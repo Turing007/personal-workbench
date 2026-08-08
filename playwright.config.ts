@@ -1,0 +1,16 @@
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './tests/e2e',
+  use: {
+    baseURL: 'http://127.0.0.1:52341',
+    headless: true,
+    trace: 'retain-on-failure',
+  },
+  webServer: {
+    command: 'npm run start',
+    url: 'http://127.0.0.1:52341/health',
+    reuseExistingServer: true,
+    timeout: 120_000,
+  },
+});

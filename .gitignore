@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.superpowers/
+data/workbench.sqlite
+data/workbench.sqlite-*
+data/files/
+data/backups/
+.env
+.env.*
+playwright-report/
+test-results/
+.workbench.pid
