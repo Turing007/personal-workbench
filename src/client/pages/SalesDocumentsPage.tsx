@@ -1,0 +1,234 @@
+import { Edit3, FileSpreadsheet, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type {
+  CompanySnapshot,
+  PaymentStatus,
+  SalesDocumentDetail,
+  SalesDocumentStatus,
+  SalesDocumentSummary,
+  SalesReceipt,
+} from '../../shared/documents';
+import type { Customer, CustomerProduct, CustomerProductSaveInput, CustomerSaveInput } from '../../shared/customers';
+import {
+  deleteSalesDocument,
+  downloadSalesDocumentPdf,
+  getCompanyProfile,
+  getSalesDocument,
+  listSalesDocuments,
+  saveSalesDocument,
+  setSalesDocumentStatus,
+} from '../api';
+import Modal from '../components/Modal';
+import PdfDownloadButton from '../components/documents/PdfDownloadButton';
+import SalesDocumentForm, { createEmptySalesDocumentDraft } from '../components/sales/SalesDocumentForm';
+import type { SalesDocumentDraft } from '../documents/document-drafts';
+import { salesDocumentDetailToDraft, salesDocumentDraftToFormData } from '../documents/document-drafts';
+
+export interface SalesDocumentsPageProps {
+  onNotify?: (message: string, tone?: 'success' | 'error' | 'info') => void;
+  customers: Customer[];
+  onSaveCustomerProduct?: (customerId: number, input: CustomerProductSaveInput) => Promise<CustomerProduct>;
+  onCreateCustomer?: (input: CustomerSaveInput) => Promise<Customer>;
+}
+
+const documentStatusLabels: Record<SalesDocumentStatus, string> = { draft: '草稿', issued: '已开单', void: '已作废' };
+const paymentStatusLabels: Record<PaymentStatus, string> = { unpaid: '未付款', partial: '部分付款', paid: '已付清' };
+
+function formatMoney(cents: number): string {
+  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(cents / 100);
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return error.message;
+  }
+  return fallback;
+}
+
+export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomerProduct, onCreateCustomer }: SalesDocumentsPageProps) {
+  const [rows, setRows] = useState<SalesDocumentSummary[]>([]);
+  const [query, setQuery] = useState('');
+  const [documentStatus, setDocumentStatusFilter] = useState<'all' | SalesDocumentStatus>('all');
+  const [paymentStatus, setPaymentStatusFilter] = useState<'all' | PaymentStatus>('all');
+  const [company, setCompany] = useState<CompanySnapshot>();
+  const [draft, setDraft] = useState<SalesDocumentDraft>(() => createEmptySalesDocumentDraft());
+  const [receipts, setReceipts] = useState<SalesReceipt[]>([]);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState<number>();
+
+  const notify = useCallback((message: string, tone: 'success' | 'error' | 'info' = 'info') => {
+    onNotify?.(message, tone);
+  }, [onNotify]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await listSalesDocuments({
+        q: query.trim(),
+        documentStatus,
+        paymentStatus,
+        page: 1,
+        pageSize: 100,
+      });
+      setRows(result.rows);
+    } catch (error) {
+      notify(errorMessage(error, '加载销售单失败'), 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [documentStatus, notify, paymentStatus, query]);
+
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void getCompanyProfile().then(setCompany).catch(() => undefined);
+  }, []);
+
+  const visibleRows = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return rows.filter((row) => (
+      (documentStatus === 'all' || row.documentStatus === documentStatus)
+      && (paymentStatus === 'all' || row.paymentStatus === paymentStatus)
+      && (!needle || [row.number, row.customerName, row.purchaseOrderNo].join(' ').toLowerCase().includes(needle))
+    ));
+  }, [documentStatus, paymentStatus, query, rows]);
+
+  const applyDetail = (detail: SalesDocumentDetail) => {
+    setDraft(salesDocumentDetailToDraft(detail));
+    setReceipts(detail.receipts);
+  };
+
+  const openNew = () => {
+    setDraft(createEmptySalesDocumentDraft(company));
+    setReceipts([]);
+    setEditorOpen(true);
+  };
+
+  const openEdit = async (id: number) => {
+    setBusyId(id);
+    try {
+      applyDetail(await getSalesDocument(id));
+      setEditorOpen(true);
+    } catch (error) {
+      notify(errorMessage(error, '读取销售单失败'), 'error');
+    } finally {
+      setBusyId(undefined);
+    }
+  };
+
+  const refreshDetail = async () => {
+    if (!draft.id) return;
+    try {
+      applyDetail(await getSalesDocument(draft.id));
+      await load();
+    } catch (error) {
+      notify(errorMessage(error, '刷新销售单失败'), 'error');
+    }
+  };
+
+  const save = async (nextDraft: SalesDocumentDraft) => {
+    setSaving(true);
+    try {
+      const detail = await saveSalesDocument(salesDocumentDraftToFormData(nextDraft), nextDraft.id);
+      applyDetail(detail);
+      notify(nextDraft.id ? '销售单已保存' : `销售单 ${detail.number} 已创建，可继续添加收款`, 'success');
+      await load();
+    } catch (error) {
+      notify(errorMessage(error, '保存销售单失败'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const changeStatus = async (row: SalesDocumentSummary, status: SalesDocumentStatus) => {
+    if (row.documentStatus === status) return;
+    if (status === 'void' && !window.confirm(`确定将销售单“${row.number}”标记为已作废吗？作废后将永久保留且不能编辑。`)) return;
+    setBusyId(row.id);
+    try {
+      await setSalesDocumentStatus(row.id, status);
+      notify(`销售单已更新为${documentStatusLabels[status]}`, 'success');
+      await load();
+    } catch (error) {
+      notify(errorMessage(error, '更新销售单状态失败'), 'error');
+    } finally {
+      setBusyId(undefined);
+    }
+  };
+
+  const remove = async (row: SalesDocumentSummary) => {
+    if (row.documentStatus === 'void') return;
+    if (!window.confirm(`确定删除销售单“${row.number}”吗？`)) return;
+    if (row.documentStatus === 'issued' && !window.confirm('该销售单已开单，请再次确认删除。')) return;
+    setBusyId(row.id);
+    try {
+      await deleteSalesDocument(row.id, row.documentStatus === 'issued');
+      notify('销售单已删除', 'success');
+      await load();
+    } catch (error) {
+      notify(errorMessage(error, '删除销售单失败'), 'error');
+    } finally {
+      setBusyId(undefined);
+    }
+  };
+
+  return <div className="page-shell sales-documents-page">
+    <div className="page-toolbar" style={{ gap: 8, flexWrap: 'wrap' }}>
+      <div><strong className="page-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><FileSpreadsheet size={17} />销售开单</strong><span className="page-subtitle">维护销售单、收款状态与单据生命周期</span></div>
+      <div className="search-control" style={{ flex: '1 1 260px' }}><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索销售单号、客户、采购单号" /></div>
+      <select className="toolbar-select" aria-label="单据状态筛选" value={documentStatus} onChange={(event) => setDocumentStatusFilter(event.target.value as 'all' | SalesDocumentStatus)}>
+        <option value="all">全部单据状态</option><option value="draft">草稿</option><option value="issued">已开单</option><option value="void">已作废</option>
+      </select>
+      <select className="toolbar-select" aria-label="付款状态筛选" value={paymentStatus} onChange={(event) => setPaymentStatusFilter(event.target.value as 'all' | PaymentStatus)}>
+        <option value="all">全部付款状态</option><option value="unpaid">未付款</option><option value="partial">部分付款</option><option value="paid">已付清</option>
+      </select>
+      <span className="toolbar-count">{visibleRows.length} 份</span>
+      <button className="icon-button" type="button" title="刷新销售单列表" disabled={loading} onClick={() => void load()}><RefreshCw size={15} /></button>
+      <button className="button button-primary" type="button" title="独立新建销售单" onClick={openNew}><Plus size={15} />新建销售单</button>
+    </div>
+
+    <section className="table-panel">
+      <div className="table-scroll"><table className="data-table" style={{ minWidth: 1160 }}>
+        <thead><tr>{['销售单号', '日期', '客户', '采购单号', '含税合计', '已收', '未付', '单据状态', '付款状态', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
+        <tbody>{visibleRows.map((row) => {
+          const receivedCents = Math.max(0, row.totalCents - row.outstandingCents);
+          return <tr key={row.id}>
+            <td className="strong-cell" style={{ color: '#0f766e' }}>{row.number}</td>
+            <td>{row.documentDate}</td>
+            <td className="strong-cell">{row.customerName || '-'}</td>
+            <td>{row.purchaseOrderNo || '-'}</td>
+            <td className="strong-cell">{formatMoney(row.totalCents)}</td>
+            <td>{formatMoney(receivedCents)}</td>
+            <td className="amount" style={{ color: row.outstandingCents > 0 ? '#b45309' : '#0f766e' }}>{formatMoney(row.outstandingCents)}</td>
+            <td><select className="toolbar-select" aria-label={`${row.number}单据状态`} value={row.documentStatus} disabled={busyId === row.id || row.documentStatus === 'void'} onChange={(event) => void changeStatus(row, event.target.value as SalesDocumentStatus)}><option value="draft">草稿</option><option value="issued">已开单</option><option value="void">已作废</option></select></td>
+            <td><span className={`badge ${row.paymentStatus === 'paid' ? 'badge-success' : row.paymentStatus === 'partial' ? 'badge-warning' : 'badge-neutral'}`}>{paymentStatusLabels[row.paymentStatus]}</span></td>
+            <td style={{ color: '#64748b' }}>{row.updatedAt.replace('T', ' ').slice(0, 16)}</td>
+            <td><div className="row-actions">
+              <button className="icon-button" type="button" title={row.documentStatus === 'void' ? '查看销售单' : '编辑销售单'} disabled={busyId === row.id} onClick={() => void openEdit(row.id)}><Edit3 size={14} /></button>
+              <PdfDownloadButton number={row.number} download={() => downloadSalesDocumentPdf(row.id)} onError={(message) => notify(message, 'error')} disabled={busyId === row.id} />
+              {row.documentStatus !== 'void' && <button className="icon-button danger" type="button" title="删除销售单" disabled={busyId === row.id} onClick={() => void remove(row)}><Trash2 size={14} /></button>}
+            </div></td>
+          </tr>;
+        })}</tbody>
+      </table></div>
+      {loading && <div className="table-state">正在加载销售单...</div>}
+      {!loading && !visibleRows.length && <div className="table-state">暂无符合条件的销售单，可独立新建或从已成交报价复制。</div>}
+    </section>
+
+    <Modal open={editorOpen} title={draft.number ? `销售单 · ${draft.number}` : '新建销售单'} onClose={() => setEditorOpen(false)} width={1280}>
+      <SalesDocumentForm
+        customers={customers}
+        value={draft}
+        receipts={receipts}
+        saving={saving}
+        onChange={setDraft}
+        onSave={save}
+        onCancel={() => setEditorOpen(false)}
+        onRefreshReceipts={refreshDetail}
+        onNotify={notify}
+        onSaveCustomerProduct={onSaveCustomerProduct}
+        onCreateCustomer={onCreateCustomer}
+      />
+    </Modal>
+  </div>;
+}

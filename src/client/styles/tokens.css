@@ -1,10 +1,119 @@
 :root {
-  font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
-  color: #1f2937;
-  background: #f4f6f8;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+  /* 字体 */
+  --font-system: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", "Microsoft YaHei", sans-serif;
+
+  /* 字号刻度（紧凑密度） */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --weight-medium: 550;
+  --weight-semibold: 650;
+  --weight-bold: 750;
+
+  /* 间距刻度 */
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 10px;
+  --space-5: 12px;
+  --space-6: 14px;
+  --space-7: 16px;
+  --space-8: 20px;
+  --space-9: 24px;
+  --space-10: 28px;
+
+  /* 中性色 */
+  --color-page: #f5f5f7;
+  --color-grouped: #eef0f4;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f8fafc;
+  --color-text: #1d1d1f;
+  --color-text-secondary: #5f636d;
+  --color-text-muted: #8b919c;
+  --color-border: rgba(15, 23, 42, .11);
+  --color-border-strong: rgba(15, 23, 42, .16);
+  --color-divider: rgba(15, 23, 42, .075);
+
+  /* 品牌色（teal） */
+  --color-accent: #0f766e;
+  --color-accent-hover: #0b665f;
+  --color-accent-soft: #e6f7f4;
+  --color-accent-border: #b7e4df;
+
+  /* 状态色 */
+  --color-success: #15803d;
+  --color-success-soft: #f0fdf4;
+  --color-success-border: #bbf7d0;
+  --color-warning: #92400e;
+  --color-warning-soft: #fffbeb;
+  --color-warning-border: #fde68a;
+  --color-danger: #b42318;
+  --color-danger-strong: #dc2626;
+  --color-danger-soft: #fff1f2;
+  --color-danger-border: #fecaca;
+  --color-info: #1d4ed8;
+  --color-info-soft: #eff6ff;
+  --color-info-border: #bfdbfe;
+  --color-neutral-pill: #f1f5f9;
+
+  /* 侧栏深色主题 */
+  --sidebar-bg: #10161f;
+  --sidebar-bg-hover: rgba(148, 163, 184, .09);
+  --sidebar-bg-active: rgba(45, 212, 191, .13);
+  --sidebar-border-active: rgba(45, 212, 191, .38);
+  --sidebar-text: #f5f7fb;
+  --sidebar-text-muted: #97a5b4;
+  --sidebar-accent: #2dd4bf;
+
+  /* 圆角 */
+  --radius-control: 9px;
+  --radius-card: 14px;
+  --radius-modal: 18px;
+  --radius-pill: 999px;
+
+  /* 阴影 */
+  --shadow-card: 0 8px 30px rgba(15, 23, 42, .055);
+  --shadow-popover: 0 14px 38px rgba(15, 23, 42, .14);
+  --shadow-modal: 0 28px 90px rgba(15, 23, 42, .22);
+
+  /* 表单控件 */
+  --control-height: 34px;
+  --control-border: rgba(15, 23, 42, .15);
+  --control-bg: var(--color-surface);
+  --control-focus-ring: 0 0 0 3px rgba(15, 118, 110, .13);
+
+  /* 动效 */
+  --ease-standard: 180ms ease;
+
+  /* 语义别名：页面组件统一使用这些变量，保留旧令牌兼容现有样式。 */
+  --color-surface-raised: #ffffff;
+  --color-surface-hover: #fbfefd;
+  --color-text-strong: #17212b;
+  --color-border-subtle: rgba(15, 23, 42, .075);
+  --color-border-control: rgba(15, 23, 42, .15);
+  --color-focus: #0f766e;
+  --color-focus-ring: rgba(15, 118, 110, .14);
+  --color-link: #0f766e;
+  --color-overlay: rgba(15, 23, 42, .42);
+  --color-warning-text: #92400e;
+  --color-danger-text: #b42318;
+  --line-height-tight: 1.25;
+  --line-height-body: 1.45;
+  --line-height-control: 1.35;
+  --control-height-sm: 30px;
+  --control-height-md: 36px;
+  --control-height-lg: 42px;
+  --z-sidebar: 10;
+  --z-overlay: 20;
+  --z-toast: 60;
+  --z-print: 100;
+  --breakpoint-wide: 1180px;
+  --breakpoint-tablet: 900px;
+  --breakpoint-phone: 640px;
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 960px; }
+body { margin: 0; min-width: 0; }
