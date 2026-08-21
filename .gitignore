@@ -10,3 +10,6 @@ data/backups/
 playwright-report/
 test-results/
 .workbench.pid
+data/*.log
+.reasonix/
+.zcode/
