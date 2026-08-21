@@ -12,7 +12,7 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 52342,
     proxy: {
-      '/api': 'http://127.0.0.1:52341',
+      '^/api/': 'http://127.0.0.1:52341',
       '/health': 'http://127.0.0.1:52341',
       '/files': 'http://127.0.0.1:52341',
     },
