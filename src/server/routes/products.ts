@@ -1,0 +1,591 @@
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import * as XLSX from 'xlsx';
+import type { DatabaseRepositories, PackagingInput, ProductImportInput, ProductInput } from '../db/repositories.js';
+import { FileStore, FileStoreError } from '../files/file-store.js';
+import {
+  ApiError,
+  asRecord,
+  finiteNumber,
+  mapDatabaseError,
+  optionalText,
+  parseId,
+  positiveInteger,
+  requiredText,
+  sendFailure,
+  sendSuccess,
+} from './api-response.js';
+import { contractFileOptions, imageFileOptions } from './multipart-limits.js';
+
+const DEFAULT_COLORS = ['蓝', '红', '黄'];
+const DEFAULT_BATTERY_PLUGS = ['牧田', '德伟', '米沃奇'];
+const PRODUCT_ATTACHMENT_CATEGORIES = new Set(['manual', 'packaging-design', 'label-dieline', 'other']);
+
+interface ProductRouteOptions {
+  repositories: DatabaseRepositories;
+  fileStore?: FileStore;
+}
+
+interface ImageParams {
+  id: string;
+  imageId: string;
+}
+
+interface PackagingImageParams extends ImageParams {
+  packagingId: string;
+}
+
+function parsePackaging(value: unknown): PackagingInput[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new ApiError(400, 'VALIDATION_ERROR', '至少需要一行包装方式', 'packaging');
+  }
+
+  return value.map((rawItem, index) => {
+    const item = asRecord(rawItem);
+    const prefix = `packaging[${index}]`;
+    return {
+      name: optionalText(item.name, `${prefix}.name`, '包装名称'),
+      id: item.id == null || item.id === '' ? undefined : parseId(String(item.id), `${prefix}.id`),
+      imageIds: Array.isArray(item.imageIds) ? item.imageIds.map((value) => parseId(String(value), `${prefix}.imageIds`)) : undefined,
+      innerSize: optionalText(item.innerSize, `${prefix}.innerSize`, '内盒尺寸'),
+      innerWeight: finiteNumber(item.innerWeight, `${prefix}.innerWeight`, '内盒重量'),
+      outerSize: optionalText(item.outerSize, `${prefix}.outerSize`, '外箱尺寸'),
+      outerLength: finiteNumber(item.outerLength, `${prefix}.outerLength`, '外箱长度'),
+      outerWidth: finiteNumber(item.outerWidth, `${prefix}.outerWidth`, '外箱宽度'),
+      outerHeight: finiteNumber(item.outerHeight, `${prefix}.outerHeight`, '外箱高度'),
+      outerWeight: finiteNumber(item.outerWeight, `${prefix}.outerWeight`, '外箱重量'),
+      packCount: positiveInteger(item.packCount, `${prefix}.packCount`, '装箱数'),
+      purchasePrice: item.purchasePrice === undefined || item.purchasePrice === null || item.purchasePrice === ''
+        ? null
+        : finiteNumber(item.purchasePrice, `${prefix}.purchasePrice`, '包装采购价'),
+    };
+  });
+}
+
+const PRODUCT_HEADERS = ['产品标识（必填）', 'SKU', '产品名称（必填）', '参数', '分类', '产品默认采购价', '供应商', '颜色（多个用、分隔）', '电池插脚（多个用、分隔）', '配件', '备注', '产品图片路径'];
+const PACKAGING_HEADERS = ['产品标识（必填）', 'SKU', '包装名称（必填）', '内盒尺寸', '内盒重量(kg)', '外箱尺寸', '外箱重量(kg)', '装箱数（必填）', '包装采购价'];
+
+type ExcelRow = Record<string, unknown>;
+
+function excelText(value: unknown): string {
+  return value === undefined || value === null ? '' : String(value).trim();
+}
+
+function excelNumber(value: unknown, field: string, rowIndex: number, options: { required?: boolean; integer?: boolean } = {}): number | undefined {
+  const text = excelText(value);
+  if (!text) {
+    if (options.required) throw new ApiError(400, 'EXCEL_VALIDATION_ERROR', `第 ${rowIndex} 行的${field}不能为空`, field);
+    return undefined;
+  }
+  const number = Number(value);
+  if (!Number.isFinite(number) || (options.integer && !Number.isInteger(number)) || (options.integer && number <= 0) || (!options.integer && number < 0)) {
+    throw new ApiError(400, 'EXCEL_VALIDATION_ERROR', `第 ${rowIndex} 行的${field}格式不正确`, field);
+  }
+  return number;
+}
+
+function excelList(value: unknown): string[] | undefined {
+  const text = excelText(value);
+  return text ? [...new Set(text.split(/[、,，;；\n]/).map((item) => item.trim()).filter(Boolean))] : undefined;
+}
+
+function sheetRows(workbook: XLSX.WorkBook, sheetName: string, headers: string[], required = true): ExcelRow[] {
+  const sheet = workbook.Sheets[sheetName];
+  if (!sheet) {
+    if (required) throw new ApiError(400, 'EXCEL_FORMAT_ERROR', `Excel 文件缺少“${sheetName}”工作表`, sheetName);
+    return [];
+  }
+  const rows = XLSX.utils.sheet_to_json<ExcelRow>(sheet, { defval: '', raw: true });
+  const actualHeaders = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '', raw: true })[0] ?? [];
+  const missing = headers.filter((header) => !actualHeaders.map((item) => excelText(item)).includes(header));
+  if (missing.length) throw new ApiError(400, 'EXCEL_FORMAT_ERROR', `“${sheetName}”缺少列：${missing.join('、')}`, sheetName);
+  return rows;
+}
+
+function parseExcelImport(buffer: Buffer): ProductImportInput[] {
+  let workbook: XLSX.WorkBook;
+  try {
+    workbook = XLSX.read(buffer, { type: 'buffer', cellDates: false });
+  } catch {
+    throw new ApiError(400, 'EXCEL_FORMAT_ERROR', '无法读取 Excel 文件，请使用产品库模板');
+  }
+
+  const productRows = sheetRows(workbook, '产品', PRODUCT_HEADERS);
+  const packagingRows = sheetRows(workbook, '包装', PACKAGING_HEADERS);
+  if (!productRows.length) throw new ApiError(400, 'EXCEL_VALIDATION_ERROR', '“产品”工作表至少需要一行产品');
+
+  const products = new Map<string, ProductImportInput>();
+  productRows.forEach((row, index) => {
+    const rowIndex = index + 2;
+    const key = excelText(row['产品标识（必填）']);
+    if (!key) throw new ApiError(400, 'EXCEL_VALIDATION_ERROR', `“产品”工作表第 ${rowIndex} 行缺少产品标识`, '产品标识');
+    if (products.has(key)) throw new ApiError(400, 'DUPLICATE_PRODUCT_KEY', `产品标识重复：${key}`, '产品标识');
+    const sourceSku = excelText(row.SKU);
+    const input: ProductInput = {
+      name: excelText(row['产品名称（必填）']),
+      sku: sourceSku,
+      specification: '',
+      parameters: excelText(row.参数),
+      category: excelText(row['分类']),
+      purchasePrice: excelNumber(row['产品默认采购价'], '产品默认采购价', rowIndex),
+      supplier: excelText(row['供应商']),
+      colors: excelList(row['颜色（多个用、分隔）']),
+      batteryPlugs: excelList(row['电池插脚（多个用、分隔）']),
+      accessories: excelText(row['配件']),
+      remark: excelText(row['备注']),
+      packaging: [],
+    };
+    products.set(key, { sourceSku, product: input });
+  });
+
+  packagingRows.forEach((row, index) => {
+    const rowIndex = index + 2;
+    const key = excelText(row['产品标识（必填）']);
+    const target = products.get(key);
+    if (!target) throw new ApiError(400, 'EXCEL_VALIDATION_ERROR', `“包装”工作表第 ${rowIndex} 行找不到产品标识：${key}`, '产品标识');
+    const name = excelText(row['包装名称（必填）']);
+    if (!name) throw new ApiError(400, 'EXCEL_VALIDATION_ERROR', `“包装”工作表第 ${rowIndex} 行缺少包装名称`, '包装名称');
+    const packCount = excelNumber(row['装箱数（必填）'], '装箱数', rowIndex, { required: true, integer: true });
+    if (packCount === undefined) throw new ApiError(400, 'EXCEL_VALIDATION_ERROR', `“包装”工作表第 ${rowIndex} 行缺少装箱数`, '装箱数');
+    target.product.packaging!.push({
+      name,
+      innerSize: excelText(row['内盒尺寸']),
+      innerWeight: excelNumber(row['内盒重量(kg)'], '内盒重量', rowIndex),
+      outerSize: excelText(row['外箱尺寸']),
+      outerWeight: excelNumber(row['外箱重量(kg)'], '外箱重量', rowIndex),
+      packCount,
+      purchasePrice: excelNumber(row['包装采购价'], '包装采购价', rowIndex),
+    });
+  });
+
+  for (const [key, input] of products) {
+    if (!input.product.name) throw new ApiError(400, 'EXCEL_VALIDATION_ERROR', `产品“${key}”缺少产品名称`, '产品名称');
+    if (!input.product.packaging?.length) throw new ApiError(400, 'EXCEL_VALIDATION_ERROR', `产品“${key}”至少需要一行包装`, '包装');
+    input.product = parseProductInput(input.product);
+  }
+  const skus = new Set<string>();
+  for (const input of products.values()) {
+    if (input.sourceSku && skus.has(input.sourceSku)) throw new ApiError(400, 'DUPLICATE_SKU', `导入文件中存在重复 SKU：${input.sourceSku}`, 'SKU');
+    if (input.sourceSku) skus.add(input.sourceSku);
+  }
+  return [...products.values()];
+}
+
+function workbookBuffer(products: Array<Record<string, unknown>>, includeSample = false): Buffer {
+  const workbook = XLSX.utils.book_new();
+  const productRows = includeSample
+    ? [PRODUCT_HEADERS, ['示例-001', '', '示例产品', '', '工具', 0, '', '蓝、红', '牧田', '', '请删除示例行后填写', '']]
+    : [PRODUCT_HEADERS, ...products.map((product) => [
+      `P-${product.id}`,
+      product.sku,
+      product.name,
+      product.parameters,
+      product.category,
+      product.purchasePrice ?? '',
+      product.supplier,
+      Array.isArray(product.colors) ? product.colors.join('、') : '',
+      Array.isArray(product.batteryPlugs) ? product.batteryPlugs.join('、') : '',
+      product.accessories,
+      product.remark,
+      Array.isArray(product.images) ? product.images.map((image) => String((image as Record<string, unknown>).relativePath ?? '')).filter(Boolean).join('、') : '',
+    ])];
+  const packagingRows = includeSample
+    ? [PACKAGING_HEADERS, ['示例-001', '', '彩盒包装', '', '', '', '', 1, 0]]
+    : [PACKAGING_HEADERS, ...products.flatMap((product) => (Array.isArray(product.packaging) ? product.packaging : []).map((packaging) => {
+      const item = packaging as Record<string, unknown>;
+      return [`P-${product.id}`, product.sku, item.name, item.innerSize, item.innerWeight, item.outerSize, item.outerWeight, item.packCount, item.purchasePrice ?? ''];
+    }))];
+  const notes = [
+    ['产品库 Excel 导入模板'],
+    ['填写规则'],
+    ['1. “产品”工作表每个产品填写一行，“产品标识”是本次导入的分组键；同一产品的包装行要在“包装”工作表使用相同标识。'],
+    ['2. 已存在产品填写原 SKU 可更新；新产品 SKU 可留空，系统会自动生成。'],
+    ['3. 每个包装单独一行，在“包装采购价”填写该包装自己的采购价；产品默认采购价用于历史数据兼容。'],
+    ['4. 请删除示例行后再导入，颜色和电池插脚可使用“、”分隔多个值。'],
+  ];
+  const productSheet = XLSX.utils.aoa_to_sheet(productRows);
+  const packagingSheet = XLSX.utils.aoa_to_sheet(packagingRows);
+  const notesSheet = XLSX.utils.aoa_to_sheet(notes);
+  productSheet['!cols'] = PRODUCT_HEADERS.map(() => ({ wch: 18 }));
+  packagingSheet['!cols'] = PACKAGING_HEADERS.map(() => ({ wch: 18 }));
+  notesSheet['!cols'] = [{ wch: 110 }];
+  XLSX.utils.book_append_sheet(workbook, productSheet, '产品');
+  XLSX.utils.book_append_sheet(workbook, packagingSheet, '包装');
+  XLSX.utils.book_append_sheet(workbook, notesSheet, '说明');
+  return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+}
+
+function parseStringArray(value: unknown, field: string, label: string, defaultValue: string[]): string[] {
+  if (value === undefined || value === null) return [...defaultValue];
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || !item.trim())) {
+    throw new ApiError(400, 'VALIDATION_ERROR', `${label}必须是非空文本数组`, field);
+  }
+  return [...new Set(value.map((item) => item.trim()))];
+}
+
+function parseParameters(value: unknown): string {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value !== 'string') {
+    throw new ApiError(400, 'VALIDATION_ERROR', '参数必须是文本', 'parameters');
+  }
+  return value;
+}
+
+function parseProductInput(value: unknown): ProductInput {
+  const body = asRecord(value);
+  const status: 'draft' | 'active' = body.status === 'draft' ? 'draft' : 'active';
+  return {
+    name: status === 'draft'
+      ? optionalText(body.name, 'name', '品名')
+      : requiredText(body.name, 'name', '品名'),
+    sku: optionalText(body.sku, 'sku', 'SKU'),
+    specification: optionalText(body.specification, 'specification', '规格'),
+    parameters: parseParameters(body.parameters),
+    category: optionalText(body.category, 'category', '分类'),
+    purchasePrice: finiteNumber(body.purchasePrice, 'purchasePrice', '采购价', 0),
+    supplier: optionalText(body.supplier, 'supplier', '供应商'),
+    colors: parseStringArray(body.colors, 'colors', '颜色', DEFAULT_COLORS),
+    batteryPlugs: parseStringArray(body.batteryPlugs, 'batteryPlugs', '电池插脚', DEFAULT_BATTERY_PLUGS),
+    accessories: optionalText(body.accessories, 'accessories', '配件'),
+    remark: optionalText(body.remark, 'remark', '备注'),
+    status,
+    packaging: parsePackaging(body.packaging),
+  };
+}
+
+function parseProductImport(value: unknown): ProductImportInput[] {
+  const body = Array.isArray(value) ? { products: value } : asRecord(value);
+  const rawProducts = body.products;
+  if (!Array.isArray(rawProducts) || rawProducts.length === 0) {
+    throw new ApiError(400, 'VALIDATION_ERROR', '导入文件至少需要包含一个产品', 'products');
+  }
+
+  const sourceSkus = new Set<string>();
+  return rawProducts.map((rawProduct, index) => {
+    const raw = asRecord(rawProduct);
+    const sourceSku = optionalText(raw.sku, `products[${index}].sku`, 'SKU');
+    if (sourceSku && sourceSkus.has(sourceSku)) {
+      throw new ApiError(400, 'DUPLICATE_SKU', `导入文件中存在重复 SKU：${sourceSku}`, `products[${index}].sku`);
+    }
+    if (sourceSku) sourceSkus.add(sourceSku);
+
+    return {
+      sourceSku,
+      product: parseProductInput({
+        ...raw,
+        // Older exports may omit packaging. Keep the import useful while
+        // preserving the same valid shape used by the product editor.
+        packaging: raw.packaging ?? [{ name: '标准包装', packCount: 1 }],
+      }),
+    };
+  });
+}
+
+function mapImage(row: Record<string, unknown>) {
+  const relativePath = String(row.relativePath ?? row.relative_path ?? '');
+  return {
+    id: Number(row.id),
+    relativePath,
+    originalName: String(row.originalName ?? row.original_name ?? ''),
+    mimeType: String(row.mimeType ?? row.mime_type ?? ''),
+    size: Number(row.size ?? row.size_bytes ?? 0),
+    createdAt: String(row.createdAt ?? row.created_at ?? ''),
+  };
+}
+
+function mapAttachment(row: Record<string, unknown>) {
+  const relativePath = String(row.relativePath ?? row.relative_path ?? '');
+  return {
+    id: Number(row.id),
+    productId: Number(row.productId ?? row.product_id ?? 0),
+    category: String(row.category ?? 'other'),
+    relativePath,
+    originalName: String(row.originalName ?? row.original_name ?? ''),
+    mimeType: String(row.mimeType ?? row.mime_type ?? ''),
+    size: Number(row.size ?? row.size_bytes ?? 0),
+    createdAt: String(row.createdAt ?? row.created_at ?? ''),
+    url: `/files/${relativePath}`,
+  };
+}
+
+function mapProduct(row: Record<string, unknown> | undefined) {
+  if (!row) return undefined;
+  return {
+    id: Number(row.id),
+    name: String(row.name),
+    sku: String(row.sku),
+    specification: String(row.specification),
+    parameters: String(row.parameters ?? ''),
+    category: String(row.category),
+    purchasePrice: row.purchase_price === null ? null : Number(row.purchase_price),
+    supplier: String(row.supplier),
+    colors: Array.isArray(row.colors) ? row.colors : [],
+    batteryPlugs: Array.isArray(row.batteryPlugs) ? row.batteryPlugs : [],
+    accessories: String(row.accessories),
+    remark: String(row.remark),
+    status: String(row.status ?? 'active'),
+    packaging: Array.isArray(row.packaging) ? row.packaging : [],
+    images: Array.isArray(row.images) ? row.images : [],
+    attachments: Array.isArray(row.attachments) ? row.attachments.map((item) => mapAttachment(item as Record<string, unknown>)) : [],
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+function getProductId(request: FastifyRequest<{ Params: { id: string } }>): number {
+  return parseId(request.params.id);
+}
+
+async function safeRoute<T>(
+  handler: () => Promise<T> | T,
+  reply: Parameters<typeof sendFailure>[0],
+): Promise<unknown> {
+  try {
+    return await handler();
+  } catch (error) {
+    if (error instanceof ApiError) return sendFailure(reply, error);
+    if (error instanceof FileStoreError) {
+        const statusCode = error.code === 'IMAGE_TOO_LARGE' || error.code === 'PRODUCT_ATTACHMENT_TOO_LARGE' ? 413 : error.code === 'UNSUPPORTED_IMAGE_TYPE' || error.code === 'UNSUPPORTED_PRODUCT_ATTACHMENT_TYPE' ? 415 : 400;
+      return sendFailure(reply, new ApiError(statusCode, error.code, error.message, 'file'));
+    }
+    return sendFailure(reply, mapDatabaseError(error));
+  }
+}
+
+export async function registerProductRoutes(app: FastifyInstance, options: ProductRouteOptions): Promise<void> {
+  const { repositories, fileStore } = options;
+
+  app.get('/api/products/export', async (_request, reply) =>
+    safeRoute(() => {
+      // 草稿是未完成的产品资料，不进入导出文件。
+      const products = repositories.listProducts({ status: 'active' }).flatMap((product) => {
+        const mapped = mapProduct(product);
+        return mapped ? [mapped] : [];
+      });
+      const fileName = `产品库-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      return reply
+        .header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        .header('Content-Disposition', `attachment; filename="products.xlsx"; filename*=UTF-8''${encodeURIComponent(fileName)}`)
+        .send(workbookBuffer(products));
+    }, reply),
+  );
+
+  app.get('/api/products/import-template', async (_request, reply) =>
+    safeRoute(() => reply
+      .header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+      .header('Content-Disposition', `attachment; filename="product-import-template.xlsx"; filename*=UTF-8''${encodeURIComponent('产品库导入模板.xlsx')}`)
+      .send(workbookBuffer([], true)), reply),
+  );
+
+  app.post('/api/products/import', async (request, reply) =>
+    safeRoute(async () => {
+      const file = await request.file();
+      if (!file) throw new ApiError(400, 'FILE_REQUIRED', '请选择产品库 Excel 文件', 'file');
+      const buffer = await file.toBuffer();
+      if (!buffer.length) throw new ApiError(400, 'EXCEL_FORMAT_ERROR', '导入文件不能为空', 'file');
+      const inputs = parseExcelImport(buffer);
+      const result = repositories.importProducts(inputs);
+      return sendSuccess(reply, {
+        formatVersion: 2,
+        total: inputs.length,
+        created: result.created,
+        updated: result.updated,
+        products: result.products.map((product) => mapProduct(product)),
+      });
+    }, reply),
+  );
+
+  app.get('/api/products', async (request, reply) =>
+    safeRoute(() => {
+      const query = request.query as Record<string, string | undefined>;
+      const page = Math.max(1, Number(query.page ?? 1) || 1);
+      const pageSize = Math.min(200, Math.max(1, Number(query.pageSize ?? 50) || 50));
+      const all = repositories.listProducts({
+        query: query.q,
+        name: query.name,
+        sku: query.sku,
+        specification: query.specification,
+        status: query.status === 'draft' || query.status === 'active' ? query.status : undefined,
+      });
+      const items = all.slice((page - 1) * pageSize, page * pageSize).map((row) => mapProduct(row));
+      return sendSuccess(reply, { items, total: all.length, page, pageSize });
+    }, reply),
+  );
+
+  app.get('/api/products/:id', async (request: FastifyRequest<{ Params: { id: string } }>, reply) =>
+    safeRoute(() => {
+      const product = repositories.getProduct(getProductId(request));
+      if (!product) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
+      return sendSuccess(reply, mapProduct(product));
+    }, reply),
+  );
+
+  app.post('/api/products', async (request, reply) =>
+    safeRoute(() => {
+      const product = repositories.saveProduct(parseProductInput(request.body));
+      if (!product) throw new ApiError(500, 'SAVE_FAILED', '产品保存失败');
+      return sendSuccess(reply, mapProduct(product), 201);
+    }, reply),
+  );
+
+  app.put('/api/products/:id', async (request: FastifyRequest<{ Params: { id: string } }>, reply) =>
+    safeRoute(() => {
+      const id = getProductId(request);
+      if (!repositories.getProduct(id)) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
+      const product = repositories.saveProduct(parseProductInput(request.body), id);
+      if (!product) throw new ApiError(500, 'SAVE_FAILED', '产品保存失败');
+      return sendSuccess(reply, mapProduct(product));
+    }, reply),
+  );
+
+  app.delete('/api/products/:id', async (request: FastifyRequest<{ Params: { id: string } }>, reply) =>
+    safeRoute(async () => {
+      const id = getProductId(request);
+      if (!repositories.getProduct(id)) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
+      const paths = repositories.deleteProduct(id);
+      if (fileStore) await Promise.all(paths.map((path) => fileStore.deleteFile(path)));
+      return sendSuccess(reply, null);
+    }, reply),
+  );
+
+  app.post('/api/products/:id/images', async (request: FastifyRequest<{ Params: { id: string } }>, reply) =>
+    safeRoute(async () => {
+      if (!fileStore) throw new ApiError(503, 'FILE_STORE_UNAVAILABLE', '附件存储尚未配置');
+      const id = getProductId(request);
+      if (!repositories.getProduct(id)) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
+      const file = await request.file(imageFileOptions);
+      if (!file) throw new ApiError(400, 'FILE_REQUIRED', '请选择产品图片', 'file');
+      const stored = await fileStore.saveImage(file.file, 'product', file.filename, file.mimetype);
+      try {
+        const image = repositories.addProductImage(id, stored);
+        return sendSuccess(reply, image ? mapImage(image) : null, 201);
+      } catch (error) {
+        await fileStore.deleteFile(stored.relativePath);
+        throw error;
+      }
+    }, reply),
+  );
+
+  app.put(
+    '/api/products/:id/images/order',
+    async (request: FastifyRequest<{ Params: { id: string }; Body: { imageIds?: unknown } }>, reply) =>
+      safeRoute(() => {
+        const productId = getProductId(request);
+        if (!repositories.getProduct(productId)) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
+        const body = asRecord(request.body);
+        if (!Array.isArray(body.imageIds) || body.imageIds.some((value) => !/^\d+$/.test(String(value)))) {
+          throw new ApiError(400, 'VALIDATION_ERROR', '图片顺序参数无效', 'imageIds');
+        }
+        if (!repositories.reorderProductImages(productId, body.imageIds.map((value) => Number(value)))) {
+          throw new ApiError(400, 'VALIDATION_ERROR', '图片顺序与产品图片不匹配', 'imageIds');
+        }
+        return sendSuccess(reply, null);
+      }, reply),
+  );
+
+  app.delete(
+    '/api/products/:id/images/:imageId',
+    async (request: FastifyRequest<{ Params: ImageParams }>, reply) =>
+      safeRoute(async () => {
+        if (!fileStore) throw new ApiError(503, 'FILE_STORE_UNAVAILABLE', '附件存储尚未配置');
+        const productId = parseId(request.params.id);
+        const imageId = parseId(request.params.imageId, 'imageId');
+        const relativePath = repositories.deleteProductImage(productId, imageId);
+        if (!relativePath) throw new ApiError(404, 'NOT_FOUND', '产品图片不存在');
+        await fileStore.deleteFile(relativePath);
+        return sendSuccess(reply, null);
+      }, reply),
+  );
+
+  app.get('/api/products/:id/attachments', async (request: FastifyRequest<{ Params: { id: string } }>, reply) =>
+    safeRoute(() => {
+      const productId = getProductId(request);
+      if (!repositories.getProduct(productId)) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
+      return sendSuccess(reply, repositories.listProductAttachments(productId).map((row) => mapAttachment(row as Record<string, unknown>)));
+    }, reply),
+  );
+
+  app.post('/api/products/:id/attachments', async (request: FastifyRequest<{ Params: { id: string }; Querystring: { category?: string } }>, reply) =>
+    safeRoute(async () => {
+      if (!fileStore) throw new ApiError(503, 'FILE_STORE_UNAVAILABLE', '附件存储尚未配置');
+      const productId = getProductId(request);
+      if (!repositories.getProduct(productId)) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
+      const category = String(request.query?.category ?? 'other').trim() || 'other';
+      if (!PRODUCT_ATTACHMENT_CATEGORIES.has(category)) throw new ApiError(400, 'VALIDATION_ERROR', '附件类型无效', 'category');
+      const file = await request.file(contractFileOptions);
+      if (!file) throw new ApiError(400, 'FILE_REQUIRED', '请选择产品附件', 'file');
+      const stored = await fileStore.saveFile(file.file, 'product-attachment', file.filename, file.mimetype);
+      try {
+        const attachment = repositories.addProductAttachment(productId, category, stored);
+        return sendSuccess(reply, attachment ? mapAttachment(attachment as Record<string, unknown>) : null, 201);
+      } catch (error) {
+        await fileStore.deleteFile(stored.relativePath);
+        throw error;
+      }
+    }, reply),
+  );
+
+  app.patch('/api/products/:id/attachments/:attachmentId', async (request: FastifyRequest<{ Params: { id: string; attachmentId: string }; Body: { category?: unknown } }>, reply) =>
+    safeRoute(() => {
+      const productId = getProductId(request);
+      const attachmentId = parseId(request.params.attachmentId, 'attachmentId');
+      const category = String(asRecord(request.body).category ?? '').trim();
+      if (!PRODUCT_ATTACHMENT_CATEGORIES.has(category)) throw new ApiError(400, 'VALIDATION_ERROR', '附件类型无效', 'category');
+      if (!repositories.updateProductAttachmentCategory(attachmentId, productId, category)) throw new ApiError(404, 'NOT_FOUND', '产品附件不存在');
+      const attachment = repositories.listProductAttachments(productId).find((row) => Number((row as { id?: unknown }).id) === attachmentId);
+      return sendSuccess(reply, attachment ? mapAttachment(attachment as Record<string, unknown>) : null);
+    }, reply),
+  );
+
+  app.delete('/api/products/:id/attachments/:attachmentId', async (request: FastifyRequest<{ Params: { id: string; attachmentId: string } }>, reply) =>
+    safeRoute(async () => {
+      if (!fileStore) throw new ApiError(503, 'FILE_STORE_UNAVAILABLE', '附件存储尚未配置');
+      const productId = getProductId(request);
+      const attachmentId = parseId(request.params.attachmentId, 'attachmentId');
+      const relativePath = repositories.deleteProductAttachment(productId, attachmentId);
+      if (!relativePath) throw new ApiError(404, 'NOT_FOUND', '产品附件不存在');
+      await fileStore.deleteFile(relativePath);
+      return sendSuccess(reply, null);
+    }, reply),
+  );
+
+  app.post(
+    '/api/products/:id/packaging/:packagingId/images',
+    async (request: FastifyRequest<{ Params: { id: string; packagingId: string } }>, reply) =>
+      safeRoute(async () => {
+        if (!fileStore) throw new ApiError(503, 'FILE_STORE_UNAVAILABLE', '附件存储尚未配置');
+        const productId = parseId(request.params.id);
+        const packagingId = parseId(request.params.packagingId, 'packagingId');
+        if (!repositories.getProductPackaging(productId, packagingId)) throw new ApiError(404, 'NOT_FOUND', '包装不存在');
+        const file = await request.file(imageFileOptions);
+        if (!file) throw new ApiError(400, 'FILE_REQUIRED', '请选择包装图片', 'file');
+        const stored = await fileStore.saveImage(file.file, 'product-packaging', file.filename, file.mimetype);
+        try {
+          const image = repositories.addProductPackagingImage(packagingId, stored);
+          return sendSuccess(reply, image ? mapImage(image) : null, 201);
+        } catch (error) {
+          await fileStore.deleteFile(stored.relativePath);
+          throw error;
+        }
+      }, reply),
+  );
+
+  app.delete(
+    '/api/products/:id/packaging/:packagingId/images/:imageId',
+    async (request: FastifyRequest<{ Params: PackagingImageParams }>, reply) =>
+      safeRoute(async () => {
+        if (!fileStore) throw new ApiError(503, 'FILE_STORE_UNAVAILABLE', '附件存储尚未配置');
+        const productId = parseId(request.params.id);
+        const packagingId = parseId(request.params.packagingId, 'packagingId');
+        const imageId = parseId(request.params.imageId, 'imageId');
+        if (!repositories.getProductPackaging(productId, packagingId)) throw new ApiError(404, 'NOT_FOUND', '包装不存在');
+        const relativePath = repositories.deleteProductPackagingImage(packagingId, imageId);
+        if (!relativePath) throw new ApiError(404, 'NOT_FOUND', '包装图片不存在');
+        await fileStore.deleteFile(relativePath);
+        return sendSuccess(reply, null);
+      }, reply),
+  );
+}
+
+export const productRoutes = registerProductRoutes;
+
+export { FileStoreError };

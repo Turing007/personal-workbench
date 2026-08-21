@@ -1,0 +1,1035 @@
+import type { DatabaseSync } from 'node:sqlite';
+import { withTransaction } from './connection.js';
+import { migratePackagingColumns } from './packaging.js';
+
+const schemaSql = `
+CREATE TABLE IF NOT EXISTS products (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  sku TEXT NOT NULL DEFAULT '',
+  specification TEXT NOT NULL DEFAULT '',
+  parameters TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT '',
+  purchase_price REAL,
+  supplier TEXT NOT NULL DEFAULT '',
+  colors_json TEXT NOT NULL DEFAULT '[]',
+  battery_plugs_json TEXT NOT NULL DEFAULT '[]',
+  accessories TEXT NOT NULL DEFAULT '',
+  remark TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS product_packaging (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  inner_size TEXT NOT NULL DEFAULT '',
+  inner_weight REAL NOT NULL DEFAULT 0,
+  outer_size TEXT NOT NULL DEFAULT '',
+  outer_length REAL NOT NULL DEFAULT 0,
+  outer_width REAL NOT NULL DEFAULT 0,
+  outer_height REAL NOT NULL DEFAULT 0,
+  outer_weight REAL NOT NULL DEFAULT 0,
+  pack_count INTEGER NOT NULL CHECK (pack_count > 0),
+  purchase_price REAL CHECK (purchase_price IS NULL OR purchase_price >= 0),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS product_images (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  relative_path TEXT NOT NULL UNIQUE,
+  original_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS product_packaging_images (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  packaging_id INTEGER NOT NULL REFERENCES product_packaging(id) ON DELETE CASCADE,
+  relative_path TEXT NOT NULL UNIQUE,
+  original_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS product_attachments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  category TEXT NOT NULL DEFAULT 'other',
+  relative_path TEXT NOT NULL UNIQUE,
+  original_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL DEFAULT '',
+  size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS customers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  contact_name TEXT NOT NULL DEFAULT '',
+  contact_phone TEXT NOT NULL DEFAULT '',
+  shipping_info TEXT NOT NULL DEFAULT '',
+  is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS customer_products (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+  system_product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  specification TEXT NOT NULL DEFAULT '',
+  sku TEXT NOT NULL DEFAULT '',
+  pack_count INTEGER CHECK (pack_count IS NULL OR pack_count > 0),
+  latest_quote_cents INTEGER CHECK (latest_quote_cents IS NULL OR latest_quote_cents >= 0),
+  final_price_cents INTEGER CHECK (final_price_cents IS NULL OR final_price_cents >= 0),
+  cost_price_cents INTEGER CHECK (cost_price_cents IS NULL OR cost_price_cents >= 0),
+  freight_per_box_cents INTEGER CHECK (freight_per_box_cents IS NULL OR freight_per_box_cents >= 0),
+  packaging_json TEXT NOT NULL DEFAULT '[]',
+  source_quotation_id INTEGER REFERENCES quotations(id) ON DELETE SET NULL,
+  image_relative_path TEXT,
+  remark TEXT NOT NULL DEFAULT '',
+  label_requirement TEXT NOT NULL DEFAULT '',
+  instruction_requirement TEXT NOT NULL DEFAULT '',
+  packaging_requirement TEXT NOT NULL DEFAULT '',
+  last_synced_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS customer_product_attachments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_product_id INTEGER NOT NULL REFERENCES customer_products(id) ON DELETE CASCADE,
+  relative_path TEXT NOT NULL UNIQUE,
+  original_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL DEFAULT '',
+  size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+  category TEXT NOT NULL DEFAULT 'other',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+  customer_name TEXT NOT NULL DEFAULT '',
+  customer_contact_name TEXT NOT NULL DEFAULT '',
+  customer_contact_phone TEXT NOT NULL DEFAULT '',
+  customer_shipping_info TEXT NOT NULL DEFAULT '',
+  order_no TEXT NOT NULL UNIQUE,
+  ordered_at TEXT NOT NULL,
+  source_type TEXT NOT NULL DEFAULT '',
+  source_name TEXT NOT NULL DEFAULT '',
+  recipient_name TEXT NOT NULL DEFAULT '',
+  recipient_info TEXT NOT NULL DEFAULT '',
+  amount REAL NOT NULL DEFAULT 0,
+  amount_cents INTEGER NOT NULL DEFAULT 0 CHECK (amount_cents >= 0),
+  shipping_cents INTEGER NOT NULL DEFAULT 0 CHECK (shipping_cents >= 0),
+  tracking_no TEXT NOT NULL DEFAULT '',
+  payment_note TEXT NOT NULL DEFAULT '',
+  order_detail TEXT NOT NULL DEFAULT '',
+  remark TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending_stock',
+  label_printed_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS order_number_sequences (
+  sequence_date TEXT PRIMARY KEY,
+  last_value INTEGER NOT NULL CHECK (last_value > 0)
+);
+
+CREATE TABLE IF NOT EXISTS order_source_types (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS order_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  customer_product_id INTEGER REFERENCES customer_products(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  sku TEXT NOT NULL DEFAULT '',
+  specification TEXT NOT NULL DEFAULT '',
+  packaging_name TEXT NOT NULL DEFAULT '',
+  pack_count INTEGER NOT NULL CHECK (pack_count > 0),
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  unit_price_cents INTEGER NOT NULL DEFAULT 0 CHECK (unit_price_cents >= 0),
+  amount_cents INTEGER NOT NULL DEFAULT 0 CHECK (amount_cents >= 0),
+  freight_per_box_cents INTEGER NOT NULL DEFAULT 0 CHECK (freight_per_box_cents >= 0),
+  remark TEXT NOT NULL DEFAULT '',
+  label_requirement TEXT NOT NULL DEFAULT '',
+  instruction_requirement TEXT NOT NULL DEFAULT '',
+  packaging_requirement TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS order_item_box_sizes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+  packaging_name TEXT NOT NULL DEFAULT '',
+  outer_length REAL NOT NULL DEFAULT 0,
+  outer_width REAL NOT NULL DEFAULT 0,
+  outer_height REAL NOT NULL DEFAULT 0,
+  outer_weight REAL NOT NULL DEFAULT 0,
+  pack_count INTEGER NOT NULL CHECK (pack_count > 0),
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS order_item_requirement_attachments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+  category TEXT NOT NULL DEFAULT 'other',
+  relative_path TEXT NOT NULL UNIQUE,
+  original_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL DEFAULT '',
+  size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS carton_labels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  box_no INTEGER NOT NULL CHECK (box_no > 0),
+  total_boxes INTEGER NOT NULL CHECK (total_boxes > 0),
+  manual_edited INTEGER NOT NULL DEFAULT 0 CHECK (manual_edited IN (0, 1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (order_id, box_no)
+);
+
+CREATE TABLE IF NOT EXISTS carton_label_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  carton_label_id INTEGER NOT NULL REFERENCES carton_labels(id) ON DELETE CASCADE,
+  order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  sku TEXT NOT NULL DEFAULT '',
+  specification TEXT NOT NULL DEFAULT '',
+  pack_count INTEGER NOT NULL CHECK (pack_count > 0),
+  box_count INTEGER NOT NULL DEFAULT 1 CHECK (box_count > 0),
+  total_count INTEGER NOT NULL CHECK (total_count > 0),
+  remark TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS payment_proofs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  relative_path TEXT NOT NULL UNIQUE,
+  original_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+  note TEXT NOT NULL DEFAULT '',
+  payment_date TEXT,
+  amount_cents INTEGER CHECK (amount_cents IS NULL OR amount_cents >= 0),
+  payment_method TEXT NOT NULL DEFAULT '',
+  payer_name TEXT NOT NULL DEFAULT '',
+  transaction_no TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'void')),
+  review_note TEXT NOT NULL DEFAULT '',
+  reviewed_at TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS order_finance (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE,
+  receivable_cents INTEGER NOT NULL CHECK (receivable_cents >= 0),
+  received_cents INTEGER NOT NULL DEFAULT 0 CHECK (received_cents >= 0),
+  outstanding_cents INTEGER NOT NULL DEFAULT 0,
+  payment_status TEXT NOT NULL CHECK (payment_status IN ('unpaid', 'partial', 'paid', 'overpaid')),
+  proof_status TEXT NOT NULL CHECK (proof_status IN ('none', 'pending', 'approved', 'rejected')),
+  invoice_status TEXT NOT NULL CHECK (invoice_status IN ('not_requested', 'incomplete', 'pending_issue', 'issued', 'sent', 'void')),
+  invoice_requested_at TEXT,
+  remark TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS finance_receipts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  payment_proof_id INTEGER REFERENCES payment_proofs(id) ON DELETE SET NULL,
+  received_at TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+  payment_method TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS finance_invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'incomplete'
+    CHECK (status IN ('incomplete', 'pending_issue', 'issued', 'sent', 'void')),
+  invoice_type TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  tax_no TEXT NOT NULL DEFAULT '',
+  recipient_email TEXT NOT NULL DEFAULT '',
+  recipient_address TEXT NOT NULL DEFAULT '',
+  amount_cents INTEGER NOT NULL DEFAULT 0 CHECK (amount_cents >= 0),
+  tax_rate_bps INTEGER NOT NULL DEFAULT 0 CHECK (tax_rate_bps BETWEEN 0 AND 10000),
+  tax_cents INTEGER NOT NULL DEFAULT 0 CHECK (tax_cents >= 0),
+  invoice_code TEXT NOT NULL DEFAULT '',
+  invoice_no TEXT NOT NULL DEFAULT '',
+  issued_at TEXT,
+  sent_at TEXT,
+  voided_at TEXT,
+  remark TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS finance_invoice_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_id INTEGER NOT NULL REFERENCES finance_invoices(id) ON DELETE CASCADE,
+  relative_path TEXT NOT NULL UNIQUE,
+  original_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS order_contracts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  relative_path TEXT NOT NULL UNIQUE,
+  original_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+  category TEXT NOT NULL DEFAULT 'other',
+  source_customer_product_id INTEGER REFERENCES customer_products(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS order_detail_images (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  relative_path TEXT NOT NULL UNIQUE,
+  original_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS print_histories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  printed_at TEXT NOT NULL,
+  action_type TEXT NOT NULL DEFAULT 'print',
+  order_count INTEGER NOT NULL DEFAULT 0,
+  label_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS print_history_labels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  print_history_id INTEGER NOT NULL REFERENCES print_histories(id) ON DELETE CASCADE,
+  label_id INTEGER REFERENCES carton_labels(id) ON DELETE SET NULL,
+  order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+  order_no TEXT NOT NULL DEFAULT '',
+  box_no INTEGER NOT NULL CHECK (box_no > 0),
+  total_boxes INTEGER NOT NULL CHECK (total_boxes > 0),
+  snapshot_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS shipments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
+  tracking_no TEXT NOT NULL,
+  shipped_at TEXT NOT NULL,
+  total_boxes INTEGER NOT NULL CHECK (total_boxes > 0),
+  recipient_info TEXT NOT NULL DEFAULT '',
+  remark TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS shipment_batches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_no TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'draft',
+  created_at TEXT NOT NULL,
+  confirmed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS shipment_batch_orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id INTEGER NOT NULL REFERENCES shipment_batches(id) ON DELETE CASCADE,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
+  tracking_no TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (batch_id, order_id)
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS document_number_sequences (
+  document_type TEXT NOT NULL CHECK (document_type IN ('quotation', 'sales')),
+  sequence_date TEXT NOT NULL,
+  last_value INTEGER NOT NULL CHECK (last_value > 0),
+  PRIMARY KEY (document_type, sequence_date)
+);
+
+CREATE TABLE IF NOT EXISTS quotations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+  number TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL CHECK (status IN ('draft', 'sent', 'won', 'expired')),
+  quotation_date TEXT NOT NULL,
+  customer_name TEXT NOT NULL DEFAULT '',
+  contact_name TEXT NOT NULL DEFAULT '',
+  contact_phone TEXT NOT NULL DEFAULT '',
+  customer_address TEXT NOT NULL DEFAULT '',
+  valid_until TEXT NOT NULL DEFAULT '',
+  remark TEXT NOT NULL DEFAULT '',
+  tax_rate_bps INTEGER NOT NULL DEFAULT 0 CHECK (tax_rate_bps BETWEEN 0 AND 10000),
+  subtotal_cents INTEGER NOT NULL DEFAULT 0 CHECK (subtotal_cents >= 0),
+  tax_cents INTEGER NOT NULL DEFAULT 0 CHECK (tax_cents >= 0),
+  total_cents INTEGER NOT NULL DEFAULT 0 CHECK (total_cents >= 0),
+  customer_products_synced_at TEXT,
+  company_snapshot_json TEXT NOT NULL,
+  display_config_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS quotation_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  quotation_id INTEGER NOT NULL REFERENCES quotations(id) ON DELETE CASCADE,
+  product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+  customer_product_id INTEGER REFERENCES customer_products(id) ON DELETE SET NULL,
+  is_temporary INTEGER NOT NULL DEFAULT 0 CHECK (is_temporary IN (0, 1)),
+  name TEXT NOT NULL,
+  sku TEXT NOT NULL DEFAULT '',
+  specification TEXT NOT NULL DEFAULT '',
+  parameters TEXT NOT NULL DEFAULT '',
+  pack_count INTEGER CHECK (pack_count IS NULL OR pack_count > 0),
+  quantity REAL NOT NULL CHECK (quantity >= 0),
+  unit_price_cents INTEGER NOT NULL DEFAULT 0 CHECK (unit_price_cents >= 0),
+  amount_cents INTEGER NOT NULL DEFAULT 0 CHECK (amount_cents >= 0),
+  remark TEXT NOT NULL DEFAULT '',
+  image_relative_path TEXT,
+  image_original_name TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS quotation_custom_fields (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  quotation_id INTEGER NOT NULL REFERENCES quotations(id) ON DELETE CASCADE,
+  placement TEXT NOT NULL CHECK (placement IN ('header', 'footer')),
+  label TEXT NOT NULL,
+  value TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0 CHECK (sort_order >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS sales_documents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+  number TEXT NOT NULL UNIQUE,
+  source_quotation_id INTEGER REFERENCES quotations(id) ON DELETE SET NULL,
+  document_status TEXT NOT NULL CHECK (document_status IN ('draft', 'issued', 'void')),
+  payment_status TEXT NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid', 'partial', 'paid')),
+  document_date TEXT NOT NULL,
+  customer_name TEXT NOT NULL DEFAULT '',
+  contact_name TEXT NOT NULL DEFAULT '',
+  contact_phone TEXT NOT NULL DEFAULT '',
+  address TEXT NOT NULL DEFAULT '',
+  purchase_order_no TEXT NOT NULL DEFAULT '',
+  issuer TEXT NOT NULL DEFAULT '',
+  recipient TEXT NOT NULL DEFAULT '',
+  remark TEXT NOT NULL DEFAULT '',
+  shipping_cents INTEGER NOT NULL DEFAULT 0 CHECK (shipping_cents >= 0),
+  tax_rate_bps INTEGER NOT NULL DEFAULT 0 CHECK (tax_rate_bps BETWEEN 0 AND 10000),
+  subtotal_cents INTEGER NOT NULL DEFAULT 0 CHECK (subtotal_cents >= 0),
+  tax_cents INTEGER NOT NULL DEFAULT 0 CHECK (tax_cents >= 0),
+  total_cents INTEGER NOT NULL DEFAULT 0 CHECK (total_cents >= 0),
+  received_cents INTEGER NOT NULL DEFAULT 0 CHECK (received_cents >= 0),
+  outstanding_cents INTEGER NOT NULL DEFAULT 0 CHECK (outstanding_cents >= 0),
+  company_snapshot_json TEXT NOT NULL,
+  display_config_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sales_document_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sales_document_id INTEGER NOT NULL REFERENCES sales_documents(id) ON DELETE CASCADE,
+  product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+  customer_product_id INTEGER REFERENCES customer_products(id) ON DELETE SET NULL,
+  is_temporary INTEGER NOT NULL DEFAULT 0 CHECK (is_temporary IN (0, 1)),
+  product_code TEXT NOT NULL DEFAULT '',
+  name TEXT NOT NULL,
+  sku TEXT NOT NULL DEFAULT '',
+  specification TEXT NOT NULL DEFAULT '',
+  parameters TEXT NOT NULL DEFAULT '',
+  pack_count INTEGER CHECK (pack_count IS NULL OR pack_count > 0),
+  quantity REAL NOT NULL CHECK (quantity >= 0),
+  unit_price_cents INTEGER NOT NULL DEFAULT 0 CHECK (unit_price_cents >= 0),
+  amount_cents INTEGER NOT NULL DEFAULT 0 CHECK (amount_cents >= 0),
+  remark TEXT NOT NULL DEFAULT '',
+  image_relative_path TEXT,
+  image_original_name TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sales_receipts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sales_document_id INTEGER NOT NULL REFERENCES sales_documents(id) ON DELETE CASCADE,
+  received_at TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL CHECK (amount_cents >= 0),
+  payment_method TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sales_receipt_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  receipt_id INTEGER NOT NULL REFERENCES sales_receipts(id) ON DELETE CASCADE,
+  relative_path TEXT NOT NULL UNIQUE,
+  original_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_products_name_sku_spec ON products(name, sku, specification);
+CREATE INDEX IF NOT EXISTS idx_product_packaging_product ON product_packaging(product_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_product_packaging_images_packaging ON product_packaging_images(packaging_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_product_attachments_product ON product_attachments(product_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_customer_product_attachments_product ON customer_product_attachments(customer_product_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_order_source_types_active ON order_source_types(is_active, id);
+CREATE INDEX IF NOT EXISTS idx_order_source_types_name ON order_source_types(name);
+CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_order_item_requirement_attachments_item ON order_item_requirement_attachments(order_item_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_carton_labels_order ON carton_labels(order_id, box_no);
+CREATE INDEX IF NOT EXISTS idx_payment_proofs_order ON payment_proofs(order_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_order_finance_payment_status ON order_finance(payment_status, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_order_finance_proof_status ON order_finance(proof_status, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_order_finance_invoice_status ON order_finance(invoice_status, updated_at DESC, id DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_receipts_proof
+  ON finance_receipts(payment_proof_id)
+  WHERE payment_proof_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_finance_receipts_order ON finance_receipts(order_id, received_at, id);
+CREATE INDEX IF NOT EXISTS idx_finance_invoices_order ON finance_invoices(order_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_finance_invoices_status ON finance_invoices(status, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_finance_invoice_files_invoice ON finance_invoice_files(invoice_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_order_contracts_order ON order_contracts(order_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_order_detail_images_order ON order_detail_images(order_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_print_history_labels_history ON print_history_labels(print_history_id);
+CREATE INDEX IF NOT EXISTS idx_shipments_order ON shipments(order_id, shipped_at DESC);
+CREATE INDEX IF NOT EXISTS idx_batch_orders_batch ON shipment_batch_orders(batch_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_quotations_status_updated ON quotations(status, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_quotation_items_quotation ON quotation_items(quotation_id, sort_order, id);
+CREATE INDEX IF NOT EXISTS idx_quotation_items_product ON quotation_items(product_id);
+CREATE INDEX IF NOT EXISTS idx_quotation_custom_fields_quotation ON quotation_custom_fields(quotation_id, placement, sort_order, id);
+CREATE INDEX IF NOT EXISTS idx_sales_documents_status_updated ON sales_documents(document_status, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_sales_documents_payment_status ON sales_documents(payment_status, updated_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_sales_documents_source_quotation ON sales_documents(source_quotation_id);
+CREATE INDEX IF NOT EXISTS idx_sales_document_items_document ON sales_document_items(sales_document_id, sort_order, id);
+CREATE INDEX IF NOT EXISTS idx_sales_document_items_product ON sales_document_items(product_id);
+CREATE INDEX IF NOT EXISTS idx_sales_receipts_document ON sales_receipts(sales_document_id, received_at, id);
+CREATE INDEX IF NOT EXISTS idx_sales_receipt_files_receipt ON sales_receipt_files(receipt_id);
+`;
+
+type MigratedTable =
+  | 'products'
+  | 'product_images'
+  | 'customer_products'
+  | 'customer_product_attachments'
+  | 'orders'
+  | 'order_items'
+  | 'order_item_requirement_attachments'
+  | 'order_contracts'
+  | 'quotations'
+  | 'quotation_items'
+  | 'sales_documents'
+  | 'sales_document_items'
+  | 'payment_proofs';
+
+interface MigrationPreflight {
+  schemaVersion: number;
+  versionSixInitialized: boolean;
+}
+
+function tableExists(database: DatabaseSync, table: string): boolean {
+  return database
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(table) !== undefined;
+}
+
+function preflightMigration(database: DatabaseSync): MigrationPreflight {
+  let schemaVersionValue: string | undefined;
+  let versionSixInitialized = false;
+  if (tableExists(database, 'settings')) {
+    const settingsColumns = database
+      .prepare('PRAGMA table_info(settings)')
+      .all()
+      .map((row: { name?: unknown }) => String(row.name));
+    if (!settingsColumns.includes('key') || !settingsColumns.includes('value')) {
+      throw new Error('Cannot inspect database schema version because the settings table is incompatible');
+    }
+
+    const schemaVersionRow = database
+      .prepare("SELECT value FROM settings WHERE key = 'schema_version'")
+      .get();
+    schemaVersionValue = schemaVersionRow ? String(schemaVersionRow.value) : undefined;
+    const initializedRow = database
+      .prepare("SELECT value FROM settings WHERE key = 'customer_products_v6_initialized'")
+      .get();
+    versionSixInitialized = initializedRow !== undefined && String(initializedRow.value) === '1';
+  }
+
+  const normalizedSchemaVersion = schemaVersionValue?.trim() ?? '';
+  if (normalizedSchemaVersion !== '' && !/^\d+$/.test(normalizedSchemaVersion)) {
+    throw new Error(
+      `Invalid database schema version '${schemaVersionValue}'; expected a non-negative decimal integer`,
+    );
+  }
+  const parsedSchemaVersion = normalizedSchemaVersion === '' ? 0 : Number(normalizedSchemaVersion);
+  if (parsedSchemaVersion > 14) {
+    throw new Error(
+      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version 14`,
+    );
+  }
+
+  const customerProductsExists = tableExists(database, 'customer_products');
+  const customerIdColumnExisted = customerProductsExists
+    && database
+      .prepare('PRAGMA table_info(customer_products)')
+      .all()
+      .some((row: { name?: unknown }) => String(row.name) === 'customer_id');
+  // customer_id 列存在说明 v6 结构已应用；元数据版本低于 6 时重跑 v6 迁移会清空
+  // customer_products，必须停止迁移保护数据。版本 7 及以上同样视为已初始化。
+  if (
+    customerIdColumnExisted
+    && (parsedSchemaVersion < 6 || !versionSixInitialized)
+  ) {
+    throw new Error(
+      'Version 6 customer product structure conflicts with migration metadata; migration stopped to preserve existing data',
+    );
+  }
+
+  return {
+    schemaVersion: parsedSchemaVersion,
+    versionSixInitialized,
+  };
+}
+
+function columnNames(database: DatabaseSync, table: MigratedTable): string[] {
+  return database
+    .prepare(`PRAGMA table_info(${table})`)
+    .all()
+    .map((row: { name?: unknown }) => String(row.name));
+}
+
+function addColumnIfMissing(
+  database: DatabaseSync,
+  table: MigratedTable,
+  column: string,
+  definition: string,
+): boolean {
+  if (columnNames(database, table).includes(column)) return false;
+  database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  return true;
+}
+
+function upsertSetting(database: DatabaseSync, key: string, value: string, now: string): void {
+  database
+    .prepare(
+      `INSERT INTO settings (key, value, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    )
+    .run(key, value, now);
+}
+
+function migrateVersionSix(database: DatabaseSync, now: string, preflight: MigrationPreflight): void {
+
+  const productImagesSortOrderAdded = addColumnIfMissing(database, 'product_images', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
+  if (productImagesSortOrderAdded) {
+    database.exec(`
+      WITH ranked AS (
+        SELECT id, ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY id) - 1 AS position
+        FROM product_images
+      )
+      UPDATE product_images
+      SET sort_order = (SELECT position FROM ranked WHERE ranked.id = product_images.id);
+    `);
+  }
+
+  const customerProductColumns: Array<[string, string]> = [
+    ['customer_id', 'INTEGER REFERENCES customers(id) ON DELETE RESTRICT'],
+    ['system_product_id', 'INTEGER REFERENCES products(id) ON DELETE SET NULL'],
+    ['pack_count', 'INTEGER CHECK (pack_count IS NULL OR pack_count > 0)'],
+    ['latest_quote_cents', 'INTEGER CHECK (latest_quote_cents IS NULL OR latest_quote_cents >= 0)'],
+    ['final_price_cents', 'INTEGER CHECK (final_price_cents IS NULL OR final_price_cents >= 0)'],
+    ['cost_price_cents', 'INTEGER CHECK (cost_price_cents IS NULL OR cost_price_cents >= 0)'],
+    ['packaging_json', "TEXT NOT NULL DEFAULT '[]'"],
+    ['source_quotation_id', 'INTEGER REFERENCES quotations(id) ON DELETE SET NULL'],
+    ['image_relative_path', 'TEXT'],
+    ['last_synced_at', 'TEXT'],
+  ];
+  for (const [name, definition] of customerProductColumns) {
+    addColumnIfMissing(database, 'customer_products', name, definition);
+  }
+
+  if (preflight.schemaVersion < 6 && !preflight.versionSixInitialized) {
+    addColumnIfMissing(
+      database,
+      'order_items',
+      'customer_product_id',
+      'INTEGER REFERENCES customer_products(id) ON DELETE SET NULL',
+    );
+    database.exec('UPDATE order_items SET customer_product_id = NULL');
+    database.exec('DELETE FROM customer_products');
+  }
+
+  database.exec(`
+    CREATE TRIGGER IF NOT EXISTS customer_products_require_customer_insert
+    BEFORE INSERT ON customer_products
+    WHEN NEW.customer_id IS NULL
+    BEGIN
+      SELECT RAISE(ABORT, 'customer_products.customer_id is required');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS customer_products_require_customer_update
+    BEFORE UPDATE ON customer_products
+    WHEN NEW.customer_id IS NULL
+    BEGIN
+      SELECT RAISE(ABORT, 'customer_products.customer_id is required');
+    END;
+  `);
+
+  const cartonLabelItemColumns = database
+    .prepare('PRAGMA table_info(carton_label_items)')
+    .all()
+    .map((row: { name?: unknown }) => String(row.name));
+  if (!cartonLabelItemColumns.includes('remark')) {
+    database.exec("ALTER TABLE carton_label_items ADD COLUMN remark TEXT NOT NULL DEFAULT ''");
+  }
+  if (!cartonLabelItemColumns.includes('total_count')) {
+    database.exec("ALTER TABLE carton_label_items ADD COLUMN total_count INTEGER NOT NULL DEFAULT 1");
+  }
+
+  const orderAmountCentsAdded = addColumnIfMissing(
+    database,
+    'orders',
+    'amount_cents',
+    'INTEGER NOT NULL DEFAULT 0 CHECK (amount_cents >= 0)',
+  );
+  const documentColumns: Array<[MigratedTable, string, string]> = [
+    ['orders', 'customer_id', 'INTEGER REFERENCES customers(id) ON DELETE SET NULL'],
+    ['orders', 'customer_name', "TEXT NOT NULL DEFAULT ''"],
+    ['orders', 'customer_contact_name', "TEXT NOT NULL DEFAULT ''"],
+    ['orders', 'customer_contact_phone', "TEXT NOT NULL DEFAULT ''"],
+    ['orders', 'customer_shipping_info', "TEXT NOT NULL DEFAULT ''"],
+    ['orders', 'order_detail', "TEXT NOT NULL DEFAULT ''"],
+    ['order_items', 'unit_price_cents', 'INTEGER NOT NULL DEFAULT 0 CHECK (unit_price_cents >= 0)'],
+    ['order_items', 'amount_cents', 'INTEGER NOT NULL DEFAULT 0 CHECK (amount_cents >= 0)'],
+    ['quotations', 'customer_id', 'INTEGER REFERENCES customers(id) ON DELETE SET NULL'],
+    ['quotations', 'customer_products_synced_at', 'TEXT'],
+    ['quotation_items', 'customer_product_id', 'INTEGER REFERENCES customer_products(id) ON DELETE SET NULL'],
+    ['quotation_items', 'pack_count', 'INTEGER CHECK (pack_count IS NULL OR pack_count > 0)'],
+    ['sales_documents', 'customer_id', 'INTEGER REFERENCES customers(id) ON DELETE SET NULL'],
+    ['sales_document_items', 'customer_product_id', 'INTEGER REFERENCES customer_products(id) ON DELETE SET NULL'],
+    ['sales_document_items', 'pack_count', 'INTEGER CHECK (pack_count IS NULL OR pack_count > 0)'],
+  ];
+  for (const [table, name, definition] of documentColumns) {
+    addColumnIfMissing(database, table, name, definition);
+  }
+
+  if (orderAmountCentsAdded) {
+    database.exec('UPDATE orders SET amount_cents = CAST(ROUND(amount * 100) AS INTEGER)');
+  }
+
+  database.exec(`
+    DROP INDEX IF EXISTS idx_customer_products_name_sku_spec;
+    CREATE INDEX IF NOT EXISTS idx_customers_active_name
+      ON customers(is_active, name, id);
+    CREATE INDEX IF NOT EXISTS idx_customer_products_customer_updated
+      ON customer_products(customer_id, updated_at DESC, id DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_products_system
+      ON customer_products(customer_id, system_product_id)
+      WHERE system_product_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_products_temporary
+      ON customer_products(customer_id, lower(trim(name)), lower(trim(specification)))
+      WHERE system_product_id IS NULL;
+  `);
+
+  upsertSetting(database, 'customer_products_v6_initialized', '1', now);
+  upsertSetting(database, 'schema_version', '6', now);
+}
+
+function migrateVersionSeven(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'products', 'status', "TEXT NOT NULL DEFAULT 'active'");
+  upsertSetting(database, 'schema_version', '7', now);
+}
+
+function migrateVersionEight(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'orders', 'shipping_cents', 'INTEGER NOT NULL DEFAULT 0 CHECK (shipping_cents >= 0)');
+  upsertSetting(database, 'schema_version', '8', now);
+}
+
+function migrateVersionNine(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'customer_products', 'remark', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(database, 'customer_products', 'label_requirement', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(database, 'customer_products', 'instruction_requirement', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(database, 'customer_products', 'packaging_requirement', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(database, 'customer_product_attachments', 'category', "TEXT NOT NULL DEFAULT 'other'");
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS customer_product_attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_product_id INTEGER NOT NULL REFERENCES customer_products(id) ON DELETE CASCADE,
+      relative_path TEXT NOT NULL UNIQUE,
+      original_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL DEFAULT '',
+      size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+      category TEXT NOT NULL DEFAULT 'other',
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_customer_product_attachments_product
+      ON customer_product_attachments(customer_product_id, created_at, id);
+  `);
+  upsertSetting(database, 'schema_version', '9', now);
+}
+
+function migrateVersionTen(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'order_items', 'label_requirement', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(database, 'order_items', 'instruction_requirement', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(database, 'order_items', 'packaging_requirement', "TEXT NOT NULL DEFAULT ''");
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS order_item_requirement_attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+      category TEXT NOT NULL DEFAULT 'other',
+      relative_path TEXT NOT NULL UNIQUE,
+      original_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL DEFAULT '',
+      size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_order_item_requirement_attachments_item
+      ON order_item_requirement_attachments(order_item_id, created_at, id);
+  `);
+  upsertSetting(database, 'schema_version', '10', now);
+}
+
+function migrateVersionEleven(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'order_contracts', 'category', "TEXT NOT NULL DEFAULT 'other'");
+  addColumnIfMissing(database, 'order_contracts', 'source_customer_product_id', 'INTEGER REFERENCES customer_products(id) ON DELETE SET NULL');
+  upsertSetting(database, 'schema_version', '11', now);
+}
+
+function migrateVersionTwelve(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'orders', 'label_printed_at', 'TEXT');
+  database.exec(`
+    UPDATE orders
+    SET status = 'pending_stock'
+    WHERE status = 'label_pending';
+
+    UPDATE orders
+    SET label_printed_at = (
+      SELECT MAX(ph.printed_at)
+      FROM print_histories ph
+      JOIN print_history_labels phl ON phl.print_history_id = ph.id
+      WHERE phl.order_id = orders.id
+    )
+    WHERE label_printed_at IS NULL;
+  `);
+  upsertSetting(database, 'schema_version', '12', now);
+}
+
+function migrateVersionThirteen(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'customer_products', 'freight_per_box_cents', 'INTEGER CHECK (freight_per_box_cents IS NULL OR freight_per_box_cents >= 0)');
+  addColumnIfMissing(database, 'order_items', 'freight_per_box_cents', 'INTEGER NOT NULL DEFAULT 0 CHECK (freight_per_box_cents >= 0)');
+  upsertSetting(database, 'schema_version', '13', now);
+}
+
+function migrateVersionFourteen(database: DatabaseSync, now: string): void {
+  const paymentProofColumns: Array<[string, string]> = [
+    ['payment_date', 'TEXT'],
+    ['amount_cents', 'INTEGER CHECK (amount_cents IS NULL OR amount_cents >= 0)'],
+    ['payment_method', "TEXT NOT NULL DEFAULT ''"],
+    ['payer_name', "TEXT NOT NULL DEFAULT ''"],
+    ['transaction_no', "TEXT NOT NULL DEFAULT ''"],
+    ['status', "TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'void'))"],
+    ['review_note', "TEXT NOT NULL DEFAULT ''"],
+    ['reviewed_at', 'TEXT'],
+  ];
+  for (const [name, definition] of paymentProofColumns) {
+    addColumnIfMissing(database, 'payment_proofs', name, definition);
+  }
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS order_finance (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE,
+      receivable_cents INTEGER NOT NULL CHECK (receivable_cents >= 0),
+      received_cents INTEGER NOT NULL DEFAULT 0 CHECK (received_cents >= 0),
+      outstanding_cents INTEGER NOT NULL DEFAULT 0,
+      payment_status TEXT NOT NULL CHECK (payment_status IN ('unpaid', 'partial', 'paid', 'overpaid')),
+      proof_status TEXT NOT NULL CHECK (proof_status IN ('none', 'pending', 'approved', 'rejected')),
+      invoice_status TEXT NOT NULL CHECK (invoice_status IN ('not_requested', 'incomplete', 'pending_issue', 'issued', 'sent', 'void')),
+      invoice_requested_at TEXT,
+      remark TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS finance_receipts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      payment_proof_id INTEGER REFERENCES payment_proofs(id) ON DELETE SET NULL,
+      received_at TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+      payment_method TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS finance_invoices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'incomplete' CHECK (status IN ('incomplete', 'pending_issue', 'issued', 'sent', 'void')),
+      invoice_type TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', tax_no TEXT NOT NULL DEFAULT '',
+      recipient_email TEXT NOT NULL DEFAULT '', recipient_address TEXT NOT NULL DEFAULT '',
+      amount_cents INTEGER NOT NULL DEFAULT 0 CHECK (amount_cents >= 0),
+      tax_rate_bps INTEGER NOT NULL DEFAULT 0 CHECK (tax_rate_bps BETWEEN 0 AND 10000),
+      tax_cents INTEGER NOT NULL DEFAULT 0 CHECK (tax_cents >= 0),
+      invoice_code TEXT NOT NULL DEFAULT '', invoice_no TEXT NOT NULL DEFAULT '',
+      issued_at TEXT, sent_at TEXT, voided_at TEXT, remark TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS finance_invoice_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_id INTEGER NOT NULL REFERENCES finance_invoices(id) ON DELETE CASCADE,
+      relative_path TEXT NOT NULL UNIQUE, original_name TEXT NOT NULL, mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0), created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_order_finance_payment_status ON order_finance(payment_status, updated_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_order_finance_proof_status ON order_finance(proof_status, updated_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_order_finance_invoice_status ON order_finance(invoice_status, updated_at DESC, id DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_receipts_proof ON finance_receipts(payment_proof_id) WHERE payment_proof_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_finance_receipts_order ON finance_receipts(order_id, received_at, id);
+    CREATE INDEX IF NOT EXISTS idx_finance_invoices_order ON finance_invoices(order_id, created_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_finance_invoices_status ON finance_invoices(status, updated_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_finance_invoice_files_invoice ON finance_invoice_files(invoice_id, created_at, id);
+  `);
+  database.exec(`
+    UPDATE payment_proofs SET status = 'pending' WHERE status IS NULL OR trim(status) = '';
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_payment_proofs_order_transaction
+      ON payment_proofs(order_id, transaction_no)
+      WHERE trim(transaction_no) <> '' AND status <> 'void';
+  `);
+  database.prepare(`
+    INSERT OR IGNORE INTO order_finance
+      (order_id, receivable_cents, received_cents, outstanding_cents, payment_status, proof_status, invoice_status, created_at, updated_at)
+    SELECT id, amount_cents, 0, amount_cents, 'unpaid',
+      CASE WHEN EXISTS (SELECT 1 FROM payment_proofs p WHERE p.order_id = orders.id) THEN 'pending' ELSE 'none' END,
+      'not_requested', ?, ?
+    FROM orders
+  `).run(now, now);
+  database.prepare(`
+    UPDATE order_finance
+    SET proof_status = CASE
+      WHEN EXISTS (SELECT 1 FROM payment_proofs p WHERE p.order_id = order_finance.order_id AND p.status = 'pending') THEN 'pending'
+      WHEN EXISTS (SELECT 1 FROM payment_proofs p WHERE p.order_id = order_finance.order_id AND p.status = 'rejected') THEN 'rejected'
+      WHEN EXISTS (SELECT 1 FROM payment_proofs p WHERE p.order_id = order_finance.order_id AND p.status = 'approved') THEN 'approved'
+      ELSE 'none' END,
+      updated_at = ?
+  `).run(now);
+  upsertSetting(database, 'schema_version', '14', now);
+}
+
+export function migrateDatabase(database: DatabaseSync): void {
+  if (database.isTransaction) {
+    throw new Error('Database migration cannot run inside an active transaction');
+  }
+
+  const preflight = preflightMigration(database);
+  database.exec('PRAGMA foreign_keys = ON;');
+
+  withTransaction(database, (transactionDatabase: DatabaseSync) => {
+    transactionDatabase.exec(schemaSql);
+
+    for (const tableName of ['products', 'quotation_items', 'sales_document_items']) {
+      const columns = transactionDatabase
+        .prepare(`PRAGMA table_info(${tableName})`)
+        .all()
+        .map((row: { name?: unknown }) => String(row.name));
+
+      if (!columns.includes('parameters')) {
+        transactionDatabase.exec(
+          `ALTER TABLE ${tableName} ADD COLUMN parameters TEXT NOT NULL DEFAULT ''`,
+        );
+      }
+    }
+
+    // Older databases may predate the accessories field even though the current
+    // products schema declares it. Keep those databases readable and writable.
+    addColumnIfMissing(transactionDatabase, 'products', 'accessories', "TEXT NOT NULL DEFAULT ''");
+
+    migratePackagingColumns(transactionDatabase);
+
+    const now = new Date().toISOString();
+    migrateVersionSix(transactionDatabase, now, preflight);
+    migrateVersionSeven(transactionDatabase, now);
+    migrateVersionEight(transactionDatabase, now);
+    migrateVersionNine(transactionDatabase, now);
+    migrateVersionTen(transactionDatabase, now);
+    migrateVersionEleven(transactionDatabase, now);
+    migrateVersionTwelve(transactionDatabase, now);
+    migrateVersionThirteen(transactionDatabase, now);
+    migrateVersionFourteen(transactionDatabase, now);
+    transactionDatabase
+      .prepare(
+        `INSERT INTO order_source_types (name, is_active, created_at, updated_at)
+         VALUES (?, 1, ?, ?)
+         ON CONFLICT(name) DO NOTHING`,
+      )
+      .run('微信', now, now);
+    transactionDatabase
+      .prepare(
+        `INSERT INTO order_source_types (name, is_active, created_at, updated_at)
+         VALUES (?, 1, ?, ?)
+         ON CONFLICT(name) DO NOTHING`,
+      )
+      .run('1688', now, now);
+    transactionDatabase.exec(
+      `INSERT INTO order_source_types (name, is_active, created_at, updated_at)
+       SELECT DISTINCT TRIM(source_type), 0, '${now}', '${now}'
+       FROM orders
+       WHERE TRIM(source_type) <> ''
+         AND NOT EXISTS (
+           SELECT 1 FROM order_source_types existing WHERE existing.name = TRIM(orders.source_type)
+         )`,
+    );
+
+    const foreignKeyViolations = transactionDatabase.prepare('PRAGMA foreign_key_check').all();
+    if (foreignKeyViolations.length > 0) {
+      throw new Error(`Foreign key check failed after migration: ${JSON.stringify(foreignKeyViolations)}`);
+    }
+  });
+}
+
+export const schema = schemaSql;
