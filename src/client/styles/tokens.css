@@ -1,6 +1,6 @@
 :root {
   /* 字体 */
-  --font-system: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", "Microsoft YaHei", sans-serif;
+  --font-system: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI Variable Text", "Segoe UI", "HarmonyOS Sans SC", "MiSans", "Noto Sans SC", "Microsoft YaHei", sans-serif;
 
   /* 字号刻度（紧凑密度） */
   --text-2xs: 11px;
@@ -25,23 +25,23 @@
   --space-9: 24px;
   --space-10: 28px;
 
-  /* 中性色 */
-  --color-page: #f5f5f7;
+  /* 中性色：更深的墨色层级，对比更锐利 */
+  --color-page: #f4f5f7;
   --color-grouped: #eef0f4;
   --color-surface: #ffffff;
-  --color-surface-subtle: #f8fafc;
-  --color-text: #1d1d1f;
-  --color-text-secondary: #5f636d;
-  --color-text-muted: #8b919c;
-  --color-border: rgba(15, 23, 42, .11);
-  --color-border-strong: rgba(15, 23, 42, .16);
-  --color-divider: rgba(15, 23, 42, .075);
+  --color-surface-subtle: #f7f8fa;
+  --color-text: #171a20;
+  --color-text-secondary: #556070;
+  --color-text-muted: #8a93a2;
+  --color-border: rgba(23, 32, 47, .1);
+  --color-border-strong: rgba(23, 32, 47, .16);
+  --color-divider: rgba(23, 32, 47, .07);
 
-  /* 品牌色（teal） */
-  --color-accent: #0f766e;
-  --color-accent-hover: #0b665f;
-  --color-accent-soft: #e6f7f4;
-  --color-accent-border: #b7e4df;
+  /* 品牌色（精炼深青） */
+  --color-accent: #0e7368;
+  --color-accent-hover: #0a5f57;
+  --color-accent-soft: #e9f6f3;
+  --color-accent-border: #b9e3dc;
 
   /* 状态色 */
   --color-success: #15803d;
@@ -59,45 +59,45 @@
   --color-info-border: #bfdbfe;
   --color-neutral-pill: #f1f5f9;
 
-  /* 侧栏深色主题 */
-  --sidebar-bg: #10161f;
+  /* 侧栏深色主题：墨色渐变 + 顶部环境光 */
+  --sidebar-bg: radial-gradient(360px 220px at 24% -80px, rgba(45, 212, 191, .09), transparent 68%), linear-gradient(180deg, #10161f, #0a0f18 92%);
   --sidebar-bg-hover: rgba(148, 163, 184, .09);
-  --sidebar-bg-active: rgba(45, 212, 191, .13);
-  --sidebar-border-active: rgba(45, 212, 191, .38);
+  --sidebar-bg-active: linear-gradient(90deg, rgba(45, 212, 191, .17), rgba(45, 212, 191, .05));
+  --sidebar-border-active: rgba(45, 212, 191, .24);
   --sidebar-text: #f5f7fb;
   --sidebar-text-muted: #97a5b4;
   --sidebar-accent: #2dd4bf;
 
-  /* 圆角 */
-  --radius-control: 9px;
-  --radius-card: 14px;
-  --radius-modal: 18px;
+  /* 圆角：稍大一号，更现代 */
+  --radius-control: 10px;
+  --radius-card: 16px;
+  --radius-modal: 20px;
   --radius-pill: 999px;
 
-  /* 阴影 */
-  --shadow-card: 0 8px 30px rgba(15, 23, 42, .055);
-  --shadow-popover: 0 14px 38px rgba(15, 23, 42, .14);
-  --shadow-modal: 0 28px 90px rgba(15, 23, 42, .22);
+  /* 阴影：多层精工（贴地 + 漫射双层） */
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, .04), 0 6px 20px -8px rgba(16, 24, 40, .08);
+  --shadow-popover: 0 2px 6px rgba(16, 24, 40, .06), 0 18px 44px -12px rgba(16, 24, 40, .18);
+  --shadow-modal: 0 4px 12px rgba(16, 24, 40, .08), 0 32px 90px -16px rgba(16, 24, 40, .28);
 
   /* 表单控件 */
   --control-height: 34px;
-  --control-border: rgba(15, 23, 42, .15);
+  --control-border: rgba(23, 32, 47, .15);
   --control-bg: var(--color-surface);
-  --control-focus-ring: 0 0 0 3px rgba(15, 118, 110, .13);
+  --control-focus-ring: 0 0 0 3px rgba(14, 115, 104, .13);
 
-  /* 动效 */
-  --ease-standard: 180ms ease;
+  /* 动效：更利落的缓动 */
+  --ease-standard: 160ms cubic-bezier(.2, .6, .25, 1);
 
   /* 语义别名：页面组件统一使用这些变量，保留旧令牌兼容现有样式。 */
   --color-surface-raised: #ffffff;
-  --color-surface-hover: #fbfefd;
-  --color-text-strong: #17212b;
-  --color-border-subtle: rgba(15, 23, 42, .075);
-  --color-border-control: rgba(15, 23, 42, .15);
-  --color-focus: #0f766e;
-  --color-focus-ring: rgba(15, 118, 110, .14);
-  --color-link: #0f766e;
-  --color-overlay: rgba(15, 23, 42, .42);
+  --color-surface-hover: #f4f8f7;
+  --color-text-strong: #131a22;
+  --color-border-subtle: rgba(23, 32, 47, .07);
+  --color-border-control: rgba(23, 32, 47, .15);
+  --color-focus: #0e7368;
+  --color-focus-ring: rgba(14, 115, 104, .14);
+  --color-link: #0e7368;
+  --color-overlay: rgba(13, 20, 33, .46);
   --color-warning-text: #92400e;
   --color-danger-text: #b42318;
   --line-height-tight: 1.25;

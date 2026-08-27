@@ -16,12 +16,14 @@ import type { DocumentItemImageInput, PreparedDocumentAsset, PreparedDocumentAss
 import type {
   CompanySnapshot,
   QuotationDisplayConfig,
+  QuotationPriceTier,
   QuotationStatus,
 } from '../../shared/documents.js';
 import {
   calculateDocumentTotals,
   calculateLineAmountCents,
   centsToYuan,
+  resolveTierUnitPriceCents,
   yuanToCents,
 } from '../../shared/money.js';
 import {
@@ -92,6 +94,14 @@ export interface QuotationAssetManager {
   deleteFile?(relativePath: string): Promise<void> | void;
 }
 
+export interface QuotationPriceTierInput {
+  minQuantity: number;
+  maxQuantity?: number | null;
+  /** Convenience input for form layers that still express prices in yuan. */
+  unitPrice?: number;
+  unitPriceCents?: number;
+}
+
 export interface QuotationItemInput {
   clientKey?: string;
   id?: number;
@@ -115,6 +125,7 @@ export interface QuotationItemInput {
   unitPriceCents?: number;
   /** Convenience input for form layers that still express prices in yuan. */
   unitPrice?: number;
+  priceTiers?: readonly QuotationPriceTierInput[];
   remark?: string;
   sortOrder?: number;
 }
@@ -239,7 +250,8 @@ const DEFAULT_COLUMNS: QuotationDisplayConfig['columns'] = {
   specification: true,
   quantity: true,
   unitPrice: true,
-  amount: true,
+  tierPrice: true,
+  amount: false,
   remark: true,
 };
 
@@ -271,6 +283,62 @@ function normalizePriceCents(item: QuotationItemInput, index: number): number {
   } catch (error) {
     throw new DocumentValidationError((error as Error).message, `items.${index}.unitPriceCents`);
   }
+}
+
+const MAX_PRICE_TIERS = 8;
+
+function normalizePriceTiers(item: QuotationItemInput, index: number): QuotationPriceTier[] {
+  const tiers = item.priceTiers;
+  if (tiers === undefined || tiers === null) return [];
+  if (!Array.isArray(tiers)) {
+    throw new DocumentValidationError('数量区间价必须是数组', `items.${index}.priceTiers`);
+  }
+  if (tiers.length > MAX_PRICE_TIERS) {
+    throw new DocumentValidationError(`每行产品最多 ${MAX_PRICE_TIERS} 个数量区间`, `items.${index}.priceTiers`);
+  }
+
+  const normalized = tiers.map((tier, tierIndex): QuotationPriceTier => {
+    const field = `items.${index}.priceTiers.${tierIndex}`;
+    if (tier == null || typeof tier !== 'object') {
+      throw new DocumentValidationError('数量区间必须是对象', field);
+    }
+    const record = tier as Partial<QuotationPriceTierInput>;
+    const minQuantity = Number(record.minQuantity);
+    if (!Number.isFinite(minQuantity) || minQuantity < 0) {
+      throw new DocumentValidationError('区间起始数量必须是大于等于 0 的数字', `${field}.minQuantity`);
+    }
+    let maxQuantity: number | null = null;
+    if (record.maxQuantity !== undefined && record.maxQuantity !== null) {
+      maxQuantity = Number(record.maxQuantity);
+      if (!Number.isFinite(maxQuantity) || maxQuantity < minQuantity) {
+        throw new DocumentValidationError('区间截止数量必须大于等于起始数量', `${field}.maxQuantity`);
+      }
+    }
+    let unitPriceCents: number;
+    if (record.unitPriceCents !== undefined) {
+      unitPriceCents = Number(record.unitPriceCents);
+      if (!Number.isSafeInteger(unitPriceCents) || unitPriceCents < 0) {
+        throw new DocumentValidationError('区间单价必须是大于等于 0 的整数分', `${field}.unitPriceCents`);
+      }
+    } else if (record.unitPrice !== undefined) {
+      const yuan = Number(record.unitPrice);
+      if (!Number.isFinite(yuan) || yuan < 0) {
+        throw new DocumentValidationError('区间单价必须是有效数字', `${field}.unitPrice`);
+      }
+      unitPriceCents = yuanToCents(yuan);
+    } else {
+      throw new DocumentValidationError('区间单价不能为空', `${field}.unitPriceCents`);
+    }
+    return { minQuantity, maxQuantity, unitPriceCents };
+  });
+
+  const sorted = [...normalized].sort((a, b) => a.minQuantity - b.minQuantity);
+  for (let i = 1; i < sorted.length; i += 1) {
+    if (sorted[i].minQuantity <= sorted[i - 1].minQuantity) {
+      throw new DocumentValidationError('数量区间的起始数量必须从小到大递增', `items.${index}.priceTiers`);
+    }
+  }
+  return sorted;
 }
 
 function asDetail(value: QuotationRepositoryDetail): QuotationServiceDetail {
@@ -438,6 +506,7 @@ export class QuotationService {
       );
       const quantity = itemInput.quantity;
       const unitPriceCents = this.normalizePriceCents(itemInput, index, customerProduct);
+      const priceTiers = normalizePriceTiers(itemInput, index);
       const image = this.resolveImage(itemInput, product);
       const key = normalizeText(itemInput.clientKey) || `item-${index}`;
       if (image && !image.relativePath.startsWith('quotation-assets/')) {
@@ -470,6 +539,7 @@ export class QuotationService {
           : Math.max(1, Math.trunc(itemInput.packCount)),
         unitPriceCents,
         amountCents: 0,
+        priceTiers,
         remark: normalizeText(itemInput.remark),
         imageRelativePath,
         imageOriginalName: image?.originalName ?? normalizeText(itemInput.imageOriginalName),
@@ -479,9 +549,18 @@ export class QuotationService {
 
     validateDocumentLines(productRows);
     productRows.forEach((row) => {
-      row.amountCents = calculateLineAmountCents(row.quantity, row.unitPriceCents);
+      row.amountCents = calculateLineAmountCents(
+        row.quantity,
+        resolveTierUnitPriceCents(row.priceTiers, row.quantity, row.unitPriceCents),
+      );
     });
-    const totals = calculateDocumentTotals(productRows, taxRateBps);
+    const totals = calculateDocumentTotals(
+      productRows.map((row) => ({
+        quantity: row.quantity,
+        unitPriceCents: resolveTierUnitPriceCents(row.priceTiers, row.quantity, row.unitPriceCents),
+      })),
+      taxRateBps,
+    );
     const fallbackCompany = this.settingsRepository.getCompanyProfile();
     const companySnapshot = normalizeCompanySnapshot(input.companySnapshot, fallbackCompany ?? EMPTY_COMPANY_PROFILE);
     const displayConfig = normalizeDisplayConfig(input.displayConfig);

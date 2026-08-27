@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getOrderNextAction } from '../../src/client/order-workflow';
+import { getOrderNextAction, isDraftOrder } from '../../src/client/order-workflow';
 
 describe('订单下一步动作', () => {
   it('为备货、打包和发货状态提供明确动作', () => {
@@ -11,5 +11,15 @@ describe('订单下一步动作', () => {
 
   it('已发货订单没有下一步动作', () => {
     expect(getOrderNextAction('shipped')).toBeUndefined();
+  });
+
+  it('草稿订单的下一步动作是发布', () => {
+    expect(getOrderNextAction('draft')).toEqual({ kind: 'publish', label: '发布订单' });
+  });
+
+  it('isDraftOrder 正确识别草稿订单', () => {
+    expect(isDraftOrder({ status: 'draft' })).toBe(true);
+    expect(isDraftOrder({ status: 'pending_stock' })).toBe(false);
+    expect(isDraftOrder({ status: undefined })).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import type {
   QuotationCustomField,
   QuotationDisplayConfig,
   QuotationItem,
+  QuotationPriceTier,
   QuotationStatus,
   QuotationSummary,
 } from '../../shared/documents.js';
@@ -20,6 +21,7 @@ export interface QuotationPersistenceItem {
   quantity: number;
   unitPriceCents: number;
   amountCents: number;
+  priceTiers: QuotationPriceTier[];
   remark: string;
   imageRelativePath: string | null;
   imageOriginalName: string;
@@ -126,6 +128,25 @@ function mapSummary(row: SqlRow): QuotationSummary {
   };
 }
 
+function parsePriceTiers(value: unknown): QuotationPriceTier[] {
+  const parsed = parseJson<unknown>(value, []);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((tier): tier is QuotationPriceTier => {
+    if (tier == null || typeof tier !== 'object') return false;
+    const record = tier as Record<string, unknown>;
+    return (
+      Number.isFinite(Number(record.minQuantity)) &&
+      (record.maxQuantity == null || Number.isFinite(Number(record.maxQuantity))) &&
+      Number.isSafeInteger(Number(record.unitPriceCents)) &&
+      Number(record.unitPriceCents) >= 0
+    );
+  }).map((tier) => ({
+    minQuantity: Number(tier.minQuantity),
+    maxQuantity: tier.maxQuantity == null ? null : Number(tier.maxQuantity),
+    unitPriceCents: Number(tier.unitPriceCents),
+  }));
+}
+
 function mapItem(row: SqlRow): QuotationItem {
   return {
     id: numberValue(row, 'id'),
@@ -142,6 +163,7 @@ function mapItem(row: SqlRow): QuotationItem {
     quantity: numberValue(row, 'quantity'),
     unitPriceCents: numberValue(row, 'unit_price_cents'),
     amountCents: numberValue(row, 'amount_cents'),
+    priceTiers: parsePriceTiers(row.tiered_prices_json),
     remark: rowValue(row, 'remark'),
     sortOrder: numberValue(row, 'sort_order'),
   };
@@ -228,7 +250,7 @@ export class QuotationRepository {
         showContactPhone: false,
         showTax: true,
         showTaxIncludedTotal: true,
-        columns: { image: true, name: true, sku: true, specification: true, quantity: true, unitPrice: true, amount: true, remark: true },
+        columns: { image: true, name: true, sku: true, specification: true, quantity: true, unitPrice: true, tierPrice: true, amount: false, remark: true },
       }),
       items: items.map(mapItem),
       customFields: customFields.map(mapCustomField),
@@ -332,8 +354,8 @@ export class QuotationRepository {
     const insertItem = database.prepare(
       `INSERT INTO quotation_items
         (quotation_id, product_id, customer_product_id, is_temporary, name, sku, specification, parameters, pack_count,
-         quantity, unit_price_cents, amount_cents, remark, image_relative_path, image_original_name, sort_order, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         quantity, unit_price_cents, amount_cents, tiered_prices_json, remark, image_relative_path, image_original_name, sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     record.items.forEach((item) => insertItem.run(
       quotationId,
@@ -348,6 +370,7 @@ export class QuotationRepository {
       item.quantity,
       item.unitPriceCents,
       item.amountCents,
+      item.priceTiers.length ? JSON.stringify(item.priceTiers) : null,
       item.remark,
       item.imageRelativePath,
       item.imageOriginalName,

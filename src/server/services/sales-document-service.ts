@@ -14,6 +14,8 @@ import {
   type SalesReceiptPersistenceInput,
 } from '../db/sales-document-repository.js';
 import { EMPTY_COMPANY_PROFILE, SettingsRepository } from '../db/settings-repository.js';
+import type { CreateOrderInput } from '../db/repositories.js';
+import type { OrderService } from './order-service.js';
 import type {
   DocumentItemImageInput,
   PreparedDocumentAsset,
@@ -190,6 +192,7 @@ export interface SalesDocumentServiceOptions {
   assetManager?: SalesDocumentAssetManager;
   sourceFileReader?: SalesDocumentSourceFileReader;
   receiptFileStore?: SalesReceiptFileStore;
+  orderService?: OrderService;
   now?: () => string;
 }
 
@@ -206,6 +209,10 @@ export class SalesDocumentServiceError extends Error {
       | 'RECEIPT_FILE_STORE_REQUIRED'
       | 'RECEIPT_NOT_FOUND'
       | 'SALES_DOCUMENT_NOT_FOUND'
+      | 'SALES_DOCUMENT_NOT_ISSUED'
+      | 'ORDER_SERVICE_REQUIRED'
+      | 'ORDER_ALREADY_GENERATED'
+      | 'ORDER_QUANTITY_INVALID'
       | 'VOID_DOCUMENT_PRESERVED'
       | 'CUSTOMER_NOT_FOUND'
       | 'CUSTOMER_INACTIVE'
@@ -373,6 +380,7 @@ export class SalesDocumentService {
   readonly assetManager?: SalesDocumentAssetManager;
   readonly sourceFileReader?: SalesDocumentSourceFileReader;
   readonly receiptFileStore?: SalesReceiptFileStore;
+  readonly orderService?: OrderService;
   private readonly now: () => string;
 
   constructor(private readonly options: SalesDocumentServiceOptions) {
@@ -386,6 +394,7 @@ export class SalesDocumentService {
     this.assetManager = options.assetManager;
     this.sourceFileReader = options.sourceFileReader;
     this.receiptFileStore = options.receiptFileStore;
+    this.orderService = options.orderService;
     this.now = options.now ?? (() => new Date().toISOString());
   }
 
@@ -403,6 +412,69 @@ export class SalesDocumentService {
   get(id: number): SalesDocumentServiceDetail | undefined {
     const detail = this.repository.get(id);
     return detail ? asDetail(detail) : undefined;
+  }
+
+  async createOrderFromSalesDocument(salesDocumentId: number) {
+    if (!this.orderService) {
+      throw new SalesDocumentServiceError('ORDER_SERVICE_REQUIRED', '生成订单需要配置订单服务');
+    }
+    const document = this.repository.get(salesDocumentId);
+    if (!document) {
+      throw new SalesDocumentServiceError('SALES_DOCUMENT_NOT_FOUND', '销售单不存在');
+    }
+    if (document.documentStatus !== 'issued') {
+      throw new SalesDocumentServiceError('SALES_DOCUMENT_NOT_ISSUED', '只有已开单的销售单可以生成订单');
+    }
+    const existing = this.repository.findGeneratedOrder(salesDocumentId);
+    if (existing) {
+      throw new SalesDocumentServiceError('ORDER_ALREADY_GENERATED', `该销售单已生成订单 ${existing.orderNo}`);
+    }
+    const invalidIndex = document.items.findIndex((item) => !Number.isSafeInteger(item.quantity) || item.quantity <= 0);
+    if (invalidIndex >= 0) {
+      throw new SalesDocumentServiceError(
+        'ORDER_QUANTITY_INVALID',
+        `第 ${invalidIndex + 1} 行数量 ${document.items[invalidIndex]!.quantity} 不是正整数，订单数量必须为整数`,
+      );
+    }
+    const shippingCents = document.shippingCents + document.taxCents;
+    const remarkParts = [`生成自销售单 ${document.number}`];
+    if (document.taxCents > 0) remarkParts.push(`含税费 ${centsToYuan(document.taxCents)} 元已并入运费`);
+    const input: CreateOrderInput = {
+      orderNo: '',
+      orderedAt: document.documentDate,
+      customerId: document.customerId,
+      customerName: document.customerName,
+      customerContactName: document.contactName,
+      customerContactPhone: document.contactPhone,
+      customerShippingInfo: document.customerAddress,
+      recipientName: document.consignee || document.contactName || document.customerName,
+      recipientInfo: document.customerAddress,
+      shippingCents,
+      remark: remarkParts.join('；'),
+      sourceSalesDocumentId: salesDocumentId,
+      items: document.items.map((item) => ({
+        customerProductId: item.customerProductId,
+        name: item.name,
+        sku: item.sku,
+        specification: item.specification,
+        packCount: item.packCount ?? undefined,
+        quantity: item.quantity,
+        unitPriceCents: item.unitPriceCents,
+        remark: item.remark,
+      })),
+    };
+    try {
+      return await this.orderService.create(input);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('idx_orders_source_sales_document_id')) {
+        const generated = this.repository.findGeneratedOrder(salesDocumentId);
+        throw new SalesDocumentServiceError(
+          'ORDER_ALREADY_GENERATED',
+          generated ? `该销售单已生成订单 ${generated.orderNo}` : '该销售单已生成订单',
+        );
+      }
+      throw error;
+    }
   }
 
   async create(input: SalesDocumentInput): Promise<SalesDocumentServiceDetail> {

@@ -15,6 +15,7 @@ import {
   type SalesReceiptInput,
 } from '../services/sales-document-service.js';
 import { DocumentValidationError } from '../../shared/document-validation.js';
+import { OrderCustomerError } from '../services/order-service.js';
 import type { PaymentStatus, SalesDocumentStatus } from '../../shared/documents.js';
 import { ApiError, asRecord, parseId, sendFailure, sendSuccess } from './api-response.js';
 import { assertMultipartFileNotTruncated, imageFileOptions, imagePartsOptions } from './multipart-limits.js';
@@ -36,12 +37,16 @@ interface BufferedUpload {
 function salesError(error: unknown): ApiError {
   if (error instanceof ApiError) return error;
   if (error instanceof DocumentValidationError) return new ApiError(400, 'VALIDATION_ERROR', error.message, error.field);
+  if (error instanceof OrderCustomerError) {
+    const statusCode = error.code === 'CUSTOMER_NOT_FOUND' || error.code === 'CUSTOMER_PRODUCT_NOT_FOUND' ? 404 : 409;
+    return new ApiError(statusCode, error.code, error.message);
+  }
   if (error instanceof SalesDocumentServiceError) {
     const statusCode = error.code === 'SALES_DOCUMENT_NOT_FOUND' || error.code === 'RECEIPT_NOT_FOUND' || error.code === 'QUOTATION_NOT_FOUND' || error.code === 'CUSTOMER_NOT_FOUND' || error.code === 'CUSTOMER_PRODUCT_NOT_FOUND'
       ? 404
-      : error.code === 'CONFIRMATION_REQUIRED' || error.code === 'QUOTATION_NOT_WON' || error.code === 'VOID_DOCUMENT_PRESERVED' || error.code === 'CUSTOMER_INACTIVE' || error.code === 'CUSTOMER_PRODUCT_CUSTOMER_MISMATCH'
+      : error.code === 'CONFIRMATION_REQUIRED' || error.code === 'QUOTATION_NOT_WON' || error.code === 'VOID_DOCUMENT_PRESERVED' || error.code === 'CUSTOMER_INACTIVE' || error.code === 'CUSTOMER_PRODUCT_CUSTOMER_MISMATCH' || error.code === 'SALES_DOCUMENT_NOT_ISSUED' || error.code === 'ORDER_ALREADY_GENERATED' || error.code === 'ORDER_QUANTITY_INVALID'
         ? 409
-        : error.code === 'ASSET_MANAGER_REQUIRED' || error.code === 'RECEIPT_FILE_STORE_REQUIRED'
+        : error.code === 'ASSET_MANAGER_REQUIRED' || error.code === 'RECEIPT_FILE_STORE_REQUIRED' || error.code === 'ORDER_SERVICE_REQUIRED'
           ? 503
           : 400;
     return new ApiError(statusCode, error.code, error.message, error.field);
@@ -173,6 +178,10 @@ export async function registerSalesDocumentRoutes(app: FastifyInstance, options:
     if (!detail) throw new ApiError(404, 'NOT_FOUND', '销售单不存在');
     return sendSuccess(reply, detail);
   }, reply));
+
+  app.post('/api/sales-documents/:id/create-order', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(async () => (
+    sendSuccess(reply, await options.service.createOrderFromSalesDocument(parseId(request.params.id)), 201)
+  ), reply));
 
   app.delete('/api/sales-documents/:id', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(async () => {
     const deleted = await options.service.delete(parseId(request.params.id), parseConfirmed(request.body));

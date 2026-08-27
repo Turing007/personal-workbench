@@ -4,6 +4,7 @@ import { withTransaction } from './connection.js';
 import { mapPackagingRecord, normalizePackagingItem, type PackagingInputLike } from './packaging.js';
 import { OrderNumberService } from '../services/order-number-service.js';
 import { autoPack, type PackedBox } from '../../shared/packing.js';
+import { calculateOutstandingCents, deriveFinancePaymentStatus } from '../../shared/finance.js';
 
 type SqlValue = string | number | null;
 
@@ -95,6 +96,9 @@ export interface CreateOrderInput {
   orderDetail?: string;
   remark?: string;
   orderAttachments?: OrderAttachmentInput[];
+  sourceSalesDocumentId?: number | null;
+  /** 草稿订单：宽松校验，status 存为 draft，发布后回到正式流程。 */
+  isDraft?: boolean;
   items: OrderItemInput[];
 }
 
@@ -558,18 +562,19 @@ export class DatabaseRepositories {
 
   createOrder(input: CreateOrderInput) {
     const timestamp = now();
+    const status = input.isDraft ? 'draft' : 'pending_stock';
     return withTransaction(this.database, (database) => {
       const orderNo = input.orderNo.trim() || this.orderNumbers.next();
       const amountCents = input.amountCents ?? Math.round((input.amount ?? 0) * 100);
       const orderId = lastInsertId(
         database
           .prepare(
-            `INSERT INTO orders
-              (customer_id, customer_name, customer_contact_name, customer_contact_phone, customer_shipping_info,
-               order_no, ordered_at, recipient_name, recipient_info, amount, amount_cents, shipping_cents,
-               tracking_no, payment_note, order_detail, remark, status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_stock', ?, ?)`,
-          )
+        `INSERT INTO orders
+          (customer_id, customer_name, customer_contact_name, customer_contact_phone, customer_shipping_info,
+           order_no, ordered_at, recipient_name, recipient_info, amount, amount_cents, shipping_cents,
+           tracking_no, payment_note, order_detail, remark, status, source_sales_document_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
           .run(
             input.customerId ?? null,
             input.customerName ?? '',
@@ -587,6 +592,8 @@ export class DatabaseRepositories {
             input.paymentNote ?? '',
             input.orderDetail ?? '',
             input.remark ?? '',
+            status,
+            input.sourceSalesDocumentId ?? null,
             timestamp,
             timestamp,
           ),
@@ -669,6 +676,8 @@ export class DatabaseRepositories {
       const existing = database.prepare('SELECT id FROM orders WHERE id = ?').get(orderId);
       if (!existing) return undefined;
 
+      const amountCents = input.amountCents ?? Math.round((input.amount ?? 0) * 100);
+
       database
         .prepare(
           `UPDATE orders SET customer_id = ?, customer_name = ?, customer_contact_name = ?, customer_contact_phone = ?,
@@ -686,8 +695,8 @@ export class DatabaseRepositories {
           input.orderedAt,
           input.recipientName ?? '',
           input.recipientInfo ?? '',
-          input.amount ?? (input.amountCents ?? 0) / 100,
-          input.amountCents ?? Math.round((input.amount ?? 0) * 100),
+          input.amount ?? amountCents / 100,
+          amountCents,
           input.shippingCents ?? 0,
           input.trackingNo ?? '',
           input.paymentNote ?? '',
@@ -696,6 +705,16 @@ export class DatabaseRepositories {
           timestamp,
           orderId,
         );
+
+      // 订单金额变动时同步财务快照，保证应收/未收/付款状态与订单实时一致
+      const financeRow = database.prepare('SELECT received_cents FROM order_finance WHERE order_id = ?').get(orderId) as { received_cents?: unknown } | undefined;
+      if (financeRow) {
+        const receivedCents = Number(financeRow.received_cents ?? 0);
+        database.prepare(`
+          UPDATE order_finance SET receivable_cents = ?, outstanding_cents = ?, payment_status = ?, updated_at = ?
+          WHERE order_id = ?
+        `).run(amountCents, calculateOutstandingCents(amountCents, receivedCents), deriveFinancePaymentStatus(amountCents, receivedCents), timestamp, orderId);
+      }
 
       database.prepare('DELETE FROM carton_labels WHERE order_id = ?').run(orderId);
       database.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderId);
@@ -767,13 +786,24 @@ export class DatabaseRepositories {
   }
 
   deleteOrder(orderId: number): { deleted: boolean; filePaths: string[] } {
-    const filePaths = [
-      ...this.database.prepare('SELECT relative_path FROM order_contracts WHERE order_id = ?').all(orderId),
-      ...this.database.prepare('SELECT relative_path FROM payment_proofs WHERE order_id = ?').all(orderId),
-      ...this.database.prepare('SELECT relative_path FROM order_detail_images WHERE order_id = ?').all(orderId),
-    ].map((row) => String(row.relative_path ?? '')).filter(Boolean);
-    const result = this.database.prepare('DELETE FROM orders WHERE id = ?').run(orderId);
-    return { deleted: Number(result.changes ?? 0) > 0, filePaths };
+    return withTransaction(this.database, (database) => {
+      const filePaths = [
+        ...database.prepare('SELECT relative_path FROM order_contracts WHERE order_id = ?').all(orderId),
+        ...database.prepare('SELECT relative_path FROM payment_proofs WHERE order_id = ?').all(orderId),
+        ...database.prepare('SELECT relative_path FROM order_detail_images WHERE order_id = ?').all(orderId),
+        // 发票文件挂在 finance_invoices 下，随订单级联删除前必须先收集物理路径。
+        ...database.prepare(`
+          SELECT f.relative_path FROM finance_invoice_files f
+          JOIN finance_invoices i ON i.id = f.invoice_id
+          WHERE i.order_id = ?
+        `).all(orderId),
+      ].map((row) => String(row.relative_path ?? '')).filter(Boolean);
+      // 发货记录与批次明细对订单是 RESTRICT 外键，不会随订单级联删除，必须先显式清理。
+      database.prepare('DELETE FROM shipment_batch_orders WHERE order_id = ?').run(orderId);
+      database.prepare('DELETE FROM shipments WHERE order_id = ?').run(orderId);
+      const result = database.prepare('DELETE FROM orders WHERE id = ?').run(orderId);
+      return { deleted: Number(result.changes ?? 0) > 0, filePaths };
+    });
   }
 
   updateOrderStatus(orderId: number, status: string): boolean {
@@ -781,6 +811,15 @@ export class DatabaseRepositories {
       .prepare('UPDATE orders SET status = ?, updated_at = ? WHERE id = ?')
       .run(status, now(), orderId);
     return Number(result.changes ?? 0) > 0;
+  }
+
+  /** 订单详情用的轻量财务摘要，避免详情页加载全部水单/发票附件。 */
+  getOrderFinanceSummary(orderId: number) {
+    return this.database.prepare(`
+      SELECT order_id, receivable_cents, received_cents, outstanding_cents,
+        payment_status, proof_status, invoice_status, updated_at
+      FROM order_finance WHERE order_id = ?
+    `).get(orderId);
   }
 
   updateOrderStatusWithTracking(orderId: number, status: string, trackingNo: string): boolean {

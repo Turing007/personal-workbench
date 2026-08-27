@@ -96,6 +96,9 @@ export function mapDatabaseError(error: unknown): ApiError {
   if (/UNIQUE constraint failed/i.test(message)) {
     return new ApiError(409, 'CONFLICT', '资源已存在');
   }
+  if (/FOREIGN KEY constraint failed/i.test(message)) {
+    return new ApiError(409, 'CONFLICT', '存在关联数据，操作被拒绝');
+  }
   if (/CHECK constraint failed/i.test(message)) {
     return new ApiError(400, 'VALIDATION_ERROR', '提交的数据不符合约束');
   }

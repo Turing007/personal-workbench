@@ -12,13 +12,16 @@ import {
   ORDER_STATUS_SEQUENCE,
   canTransition,
   getTransitionError,
+  isDraftStatus,
   type OrderStatus,
   type TransitionReason,
 } from '../../shared/domain.js';
 
 export const DB_ORDER_STATUS_LABELS = ORDER_STATUS_LABELS;
 
-const STATUS_ALIASES: Record<string, OrderStatus> = {
+const STATUS_ALIASES: Record<string, OrderStatus | 'draft'> = {
+  draft: 'draft',
+  草稿: 'draft',
   label_pending: 'label_pending',
   pending_stock: 'pending_stock',
   stock_reported: 'stock_reported',
@@ -161,7 +164,14 @@ function mapOrderDetailImage(row: Record<string, unknown> | undefined): OrderDet
 
 export function normalizeOrderStatus(value: unknown): OrderStatus {
   const normalized = typeof value === 'string' ? STATUS_ALIASES[value.trim()] : undefined;
-  if (!normalized) throw new Error(`订单状态无效，可选值：${ORDER_STATUS_SEQUENCE.join('、')}`);
+  if (!normalized || normalized === 'draft') throw new Error(`订单状态无效，可选值：${ORDER_STATUS_SEQUENCE.join('、')}`);
+  return normalized;
+}
+
+/** 接受包括 draft 在内的全部订单状态（列表筛选用）。 */
+export function normalizeAnyOrderStatus(value: unknown): OrderStatus | 'draft' {
+  const normalized = typeof value === 'string' ? STATUS_ALIASES[value.trim()] : undefined;
+  if (!normalized) throw new Error(`订单状态无效，可选值：draft、${ORDER_STATUS_SEQUENCE.join('、')}`);
   return normalized;
 }
 
@@ -181,7 +191,7 @@ export class OrderService {
   list(filters: { status?: string; query?: string; q?: string; page?: number; pageSize?: number } = {}) {
     return this.repositories.listOrders({
       ...filters,
-      status: filters.status ? normalizeOrderStatus(filters.status) : undefined,
+      status: filters.status ? normalizeAnyOrderStatus(filters.status) : undefined,
     });
   }
 
@@ -190,11 +200,12 @@ export class OrderService {
   }
 
   async create(input: CreateOrderInput) {
+    const isDraft = Boolean(input.isDraft);
     const normalized = this.normalizeInput(input);
     let withCustomerProducts: CreateOrderInput | undefined;
     try {
-      withCustomerProducts = await this.validateCustomerProductReferences(normalized, true);
-      this.validateInput(withCustomerProducts, { allowEmptyOrderNo: true });
+      withCustomerProducts = await this.validateCustomerProductReferences(normalized, true, undefined, { draft: isDraft });
+      this.validateInput(withCustomerProducts, { allowEmptyOrderNo: true, draft: isDraft });
       return this.repositories.createOrder(withCustomerProducts);
     } catch (error) {
       if (withCustomerProducts) await this.deleteCopiedRequirementFiles(withCustomerProducts);
@@ -204,13 +215,16 @@ export class OrderService {
 
   async update(orderId: number, input: UpdateOrderInput) {
     if (!this.repositories.getOrderDetail(orderId)) return undefined;
+    const previous = this.repositories.getOrderDetail(orderId) as Record<string, unknown> | undefined;
+    const wasDraft = isDraftStatus(previous?.status);
+    const isDraft = input.isDraft === undefined ? wasDraft : Boolean(input.isDraft);
     const normalized = this.normalizeInput(input);
     const previousPaths = this.getOrderRequirementPaths(orderId);
     let withCustomerProducts: CreateOrderInput | undefined;
     let updated;
     try {
-      withCustomerProducts = await this.validateCustomerProductReferences(normalized, false, new Set(previousPaths));
-      this.validateInput(withCustomerProducts);
+      withCustomerProducts = await this.validateCustomerProductReferences(normalized, false, new Set(previousPaths), { draft: isDraft });
+      this.validateInput(withCustomerProducts, { draft: isDraft });
       updated = this.repositories.updateOrder(orderId, withCustomerProducts);
     } catch (error) {
       if (withCustomerProducts) await this.deleteCopiedRequirementFiles(withCustomerProducts, new Set(previousPaths));
@@ -230,6 +244,63 @@ export class OrderService {
       await Promise.all(result.filePaths.map((path) => this.fileStore!.deleteFile(path).catch(() => undefined)));
     }
     return true;
+  }
+
+  /**
+   * 发布草稿：draft → pending_stock，并按正式订单标准补全校验。
+   * 校验失败时抛出错误，草稿保持不变，便于继续编辑。
+   */
+  publish(orderId: number) {
+    const order = this.repositories.getOrderDetail(orderId) as (Record<string, unknown> & { status?: unknown }) | undefined;
+    if (!order) return undefined;
+    if (!isDraftStatus(order.status)) throw new Error('只有草稿订单可以发布');
+
+    // 以库内数据重建完整输入做正式校验，确保发布后的订单信息完整。
+    const input = this.buildInputFromDetail(order);
+    const normalized = this.normalizeInput(input);
+    this.validateInput(normalized);
+    if (normalized.items.length === 0) throw new Error('订单至少需要一行产品');
+    if (!normalized.recipientName?.trim()) throw new Error('收件人名称不能为空');
+
+    if (!this.repositories.updateOrderStatusWithTracking(orderId, 'pending_stock', String(order.tracking_no ?? ''))) {
+      return undefined;
+    }
+    return this.repositories.getOrderDetail(orderId);
+  }
+
+  private buildInputFromDetail(detail: Record<string, unknown>): CreateOrderInput {
+    const items = Array.isArray(detail.items) ? detail.items as Array<Record<string, unknown>> : [];
+    return {
+      orderNo: String(detail.order_no ?? ''),
+      orderedAt: String(detail.ordered_at ?? ''),
+      customerId: detail.customer_id == null ? null : Number(detail.customer_id),
+      customerName: String(detail.customer_name ?? ''),
+      customerContactName: String(detail.customer_contact_name ?? ''),
+      customerContactPhone: String(detail.customer_contact_phone ?? ''),
+      customerShippingInfo: String(detail.customer_shipping_info ?? ''),
+      recipientName: String(detail.recipient_name ?? ''),
+      recipientInfo: String(detail.recipient_info ?? ''),
+      amount: Number(detail.amount ?? 0),
+      amountCents: Number(detail.amount_cents ?? Math.round(Number(detail.amount ?? 0) * 100)),
+      shippingCents: Number(detail.shipping_cents ?? 0),
+      trackingNo: String(detail.tracking_no ?? ''),
+      paymentNote: String(detail.payment_note ?? ''),
+      orderDetail: String(detail.order_detail ?? ''),
+      remark: String(detail.remark ?? ''),
+      items: items.map((item) => ({
+        customerProductId: item.customer_product_id == null ? null : Number(item.customer_product_id),
+        name: String(item.name ?? ''),
+        sku: String(item.sku ?? ''),
+        specification: String(item.specification ?? ''),
+        packagingName: String(item.packaging_name ?? ''),
+        packCount: Number(item.pack_count ?? 1),
+        quantity: Number(item.quantity ?? 1),
+        unitPriceCents: Number(item.unit_price_cents ?? 0),
+        amountCents: Number(item.amount_cents ?? 0),
+        freightPerBoxCents: Number(item.freight_per_box_cents ?? 0),
+        remark: String(item.remark ?? ''),
+      })),
+    };
   }
 
   transition(orderId: number, toValue: unknown, reason: TransitionReason = 'manual', trackingNo?: string | null) {
@@ -359,13 +430,19 @@ export class OrderService {
     return mapped;
   }
 
-  private async validateCustomerProductReferences(input: CreateOrderInput, isCreate: boolean, preservedPaths = new Set<string>()): Promise<CreateOrderInput> {
+  private async validateCustomerProductReferences(
+    input: CreateOrderInput,
+    isCreate: boolean,
+    preservedPaths = new Set<string>(),
+    options: { draft?: boolean } = {},
+  ): Promise<CreateOrderInput> {
     const customer = input.customerId == null
       ? undefined
       : this.customerRepository?.get(input.customerId);
     if (input.customerId != null && !customer) throw new OrderCustomerError('CUSTOMER_NOT_FOUND', '客户不存在');
 
-    if (isCreate && customer && !customer.isActive) {
+    // 草稿订单不强制客户有效状态，发布时才要求。
+    if (!options.draft && isCreate && customer && !customer.isActive) {
       throw new OrderCustomerError('CUSTOMER_INACTIVE', '客户已停用，不能新建订单');
     }
 
@@ -487,7 +564,7 @@ export class OrderService {
     return { ...input, orderedAt: normalizeOrderDate(input.orderedAt) };
   }
 
-  private validateInput(input: CreateOrderInput, options: { allowEmptyOrderNo?: boolean } = {}): void {
+  private validateInput(input: CreateOrderInput, options: { allowEmptyOrderNo?: boolean; draft?: boolean } = {}): void {
     if (!input || typeof input !== 'object') throw new Error('订单数据无效');
     if (!options.allowEmptyOrderNo && !input.orderNo?.trim()) throw new Error('订单号不能为空');
     normalizeOrderDate(input.orderedAt);
@@ -499,9 +576,14 @@ export class OrderService {
     if (input.shippingCents != null && (!Number.isSafeInteger(input.shippingCents) || input.shippingCents < 0)) {
       throw new Error('运费必须是非负整数分');
     }
+    // 草稿允许收件人为空，发布时才强制。
+    if (!options.draft && !input.recipientName?.trim()) throw new Error('收件人名称不能为空');
 
     input.items.forEach((item, index) => {
-      if (!item.name?.trim()) throw new Error(`第 ${index + 1} 行产品品名不能为空`);
+      if (!item.name?.trim()) {
+        // 草稿行允许品名暂缺，正式订单必须填写。
+        if (!options.draft) throw new Error(`第 ${index + 1} 行产品品名不能为空`);
+      }
       if (!integer(item.quantity) || item.quantity <= 0) throw new Error(`第 ${index + 1} 行产品数量必须是正整数`);
       if (item.packCount != null && (!integer(item.packCount) || item.packCount <= 0)) throw new Error(`第 ${index + 1} 行装箱数必须是正整数`);
       if (item.unitPriceCents != null && (!integer(item.unitPriceCents) || item.unitPriceCents < 0)) throw new Error(`第 ${index + 1} 行单价必须是非负整数分`);

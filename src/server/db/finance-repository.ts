@@ -13,6 +13,7 @@ import {
   type FinanceListStats,
   type FinanceReceipt,
   type OrderFinanceSummary,
+  type PayeeBreakdownRow,
   type PaymentProofRecord,
   type PaymentProofStatus,
   type InvoiceStatus,
@@ -65,6 +66,7 @@ export interface FinanceReceiptPersistenceInput {
   receivedAt: string;
   amountCents: number;
   paymentMethod: string;
+  payeeName: string;
   note: string;
   createdAt: string;
   updatedAt: string;
@@ -142,6 +144,7 @@ function mapReceipt(row: SqlRow): FinanceReceipt {
     receivedAt: stringValue(row, 'received_at'),
     amountCents: numberValue(row, 'amount_cents'),
     paymentMethod: stringValue(row, 'payment_method'),
+    payeeName: stringValue(row, 'payee_name'),
     note: stringValue(row, 'note'),
     createdAt: stringValue(row, 'created_at'),
     updatedAt: stringValue(row, 'updated_at'),
@@ -214,19 +217,19 @@ export class FinanceRepository {
     if (!order) throw new Error('订单不存在');
     const existing = database.prepare('SELECT * FROM order_finance WHERE order_id = ?').get(orderId) as SqlRow | undefined;
     if (!existing) this.ensureOrderFinance(orderId, numberValue(order, 'amount_cents'), database);
-    const finance = database.prepare('SELECT * FROM order_finance WHERE order_id = ?').get(orderId) as SqlRow;
     const receipts = database.prepare('SELECT * FROM finance_receipts WHERE order_id = ? ORDER BY received_at, id').all(orderId) as SqlRow[];
     const proofs = database.prepare('SELECT status FROM payment_proofs WHERE order_id = ?').all(orderId) as Array<{ status?: unknown }>;
     const invoices = database.prepare('SELECT status FROM finance_invoices WHERE order_id = ?').all(orderId) as Array<{ status?: unknown }>;
-    const receivableCents = numberValue(finance, 'receivable_cents');
+    const receivableCents = numberValue(order, 'amount_cents');
     const receivedCents = receipts.reduce((sum, row) => sum + numberValue(row, 'amount_cents'), 0);
     const proofStatus = deriveProofStatus(proofs.map((row) => ({ status: String(row.status ?? 'pending') as PaymentProofStatus })));
     const invoiceStatus = deriveInvoiceStatus(invoices.map((row) => ({ status: String(row.status) as Exclude<InvoiceStatus, 'not_requested'> })));
     const updatedAt = new Date().toISOString();
     database.prepare(`
-      UPDATE order_finance SET received_cents = ?, outstanding_cents = ?, payment_status = ?, proof_status = ?, invoice_status = ?, updated_at = ?
+      UPDATE order_finance SET receivable_cents = ?, received_cents = ?, outstanding_cents = ?, payment_status = ?, proof_status = ?, invoice_status = ?, updated_at = ?
       WHERE order_id = ?
     `).run(
+      receivableCents,
       receivedCents,
       calculateOutstandingCents(receivableCents, receivedCents),
       deriveFinancePaymentStatus(receivableCents, receivedCents),
@@ -251,6 +254,11 @@ export class FinanceRepository {
     if (filters.proofStatus) { conditions.push('f.proof_status = ?'); values.push(filters.proofStatus); }
     if (filters.invoiceStatus) { conditions.push('f.invoice_status = ?'); values.push(filters.invoiceStatus); }
     if (filters.orderStatus) { conditions.push('o.status = ?'); values.push(filters.orderStatus); }
+    const month = filters.month?.trim();
+    if (month) {
+      conditions.push("substr(o.ordered_at, 1, 7) = ?");
+      values.push(month);
+    }
     const query = (filters.query ?? filters.orderNo ?? filters.customerName)?.trim();
     if (query) {
       const like = `%${query}%`;
@@ -270,7 +278,7 @@ export class FinanceRepository {
       SELECT COALESCE(SUM(f.receivable_cents), 0) AS receivable_cents,
         COALESCE(SUM(f.received_cents), 0) AS received_cents,
         COALESCE(SUM(f.outstanding_cents), 0) AS outstanding_cents,
-        COALESCE(SUM(CASE WHEN f.proof_status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_proof_count,
+        COALESCE(SUM((SELECT COUNT(*) FROM payment_proofs p WHERE p.order_id = f.order_id AND p.status = 'pending')), 0) AS pending_proof_count,
         COALESCE(SUM(CASE WHEN f.invoice_status IN ('incomplete', 'pending_issue', 'issued') THEN 1 ELSE 0 END), 0) AS pending_invoice_count
       FROM order_finance f JOIN orders o ON o.id = f.order_id ${where}
     `).get(...values) as SqlRow;
@@ -334,9 +342,9 @@ export class FinanceRepository {
 
   insertReceipt(database: DatabaseSync, input: FinanceReceiptPersistenceInput): FinanceReceipt {
     const id = lastInsertId(database.prepare(`
-      INSERT INTO finance_receipts (order_id, payment_proof_id, received_at, amount_cents, payment_method, note, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(input.orderId, input.paymentProofId, input.receivedAt, input.amountCents, input.paymentMethod, input.note, input.createdAt, input.updatedAt));
+      INSERT INTO finance_receipts (order_id, payment_proof_id, received_at, amount_cents, payment_method, payee_name, note, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(input.orderId, input.paymentProofId, input.receivedAt, input.amountCents, input.paymentMethod, input.payeeName, input.note, input.createdAt, input.updatedAt));
     return mapReceipt(database.prepare('SELECT * FROM finance_receipts WHERE id = ?').get(id) as SqlRow);
   }
 
@@ -346,6 +354,22 @@ export class FinanceRepository {
 
   listReceipts(orderId: number): FinanceReceipt[] {
     return (this.database.prepare('SELECT * FROM finance_receipts WHERE order_id = ? ORDER BY received_at DESC, id DESC').all(orderId) as SqlRow[]).map(mapReceipt);
+  }
+
+  listPayeeBreakdown(): PayeeBreakdownRow[] {
+    const rows = this.database.prepare(`
+      SELECT COALESCE(NULLIF(payee_name, ''), '未指定') AS payee_name,
+        COUNT(*) AS receipt_count,
+        COALESCE(SUM(amount_cents), 0) AS amount_cents
+      FROM finance_receipts
+      GROUP BY COALESCE(NULLIF(payee_name, ''), '未指定')
+      ORDER BY amount_cents DESC, receipt_count DESC
+    `).all() as SqlRow[];
+    return rows.map((row) => ({
+      payeeName: stringValue(row, 'payee_name', '未指定'),
+      receiptCount: numberValue(row, 'receipt_count'),
+      amountCents: numberValue(row, 'amount_cents'),
+    }));
   }
 
   listInvoices(orderId: number): FinanceInvoice[] {

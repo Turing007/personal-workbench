@@ -93,7 +93,7 @@ export default function QuotationSyncModal({ open, quotationId, onClose, onNotif
           <span>报价产品默认全部勾选；只会把勾选的产品同步到当前客户。</span>
           <button type="button" className="button button-secondary" onClick={toggleAll}>{allSelected ? '取消全选' : '全选产品'}</button>
         </div>
-        <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 6 }}>
+        <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(50vh, 420px)', border: '1px solid #e2e8f0', borderRadius: 6 }}>
           <table className="data-table" style={{ minWidth: 680 }}><thead><tr><th style={{ width: 38 }}><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="全选同步产品" /></th><th>产品</th><th>规格</th><th>本次报价</th><th>同步预判</th></tr></thead>
             <tbody>{preview.items.map((item) => <tr key={item.quotationItemId}>
               <td><input type="checkbox" checked={selectedIds.includes(item.quotationItemId)} onChange={() => setSelectedIds((current) => current.includes(item.quotationItemId) ? current.filter((id) => id !== item.quotationItemId) : [...current, item.quotationItemId])} aria-label={`选择${item.name}`} /></td>
@@ -107,7 +107,7 @@ export default function QuotationSyncModal({ open, quotationId, onClose, onNotif
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 7 }}>
           {([['created', '新增'], ['updated', '更新'], ['unchanged', '无变化'], ['failed', '失败']] as const).map(([key, label]) => <div key={key} style={{ padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: 6, background: '#f8fafc' }}><small style={{ color: '#64748b' }}>{label}</small><strong style={{ display: 'block', marginTop: 3, fontSize: 18, color: key === 'failed' ? '#b91c1c' : '#17212b' }}>{summary[key]}</strong></div>)}
         </div>
-        <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 6 }}><table className="data-table"><thead><tr><th>产品</th><th>结果</th><th>说明</th></tr></thead><tbody>{result.items.map((item) => {
+        <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(50vh, 420px)', border: '1px solid #e2e8f0', borderRadius: 6 }}><table className="data-table"><thead><tr><th>产品</th><th>结果</th><th>说明</th></tr></thead><tbody>{result.items.map((item) => {
           const source = preview?.items.find((candidate) => candidate.quotationItemId === item.quotationItemId);
           return <tr key={item.quotationItemId}><td>{source?.name ?? `产品行 ${item.quotationItemId}`}</td><td><span style={{ color: item.status === 'failed' ? '#b91c1c' : '#0f766e' }}>{resultLabels[item.status]}</span></td><td>{item.error || '-'}</td></tr>;
         })}</tbody></table></div>

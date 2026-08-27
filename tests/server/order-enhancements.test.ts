@@ -621,3 +621,138 @@ describe('订单号基础设施', () => {
     database.close();
   });
 });
+
+describe('删除订单', () => {
+  it('已发货或已加入发货批次的订单可正常删除，发货相关子表一并清理', async () => {
+    const { app, database } = await makeContext();
+    const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput() });
+    expect(created.statusCode).toBe(201);
+    const orderId = created.json().data.id as number;
+
+    // 模拟订单已进入发货流程：加入批次并确认发货
+    const now = new Date().toISOString();
+    const batchId = Number(database.prepare(
+      `INSERT INTO shipment_batches (batch_no, status, created_at) VALUES ('BH20260824001', 'confirmed', ?)`,
+    ).run(now).lastInsertRowid);
+    database.prepare(
+      `INSERT INTO shipment_batch_orders (batch_id, order_id, tracking_no, sort_order) VALUES (?, ?, 'SF123456', 0)`,
+    ).run(batchId, orderId);
+    database.prepare(
+      `INSERT INTO shipments (order_id, tracking_no, shipped_at, total_boxes, recipient_info, remark) VALUES (?, 'SF123456', ?, 1, '', '')`,
+    ).run(orderId, now);
+
+    // 修复前：shipments / shipment_batch_orders 为 RESTRICT 外键，删除报 FOREIGN KEY constraint failed
+    const removed = await app.inject({ method: 'DELETE', url: `/api/orders/${orderId}` });
+    expect(removed.statusCode).toBe(200);
+
+    expect(database.prepare('SELECT COUNT(*) AS n FROM orders WHERE id = ?').get(orderId)).toEqual({ n: 0 });
+    expect(database.prepare('SELECT COUNT(*) AS n FROM shipment_batch_orders WHERE order_id = ?').get(orderId)).toEqual({ n: 0 });
+    expect(database.prepare('SELECT COUNT(*) AS n FROM shipments WHERE order_id = ?').get(orderId)).toEqual({ n: 0 });
+
+    await app.close();
+    database.close();
+  });
+
+  it('不存在的订单返回 404', async () => {
+    const { app, database } = await makeContext();
+    const removed = await app.inject({ method: 'DELETE', url: '/api/orders/999999' });
+    expect(removed.statusCode).toBe(404);
+    await app.close();
+    database.close();
+  });
+});
+
+describe('订单草稿', () => {
+  it('创建草稿订单：status 为 draft，且收件人可暂缺', async () => {
+    const { app, database } = await makeContext();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      payload: orderInput({
+        isDraft: true,
+        recipientName: '',
+        items: [{ name: '', quantity: 5, packCount: 2 }],
+      }),
+    });
+    expect(created.statusCode).toBe(201);
+    const body = created.json();
+    expect(body.data.status).toBe('draft');
+
+    const row = database.prepare('SELECT status, recipient_name FROM orders WHERE id = ?').get(Number(body.data.id));
+    expect(row).toMatchObject({ status: 'draft', recipient_name: '' });
+    await app.close();
+    database.close();
+  });
+
+  it('草稿在列表中可通过 status=draft 筛选', async () => {
+    const { app, database } = await makeContext();
+    await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput({ isDraft: true }) });
+    await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput() });
+
+    const drafts = await app.inject({ method: 'GET', url: '/api/orders?status=draft' });
+    expect(drafts.statusCode).toBe(200);
+    const rows = drafts.json().data.rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('draft');
+    await app.close();
+    database.close();
+  });
+
+  it('发布草稿：进入待备货，信息完整时成功', async () => {
+    const { app, database } = await makeContext();
+    const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput({ isDraft: true }) });
+    const orderId = Number(created.json().data.id);
+
+    const published = await app.inject({ method: 'POST', url: `/api/orders/${orderId}/publish` });
+    expect(published.statusCode).toBe(200);
+    expect(published.json().data.status).toBe('pending_stock');
+    expect(database.prepare('SELECT status FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'pending_stock' });
+    await app.close();
+    database.close();
+  });
+
+  it('发布失败：收件人为空时保持草稿不变', async () => {
+    const { app, database } = await makeContext();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      payload: orderInput({ isDraft: true, recipientName: '' }),
+    });
+    const orderId = Number(created.json().data.id);
+
+    const published = await app.inject({ method: 'POST', url: `/api/orders/${orderId}/publish` });
+    expect(published.statusCode).toBe(400);
+    // 草稿保持原状态，可继续编辑
+    expect(database.prepare('SELECT status FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'draft' });
+    await app.close();
+    database.close();
+  });
+
+  it('非草稿订单不能发布', async () => {
+    const { app, database } = await makeContext();
+    const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput() });
+    const orderId = Number(created.json().data.id);
+
+    const published = await app.inject({ method: 'POST', url: `/api/orders/${orderId}/publish` });
+    expect(published.statusCode).toBe(400);
+    await app.close();
+    database.close();
+  });
+
+  it('更新草稿不改变其 draft 状态；正式订单更新不受影响', async () => {
+    const { app, database } = await makeContext();
+    const draftCreated = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput({ isDraft: true }) });
+    const draftId = Number(draftCreated.json().data.id);
+    const draftOrderNo = String(draftCreated.json().data.order_no ?? '');
+
+    const updated = await app.inject({
+      method: 'PUT',
+      url: `/api/orders/${draftId}`,
+      payload: orderInput({ orderNo: draftOrderNo, recipientName: '李四' }),
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(database.prepare('SELECT status FROM orders WHERE id = ?').get(draftId)).toEqual({ status: 'draft' });
+    await app.close();
+    database.close();
+  });
+});

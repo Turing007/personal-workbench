@@ -13,7 +13,7 @@ import PackagingTable from './PackagingTable';
 import Modal from './Modal';
 
 export type ToastKind = 'success' | 'info' | 'error';
-export type OrderStatus = 'label_pending' | 'pending_stock' | 'stock_reported' | 'pending_packing' | 'ship_pending' | 'shipped';
+export type OrderStatus = 'draft' | 'label_pending' | 'pending_stock' | 'stock_reported' | 'pending_packing' | 'ship_pending' | 'shipped';
 
 export interface PackagingOption {
   id: string;
@@ -108,6 +108,7 @@ export interface OrderDraft {
   totalBoxes?: number;
   status?: OrderStatus;
   labelPrintedAt?: string;
+  financeSummary?: import('../../shared/finance').OrderFinanceLite | null;
 }
 
 export interface OrderFormProps {
@@ -115,6 +116,7 @@ export interface OrderFormProps {
   customers: Customer[];
   onSubmit: (value: OrderDraft) => void;
   onCancel?: () => void;
+  onSaveDraft?: (value: OrderDraft) => void;
   onSaveCustomerProduct?: (customerId: number, input: CustomerProductSaveInput) => Promise<CustomerProductRecord | undefined>;
   onCreateCustomer?: (input: CustomerSaveInput) => Promise<Customer>;
   submitLabel?: string;
@@ -171,13 +173,15 @@ function customerAttachmentLabel(category: string): string {
   return category === 'label' ? '标贴文件' : category === 'instruction' ? '说明书文件' : category === 'packaging' ? '打包文件' : '客户产品附件';
 }
 
-export default function OrderForm({ value, customers, onSubmit, onCancel, onSaveCustomerProduct, onCreateCustomer, submitLabel = '保存订单', onGetNextOrderNumber }: OrderFormProps) {
+export default function OrderForm({ value, customers, onSubmit, onCancel, onSaveDraft, onSaveCustomerProduct, onCreateCustomer, submitLabel = '保存订单', onGetNextOrderNumber }: OrderFormProps) {
   const [draft, setDraft] = useState<OrderDraft>(() => defaultDraft(value));
   const [shippingInput, setShippingInput] = useState(() => ((value?.shippingCents ?? 0) / 100).toFixed(2));
   const [shippingOverridden, setShippingOverridden] = useState(Boolean(value?.id));
   const [error, setError] = useState('');
   const [newProductOpen, setNewProductOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  /** 单价输入的本地编辑缓冲：允许 “”“12.”“12.3” 等中间态，失焦后再规范化。 */
+  const [priceInputs, setPriceInputs] = useState<Record<string, string>>({});
   const calculatedTotalCents = calculateOrderTotalCents(draft.items.map((item) => ({ quantity: item.quantity, unitPriceCents: item.unitPriceCents ?? 0 })));
   const calculatedFreightCents = calculateFreightCents(draft.items.map((item) => ({ boxes: item.boxes, freightPerBoxCents: item.freightPerBoxCents ?? 0 })));
   const shippingCents = shippingOverridden ? Math.max(0, Math.trunc(draft.shippingCents ?? 0)) : calculatedFreightCents;
@@ -261,6 +265,25 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
     return { ...item, ...patch, unitPriceCents, amountCents: calculateOrderLineAmountCents({ quantity, unitPriceCents }), boxes: calculateOrderBoxes(quantity, packSize) };
   }) }));
   const openNewProduct = () => setNewProductOpen(true);
+  /** 单价输入中间态：仅当用户正在编辑该行单价时使用缓冲值，否则回显规范化的两位小数。 */
+  const priceInputValue = (item: OrderItemDraft) => priceInputs[item.id] ?? ((item.unitPriceCents ?? 0) / 100).toFixed(2);
+  const changePriceInput = (id: string, next: string) => {
+    if (next !== '' && !/^\d*(?:\.\d{0,2})?$/.test(next)) return;
+    setPriceInputs((current) => ({ ...current, [id]: next }));
+    if (!/^\d*(?:\.\d{0,2})?$/.test(next)) return;
+    updateItem(id, { unitPriceCents: Math.max(0, Math.round((Number(next) || 0) * 100)) });
+  };
+  const commitPriceInput = (item: OrderItemDraft) => {
+    const raw = priceInputs[item.id];
+    if (raw === undefined) return;
+    const cents = Math.max(0, Math.round((Number(raw) || 0) * 100));
+    updateItem(item.id, { unitPriceCents: cents });
+    setPriceInputs((current) => {
+      if (current[item.id] === undefined) return current;
+      const { [item.id]: _removed, ...rest } = current;
+      return rest;
+    });
+  };
   const saveNewProduct = async (input: CustomerProductSaveInput) => {
     if (!draft.customerId || !onSaveCustomerProduct) throw new Error('请先选择客户后再添加客户产品');
     const saved = await onSaveCustomerProduct(draft.customerId, input);
@@ -302,17 +325,24 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
     onSubmit({ ...draft, amount: calculatedAmount, shippingCents });
   };
 
+  // 存草稿：仅要求至少一行产品（可以是空行），其余字段允许暂缺。
+  const submitDraft = () => {
+    if (!draft.items.length) return setError('草稿也需至少添加一行产品，可在订单详情中先选择产品');
+    setError('');
+    onSaveDraft?.({ ...draft, amount: calculatedAmount, shippingCents, status: 'draft' });
+  };
+
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       {error && <div role="alert" style={{ padding: '9px 11px', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12 }}>{error}</div>}
       <section style={{ display: 'grid', gap: 9 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#17212b' }}><UserRound size={16} /><strong style={{ fontSize: 13 }}>客户与订单信息</strong></div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1.5fr) minmax(150px, .9fr) minmax(130px, .7fr)', gap: 10 }}>
+        <div className="order-form-grid order-form-grid-main">
           <CustomerSelector value={draft.customerId ?? null} customers={customers} onChange={selectCustomer} onCreateCustomer={onCreateCustomer} />
           <label style={labelStyle}>订单号<input style={controlStyle} value={draft.orderNo} onChange={(event) => { const orderNo = event.target.value; update('orderNo', orderNo); update('orderNoAuto', !orderNo.trim()); }} placeholder="自动生成，可手动修改" /></label>
           <label style={labelStyle}>下单时间<input type="date" style={{ ...controlStyle, minWidth: 0 }} value={draft.orderedAt} onChange={(event) => update('orderedAt', event.target.value)} /></label>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, .8fr) minmax(280px, 2fr) minmax(150px, .8fr)', gap: 10 }}>
+        <div className="order-form-grid order-form-grid-recipient">
           <label style={labelStyle}>收件人名称<input style={controlStyle} value={draft.recipientName} onChange={(event) => update('recipientName', event.target.value)} placeholder="箱唛显示名称" /></label>
           <label style={labelStyle}>收件信息<textarea rows={2} style={{ ...controlStyle, resize: 'vertical' }} value={draft.recipientInfo} onChange={(event) => update('recipientInfo', event.target.value)} placeholder="收件人、地址、电话等统一记录" /></label>
           <label style={labelStyle}>发货单号<input style={controlStyle} value={draft.trackingNo} onChange={(event) => update('trackingNo', event.target.value)} placeholder="发货后回填" /></label>
@@ -331,7 +361,7 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
         {!draft.items.length && <span style={{ color: '#94a3b8', fontSize: 11 }}>尚未添加产品，点击“填写订单详情”选择客户产品并填写数量与单价。</span>}
       </section>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 1fr) minmax(320px, 1.25fr)', gap: 12, alignItems: 'start' }}>
+      <div className="order-form-grid order-form-grid-attachments">
         <ImagePasteUpload value={draft.paymentProofs} onChange={(proofs) => update('paymentProofs', proofs as PaymentProofDraft[])} />
         <section style={{ display: 'grid', gap: 6, padding: 8, border: '1px solid #e2e8f0', borderRadius: 6, background: '#fbfdff' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}><label style={{ color: '#64748b', fontSize: 12, fontWeight: 600 }}>订单附件</label><label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #cbd5e1', borderRadius: 5, padding: '6px 9px', color: '#0f766e', background: '#fff', cursor: 'pointer', fontSize: 12 }}><Plus size={14} />选择附件<input type="file" multiple accept={contractAccept} onChange={(event) => { addContractFiles(Array.from(event.target.files ?? [])); event.target.value = ''; }} style={{ display: 'none' }} /></label></div>
@@ -339,7 +369,7 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
         </section>
       </div>
       <label style={labelStyle}>订单备注<textarea rows={2} style={{ ...controlStyle, resize: 'vertical' }} value={draft.remark} onChange={(event) => update('remark', event.target.value)} placeholder="付款阶段、特殊要求等" /></label>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid #edf0f2', paddingTop: 11 }}><button type="button" onClick={onCancel} style={{ border: '1px solid #cbd5e1', borderRadius: 5, background: '#fff', color: '#475569', padding: '8px 15px', cursor: 'pointer' }}>取消</button><button type="button" onClick={submit} style={{ border: 0, borderRadius: 5, background: '#0f766e', color: '#fff', padding: '8px 17px', cursor: 'pointer', fontWeight: 650 }}>{submitLabel}</button></div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid #edf0f2', paddingTop: 11 }}>{onSaveDraft && <button type="button" onClick={submitDraft} title="保存为草稿，信息可暂不完整，稍后继续编辑" style={{ border: '1px solid #cbd5e1', borderRadius: 5, background: '#fff', color: '#475569', padding: '8px 15px', cursor: 'pointer' }}>存草稿</button>}<button type="button" onClick={onCancel} style={{ border: '1px solid #cbd5e1', borderRadius: 5, background: '#fff', color: '#475569', padding: '8px 15px', cursor: 'pointer' }}>取消</button><button type="button" onClick={submit} style={{ border: 0, borderRadius: 5, background: '#0f766e', color: '#fff', padding: '8px 17px', cursor: 'pointer', fontWeight: 650 }}>{submitLabel}</button></div>
       <CustomerProductEditorModal open={newProductOpen} product={null} layer={40} onClose={() => setNewProductOpen(false)} onSave={saveNewProduct} />
       <Modal open={detailOpen} title="填写订单详情" onClose={() => setDetailOpen(false)} width={980}>
         <div style={{ display: 'grid', gap: 12 }}>
@@ -348,7 +378,7 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
           <section style={{ display: 'grid', gap: 9, order: -1, borderBottom: '1px solid #edf0f2', paddingBottom: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div><strong style={{ fontSize: 13 }}>产品明细</strong><span style={{ marginLeft: 8, color: '#94a3b8', fontSize: 11 }}>金额 = 数量 × 单价，自动汇总</span></div>{onSaveCustomerProduct && draft.customerId && <button type="button" onClick={openNewProduct} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: 0, color: '#0f766e', background: 'transparent', cursor: 'pointer', fontSize: 12 }}><Plus size={14} />添加新品</button>}</div>
             <CustomerProductPicker customerId={draft.customerId ?? null} onSelect={selectProduct} onAddNew={onSaveCustomerProduct && draft.customerId ? openNewProduct : undefined} />
-            <div style={{ display: 'grid', gap: 7 }}>{draft.items.map((item) => <div key={item.id} style={{ display: 'grid', gap: 7, padding: '8px 9px', border: '1px solid #e2e8f0', borderRadius: 6, background: '#fff' }}><div style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 1.2fr) minmax(100px, .8fr) minmax(120px, 1fr) 72px 72px 46px 96px 90px 28px', gap: 5, alignItems: 'center' }}><input aria-label="订单产品品名" value={item.name} onChange={(event) => updateItem(item.id, { name: event.target.value })} style={controlStyle} /><input aria-label="订单产品SKU" value={item.sku} onChange={(event) => updateItem(item.id, { sku: event.target.value })} style={controlStyle} /><input aria-label="订单产品规格" value={item.specification} onChange={(event) => updateItem(item.id, { specification: event.target.value })} style={controlStyle} /><input type="number" min="1" aria-label="订购数量" value={item.quantity} onChange={(event) => updateItem(item.id, { quantity: Math.max(1, Number(event.target.value) || 1) })} style={controlStyle} /><input type="number" min="1" aria-label="订单装箱数" value={item.packSize} onChange={(event) => updateItem(item.id, { packSize: Math.max(1, Number(event.target.value) || 1) })} style={controlStyle} /><span style={{ color: '#0f766e', fontWeight: 700 }}>{item.boxes}</span><input type="number" min="0" step="0.01" aria-label="订单产品单价" value={((item.unitPriceCents ?? 0) / 100).toFixed(2)} onChange={(event) => updateItem(item.id, { unitPriceCents: Math.max(0, Math.round((Number(event.target.value) || 0) * 100)) })} style={controlStyle} /><strong style={{ color: '#0f766e', textAlign: 'right' }}>¥ {((item.amountCents ?? calculateOrderLineAmountCents({ quantity: item.quantity, unitPriceCents: item.unitPriceCents ?? 0 })) / 100).toFixed(2)}</strong><button type="button" title="删除产品" onClick={() => update('items', draft.items.filter((entry) => entry.id !== item.id))} style={{ border: 0, background: 'transparent', color: '#b91c1c', cursor: 'pointer' }}><Trash2 size={14} /></button></div>{(item.remark.trim() || item.customerProductAttachments?.length) ? <div style={{ display: 'grid', gap: 4, padding: '6px 8px', borderLeft: '3px solid #0f766e', background: '#f7fffd', color: '#475569', fontSize: 11 }}><strong style={{ color: '#0f766e' }}>产品备注</strong>{item.remark.trim() && <span style={{ whiteSpace: 'pre-wrap' }}>{item.remark}</span>}{item.customerProductAttachments?.length ? <span>附件已带入订单：{item.customerProductAttachments.map((attachment) => `${attachment.originalName}`).join('；')}</span> : null}</div> : null}</div>)}{!draft.items.length && <div style={{ padding: 25, textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>从上方客户产品库选择产品</div>}<div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '9px 10px', borderTop: '1px solid #edf0f2', background: '#fbfdff', color: '#64748b', fontSize: 12 }}><span>产品合计</span><strong style={{ color: '#0f766e', fontSize: 13 }}>¥ {productAmount}</strong><label style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>运费（元）{!shippingOverridden && <small style={{ color: '#0f766e' }}>自动</small>}<input type="text" inputMode="decimal" aria-label="订单运费" value={shippingInput} onChange={(event) => updateShippingInput(event.target.value)} onBlur={commitShippingInput} style={{ ...controlStyle, width: 92 }} /></label><span>订单金额</span><strong style={{ color: '#0f766e', fontSize: 14 }}>¥ {calculatedAmount}</strong></div></div>
+            <div style={{ display: 'grid', gap: 7 }}>{draft.items.length > 0 && <div className="order-items-head"><span>品名</span><span>SKU</span><span>规格</span><span>数量</span><span>装箱数</span><span>箱数</span><span>单价（元）</span><span>金额</span><span /></div>}{draft.items.map((item) => <div key={item.id} className="order-item-card"><div className="order-item-row"><label className="order-item-cell is-name"><small>品名</small><input aria-label="订单产品品名" value={item.name} onChange={(event) => updateItem(item.id, { name: event.target.value })} style={controlStyle} /></label><label className="order-item-cell is-sku"><small>SKU</small><input aria-label="订单产品SKU" value={item.sku} onChange={(event) => updateItem(item.id, { sku: event.target.value })} style={controlStyle} /></label><label className="order-item-cell is-spec"><small>规格</small><input aria-label="订单产品规格" value={item.specification} onChange={(event) => updateItem(item.id, { specification: event.target.value })} style={controlStyle} /></label><label className="order-item-cell is-qty"><small>数量</small><input type="number" min="1" aria-label="订购数量" value={item.quantity} onChange={(event) => updateItem(item.id, { quantity: Math.max(1, Number(event.target.value) || 1) })} style={controlStyle} /></label><label className="order-item-cell is-pack"><small>装箱数</small><input type="number" min="1" aria-label="订单装箱数" value={item.packSize} onChange={(event) => updateItem(item.id, { packSize: Math.max(1, Number(event.target.value) || 1) })} style={controlStyle} /></label><span className="order-item-cell is-boxes"><small>箱数</small><strong>{item.boxes}</strong></span><label className="order-item-cell is-price"><small>单价（元）</small><input type="number" min="0" step="0.01" inputMode="decimal" aria-label="订单产品单价" value={priceInputValue(item)} onChange={(event) => changePriceInput(item.id, event.target.value)} onBlur={() => commitPriceInput(item)} style={controlStyle} /></label><span className="order-item-cell is-amount"><small>金额</small><strong>¥ {((item.amountCents ?? calculateOrderLineAmountCents({ quantity: item.quantity, unitPriceCents: item.unitPriceCents ?? 0 })) / 100).toFixed(2)}</strong></span><button type="button" className="order-item-cell is-remove" title="删除产品" onClick={() => update('items', draft.items.filter((entry) => entry.id !== item.id))} style={{ border: 0, background: 'transparent', color: '#b91c1c', cursor: 'pointer' }}><Trash2 size={14} /></button></div>{(item.remark.trim() || item.customerProductAttachments?.length) ? <div style={{ display: 'grid', gap: 4, padding: '6px 8px', borderLeft: '3px solid #0f766e', background: '#f7fffd', color: '#475569', fontSize: 11 }}><strong style={{ color: '#0f766e' }}>产品备注</strong>{item.remark.trim() && <span style={{ whiteSpace: 'pre-wrap' }}>{item.remark}</span>}{item.customerProductAttachments?.length ? <span>附件已带入订单：{item.customerProductAttachments.map((attachment) => `${attachment.originalName}`).join('；')}</span> : null}</div> : null}</div>)}{!draft.items.length && <div style={{ padding: 25, textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>从上方客户产品库选择产品</div>}<div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '9px 10px', borderTop: '1px solid #edf0f2', background: '#fbfdff', color: '#64748b', fontSize: 12 }}><span>产品合计</span><strong style={{ color: '#0f766e', fontSize: 13 }}>¥ {productAmount}</strong><label style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>运费（元）{!shippingOverridden && <small style={{ color: '#0f766e' }}>自动</small>}<input type="text" inputMode="decimal" aria-label="订单运费" value={shippingInput} onChange={(event) => updateShippingInput(event.target.value)} onBlur={commitShippingInput} style={{ ...controlStyle, width: 92 }} /></label><span>订单金额</span><strong style={{ color: '#0f766e', fontSize: 14 }}>¥ {calculatedAmount}</strong></div></div>
           </section>
           <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #edf0f2', paddingTop: 12 }}><button type="button" onClick={() => setDetailOpen(false)} style={{ border: 0, borderRadius: 5, background: '#0f766e', color: '#fff', padding: '8px 16px', cursor: 'pointer', fontWeight: 650 }}>完成</button></div>
         </div>

@@ -28,6 +28,7 @@ import { registerSettingsRoutes } from './routes/settings.js';
 import { registerCustomerRoutes } from './routes/customers.js';
 import { registerFinanceRoutes } from './routes/finance.js';
 import { FinanceService } from './services/finance-service.js';
+import { OrderService } from './services/order-service.js';
 import { DocumentCustomerService } from './services/document-customer-service.js';
 import { QuotationService } from './services/quotation-service.js';
 import { SalesDocumentService } from './services/sales-document-service.js';
@@ -111,13 +112,16 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   await registerCustomerRoutes(app, {
     service: new CustomerService(customerRepository),
   });
+  const settingsRepository = new SettingsRepository(options.database);
   const orderOptions = {
     repositories,
     customerRepository,
     customerProductRepository,
     fileStore: options.fileStore,
+    settingsRepository,
   };
-  await registerOrderRoutes(app, orderOptions);
+  const orderService = new OrderService(orderOptions);
+  await registerOrderRoutes(app, { ...orderOptions, service: orderService });
   await registerPaymentProofDeleteRoute(app, orderOptions);
   await registerFinanceRoutes(app, {
     service: new FinanceService({ database: options.database, fileStore: options.fileStore }),
@@ -126,7 +130,6 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   await registerLabelRoutes(app, { repositories });
   await registerShippingRoutes(app, { repositories });
 
-  const settingsRepository = new SettingsRepository(options.database);
   const quotationRepository = new QuotationRepository(options.database);
   const salesDocumentRepository = new SalesDocumentRepository(options.database);
   const documentAssetManager = options.fileStore
@@ -163,6 +166,7 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
     assetManager,
     sourceFileReader: options.fileStore,
     receiptFileStore: options.fileStore,
+    orderService,
   });
 
   await registerSettingsRoutes(app, {

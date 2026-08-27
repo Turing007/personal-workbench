@@ -4,7 +4,9 @@ import type {
   Customer,
   CustomerProduct as SharedCustomerProduct,
   CustomerProductAttachment,
+  CustomerProductBatchSaveInput,
   CustomerProductListFilters,
+  CustomerProductPackaging,
   CustomerProductSaveInput,
   CustomerSaveInput,
   QuotationCustomerProductSyncPreview,
@@ -33,6 +35,7 @@ import type {
   FinanceListResult,
   FinanceReceipt,
   OrderFinanceSummary,
+  PayeeBreakdownRow,
   PaymentProofRecord,
 } from '../shared/finance';
 import type { CustomerProduct as LegacyCustomerProduct, OrderDraft, OrderItemDraft, PackagingOption } from './components/OrderForm';
@@ -106,7 +109,8 @@ export interface ApiOrderRow {
   remark?: string;
   created_at?: string;
   updated_at?: string;
-  status: OrderStatus;
+  /** 含 draft（草稿）在内的全部订单状态。 */
+  status: OrderStatus | 'draft';
   label_printed_at?: string | null;
   total_boxes: number;
   total_quantity: number;
@@ -306,6 +310,7 @@ export function mapProductRecord(row: ProductApiRecord): ProductRecord {
 }
 
 export function draftToInput(draft: OrderDraft) {
+  const isDraft = draft.status === 'draft';
   const itemInputs = draft.items.map((item) => ({
     quantity: Math.max(1, Math.trunc(item.quantity)),
     unitPriceCents: Math.max(0, Math.trunc(item.unitPriceCents ?? 0)),
@@ -315,6 +320,7 @@ export function draftToInput(draft: OrderDraft) {
   return {
     orderNo: draft.orderNo.trim(),
     orderedAt: draft.orderedAt.slice(0, 10),
+    isDraft: isDraft || undefined,
     customerId: draft.customerId ?? null,
     customerName: draft.customerName ?? '',
     customerContactName: draft.customerContactName ?? '',
@@ -354,6 +360,11 @@ export function saveOrder(draft: OrderDraft) {
   return request<ApiOrderDetail>(draft.id ? `/api/orders/${draft.id}` : '/api/orders', input);
 }
 
+/** 发布草稿订单：draft → pending_stock，进入正式流程。 */
+export function publishOrder(id: number | string) {
+  return request<ApiOrderDetail>(`/api/orders/${id}/publish`, { method: 'POST' });
+}
+
 export function deleteOrder(id: number | string) {
   return request<null>(`/api/orders/${id}`, { method: 'DELETE' });
 }
@@ -381,6 +392,10 @@ export function getOrderContracts(orderId: number | string) {
 
 export function deleteOrderContract(id: number | string) {
   return request<null>(`/api/order-contracts/${id}`, { method: 'DELETE' });
+}
+
+export function generateOrderContractPdf(orderId: number | string) {
+  return requestBlob(`/api/orders/${orderId}/contracts/generate`, { method: 'POST' });
 }
 
 export function advanceOrderStatus(id: number | string, to: OrderStatus, reason: 'manual' | 'first-print' = 'manual') { return request(`/api/orders/${id}/status`, { method: 'POST', body: JSON.stringify({ to, reason }) }); }
@@ -429,6 +444,18 @@ export function getCustomerProducts(customerId: number, filters: CustomerProduct
     .then((result) => result.items.map(mapCustomerProduct));
 }
 
+function packagingPayload(packaging: CustomerProductPackaging[] | undefined) {
+  return (packaging ?? []).map((item) => ({
+    id: item.id,
+    name: item.name,
+    innerSize: item.innerSize,
+    innerWeight: Number(item.innerWeight) || 0,
+    outerSize: item.outerSize,
+    outerWeight: Number(item.outerWeight) || 0,
+    packCount: Math.max(1, Math.trunc(Number(item.packCount) || 1)),
+  }));
+}
+
 function customerProductInput(product: CustomerProductSaveInput) {
   return {
     ...(product.systemProductId === undefined ? {} : { systemProductId: product.systemProductId }),
@@ -440,15 +467,7 @@ function customerProductInput(product: CustomerProductSaveInput) {
     costPriceCents: product.costPriceCents ?? null,
     freightPerBoxCents: product.freightPerBoxCents ?? null,
     remark: product.remark ?? '',
-    packaging: (product.packaging ?? []).map((item) => ({
-      id: item.id,
-      name: item.name,
-      innerSize: item.innerSize,
-      innerWeight: Number(item.innerWeight) || 0,
-      outerSize: item.outerSize,
-      outerWeight: Number(item.outerWeight) || 0,
-      packCount: Math.max(1, Math.trunc(Number(item.packCount) || 1)),
-    })),
+    packaging: packagingPayload(product.packaging),
     ...(product.imageRelativePath === undefined ? {} : { imageRelativePath: product.imageRelativePath }),
   };
 }
@@ -456,6 +475,25 @@ function customerProductInput(product: CustomerProductSaveInput) {
 export function saveCustomerProduct(customerId: number, product: CustomerProductSaveInput) {
   return request<SharedCustomerProduct>(`/api/customers/${customerId}/products`, { method: 'POST', body: JSON.stringify(customerProductInput(product)) })
     .then(mapCustomerProduct);
+}
+
+export function saveCustomerProductsBatch(customerId: number, input: CustomerProductBatchSaveInput) {
+  return request<{ items: SharedCustomerProduct[] }>(`/api/customers/${customerId}/products/batch`, {
+    method: 'POST',
+    body: JSON.stringify({
+      items: input.items.map((item) => ({
+        name: item.name.trim(),
+        specification: (item.specification ?? '').trim(),
+        sku: (item.sku ?? '').trim(),
+      })),
+      packCount: input.packCount,
+      finalPriceCents: input.finalPriceCents,
+      costPriceCents: input.costPriceCents ?? null,
+      freightPerBoxCents: input.freightPerBoxCents ?? null,
+      remark: input.remark ?? '',
+      packaging: packagingPayload(input.packaging),
+    }),
+  }).then((result) => result.items.map(mapCustomerProduct));
 }
 
 export function importCustomerProduct(customerId: number, systemProductId: number) {
@@ -619,7 +657,8 @@ export async function uploadFinanceProof(orderId: number | string, file: File, i
 }
 
 export function updateFinanceProof(id: number, input: Record<string, unknown>) { return request<PaymentProofRecord & { url: string }>(`/api/finance/proofs/${id}`, { method: 'PUT', body: JSON.stringify(input) }); }
-export function approveFinanceProof(id: number) { return request<ApiFinanceDetail>(`/api/finance/proofs/${id}/approve`, { method: 'POST', body: JSON.stringify({}) }); }
+export function approveFinanceProof(id: number, payeeName = '') { return request<ApiFinanceDetail>(`/api/finance/proofs/${id}/approve`, { method: 'POST', body: JSON.stringify({ payeeName }) }); }
+export function listReceivedByPayee() { return request<{ items: PayeeBreakdownRow[] }>('/api/finance/receipts/by-payee'); }
 export function rejectFinanceProof(id: number, note: string) { return request<ApiFinanceDetail>(`/api/finance/proofs/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }); }
 export function voidFinanceProof(id: number, note: string) { return request<ApiFinanceDetail>(`/api/finance/proofs/${id}/void`, { method: 'POST', body: JSON.stringify({ note }) }); }
 export function deleteFinanceProof(id: number) { return request<PaymentProofRecord>(`/api/finance/proofs/${id}`, { method: 'DELETE' }); }
@@ -765,6 +804,23 @@ export function deleteSalesDocument(id: number | string, confirmed = false) {
 
 export function setSalesDocumentStatus(id: number | string, status: SalesDocumentStatus) {
   return request<SalesDocumentDetail>(`/api/sales-documents/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+}
+
+export interface GeneratedOrderResult {
+  id: number;
+  orderNo: string;
+  amountCents: number;
+  shippingCents: number;
+}
+
+export async function createOrderFromSalesDocument(id: number | string): Promise<GeneratedOrderResult> {
+  const detail = await request<Record<string, unknown>>(`/api/sales-documents/${id}/create-order`, { method: 'POST' });
+  return {
+    id: Number(detail.id),
+    orderNo: String(detail.order_no ?? ''),
+    amountCents: Number(detail.amount_cents ?? 0),
+    shippingCents: Number(detail.shipping_cents ?? 0),
+  };
 }
 
 export function downloadSalesDocumentPdf(id: number | string) {

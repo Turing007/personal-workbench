@@ -1,4 +1,4 @@
-import { Edit3, FileSpreadsheet, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { ClipboardList, Edit3, ExternalLink, FileSpreadsheet, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   CompanySnapshot,
@@ -10,6 +10,7 @@ import type {
 } from '../../shared/documents';
 import type { Customer, CustomerProduct, CustomerProductSaveInput, CustomerSaveInput } from '../../shared/customers';
 import {
+  createOrderFromSalesDocument,
   deleteSalesDocument,
   downloadSalesDocumentPdf,
   getCompanyProfile,
@@ -29,6 +30,7 @@ export interface SalesDocumentsPageProps {
   customers: Customer[];
   onSaveCustomerProduct?: (customerId: number, input: CustomerProductSaveInput) => Promise<CustomerProduct>;
   onCreateCustomer?: (input: CustomerSaveInput) => Promise<Customer>;
+  onOpenOrder?: (orderId: number) => void | Promise<void>;
 }
 
 const documentStatusLabels: Record<SalesDocumentStatus, string> = { draft: '草稿', issued: '已开单', void: '已作废' };
@@ -45,7 +47,7 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomerProduct, onCreateCustomer }: SalesDocumentsPageProps) {
+export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomerProduct, onCreateCustomer, onOpenOrder }: SalesDocumentsPageProps) {
   const [rows, setRows] = useState<SalesDocumentSummary[]>([]);
   const [query, setQuery] = useState('');
   const [documentStatus, setDocumentStatusFilter] = useState<'all' | SalesDocumentStatus>('all');
@@ -172,6 +174,20 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
     }
   };
 
+  const generateOrder = async (row: SalesDocumentSummary) => {
+    if (!window.confirm(`确定根据销售单“${row.number}”生成订单吗？产品、单价、运费将带入新订单。`)) return;
+    setBusyId(row.id);
+    try {
+      const order = await createOrderFromSalesDocument(row.id);
+      notify(`订单 ${order.orderNo} 已生成`, 'success');
+      await load();
+    } catch (error) {
+      notify(errorMessage(error, '生成订单失败'), 'error');
+    } finally {
+      setBusyId(undefined);
+    }
+  };
+
   return <div className="page-shell sales-documents-page">
     <div className="page-toolbar" style={{ gap: 8, flexWrap: 'wrap' }}>
       <div><strong className="page-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><FileSpreadsheet size={17} />销售开单</strong><span className="page-subtitle">维护销售单、收款状态与单据生命周期</span></div>
@@ -193,7 +209,7 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
         <tbody>{visibleRows.map((row) => {
           const receivedCents = Math.max(0, row.totalCents - row.outstandingCents);
           return <tr key={row.id}>
-            <td className="strong-cell" style={{ color: '#0f766e' }}>{row.number}</td>
+              <td className="strong-cell" style={{ color: '#0f766e' }}>{row.number}{row.generatedOrderNo && <small style={{ display: 'block', color: '#64748b', fontWeight: 400 }} title="该销售单已生成的订单">订单 {row.generatedOrderNo}</small>}</td>
             <td>{row.documentDate}</td>
             <td className="strong-cell">{row.customerName || '-'}</td>
             <td>{row.purchaseOrderNo || '-'}</td>
@@ -206,6 +222,8 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
             <td><div className="row-actions">
               <button className="icon-button" type="button" title={row.documentStatus === 'void' ? '查看销售单' : '编辑销售单'} disabled={busyId === row.id} onClick={() => void openEdit(row.id)}><Edit3 size={14} /></button>
               <PdfDownloadButton number={row.number} download={() => downloadSalesDocumentPdf(row.id)} onError={(message) => notify(message, 'error')} disabled={busyId === row.id} />
+              {row.documentStatus === 'issued' && !row.generatedOrderNo && <button className="icon-button" type="button" title="从本销售单生成订单" disabled={busyId === row.id} onClick={() => void generateOrder(row)}><ClipboardList size={14} /></button>}
+              {row.generatedOrderId != null && row.generatedOrderNo && <button className="icon-button" type="button" title={`查看生成的订单 ${row.generatedOrderNo}`} disabled={busyId === row.id} onClick={() => void onOpenOrder?.(row.generatedOrderId!)}><ExternalLink size={14} /></button>}
               {row.documentStatus !== 'void' && <button className="icon-button danger" type="button" title="删除销售单" disabled={busyId === row.id} onClick={() => void remove(row)}><Trash2 size={14} /></button>}
             </div></td>
           </tr>;

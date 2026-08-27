@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CompanySnapshot } from '../shared/documents';
 import Sidebar, { navigationKeys, type NavigationKey } from './components/Sidebar';
+import MobileTabBar from './components/MobileTabBar';
 import Toast, { type ToastMessage } from './components/Toast';
 import type { CartonLabel } from './components/LabelEditorModal';
 import type { OrderContractDraft, OrderDraft, OrderItemDraft, OrderStatus } from './components/OrderForm';
@@ -36,8 +37,10 @@ import {
   saveCustomerProduct,
   saveProduct,
   deleteOrderContract,
+  generateOrderContractPdf,
   deleteOrder,
   previewBackup,
+  publishOrder,
   uploadPaymentProof,
   uploadOrderContract,
   uploadOrderDetailImage,
@@ -96,8 +99,19 @@ function mapOrderDetail(row: ApiOrderDetail | ApiOrderRow): OrderDraft {
   const rawContracts = Array.isArray(raw.contracts) ? raw.contracts : [];
   const rawDetailImages = Array.isArray(raw.orderDetailImages) ? raw.orderDetailImages : Array.isArray(raw.order_detail_images) ? raw.order_detail_images : [];
   const mappedContracts = rawContracts.map((contract): OrderContractDraft => { const item = contract as Record<string, unknown>; const relativePath = String(item.relative_path ?? item.relativePath ?? ''); return { id: String(item.id), name: String(item.original_name ?? item.originalName ?? '订单附件'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mime_type ?? item.mimeType ?? ''), size: asNumber(item.size ?? item.size_bytes), createdAt: String(item.created_at ?? item.createdAt ?? ''), category: String(item.category ?? 'other'), sourceCustomerProductId: item.source_customer_product_id == null ? null : Number(item.source_customer_product_id) }; });
+  const rawFinance = (raw.financeSummary ?? raw.finance_summary) as Record<string, unknown> | null | undefined;
   return {
       id: String(raw.id), orderNo: String(raw.order_no ?? ''), orderedAt: String(raw.ordered_at ?? '').slice(0, 10), customerId: raw.customer_id == null ? null : Number(raw.customer_id), customerName: String(raw.customer_name ?? ''), customerContactName: String(raw.customer_contact_name ?? ''), customerContactPhone: String(raw.customer_contact_phone ?? ''), customerShippingInfo: String(raw.customer_shipping_info ?? ''), orderDetail: String(raw.order_detail ?? raw.orderDetail ?? ''), orderDetailImages: rawDetailImages.map((image) => { const item = image as Record<string, unknown>; const relativePath = String(item.relative_path ?? item.relativePath ?? ''); return { id: String(item.id), name: String(item.original_name ?? item.originalName ?? '订单详情图片'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mime_type ?? item.mimeType ?? ''), size: asNumber(item.size ?? item.size_bytes) }; }), recipientName: String(raw.recipient_name ?? ''), recipientInfo: String(raw.recipient_info ?? ''), amount: asNumber(raw.amount).toFixed(2), shippingCents: Math.max(0, Math.trunc(asNumber(raw.shipping_cents ?? raw.shippingCents))), trackingNo: String(raw.tracking_no ?? ''), paymentNote: String(raw.payment_note ?? raw.paymentNote ?? ''), paymentProofs: (Array.isArray(raw.paymentProofs) ? raw.paymentProofs : Array.isArray(raw.payment_proofs) ? raw.payment_proofs : []).map((proof) => { const item = proof as Record<string, unknown>; const relativePath = String(item.relative_path ?? item.relativePath ?? ''); return { id: String(item.id), name: String(item.original_name ?? item.originalName ?? '付款凭证'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), note: String(item.note ?? ''), mimeType: String(item.mime_type ?? item.mimeType ?? ''), size: asNumber(item.size ?? item.size_bytes), createdAt: String(item.created_at ?? item.createdAt ?? '') }; }), contracts: mappedContracts, labels: Array.isArray(raw.labels) ? raw.labels as Array<Record<string, unknown>> : [], remark: String(raw.remark ?? ''), items: rawItems.map((item) => mapOrderItem(item as Record<string, unknown>)), totalBoxes: Math.max(0, Math.trunc(asNumber(raw.total_boxes))), status: String(raw.status ?? 'pending_stock') as OrderStatus, labelPrintedAt: raw.label_printed_at == null ? undefined : String(raw.label_printed_at),
+      financeSummary: rawFinance ? {
+        orderId: Math.trunc(asNumber(rawFinance.orderId ?? rawFinance.order_id)),
+        receivableCents: Math.max(0, Math.trunc(asNumber(rawFinance.receivableCents ?? rawFinance.receivable_cents))),
+        receivedCents: Math.max(0, Math.trunc(asNumber(rawFinance.receivedCents ?? rawFinance.received_cents))),
+        outstandingCents: Math.trunc(asNumber(rawFinance.outstandingCents ?? rawFinance.outstanding_cents)),
+        paymentStatus: String(rawFinance.paymentStatus ?? rawFinance.payment_status ?? 'unpaid'),
+        proofStatus: String(rawFinance.proofStatus ?? rawFinance.proof_status ?? 'none'),
+        invoiceStatus: String(rawFinance.invoiceStatus ?? rawFinance.invoice_status ?? 'not_requested'),
+        updatedAt: String(rawFinance.updatedAt ?? rawFinance.updated_at ?? ''),
+      } as import('./../shared/finance').OrderFinanceLite : null,
   };
 }
 
@@ -134,8 +148,10 @@ export default function App() {
   const [customerProductsInitialCustomerId, setCustomerProductsInitialCustomerId] = useState<number | null>(null);
   const [shippingInitialOrder, setShippingInitialOrder] = useState<OrderDraft>();
   const [financeInitialOrderId, setFinanceInitialOrderId] = useState<number>();
+  const [ordersInitialOrderId, setOrdersInitialOrderId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState<ToastMessage[]>([]);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const navigate = useCallback((next: NavigationKey) => {
     // The customer id is a one-time hand-off from quotation sync. Clear it
@@ -144,7 +160,11 @@ export default function App() {
     if (next !== 'customer-products') setCustomerProductsInitialCustomerId(null);
     if (next !== 'shipping') setShippingInitialOrder(undefined);
     if (next !== 'finance') setFinanceInitialOrderId(undefined);
+    if (next !== 'orders') setOrdersInitialOrderId(null);
     setActive(next);
+    setMobileNavOpen(false);
+    // 切换模块后回到列表顶部，避免手机上停留在上一个模块的滚动位置。
+    document.querySelector('.app-content')?.scrollTo({ top: 0 });
     // 记住当前模块，浏览器刷新后仍停留在原页面。
     try { window.localStorage.setItem(ACTIVE_NAV_STORAGE_KEY, next); } catch { /* 忽略存储失败 */ }
   }, []);
@@ -286,8 +306,19 @@ export default function App() {
       for (const contract of (draft.contracts ?? []).filter((item) => item.file)) await uploadOrderContract(orderId, contract.file!);
       for (const image of (draft.orderDetailImages ?? []).filter((item) => item.file)) await uploadOrderDetailImage(orderId, image.file!);
       for (const contractId of draft.deletedContractIds ?? []) await deleteOrderContract(contractId);
-      await loadOrders(); notify('订单已保存', 'success');
+      await loadOrders();
+      notify(draft.status === 'draft' ? '草稿已保存，可稍后继续编辑' : '订单已保存', 'success');
     } catch (error) { notify((error as { message?: string }).message ?? '订单保存失败', 'error'); }
+  };
+  // 草稿保存与正式保存共用持久化链路（附件上传等），仅提示语不同。
+  const saveOrderAsDraft = async (draft: OrderDraft) => { await saveOrderDraft({ ...draft, status: 'draft' }); };
+  const publishOrderDraft = async (order: OrderDraft) => {
+    if (!order.id) return;
+    try {
+      await publishOrder(order.id);
+      await loadOrders();
+      notify(`草稿订单 ${order.orderNo} 已发布，进入待备货流程`, 'success');
+    } catch (error) { notify((error as { message?: string }).message ?? '草稿发布失败，请补全订单信息后再试', 'error'); }
   };
   const saveOrderCustomerProduct = async (customerId: number, input: import('../shared/customers').CustomerProductSaveInput) => {
     try {
@@ -322,6 +353,26 @@ export default function App() {
       throw error;
     }
   };
+  const generateContract = async (order: OrderDraft) => {
+    if (!order.id) return;
+    try {
+      const blob = await generateOrderContractPdf(order.id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${order.orderNo}-购销合同.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      // 服务端已把 PDF 归档进订单附件，刷新后即可在详情里看到。
+      await loadOrders();
+      notify('购销合同已生成并归档', 'success');
+    } catch (error) {
+      notify((error as { message?: string }).message ?? '合同生成失败', 'error');
+      throw error;
+    }
+  };
   const removeOrder = async (order: OrderDraft) => {
     if (!order.id) return;
     try {
@@ -333,7 +384,9 @@ export default function App() {
       throw error;
     }
   };
+  // advance 只处理正式流程推进；草稿订单走 publishOrderDraft。
   const advance = async (order: OrderDraft, status: OrderStatus) => {
+    if (status === 'draft' || order.status === 'draft') return;
     const enteringStock = (order.status === 'label_pending' && status === 'pending_stock') || (order.status === 'pending_stock' && status === 'stock_reported');
     if (enteringStock && !order.labelPrintedAt) {
       const targetLabel = status === 'pending_stock' ? '待备货' : '已备货';
@@ -429,14 +482,14 @@ export default function App() {
     } catch (error) { notify((error as { message?: string }).message ?? '数据恢复失败', 'error'); }
   };
 
-  return <div className="app-layout"><Sidebar activeKey={active} onNavigate={navigate} companyName={companyProfile.name} logoUrl={companyProfile.logoRelativePath ? `/files/${companyProfile.logoRelativePath}` : undefined} /><main className="app-content">
+  return <div className="app-layout"><Sidebar activeKey={active} onNavigate={navigate} companyName={companyProfile.name} logoUrl={companyProfile.logoRelativePath ? `/files/${companyProfile.logoRelativePath}` : undefined} mobileOpen={mobileNavOpen} onMobileOpenChange={setMobileNavOpen} /><main className="app-content">
     {active === 'finance' && <FinancePage onNotify={notify} initialOrderId={financeInitialOrderId} />}
-    {active === 'orders' && <OrdersPage orders={orders} customers={customers} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => { void recordHistory(labels); }} />}
+    {active === 'orders' && <OrdersPage orders={orders} customers={customers} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => { void recordHistory(labels); }} />}
     {active === 'quotations' && <QuotationPage onNotify={notify} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
-    {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
+    {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={async (orderId) => { await loadOrders(); setOrdersInitialOrderId(orderId); navigate('orders'); }} />}
     {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} onExport={exportProductLibrary} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} />}
     {active === 'customer-products' && <CustomerProductsPage customers={customers} systemProducts={products} initialCustomerId={customerProductsInitialCustomerId ?? undefined} loading={loading} onCustomersChanged={loadCustomers} onNotify={notify} />}
     {active === 'shipping' && <ShippingPage orders={shippingOrders} initialOrder={shippingInitialOrder} onUpdateTracking={updateTracking} onConfirm={confirmShipping} />}
     {active === 'settings' && <SettingsPage onBackup={backup} onRestore={restore} onProfileChanged={setCompanyProfile} />}
-  </main><Toast messages={messages} onDismiss={(id) => setMessages((current) => current.filter((item) => item.id !== id))} /></div>;
+  </main><MobileTabBar activeKey={active} onNavigate={navigate} onOpenMore={() => setMobileNavOpen(true)} /><Toast messages={messages} onDismiss={(id) => setMessages((current) => current.filter((item) => item.id !== id))} /></div>;
 }

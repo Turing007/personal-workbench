@@ -19,8 +19,15 @@ export type QuotationColumnKey =
   | 'specification'
   | 'quantity'
   | 'unitPrice'
+  | 'tierPrice'
   | 'amount'
   | 'remark';
+
+export interface QuotationPriceTier {
+  minQuantity: number;
+  maxQuantity: number | null;
+  unitPriceCents: number;
+}
 
 export interface QuotationDisplayConfig {
   showLogo: boolean;
@@ -67,6 +74,7 @@ export interface QuotationItem extends DocumentProductSnapshot {
   quantity: number;
   unitPriceCents: number;
   amountCents: number;
+  priceTiers?: QuotationPriceTier[];
   remark: string;
   sortOrder: number;
 }
@@ -194,6 +202,8 @@ export interface SalesDocumentSummary {
   totalCents: number;
   outstandingCents: number;
   updatedAt: string;
+  generatedOrderId?: number | null;
+  generatedOrderNo?: string | null;
 }
 
 export interface SalesDocumentDetail extends SalesDocumentSummary {

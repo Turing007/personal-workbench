@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { CustomerProductSaveInput } from '../../shared/customers.js';
+import type { CustomerProductBatchSaveInput, CustomerProductSaveInput } from '../../shared/customers.js';
 import type { CustomerProductAttachment } from '../../shared/customers.js';
 import type { CustomerProductAttachmentCategory } from '../../shared/customers.js';
 import {
@@ -186,6 +186,26 @@ export async function registerCustomerProductRoutes(
       await Promise.all(filePaths.map((path) => options.fileStore!.deleteFile(path)));
     }
     return sendSuccess(reply, { deletedCount });
+  }, reply));
+
+  app.post('/api/customers/:customerId/products/batch', async (
+    request: FastifyRequest<{ Params: { customerId: string } }>,
+    reply,
+  ) => safeRoute(() => {
+    const body = asRecord(request.body);
+    const created = options.service.createMany(
+      parseId(request.params.customerId, 'customerId'),
+      {
+        items: body.items as CustomerProductBatchSaveInput['items'],
+        packCount: (body.packCount ?? null) as number | null,
+        finalPriceCents: (body.finalPriceCents ?? null) as number | null,
+        costPriceCents: (body.costPriceCents ?? null) as number | null,
+        freightPerBoxCents: (body.freightPerBoxCents ?? null) as number | null,
+        remark: typeof body.remark === 'string' ? body.remark : undefined,
+        packaging: body.packaging as CustomerProductSaveInput['packaging'],
+      },
+    );
+    return sendSuccess(reply, { items: created }, 201);
   }, reply));
 
   app.get('/api/customer-products/:id', async (

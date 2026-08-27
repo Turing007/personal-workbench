@@ -7,7 +7,7 @@ import {
   DocumentAssetError,
   DocumentAssetManager,
 } from '../../src/server/documents/document-assets';
-import { PdfRenderer, PdfRendererError } from '../../src/server/documents/pdf-renderer';
+import { PdfRenderer, PdfRendererError, closeSharedPdfRenderer } from '../../src/server/documents/pdf-renderer';
 import { FileStore } from '../../src/server/files/file-store';
 
 const temporaryDirectories: string[] = [];
@@ -231,15 +231,24 @@ describe('document asset manager', () => {
 });
 
 describe('PDF renderer', () => {
-  it('prefers Edge, falls back to bundled Chromium, and renders A4 PDF bytes', async () => {
-    const pdf = Buffer.from('%PDF-test');
-    const page = {
+  function createPage(pdf: Buffer) {
+    return {
       setContent: vi.fn(async () => undefined),
       emulateMedia: vi.fn(async () => undefined),
       pdf: vi.fn(async () => pdf),
+      close: vi.fn(async () => undefined),
     };
+  }
+
+  it('prefers Edge, falls back to bundled Chromium, and reuses the browser across renders', async () => {
+    const pdf = Buffer.from('%PDF-test');
+    const firstPage = createPage(pdf);
+    const secondPage = createPage(pdf);
     const browser = {
-      newPage: vi.fn(async () => page),
+      newPage: vi.fn()
+        .mockResolvedValueOnce(firstPage)
+        .mockResolvedValueOnce(secondPage),
+      isConnected: vi.fn(() => true),
       close: vi.fn(async () => undefined),
     };
     const launch = vi.fn()
@@ -250,15 +259,50 @@ describe('PDF renderer', () => {
     await expect(renderer.render('<html><body>报价单</body></html>')).resolves.toEqual(pdf);
     expect(launch).toHaveBeenNthCalledWith(1, { channel: 'msedge', headless: true });
     expect(launch).toHaveBeenNthCalledWith(2, { headless: true });
-    expect(page.setContent).toHaveBeenCalledWith('<html><body>报价单</body></html>', { waitUntil: 'networkidle' });
-    expect(page.emulateMedia).toHaveBeenCalledWith({ media: 'print' });
-    expect(page.pdf).toHaveBeenCalledWith({
+    // 打印媒体模拟先于内容注入，避免多余排版
+    expect(firstPage.emulateMedia).toHaveBeenCalledWith({ media: 'print' });
+    expect(firstPage.emulateMedia.mock.invocationCallOrder[0])
+      .toBeLessThan(firstPage.setContent.mock.invocationCallOrder[0]);
+    expect(firstPage.setContent).toHaveBeenCalledWith('<html><body>报价单</body></html>', { waitUntil: 'load' });
+    expect(firstPage.pdf).toHaveBeenCalledWith({
       format: 'A4',
       landscape: false,
       printBackground: true,
       margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
     });
-    expect(browser.close).toHaveBeenCalledOnce();
+    // 渲染后只关闭页面，浏览器保持常驻供下次复用
+    expect(firstPage.close).toHaveBeenCalledOnce();
+    expect(browser.close).not.toHaveBeenCalled();
+
+    await expect(renderer.render('<html><body>第二份</body></html>')).resolves.toEqual(pdf);
+    expect(launch).toHaveBeenCalledTimes(2);
+    expect(browser.newPage).toHaveBeenCalledTimes(2);
+    expect(secondPage.pdf).toHaveBeenCalledOnce();
+  });
+
+  it('relaunches and retries once when the shared browser has crashed', async () => {
+    const pdf = Buffer.from('%PDF-test');
+    const deadBrowser = {
+      newPage: vi.fn(async () => { throw new Error('Target page, context or browser has been closed'); }),
+      isConnected: () => false,
+      close: vi.fn(async () => undefined),
+    };
+    const page = createPage(pdf);
+    const liveBrowser = {
+      newPage: vi.fn(async () => page),
+      isConnected: () => true,
+      close: vi.fn(async () => undefined),
+    };
+    const launch = vi.fn()
+      .mockResolvedValueOnce(deadBrowser)
+      .mockResolvedValueOnce(liveBrowser);
+    const renderer = new PdfRenderer({ launch } as never);
+
+    await expect(renderer.render('<html></html>')).resolves.toEqual(pdf);
+    expect(launch).toHaveBeenCalledTimes(2);
+    // 崩溃的旧浏览器会被关闭回收，不会残留进程
+    expect(deadBrowser.close).toHaveBeenCalledOnce();
+    expect(page.pdf).toHaveBeenCalledOnce();
   });
 
   it('throws an identifiable error when both browsers fail to launch', async () => {
@@ -270,5 +314,22 @@ describe('PDF renderer', () => {
       name: 'PdfRendererError',
     });
     expect(launch).toHaveBeenCalledTimes(2);
+  });
+
+  it('closes the shared browser via closeSharedPdfRenderer', async () => {
+    const pdf = Buffer.from('%PDF-test');
+    const page = createPage(pdf);
+    const browser = {
+      newPage: vi.fn(async () => page),
+      isConnected: () => true,
+      close: vi.fn(async () => undefined),
+    };
+    const launch = vi.fn().mockResolvedValue(browser);
+    const renderer = new PdfRenderer({ launch } as never);
+    await renderer.render('<html></html>');
+
+    await closeSharedPdfRenderer();
+
+    expect(browser.close).toHaveBeenCalledOnce();
   });
 });

@@ -41,6 +41,18 @@ export interface OrderFinanceSummary {
   updatedAt: string;
 }
 
+/** 订单详情页使用的轻量财务摘要，不含水单/发票明细。 */
+export interface OrderFinanceLite {
+  orderId: number;
+  receivableCents: number;
+  receivedCents: number;
+  outstandingCents: number;
+  paymentStatus: FinancePaymentStatus;
+  proofStatus: FinanceProofStatus;
+  invoiceStatus: InvoiceStatus;
+  updatedAt: string;
+}
+
 export interface PaymentProofRecord {
   id: number;
   orderId: number;
@@ -67,9 +79,16 @@ export interface FinanceReceipt {
   receivedAt: string;
   amountCents: number;
   paymentMethod: string;
+  payeeName: string;
   note: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PayeeBreakdownRow {
+  payeeName: string;
+  receiptCount: number;
+  amountCents: number;
 }
 
 export interface FinanceInvoiceFile {
@@ -110,6 +129,8 @@ export interface FinanceListFilters {
   query?: string;
   orderNo?: string;
   customerName?: string;
+  /** 按订单月份筛选，格式 YYYY-MM；为空表示不限 */
+  month?: string;
   paymentStatus?: FinancePaymentStatus;
   proofStatus?: FinanceProofStatus;
   invoiceStatus?: InvoiceStatus;
@@ -153,6 +174,11 @@ function assertCents(value: number, field: string, allowNegative = false): void 
   if (!Number.isSafeInteger(value) || (!allowNegative && value < 0)) {
     throw new Error(`${field}必须是${allowNegative ? '' : '非负'}安全整数分`);
   }
+}
+
+/** 返回 YYYY-MM 格式的月份字符串（默认当前月） */
+export function currentMonth(now: Date = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
 export function calculateOutstandingCents(receivableCents: number, receivedCents: number): number {

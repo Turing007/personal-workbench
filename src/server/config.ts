@@ -79,7 +79,8 @@ export function createConfig(projectDirectory = process.cwd()): WorkbenchConfig 
   const filesDirectory = join(dataDirectory, 'files');
 
   return {
-    host: process.env.WORKBENCH_HOST ?? '127.0.0.1',
+    // 监听所有网卡，手机连同一局域网即可访问；如只想本机使用可设 WORKBENCH_HOST=127.0.0.1。
+    host: process.env.WORKBENCH_HOST ?? '0.0.0.0',
     port: Number(process.env.WORKBENCH_PORT ?? 52341),
     projectDirectory: projectRoot,
     dataDirectory,

@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   PackageOpen,
+  PencilLine,
   Truck,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -27,6 +28,7 @@ export interface StatusCardsProps {
 
 const definitions: Array<Omit<StatusCardItem, 'count'>> = [
   { key: 'all', label: '全部订单', tone: 'var(--color-info)', toneSoft: 'var(--color-info-soft)', icon: Archive },
+  { key: 'draft', label: '草稿', tone: '#64748b', toneSoft: '#f1f5f9', icon: PencilLine },
   { key: 'pending_stock', label: '待备货', tone: '#7c3aed', toneSoft: '#f5f3ff', icon: ClipboardCheck },
   { key: 'stock_reported', label: '已备货', tone: '#0891b2', toneSoft: '#ecfeff', icon: Box },
   { key: 'pending_packing', label: '待打包', tone: '#ea580c', toneSoft: '#fff7ed', icon: PackageOpen },

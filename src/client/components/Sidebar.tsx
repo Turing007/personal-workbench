@@ -28,24 +28,32 @@ export interface SidebarProps {
   collapsed?: boolean;
   companyName?: string;
   logoUrl?: string;
+  mobileOpen?: boolean;
+  onMobileOpenChange?: (open: boolean) => void;
 }
 
+/* 按业务流程排序：报价 → 开单 → 订单 → 发货 → 收款，其后是资料库与设置 */
 const items: SidebarItem[] = [
-  { key: 'orders', label: '订单管理', icon: ClipboardList },
-  { key: 'finance', label: '财务管理', icon: WalletCards },
   { key: 'quotations', label: '报价单', icon: ReceiptText },
   { key: 'sales-documents', label: '销售开单', icon: FileSpreadsheet },
+  { key: 'orders', label: '订单管理', icon: ClipboardList },
+  { key: 'shipping', label: '发货管理', icon: PackageCheck },
+  { key: 'finance', label: '财务管理', icon: WalletCards },
   { key: 'products', label: '产品库', icon: Boxes },
   { key: 'customer-products', label: '客户产品库', icon: ShoppingBag },
-  { key: 'shipping', label: '发货管理', icon: PackageCheck },
   { key: 'settings', label: '设置', icon: Settings },
 ];
 
 export const navigationKeys: NavigationKey[] = items.map((item) => item.key);
 
-export default function Sidebar({ activeKey, onNavigate, collapsed = false, companyName = '个人工作台', logoUrl }: SidebarProps) {
+export default function Sidebar({ activeKey, onNavigate, collapsed = false, companyName = '个人工作台', logoUrl, mobileOpen: mobileOpenProp, onMobileOpenChange }: SidebarProps) {
   const [logoFailed, setLogoFailed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [internalMobileOpen, setInternalMobileOpen] = useState(false);
+  const mobileOpen = mobileOpenProp ?? internalMobileOpen;
+  const setMobileOpen = (open: boolean) => {
+    setInternalMobileOpen(open);
+    onMobileOpenChange?.(open);
+  };
   const showLogo = Boolean(logoUrl && !logoFailed);
   const navigate = (key: NavigationKey) => {
     onNavigate(key);

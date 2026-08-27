@@ -29,6 +29,6 @@ test.describe('财务管理工作台', () => {
     await expect(orderDetailButtons.first()).toBeVisible();
     await orderDetailButtons.first().click();
     await expect(page.getByRole('dialog', { name: /订单详情/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: '财务详情' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '打开财务详情' })).toBeVisible();
   });
 });

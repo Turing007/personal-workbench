@@ -70,4 +70,108 @@ describe('财务模块', () => {
     await fileStore.deleteFile(file.relativePath);
     database.close();
   });
+
+  it('修改订单金额后财务应收、未收与付款状态同步更新', async () => {
+    const { database, app } = await setup();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      payload: {
+        orderNo: '',
+        orderedAt: '2026-08-22T08:00:00.000Z',
+        recipientName: '张三',
+        recipientInfo: '深圳市宝安区',
+        amount: 100,
+        trackingNo: '',
+        paymentNote: '',
+        remark: '',
+        items: [{ name: '测试产品', sku: 'VT-0001', specification: '标准规格', packagingName: '彩盒包装', packCount: 10, quantity: 10, unitPriceCents: 1000 }],
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const orderId = Number(created.json().data.id);
+    const orderNo = String(created.json().data.order_no);
+
+    const initialList = await app.inject({ method: 'GET', url: '/api/finance/orders' });
+    expect(initialList.json().data.rows).toEqual([
+      expect.objectContaining({ orderId, receivableCents: 10000, receivedCents: 0, outstandingCents: 10000, paymentStatus: 'unpaid' }),
+    ]);
+
+    const form = new FormData();
+    form.append('file', new Blob([Buffer.from('proof')], { type: 'image/png' }), 'proof.png');
+    form.append('paymentDate', '2026-08-22');
+    form.append('amountCents', '4000');
+    form.append('paymentMethod', '银行转账');
+    form.append('transactionNo', `TX-${orderId}`);
+    const uploaded = await app.inject({ method: 'POST', url: `/api/finance/orders/${orderId}/proofs`, payload: form as unknown as BodyInit, headers: Object.fromEntries(form.entries()) });
+    expect(uploaded.statusCode).toBe(201);
+    const approved = await app.inject({ method: 'POST', url: `/api/finance/proofs/${uploaded.json().data.id}/approve`, payload: {} });
+    expect(approved.statusCode).toBe(200);
+
+    const updated = await app.inject({
+      method: 'PUT',
+      url: `/api/orders/${orderId}`,
+      payload: {
+        orderNo,
+        orderedAt: '2026-08-22T08:00:00.000Z',
+        recipientName: '张三',
+        recipientInfo: '深圳市宝安区',
+        amount: 200,
+        trackingNo: '',
+        paymentNote: '',
+        remark: '',
+        items: [{ name: '测试产品', sku: 'VT-0001', specification: '标准规格', packagingName: '彩盒包装', packCount: 10, quantity: 20, unitPriceCents: 1000 }],
+      },
+    });
+    expect(updated.statusCode).toBe(200);
+
+    const list = await app.inject({ method: 'GET', url: '/api/finance/orders' });
+    expect(list.json().data.rows).toEqual([
+      expect.objectContaining({ orderId, receivableCents: 20000, receivedCents: 4000, outstandingCents: 16000, paymentStatus: 'partial' }),
+    ]);
+    const stats = list.json().data.stats;
+    expect(stats).toMatchObject({ receivableCents: 20000, receivedCents: 4000, outstandingCents: 16000 });
+
+    const detail = await app.inject({ method: 'GET', url: `/api/orders/${orderId}/detail` });
+    expect(detail.json().data.financeSummary).toMatchObject({ receivableCents: 20000, outstandingCents: 16000, paymentStatus: 'partial' });
+    await app.close();
+    database.close();
+  });
+
+  it('审核水单可填写收款人并按收款人汇总已收金额', async () => {
+    const { database, app } = await setup();
+    const uploadAndApprove = async (amountCents: number, payeeName?: string) => {
+      const orderId = insertOrder(database, amountCents);
+      const form = new FormData();
+      form.append('file', new Blob([Buffer.from('proof')], { type: 'image/png' }), 'proof.png');
+      form.append('paymentDate', '2026-08-25');
+      form.append('amountCents', String(amountCents));
+      form.append('paymentMethod', '银行转账');
+      form.append('transactionNo', `TX-${orderId}`);
+      const uploaded = await app.inject({ method: 'POST', url: `/api/finance/orders/${orderId}/proofs`, payload: form as unknown as BodyInit, headers: Object.fromEntries(form.entries()) });
+      expect(uploaded.statusCode).toBe(201);
+      const proofId = uploaded.json().data.id;
+      const approved = await app.inject({ method: 'POST', url: `/api/finance/proofs/${proofId}/approve`, payload: payeeName === undefined ? {} : { payeeName } });
+      expect(approved.statusCode).toBe(200);
+      return proofId;
+    };
+
+    const firstProof = await uploadAndApprove(10000, '对公户');
+    const secondProof = await uploadAndApprove(4000);
+
+    expect(database.prepare('SELECT payee_name FROM finance_receipts WHERE payment_proof_id = ?').get(firstProof)?.payee_name).toBe('对公户');
+    expect(database.prepare('SELECT payee_name FROM finance_receipts WHERE payment_proof_id = ?').get(secondProof)?.payee_name).toBe('');
+
+    const breakdown = await app.inject({ method: 'GET', url: '/api/finance/receipts/by-payee' });
+    expect(breakdown.statusCode).toBe(200);
+    expect(breakdown.json().data.items).toEqual([
+      { payeeName: '对公户', receiptCount: 1, amountCents: 10000 },
+      { payeeName: '未指定', receiptCount: 1, amountCents: 4000 },
+    ]);
+
+    const overview = await app.inject({ method: 'GET', url: '/api/finance/orders' });
+    expect(overview.json().data.stats).toMatchObject({ receivedCents: 14000 });
+    await app.close();
+    database.close();
+  });
 });

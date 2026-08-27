@@ -17,8 +17,8 @@ import type {
   QuotationStatus,
 } from '../../../shared/documents';
 import type { Customer, CustomerProduct, CustomerProductSaveInput, CustomerSaveInput } from '../../../shared/customers';
-import { calculateDocumentTotals } from '../../../shared/money';
-import type { DocumentImageDraft, DocumentItemDraft, QuotationDraft as SharedQuotationDraft } from '../../documents/document-drafts';
+import { calculateDocumentTotals, resolveTierUnitPriceCents } from '../../../shared/money';
+import type { DocumentImageDraft, DocumentItemDraft, DocumentItemPriceTierDraft, QuotationDraft as SharedQuotationDraft } from '../../documents/document-drafts';
 import { createDocumentClientKey } from '../../documents/document-drafts';
 import CompanySnapshotFields from '../documents/CompanySnapshotFields';
 import DocumentColumnSettings from '../documents/DocumentColumnSettings';
@@ -92,6 +92,7 @@ function emptyLine(): QuotationLineDraft {
     image: { relativePath: null, originalName: '', mimeType: '' },
     quantity: '1',
     unitPrice: '',
+    priceTiers: [],
     remark: '',
   };
 }
@@ -100,6 +101,22 @@ function parseNonNegative(value: string): number | null {
   if (!value.trim()) return 0;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function parseTiers(item: QuotationLineDraft): Array<{ minQuantity: number; maxQuantity: number | null; unitPriceCents: number }> {
+  return (item.priceTiers ?? [])
+    .filter((tier) => tier.minQuantity.trim() || tier.maxQuantity.trim() || tier.unitPrice.trim())
+    .map((tier) => ({
+      minQuantity: Number(tier.minQuantity || 0),
+      maxQuantity: tier.maxQuantity.trim() ? Number(tier.maxQuantity) : null,
+      unitPriceCents: Math.max(0, Math.round((parseNonNegative(tier.unitPrice) ?? 0) * 100)),
+    }));
+}
+
+function lineUnitPriceCents(item: QuotationLineDraft): number {
+  const quantity = parseNonNegative(item.quantity) ?? 0;
+  const baseCents = Math.max(0, Math.round((parseNonNegative(item.unitPrice) ?? 0) * 100));
+  return resolveTierUnitPriceCents(parseTiers(item), quantity, baseCents);
 }
 
 function formatMoney(cents: number): string {
@@ -132,8 +149,23 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
   };
   const duplicateLine = (index: number) => {
     const source = value.items[index];
-    const duplicate = { ...source, id: undefined, clientKey: createDocumentClientKey('quotation-line'), image: { ...source.image, file: undefined } };
+    const duplicate = { ...source, id: undefined, clientKey: createDocumentClientKey('quotation-line'), priceTiers: (source.priceTiers ?? []).map((tier) => ({ ...tier })), image: { ...source.image, file: undefined } };
     setDraft('items', [...value.items.slice(0, index + 1), duplicate, ...value.items.slice(index + 1)]);
+  };
+  const updateTier = (lineKey: string, tierIndex: number, patch: Partial<DocumentItemPriceTierDraft>) => {
+    setDraft('items', value.items.map((item) => item.clientKey === lineKey
+      ? { ...item, priceTiers: (item.priceTiers ?? []).map((tier, index) => index === tierIndex ? { ...tier, ...patch } : tier) }
+      : item));
+  };
+  const addTier = (lineKey: string) => {
+    setDraft('items', value.items.map((item) => item.clientKey === lineKey
+      ? { ...item, priceTiers: [...(item.priceTiers ?? []), { minQuantity: '', maxQuantity: '', unitPrice: '' }] }
+      : item));
+  };
+  const removeTier = (lineKey: string, tierIndex: number) => {
+    setDraft('items', value.items.map((item) => item.clientKey === lineKey
+      ? { ...item, priceTiers: (item.priceTiers ?? []).filter((_, index) => index !== tierIndex) }
+      : item));
   };
   const selectProduct = (lineKey: string, selection: LibraryProductSelection) => {
     const { product, image } = selection;
@@ -195,7 +227,7 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
   const totals = useMemo(() => {
     const lines = value.items.map((item) => ({
       quantity: parseNonNegative(item.quantity) ?? 0,
-      unitPriceCents: Math.max(0, Math.round((parseNonNegative(item.unitPrice) ?? 0) * 100)),
+      unitPriceCents: lineUnitPriceCents(item),
     }));
     const taxRate = parseNonNegative(value.taxRate);
     try {
@@ -211,6 +243,24 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
     if (!value.items.length) return setError('至少需要一行产品'), false;
     const invalidIndex = value.items.findIndex((item) => !item.name.trim() || parseNonNegative(item.quantity) === null || parseNonNegative(item.unitPrice) === null);
     if (invalidIndex >= 0) return setError(`第 ${invalidIndex + 1} 行产品信息或金额无效`), false;
+    const invalidTier = value.items.some((item) => (item.priceTiers ?? []).some((tier) => {
+      if (!tier.minQuantity.trim() && !tier.maxQuantity.trim() && !tier.unitPrice.trim()) return false;
+      const min = Number(tier.minQuantity);
+      const max = tier.maxQuantity.trim() ? Number(tier.maxQuantity) : null;
+      const price = Number(tier.unitPrice);
+      return !Number.isFinite(min) || min < 0
+        || (max !== null && (!Number.isFinite(max) || max < min))
+        || !Number.isFinite(price) || price < 0;
+    }));
+    if (invalidTier) return setError('数量区间价填写无效：区间数量需为非负数字、截止数量不小于起始数量、单价需为非负数字'), false;
+    const nonIncreasingTier = value.items.some((item) => {
+      const mins = (item.priceTiers ?? [])
+        .filter((tier) => tier.minQuantity.trim())
+        .map((tier) => Number(tier.minQuantity))
+        .sort((a, b) => a - b);
+      return mins.some((min, index) => index > 0 && min <= mins[index - 1]);
+    });
+    if (nonIncreasingTier) return setError('数量区间的起始数量必须从小到大递增（例如 1~99、100~499、500+）'), false;
     const taxRate = parseNonNegative(value.taxRate);
     if (taxRate === null || taxRate > 100) return setError('税率必须在 0% 到 100% 之间'), false;
     setError('');
@@ -257,19 +307,19 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
         </div>
       </div>
       {showColumns && <div style={{ padding: 8, background: '#f8fafc', borderRadius: 5 }}><DocumentColumnSettings kind="quotation" value={value.displayConfig.columns} onChange={(columns) => setDraft('displayConfig', { ...value.displayConfig, columns: columns as QuotationDisplayConfig['columns'] })} /></div>}
-      <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 5 }}>
-        <table style={{ width: '100%', minWidth: 1000, borderCollapse: 'collapse' }}>
+      <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(56vh, 480px)', border: '1px solid #e2e8f0', borderRadius: 5 }}>
+        <table style={{ width: '100%', minWidth: 1290, borderCollapse: 'collapse' }}>
           <thead><tr style={{ background: '#f8fafc', color: '#64748b', textAlign: 'left' }}>
-            <th style={{ padding: 7, width: 30 }}>#</th><th style={{ padding: 7, minWidth: 170 }}>产品</th><th style={{ padding: 7, width: 120 }}>SKU</th><th style={{ padding: 7, width: 150 }}>规格</th><th style={{ padding: 7, width: 72 }}>数量</th><th style={{ padding: 7, width: 100 }}>单价</th><th style={{ padding: 7, width: 105 }}>金额</th><th style={{ padding: 7, minWidth: 130 }}>备注</th><th style={{ padding: 7, width: 154 }}>操作</th>
+            <th style={{ padding: 7, width: 30 }}>#</th><th style={{ padding: 7, minWidth: 300 }}>产品</th><th style={{ padding: 7, width: 120 }}>SKU</th><th style={{ padding: 7, width: 95 }}>规格</th><th style={{ padding: 7, width: 72 }}>数量</th><th style={{ padding: 7, width: 100 }}>单价</th><th style={{ padding: 7, width: 214 }}>数量区间价</th><th style={{ padding: 7, width: 105 }}>金额</th><th style={{ padding: 7, minWidth: 130 }}>备注</th><th style={{ padding: 7, width: 154 }}>操作</th>
           </tr></thead>
           <tbody>{value.items.map((item, index) => {
             const quantity = parseNonNegative(item.quantity);
             const unitPrice = parseNonNegative(item.unitPrice);
-            const amount = Math.round((quantity ?? 0) * (unitPrice ?? 0) * 100);
+            const amount = Math.round((quantity ?? 0) * lineUnitPriceCents(item));
             const imageUrl = item.image.previewUrl ?? (item.image.relativePath ? `/files/${item.image.relativePath}` : undefined);
             return <tr key={item.clientKey} style={{ borderTop: '1px solid #edf0f2', verticalAlign: 'top' }}>
               <td style={{ padding: 7, color: '#94a3b8' }}>{index + 1}</td>
-              <td style={{ padding: 7 }}><div style={{ display: 'grid', gridTemplateColumns: '36px minmax(0, 1fr) 28px', gap: 5, alignItems: 'center' }}>
+              <td style={{ padding: 7 }}><div style={{ display: 'grid', gridTemplateColumns: '36px minmax(0, 1fr) auto', gap: 5, alignItems: 'center' }}>
                 <button type="button" title={imageUrl ? '更换产品图片' : '添加产品图片'} onClick={() => fileInputs.current[item.clientKey]?.click()} style={{ width: 36, height: 36, padding: 0, border: '1px solid #dbe3ea', borderRadius: 4, background: '#fff', display: 'grid', placeItems: 'center', overflow: 'hidden', cursor: 'pointer' }}>{imageUrl ? <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={15} color="#94a3b8" />}</button>
                 <input value={item.name} onChange={(event) => updateLine(item.clientKey, { name: event.target.value, isTemporary: item.productId == null })} style={fieldStyle} placeholder="品名" />
                 <div style={{ display: 'inline-flex', gap: 2 }}>
@@ -290,6 +340,18 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
               <td style={{ padding: 7 }}><input value={item.specification} onChange={(event) => updateLine(item.clientKey, { specification: event.target.value })} style={fieldStyle} /></td>
               <td style={{ padding: 7 }}><input type="number" min="0" step="any" value={item.quantity} onChange={(event) => updateLine(item.clientKey, { quantity: event.target.value })} style={{ ...fieldStyle, borderColor: quantity === null ? '#dc2626' : '#dbe3ea' }} /></td>
               <td style={{ padding: 7 }}><input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(event) => updateLine(item.clientKey, { unitPrice: event.target.value })} style={{ ...fieldStyle, borderColor: unitPrice === null ? '#dc2626' : '#dbe3ea' }} /></td>
+              <td style={{ padding: 7 }}>
+                <div style={{ display: 'grid', gap: 4 }}>
+                  {(item.priceTiers ?? []).map((tier, tierIndex) => <div key={tierIndex} style={{ display: 'grid', gridTemplateColumns: '56px 12px 56px 60px 24px', gap: 4, alignItems: 'center' }}>
+                    <input type="number" min="0" step="any" aria-label="区间起始数量" placeholder="≥" value={tier.minQuantity} onChange={(event) => updateTier(item.clientKey, tierIndex, { minQuantity: event.target.value })} style={fieldStyle} />
+                    <span style={{ textAlign: 'center', color: '#94a3b8' }}>~</span>
+                    <input type="number" min="0" step="any" aria-label="区间截止数量" placeholder="不限" value={tier.maxQuantity} onChange={(event) => updateTier(item.clientKey, tierIndex, { maxQuantity: event.target.value })} style={fieldStyle} />
+                    <input type="number" min="0" step="0.01" aria-label="区间单价（元）" placeholder="单价" value={tier.unitPrice} onChange={(event) => updateTier(item.clientKey, tierIndex, { unitPrice: event.target.value })} style={fieldStyle} />
+                    <button type="button" className="icon-button danger" title="删除数量区间" onClick={() => removeTier(item.clientKey, tierIndex)}><X size={13} /></button>
+                  </div>)}
+                  <button type="button" title="添加数量区间报价" onClick={() => addTier(item.clientKey)} style={{ justifySelf: 'start', display: 'inline-flex', alignItems: 'center', gap: 3, border: '1px dashed #cbd5e1', borderRadius: 4, background: '#f8fafc', padding: '3px 8px', cursor: 'pointer', color: '#475569', fontSize: 11 }}><Plus size={12} />区间价</button>
+                </div>
+              </td>
               <td style={{ padding: 10, fontWeight: 650, whiteSpace: 'nowrap' }}>{formatMoney(amount)}</td>
               <td style={{ padding: 7 }}><input value={item.remark} onChange={(event) => updateLine(item.clientKey, { remark: event.target.value })} style={fieldStyle} /></td>
               <td style={{ padding: 7 }}><div style={{ display: 'flex', gap: 3 }}><button type="button" className="icon-button" title="上移产品行" disabled={index === 0} onClick={() => moveLine(index, -1)}><ArrowUp size={14} /></button><button type="button" className="icon-button" title="下移产品行" disabled={index === value.items.length - 1} onClick={() => moveLine(index, 1)}><ArrowDown size={14} /></button><button type="button" className="icon-button" title="复制产品行" onClick={() => duplicateLine(index)}><Copy size={14} /></button><button type="button" className="icon-button danger" title="删除产品行" onClick={() => setDraft('items', value.items.filter((line) => line.clientKey !== item.clientKey))}><Trash2 size={14} /></button></div></td>
@@ -351,7 +413,7 @@ export function createEmptyQuotationDraft(companySnapshot?: CompanySnapshot): Qu
       showContactPhone: true,
       showTax: true,
       showTaxIncludedTotal: true,
-      columns: { image: true, name: true, sku: true, specification: true, quantity: true, unitPrice: true, amount: true, remark: true },
+      columns: { image: true, name: true, sku: true, specification: true, quantity: true, unitPrice: true, tierPrice: true, amount: false, remark: true },
     },
     items: [emptyLine()],
     customFields: [],

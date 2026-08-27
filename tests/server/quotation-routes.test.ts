@@ -257,4 +257,70 @@ describe('quotation routes', () => {
     await app.close();
     database.close();
   });
+
+  it('saves quantity-tier prices, computes line amounts from the matching tier, and renders them', async () => {
+    const { app, database } = await createContext();
+    const tiered = quotationInput();
+    tiered.items = [{
+      ...tiered.items[0],
+      quantity: 120,
+      priceTiers: [
+        { minQuantity: 1, maxQuantity: 99, unitPriceCents: 1_000 },
+        { minQuantity: 100, unitPriceCents: 800 },
+      ],
+    }];
+    const created = (await app.inject({ method: 'POST', url: '/api/quotations', payload: tiered })).json().data;
+    expect(created.items[0].priceTiers).toEqual([
+      { minQuantity: 1, maxQuantity: 99, unitPriceCents: 1_000 },
+      { minQuantity: 100, maxQuantity: null, unitPriceCents: 800 },
+    ]);
+    expect(created.items[0].amountCents).toBe(96_000);
+    expect(created.subtotalCents).toBe(96_000);
+
+    const detail = (await app.inject({ method: 'GET', url: `/api/quotations/${created.id}` })).json().data;
+    expect(detail.items[0].priceTiers).toHaveLength(2);
+
+    const html = await renderQuotationHtml(detail);
+    expect(html).toContain('数量区间价');
+    expect(html).toContain('1~99');
+    expect(html).toContain('100+');
+
+    const ladder = quotationInput();
+    ladder.items = [{
+      ...ladder.items[0],
+      quantity: 50,
+      priceTiers: [
+        { minQuantity: 1, unitPriceCents: 1_000 },
+        { minQuantity: 100, unitPriceCents: 800 },
+      ],
+    }];
+    const ladderSaved = (await app.inject({ method: 'POST', url: '/api/quotations', payload: ladder })).json().data;
+    expect(ladderSaved.items[0].amountCents).toBe(50_000);
+
+    const touching = quotationInput();
+    touching.items = [{
+      ...touching.items[0],
+      quantity: 99,
+      priceTiers: [
+        { minQuantity: 1, maxQuantity: 99, unitPriceCents: 1_000 },
+        { minQuantity: 99, maxQuantity: 500, unitPriceCents: 800 },
+      ],
+    }];
+    const touchingSaved = (await app.inject({ method: 'POST', url: '/api/quotations', payload: touching })).json().data;
+    expect(touchingSaved.items[0].amountCents).toBe(79_200);
+
+    const duplicate = quotationInput();
+    duplicate.items = [{
+      ...duplicate.items[0],
+      priceTiers: [
+        { minQuantity: 1, maxQuantity: 100, unitPriceCents: 900 },
+        { minQuantity: 1, unitPriceCents: 800 },
+      ],
+    }];
+    const rejected = await app.inject({ method: 'POST', url: '/api/quotations', payload: duplicate });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json().error.field).toBe('items.0.priceTiers');
+    await app.close();
+    database.close();
+  });
 });

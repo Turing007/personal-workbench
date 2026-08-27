@@ -11,5 +11,9 @@ playwright-report/
 test-results/
 .workbench.pid
 data/*.log
+data/dev-launch-diag.txt
 .reasonix/
 .zcode/
+.workbuddy/
+.workbench-dev.pid
+.git-backup-*/

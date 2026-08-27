@@ -1,5 +1,6 @@
 import type {
   CustomerProduct,
+  CustomerProductBatchSaveInput,
   CustomerProductListFilters,
   CustomerProductSaveInput,
 } from '../../shared/customers.js';
@@ -9,7 +10,7 @@ import {
 } from '../db/customer-product-repository.js';
 import { CustomerRepository } from '../db/customer-repository.js';
 
-type CustomerProductField = keyof CustomerProductSaveInput | 'ids' | 'status';
+type CustomerProductField = keyof CustomerProductSaveInput | keyof CustomerProductBatchSaveInput | 'ids' | 'status';
 
 export class CustomerProductValidationError extends Error {
   constructor(
@@ -22,8 +23,8 @@ export class CustomerProductValidationError extends Error {
 }
 
 export class CustomerProductExistsError extends Error {
-  constructor() {
-    super('该客户已存在相同产品');
+  constructor(message = '该客户已存在相同产品') {
+    super(message);
     this.name = 'CustomerProductExistsError';
   }
 }
@@ -102,6 +103,39 @@ export class CustomerProductService {
     return this.repository.createFromSystemProduct(customerId, normalizedId, normalized);
   }
 
+  createMany(customerId: number, input: CustomerProductBatchSaveInput): CustomerProduct[] {
+    this.assertActiveCustomer(customerId);
+    const items = normalizeBatchItems(input.items);
+    if (!items.length) {
+      throw new CustomerProductValidationError('请至少添加一行产品', 'items');
+    }
+    if (items.length > MAX_CUSTOMER_PRODUCT_BATCH_SIZE) {
+      throw new CustomerProductValidationError(`单个批次最多创建 ${MAX_CUSTOMER_PRODUCT_BATCH_SIZE} 个客户产品`, 'items');
+    }
+    const template = normalizeInput({
+      systemProductId: null,
+      name: items[0].name,
+      specification: items[0].specification,
+      sku: items[0].sku,
+      packCount: input.packCount,
+      finalPriceCents: input.finalPriceCents ?? null,
+      costPriceCents: input.costPriceCents,
+      freightPerBoxCents: input.freightPerBoxCents,
+      remark: input.remark,
+      packaging: input.packaging,
+    });
+    const conflicts = items.filter((item) => this.repository.findTemporary(customerId, item.name, item.specification));
+    if (conflicts.length) {
+      throw new CustomerProductExistsError(`该客户已存在相同产品：${conflicts.map((item) => item.name).join('、')}`);
+    }
+    return this.repository.createMany(customerId, items.map((item) => ({
+      ...template,
+      name: item.name,
+      specification: item.specification,
+      sku: item.sku,
+    })));
+  }
+
   update(id: number, input: CustomerProductSaveInput): CustomerProduct | undefined {
     const existing = this.repository.getById(id);
     if (!existing) return undefined;
@@ -168,6 +202,34 @@ export class CustomerProductService {
 }
 
 export { SystemProductNotFoundError };
+
+const MAX_CUSTOMER_PRODUCT_BATCH_SIZE = 50;
+
+/** 校验并规范化批量清单：品名必填，规格/SKU 逐行取值，按"品名+规格"（不区分大小写）去除批次内重复行。 */
+function normalizeBatchItems(value: unknown): Array<{ name: string; specification: string; sku: string }> {
+  if (!Array.isArray(value)) {
+    throw new CustomerProductValidationError('产品清单必须是数组', 'items');
+  }
+  const seen = new Set<string>();
+  const items: Array<{ name: string; specification: string; sku: string }> = [];
+  value.forEach((entry, index) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new CustomerProductValidationError(`产品清单第 ${index + 1} 行无效`, 'items');
+    }
+    const row = entry as Record<string, unknown>;
+    const name = typeof row.name === 'string' ? row.name.trim() : '';
+    if (!name) {
+      throw new CustomerProductValidationError(`产品清单第 ${index + 1} 行的品名不能为空`, 'items');
+    }
+    const specification = typeof row.specification === 'string' ? row.specification.trim() : '';
+    const sku = typeof row.sku === 'string' ? row.sku.trim() : '';
+    const key = `${name.toLowerCase()}\u0000${specification.toLowerCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push({ name, specification, sku });
+  });
+  return items;
+}
 
 function normalizeInput(input: CustomerProductSaveInput): CustomerProductSaveInput {
   return {

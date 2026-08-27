@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { FileStoreError } from '../files/file-store.js';
+import { normalizeContractTemplate } from '../../shared/contract.js';
 import type { CompanyProfileInput, SettingsService } from '../services/settings-service.js';
 import {
   ApiError,
@@ -23,6 +24,16 @@ function parseCompanyProfileInput(value: unknown): CompanyProfileInput {
   if ('address' in body) input.address = optionalText(body.address, 'address', '公司地址');
   if ('defaultIssuer' in body) input.defaultIssuer = optionalText(body.defaultIssuer, 'defaultIssuer', '默认开单人');
   return input;
+}
+
+function parseContractTemplateInput(value: unknown): unknown {
+  // 这里只做校验并把错误翻译成 400；真正归一化在仓储层统一执行。
+  try {
+    normalizeContractTemplate(value);
+  } catch (error) {
+    throw new ApiError(400, 'VALIDATION_ERROR', error instanceof Error ? error.message : '合同模板数据无效');
+  }
+  return value;
 }
 
 function mapSettingsError(error: unknown): ApiError {
@@ -65,6 +76,17 @@ export async function registerSettingsRoutes(app: FastifyInstance, options: Sett
   app.put('/api/settings/company-profile', async (request, reply) =>
     safeRoute(
       () => sendSuccess(reply, options.service.updateCompanyProfile(parseCompanyProfileInput(request.body))),
+      reply,
+    ),
+  );
+
+  app.get('/api/settings/contract-template', async (_request, reply) =>
+    safeRoute(() => sendSuccess(reply, options.service.getContractTemplate()), reply),
+  );
+
+  app.put('/api/settings/contract-template', async (request, reply) =>
+    safeRoute(
+      () => sendSuccess(reply, options.service.saveContractTemplate(parseContractTemplateInput(request.body))),
       reply,
     ),
   );

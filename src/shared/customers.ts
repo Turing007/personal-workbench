@@ -59,6 +59,23 @@ export interface CustomerProductSaveInput {
   imageRelativePath?: string | null;
 }
 
+/** 批量新建客户产品：清单中每行是一个独立产品（品名必填，规格、SKU 可逐行填写），其余资料与包装为共享信息。 */
+export interface CustomerProductBatchItemInput {
+  name: string;
+  specification?: string;
+  sku?: string;
+}
+
+export interface CustomerProductBatchSaveInput {
+  items: CustomerProductBatchItemInput[];
+  packCount: number | null;
+  finalPriceCents: number | null;
+  costPriceCents?: number | null;
+  freightPerBoxCents?: number | null;
+  remark?: string;
+  packaging?: CustomerProductPackaging[];
+}
+
 export interface CustomerProductAttachment {
   id: number;
   customerProductId: number;

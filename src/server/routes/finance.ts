@@ -158,6 +158,7 @@ export async function registerFinanceRoutes(app: FastifyInstance, options: Finan
       query: query.q ?? query.query,
       orderNo: query.orderNo,
       customerName: query.customerName,
+      month: query.month,
       paymentStatus: query.paymentStatus as FinanceListFilters['paymentStatus'],
       proofStatus: query.proofStatus as FinanceListFilters['proofStatus'],
       invoiceStatus: query.invoiceStatus as FinanceListFilters['invoiceStatus'],
@@ -197,8 +198,13 @@ export async function registerFinanceRoutes(app: FastifyInstance, options: Finan
   }, reply));
 
   app.post('/api/finance/proofs/:id/approve', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(() => {
-    const detail = service.approveProof(parseId(request.params.id));
+    const body = request.body == null ? {} : asRecord(request.body);
+    const detail = service.approveProof(parseId(request.params.id), text(body.payeeName ?? body.payee_name));
     return sendSuccess(reply, { ...detail, proofs: detail.proofs.map(mapProof), invoices: detail.invoices.map(mapInvoice) });
+  }, reply));
+
+  app.get('/api/finance/receipts/by-payee', async (_request, reply) => safeRoute(() => {
+    return sendSuccess(reply, { items: service.listPayeeBreakdown() });
   }, reply));
 
   app.post('/api/finance/proofs/:id/reject', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(() => {

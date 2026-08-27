@@ -96,6 +96,17 @@ try {
   }
 
   Write-Host "Personal Workbench started: $Url"
+
+  $lanAddresses = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
+    Select-Object -ExpandProperty IPAddress -Unique)
+  if ($lanAddresses.Count -gt 0) {
+    Write-Host 'Mobile access (phone on the same Wi-Fi):'
+    foreach ($address in $lanAddresses) {
+      Write-Host "  http://${address}:$Port/"
+    }
+    Write-Host 'If the phone cannot open the address, allow TCP port 52341 in Windows Firewall.'
+  }
   Start-Process $Url
   exit 0
 } catch {

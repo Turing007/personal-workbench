@@ -1,8 +1,8 @@
-import { Download, ExternalLink, FileText, Image as ImageIcon, Package, Printer, Trash2, Truck, UserRound } from 'lucide-react';
-import { useState, useEffect, Fragment } from 'react';
-import { calculateOrderLineAmountCents } from '../../shared/order-prices';
-import { getOrderItemImages } from '../api';
+import { Download, ExternalLink, FileText, Image as ImageIcon, Package, Printer, Trash2, Truck, UserRound, Wallet } from 'lucide-react';
+import { useState } from 'react';
+import { FINANCE_PAYMENT_STATUS_LABELS, INVOICE_STATUS_LABELS, PAYMENT_PROOF_STATUS_LABELS } from '../../shared/finance';
 import Modal from './Modal';
+import OrderItemsTable from './OrderItemsTable';
 import type { OrderContractDraft, OrderDraft, OrderStatus } from './OrderForm';
 import { getOrderNextAction } from '../order-workflow';
 
@@ -14,13 +14,16 @@ export interface OrderDetailModalProps {
   onEditLabels?: (order: OrderDraft) => void;
   onPrintLabels?: (order: OrderDraft) => void;
   onDeleteContract?: (contractId: string) => Promise<void>;
+  onGenerateContract?: (order: OrderDraft) => Promise<void>;
   onDeleteOrder?: (order: OrderDraft) => void;
   onAdvanceStatus?: (order: OrderDraft, status: OrderStatus) => void;
+  onPublishOrder?: (order: OrderDraft) => void;
   onOpenShipping?: (order: OrderDraft) => void;
   onOpenFinance?: (order: OrderDraft) => void;
 }
 
 const statusLabels: Record<OrderStatus, string> = {
+  draft: '草稿',
   label_pending: '待打印箱唛',
   pending_stock: '待备货',
   stock_reported: '已备货',
@@ -47,12 +50,6 @@ function isImageContract(contract: OrderContractDraft) {
   return contract.mimeType?.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(contract.name);
 }
 
-function packagingSize(item: { outerSize?: string; length?: string; width?: string; height?: string }) {
-  if (item.outerSize) return item.outerSize;
-  const dimensions = [item.length, item.width, item.height].filter(Boolean);
-  return dimensions.length ? dimensions.join(' × ') : '未填写';
-}
-
 const requirementAttachmentLabels: Record<string, string> = {
   label: '标贴文件',
   instruction: '说明书文件',
@@ -68,22 +65,15 @@ export default function OrderDetailModal({
   onEditLabels,
   onPrintLabels,
   onDeleteContract,
+  onGenerateContract,
   onDeleteOrder,
   onAdvanceStatus,
+  onPublishOrder,
   onOpenShipping,
   onOpenFinance,
 }: OrderDetailModalProps) {
   const [deletingContractId, setDeletingContractId] = useState<string>();
-  const [itemImages, setItemImages] = useState<Record<number, Array<{ url: string; name: string; mimeType: string }>>>({});
-
-  useEffect(() => {
-    if (!open || !order?.id) return;
-    let cancelled = false;
-    void getOrderItemImages(order.id).then((result) => {
-      if (!cancelled) setItemImages(result.itemImages);
-    }).catch(() => { /* 图片加载失败不打断详情展示 */ });
-    return () => { cancelled = true; };
-  }, [open, order?.id]);
+  const [generatingContract, setGeneratingContract] = useState(false);
 
   if (!order) return null;
 
@@ -91,6 +81,9 @@ export default function OrderDetailModal({
   const contracts = order.contracts ?? [];
   const paymentProofs = order.paymentProofs ?? [];
   const labels = order.labels ?? [];
+  const financePaymentStatus = (order.financeSummary?.paymentStatus ?? 'unpaid') as keyof typeof FINANCE_PAYMENT_STATUS_LABELS;
+  const financeProofStatus = (order.financeSummary?.proofStatus ?? 'none') as keyof typeof PAYMENT_PROOF_STATUS_LABELS;
+  const financeInvoiceStatus = (order.financeSummary?.invoiceStatus ?? 'not_requested') as keyof typeof INVOICE_STATUS_LABELS;
 
   const deleteContract = async (contract: OrderContractDraft) => {
     if (!onDeleteContract || deletingContractId || !window.confirm(`确定删除合同“${contract.name}”吗？`)) return;
@@ -102,17 +95,44 @@ export default function OrderDetailModal({
     }
   };
 
+  const generateContract = async () => {
+    if (!onGenerateContract || generatingContract) return;
+    setGeneratingContract(true);
+    try {
+      await onGenerateContract(order);
+    } finally {
+      setGeneratingContract(false);
+    }
+  };
+
   return (
     <Modal open={open} title={`订单详情 · ${order.orderNo}`} onClose={onClose} width={900}>
       <div style={{ display: 'grid', gap: 16 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: 12 }}>
-          <div style={detailStyle}><span style={labelStyle}>订单状态</span><strong style={{ color: '#0f766e', fontSize: 13 }}>{order.status ? statusLabels[order.status] : '未设置'}</strong><span style={{ color: order.labelPrintedAt ? '#0f766e' : '#b45309', fontSize: 11 }}>{order.labelPrintedAt ? `箱唛已打印 · ${order.labelPrintedAt.replace('T', ' ').slice(0, 16)}` : '箱唛待打印（不影响流程）'}</span></div>
+          <div style={detailStyle}><span style={labelStyle}>订单状态</span><strong style={{ color: order.status === 'draft' ? '#64748b' : '#0f766e', fontSize: 13 }}>{order.status ? statusLabels[order.status] : '未设置'}</strong><span style={{ color: order.status === 'draft' ? '#64748b' : order.labelPrintedAt ? '#0f766e' : '#b45309', fontSize: 11 }}>{order.status === 'draft' ? '草稿订单，发布后进入正式流程' : order.labelPrintedAt ? `箱唛已打印 · ${order.labelPrintedAt.replace('T', ' ').slice(0, 16)}` : '箱唛待打印（不影响流程）'}</span></div>
           <div style={detailStyle}><span style={labelStyle}>下单时间</span><strong style={{ fontSize: 13 }}>{formatDate(order.orderedAt)}</strong></div>
           <div style={detailStyle}><span style={labelStyle}>订单金额</span><strong style={{ fontSize: 13 }}>¥ {order.amount || '0.00'}</strong></div>
           <div style={detailStyle}><span style={labelStyle}>运费</span><strong style={{ fontSize: 13 }}>¥ {((order.shippingCents ?? 0) / 100).toFixed(2)}</strong></div>
           <div style={detailStyle}><span style={labelStyle}>总箱数</span><strong style={{ fontSize: 13 }}>{order.totalBoxes ?? order.items.reduce((sum, item) => sum + item.boxes, 0)}</strong></div>
           <div style={detailStyle}><span style={labelStyle}>物流单号</span><strong style={{ fontSize: 13 }}>{order.trackingNo || '未填写'}</strong></div>
         </div>
+
+        {order.financeSummary && <section style={{ display: 'grid', gap: 8, padding: 12, background: 'linear-gradient(135deg, #e6f7f4, #fff 62%)', border: '1px solid #b7e4df', borderRadius: 7 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Wallet size={15} /><strong style={{ fontSize: 13 }}>财务摘要</strong><span style={{ color: '#94a3b8', fontSize: 11 }}>（水单审核通过后才计入已收）</span></div>
+            {onOpenFinance && <button type="button" onClick={() => onOpenFinance(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #b7e4df', borderRadius: 5, padding: '5px 10px', background: '#f0fdfa', color: '#0f766e', cursor: 'pointer', fontSize: 12 }}>打开财务详情</button>}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+            <div style={detailStyle}><span style={labelStyle}>应收金额</span><strong style={{ fontSize: 13 }}>{`¥ ${(order.financeSummary.receivableCents / 100).toFixed(2)}`}</strong></div>
+            <div style={detailStyle}><span style={labelStyle}>已收金额</span><strong style={{ fontSize: 13, color: '#15803d' }}>{`¥ ${(order.financeSummary.receivedCents / 100).toFixed(2)}`}</strong></div>
+            <div style={detailStyle}><span style={labelStyle}>未收金额</span><strong style={{ fontSize: 13, color: order.financeSummary.outstandingCents > 0 ? '#92400e' : '#15803d' }}>{`¥ ${(order.financeSummary.outstandingCents / 100).toFixed(2)}`}</strong></div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <span style={{ padding: '3px 8px', borderRadius: 999, background: '#f1f5f9', color: '#475569', fontSize: 11 }}>付款：{FINANCE_PAYMENT_STATUS_LABELS[financePaymentStatus]}</span>
+            <span style={{ padding: '3px 8px', borderRadius: 999, background: '#f1f5f9', color: '#475569', fontSize: 11 }}>水单:{' '}{PAYMENT_PROOF_STATUS_LABELS[financeProofStatus]}</span>
+            <span style={{ padding: '3px 8px', borderRadius: 999, background: '#f1f5f9', color: '#475569', fontSize: 11 }}>发票：{INVOICE_STATUS_LABELS[financeInvoiceStatus]}</span>
+          </div>
+        </section>}
 
         <section style={{ display: 'grid', gap: 9, padding: 12, background: '#f8fafc', borderRadius: 7 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><UserRound size={15} /><strong style={{ fontSize: 13 }}>客户与收件信息</strong></div>
@@ -140,33 +160,7 @@ export default function OrderDetailModal({
 
         <section style={{ display: 'grid', gap: 7 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Package size={15} /><strong style={{ fontSize: 13 }}>产品明细</strong><span style={{ color: '#94a3b8', fontSize: 11 }}>（金额按数量 × 单价自动计算）</span></div>
-          <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 6 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 760 }}>
-              <thead><tr style={{ background: '#f8fafc', textAlign: 'left', color: '#64748b' }}>{['品名', 'SKU', '规格', '数量', '装箱数', '箱数', '单价', '金额', '运费/箱', '运费小计', '备注'].map((title) => <th key={title} style={{ padding: '8px 9px', fontWeight: 600 }}>{title}</th>)}</tr></thead>
-              <tbody>
-                {order.items.length ? order.items.map((item) => {
-                  const unitPriceCents = item.unitPriceCents ?? 0;
-                  const amountCents = item.amountCents ?? calculateOrderLineAmountCents({ quantity: item.quantity, unitPriceCents });
-                  const packaging = item.packaging ?? [];
-                  const images = itemImages[Number(item.id)] ?? [];
-                  const requirementAttachments = item.customerProductAttachments ?? [];
-                  return <Fragment key={item.id}><tr style={{ borderTop: '1px solid #edf0f2', verticalAlign: 'top' }}>
-                    <td style={{ padding: '8px 9px', minWidth: 120 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{images.length ? <a href={images[0]!.url} target="_blank" rel="noreferrer" title="查看原图"><img src={images[0]!.url} alt={images[0]!.name} style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 4, cursor: 'pointer', border: '1px solid #e2e8f0', flexShrink: 0 }} /></a> : null}<span>{item.name}</span></div></td>
-                    <td style={{ padding: '8px 9px' }}>{item.sku}</td>
-                    <td style={{ padding: '8px 9px' }}>{item.specification}</td>
-                    <td style={{ padding: '8px 9px' }}>{item.quantity}</td>
-                    <td style={{ padding: '8px 9px' }}>{item.packSize}</td>
-                    <td style={{ padding: '8px 9px' }}>{item.boxes}</td>
-                    <td style={{ padding: '8px 9px', color: '#0f766e', fontWeight: 650 }}>{`¥ ${(unitPriceCents / 100).toFixed(2)}`}</td>
-                    <td style={{ padding: '8px 9px', color: '#0f766e', fontWeight: 650 }}>{`¥ ${(amountCents / 100).toFixed(2)}`}</td>
-                    <td style={{ padding: '8px 9px' }}>{`¥ ${((item.freightPerBoxCents ?? 0) / 100).toFixed(2)}`}</td>
-                    <td style={{ padding: '8px 9px' }}>{`¥ ${(((item.freightPerBoxCents ?? 0) * item.boxes) / 100).toFixed(2)}`}</td>
-                    <td style={{ padding: '8px 9px', whiteSpace: 'pre-wrap' }}>{item.remark || '—'}</td>
-                  </tr>{packaging.length > 0 && <tr style={{ borderTop: '1px dashed #e2e8f0' }}><td colSpan={11} style={{ padding: '0 9px 8px', color: '#64748b', fontSize: 11 }}>包装快照：{packaging.map((pack) => `${pack.name || '未命名包装'} · ${packagingSize(pack)} · ${pack.outerWeight || '未填写'} · ${pack.packSize} 件/箱`).join('；')}</td></tr>}</Fragment>;
-                }) : <tr><td colSpan={11} style={{ padding: 14, textAlign: 'center', color: '#94a3b8' }}>暂无产品明细</td></tr>}
-              </tbody>
-            </table>
-          </div>
+          <OrderItemsTable order={order} />
         </section>
 
         {order.items.some((item) => item.customerProductAttachments?.length) && <section style={{ display: 'none' }} />}
@@ -187,8 +181,11 @@ export default function OrderDetailModal({
         {order.remark && <div style={{ display: 'grid', gap: 4 }}><span style={labelStyle}>订单备注</span><span style={{ ...valueStyle, whiteSpace: 'pre-wrap' }}>{order.remark}</span></div>}
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 7, borderTop: '1px solid #edf0f2', paddingTop: 13 }}>
           {onEditOrder && <button type="button" onClick={() => onEditOrder(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #cbd5e1', borderRadius: 5, padding: '7px 11px', background: '#fff', cursor: 'pointer', fontSize: 12 }}>编辑订单</button>}
-          {onEditLabels && <button type="button" onClick={() => onEditLabels(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #cbd5e1', borderRadius: 5, padding: '7px 11px', background: '#fff', cursor: 'pointer', fontSize: 12 }}><ExternalLink size={14} />编辑箱唛</button>}
-          {onPrintLabels && <button type="button" onClick={() => onPrintLabels(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #0f766e', borderRadius: 5, padding: '7px 11px', background: '#f0fdfa', color: '#0f766e', cursor: 'pointer', fontSize: 12 }}><Printer size={14} />打印箱唛</button>}
+          {order.status === 'draft'
+            ? onPublishOrder && <button type="button" title="校验并发布草稿订单，进入正式流程" onClick={() => { if (window.confirm(`确定发布草稿订单“${order.orderNo}”吗？发布后将进入待备货流程。`)) onPublishOrder(order); }} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 5, padding: '7px 11px', background: '#17212b', color: '#fff', cursor: 'pointer', fontSize: 12 }}><Truck size={14} />发布订单</button>
+            : <>{onEditLabels && <button type="button" onClick={() => onEditLabels(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #cbd5e1', borderRadius: 5, padding: '7px 11px', background: '#fff', cursor: 'pointer', fontSize: 12 }}><ExternalLink size={14} />编辑箱唛</button>}
+          {onPrintLabels && <button type="button" onClick={() => onPrintLabels(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #0f766e', borderRadius: 5, padding: '7px 11px', background: '#f0fdfa', color: '#0f766e', cursor: 'pointer', fontSize: 12 }}><Printer size={14} />打印箱唛</button>}</>}
+          {onGenerateContract && <button type="button" onClick={() => { void generateContract(); }} disabled={generatingContract} title="按设置中的合同模板生成购销合同 PDF，并归档到订单附件" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #0f766e', borderRadius: 5, padding: '7px 11px', background: '#f0fdfa', color: '#0f766e', cursor: generatingContract ? 'wait' : 'pointer', opacity: generatingContract ? 0.6 : 1, fontSize: 12 }}><FileText size={14} />{generatingContract ? '正在生成…' : '生成购销合同'}</button>}
           {onOpenFinance && <button type="button" onClick={() => onOpenFinance(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #b7e4df', borderRadius: 5, padding: '7px 11px', background: '#e6f7f4', color: '#0f766e', cursor: 'pointer', fontSize: 12 }}>财务详情</button>}
           {onDeleteOrder && <button type="button" onClick={() => onDeleteOrder(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #fecaca', borderRadius: 5, padding: '7px 11px', background: '#fff', color: '#b91c1c', cursor: 'pointer', fontSize: 12 }}><Trash2 size={14} />删除订单</button>}
           {nextAction?.kind === 'advance' && onAdvanceStatus && <button type="button" onClick={() => onAdvanceStatus(order, nextAction.target)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 5, padding: '7px 11px', background: '#17212b', color: '#fff', cursor: 'pointer', fontSize: 12 }}><Truck size={14} />{nextAction.label}</button>}{nextAction?.kind === 'shipping' && onOpenShipping && <button type="button" onClick={() => onOpenShipping(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 5, padding: '7px 11px', background: '#17212b', color: '#fff', cursor: 'pointer', fontSize: 12 }}><Truck size={14} />{nextAction.label}</button>}

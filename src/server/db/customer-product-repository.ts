@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { withTransaction } from './connection.js';
 import {
   getCustomerProductCompletionStatus,
   type CustomerProduct,
@@ -194,6 +195,40 @@ export class CustomerProductRepository {
       timestamp,
     );
     return this.getById(Number(result.lastInsertRowid))!;
+  }
+
+  /** 在单个事务里创建多条客户产品，任一条失败则整体回滚。 */
+  createMany(customerId: number, inputs: CustomerProductSaveInput[]): CustomerProduct[] {
+    return withTransaction(this.database, (database) => {
+      const insert = database.prepare(`
+        INSERT INTO customer_products
+          (customer_id, system_product_id, name, specification, sku, pack_count,
+           final_price_cents, cost_price_cents, freight_per_box_cents, packaging_json, image_relative_path, remark, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const created: CustomerProduct[] = [];
+      for (const input of inputs) {
+        const timestamp = new Date().toISOString();
+        const result = insert.run(
+          customerId,
+          input.systemProductId ?? null,
+          input.name,
+          input.specification,
+          input.sku,
+          input.packCount,
+          input.finalPriceCents,
+          input.costPriceCents ?? null,
+          input.freightPerBoxCents ?? null,
+          JSON.stringify(input.packaging ?? []),
+          input.imageRelativePath ?? null,
+          input.remark ?? '',
+          timestamp,
+          timestamp,
+        );
+        created.push(this.getById(Number(result.lastInsertRowid))!);
+      }
+      return created;
+    });
   }
 
   update(id: number, input: CustomerProductSaveInput): CustomerProduct | undefined {

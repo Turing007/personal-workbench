@@ -9,6 +9,15 @@ export const ORDER_STATUS_SEQUENCE = [
 
 export type OrderStatus = (typeof ORDER_STATUS_SEQUENCE)[number];
 
+/**
+ * 订单草稿状态：不属于正式流程序列，仅允许 draft → pending_stock（发布）。
+ * 独立定义避免把 draft 混入 ORDER_STATUS_SEQUENCE，影响既有索引推导逻辑。
+ */
+export const ORDER_DRAFT_STATUS = 'draft' as const;
+
+/** 全量订单状态（含草稿），供类型与展示标签使用。 */
+export type AnyOrderStatus = OrderStatus | typeof ORDER_DRAFT_STATUS;
+
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   label_pending: '待打印箱唛',
   pending_stock: '待备货',
@@ -17,6 +26,15 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   ship_pending: '待发货',
   shipped: '已发货',
 };
+
+export const ORDER_STATUS_LABELS_WITH_DRAFT: Record<AnyOrderStatus, string> = {
+  ...ORDER_STATUS_LABELS,
+  [ORDER_DRAFT_STATUS]: '草稿',
+};
+
+export function isDraftStatus(status: unknown): status is typeof ORDER_DRAFT_STATUS {
+  return status === ORDER_DRAFT_STATUS;
+}
 
 export type TransitionReason = 'manual' | 'first-print';
 
@@ -111,6 +129,16 @@ export function canTransition(
     return Boolean(context.trackingNo?.trim());
   }
   return true;
+}
+
+/**
+ * 草稿订单的合法流转：仅允许发布（draft → pending_stock）。
+ */
+export function canDraftTransition(
+  from: AnyOrderStatus,
+  to: OrderStatus,
+): boolean {
+  return from === ORDER_DRAFT_STATUS && to === 'pending_stock';
 }
 
 export function getTransitionError(

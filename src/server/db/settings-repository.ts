@@ -1,7 +1,13 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { CompanySnapshot } from '../../shared/documents.js';
+import {
+  cloneDefaultContractTemplate,
+  normalizeContractTemplate,
+  type ContractTemplate,
+} from '../../shared/contract.js';
 
 const COMPANY_PROFILE_KEY = 'company_profile';
+const CONTRACT_TEMPLATE_KEY = 'contract_template';
 
 export const EMPTY_COMPANY_PROFILE: CompanySnapshot = {
   name: '',
@@ -43,6 +49,28 @@ export class SettingsRepository {
       )
       .run(COMPANY_PROFILE_KEY, JSON.stringify(profile), new Date().toISOString());
     return profile;
+  }
+
+  getContractTemplate(): ContractTemplate {
+    const row = this.database.prepare('SELECT value FROM settings WHERE key = ?').get(CONTRACT_TEMPLATE_KEY) as { value?: string } | undefined;
+    if (!row?.value) return cloneDefaultContractTemplate();
+    try {
+      return normalizeContractTemplate(JSON.parse(row.value));
+    } catch {
+      return cloneDefaultContractTemplate();
+    }
+  }
+
+  saveContractTemplate(value: unknown): ContractTemplate {
+    // 统一走共享层归一化，非法数据在这里直接抛错，避免写入脏模板。
+    const template = normalizeContractTemplate(value);
+    this.database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(CONTRACT_TEMPLATE_KEY, JSON.stringify(template), new Date().toISOString());
+    return template;
   }
 }
 

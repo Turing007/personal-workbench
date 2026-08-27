@@ -1,4 +1,5 @@
 import {
+  Copy,
   Edit3,
   Plus,
   RefreshCw,
@@ -9,7 +10,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Customer, CustomerProduct, CustomerProductSaveInput } from '../../shared/customers';
+import type { Customer, CustomerProduct, CustomerProductBatchSaveInput, CustomerProductSaveInput } from '../../shared/customers';
 import type { ProductRecord } from '../components/ProductEditor';
 import {
   createCustomer,
@@ -19,6 +20,7 @@ import {
   getCustomerProducts,
   importCustomerProductWithInput,
   saveCustomerProduct,
+  saveCustomerProductsBatch,
   setCustomerActive,
   updateCustomer,
   updateCustomerProduct,
@@ -30,6 +32,7 @@ import {
 } from '../api';
 import CustomerEditorModal from '../components/customers/CustomerEditorModal';
 import CustomerProductEditorModal, { type CustomerProductAttachmentDraft } from '../components/customer-products/CustomerProductEditorModal';
+import { cloneCustomerProductForNew } from '../customer-product-copy';
 import type { ToastKind } from '../components/OrderForm';
 
 export interface CustomerProductsPageProps {
@@ -72,6 +75,8 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
   const [customerBusy, setCustomerBusy] = useState(false);
   const [productEditorOpen, setProductEditorOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<CustomerProduct | null>(null);
+  const [copyDraft, setCopyDraft] = useState<CustomerProduct | null>(null);
+  const [copySource, setCopySource] = useState<CustomerProduct | null>(null);
   const appliedInitialCustomerId = useRef<number | undefined>(undefined);
 
   const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId) ?? null;
@@ -158,6 +163,31 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
     }
   };
 
+  const closeProductEditor = () => {
+    setProductEditorOpen(false);
+    setEditingProduct(null);
+    setCopyDraft(null);
+    setCopySource(null);
+  };
+  const openNewProduct = () => {
+    setEditingProduct(null);
+    setCopyDraft(null);
+    setCopySource(null);
+    setProductEditorOpen(true);
+  };
+  const openEditProduct = (product: CustomerProduct) => {
+    setCopyDraft(null);
+    setCopySource(null);
+    setEditingProduct(product);
+    setProductEditorOpen(true);
+  };
+  const openCopyProduct = (product: CustomerProduct) => {
+    setEditingProduct(null);
+    setCopyDraft(cloneCustomerProductForNew(product));
+    setCopySource(product);
+    setProductEditorOpen(true);
+  };
+
   const saveProduct = async (input: CustomerProductSaveInput, imageFile?: File, attachmentDrafts: CustomerProductAttachmentDraft[] = []) => {
     if (!selectedCustomerId) throw new Error('请先选择客户');
     const previousAttachments = editingProduct?.attachments ?? [];
@@ -183,12 +213,35 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
         await updateCustomerProductAttachmentCategory(saved.id, previous.id, attachment.category);
       }
     }
-    setProductEditorOpen(false);
-    setEditingProduct(null);
+    closeProductEditor();
     await loadCustomerProducts(selectedCustomerId);
     await onCustomersChanged();
-    onNotify(editingProduct ? '客户产品已更新' : '客户产品已添加', 'success');
+    onNotify(editingProduct ? '客户产品已更新' : copyDraft ? '已复制为新客户产品' : '客户产品已添加', 'success');
     return undefined;
+  };
+
+  const saveProductsBatch = async (input: CustomerProductBatchSaveInput, imageFiles: Array<File | undefined> = []) => {
+    if (!selectedCustomerId) throw new Error('请先选择客户');
+    const created = await saveCustomerProductsBatch(selectedCustomerId, input);
+    let failedImages = 0;
+    for (let index = 0; index < created.length; index += 1) {
+      const file = imageFiles[index];
+      if (!file) continue;
+      try {
+        await uploadCustomerProductImage(created[index].id, file);
+      } catch {
+        failedImages += 1;
+      }
+    }
+    closeProductEditor();
+    await loadCustomerProducts(selectedCustomerId);
+    await onCustomersChanged();
+    onNotify(
+      failedImages
+        ? `已批量创建 ${created.length} 个客户产品，${failedImages} 张图片上传失败，可在编辑中重新上传`
+        : `已批量创建 ${created.length} 个客户产品`,
+      failedImages ? 'error' : 'success',
+    );
   };
 
   const removeProduct = async (product: CustomerProduct) => {
@@ -251,7 +304,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
           <div className="search-control customer-product-search"><Search size={15} /><input disabled={!selectedCustomer} value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="按品名、客户 SKU、规格筛选" /></div>
           <select aria-label="客户产品状态筛选" className="toolbar-select customer-product-status-select" disabled={!selectedCustomer} value={productStatus} onChange={(event) => setProductStatus(event.target.value as typeof productStatus)}><option value="all">全部状态</option><option value="complete">已完善</option><option value="incomplete">待完善</option></select>
           {selectedProductIds.length > 0 && <button className="button button-secondary" type="button" onClick={() => { void batchRemoveProducts(); }}><Trash2 size={14} />删除选中</button>}
-          <button className="button button-primary" type="button" disabled={!activeCustomer} title="添加客户新品" onClick={() => { setEditingProduct(null); setProductEditorOpen(true); }}><Plus size={14} />添加客户产品</button>
+          <button className="button button-primary" type="button" disabled={!activeCustomer} title="添加客户新品" onClick={openNewProduct}><Plus size={14} />添加客户产品</button>
         </div>
         <div className="table-scroll"><table className="data-table customer-products-table" style={{ minWidth: 1240 }}><thead><tr><th style={{ width: 34 }}><input type="checkbox" disabled={!products.length} checked={allVisibleSelected} onChange={() => setSelectedProductIds(allVisibleSelected ? [] : products.map((product) => product.id))} aria-label="全选客户产品" /></th>{['状态', '图片', '品名', '规格', '客户 SKU', '包装', '装箱数', '成本价', '最近报价', '最终价格', '运费/箱', '备注', '附件', '来源', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead><tbody>
           {products.map((product) => <tr key={product.id}>
@@ -259,7 +312,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
             <td><span style={{ display: 'inline-block', padding: '3px 6px', borderRadius: 4, background: product.completionStatus === 'complete' ? '#ecfdf5' : '#fff7ed', color: product.completionStatus === 'complete' ? '#047857' : '#b45309', whiteSpace: 'nowrap' }}>{product.completionStatus === 'complete' ? '已完善' : '待完善'}</span></td>
             <td>{product.imageRelativePath ? <img src={imageUrl(product.imageRelativePath)} alt={product.name} style={{ width: 42, height: 36, objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: 4 }} /> : <span style={{ color: '#cbd5e1' }}>-</span>}</td>
             <td className="strong-cell">{product.name || '-'}</td><td>{product.specification || '-'}</td><td>{product.sku || <span style={{ color: '#b45309' }}>待完善</span>}</td><td>{product.packaging.length ? product.packaging[0].name || `${product.packaging.length} 种` : '-'}</td><td>{product.packCount == null ? <span style={{ color: '#b45309' }}>待完善</span> : `${product.packCount} 个/箱`}</td><td>{money(product.costPriceCents)}</td><td>{money(product.latestQuoteCents)}</td><td className="strong-cell">{money(product.finalPriceCents)}</td><td>{product.freightPerBoxCents == null ? <span style={{ color: '#b45309' }}>未设置</span> : `¥${(product.freightPerBoxCents / 100).toFixed(2)}/箱`}</td><td className="customer-product-remark-cell" title={product.remark}>{product.remark || '-'}</td><td>{product.attachments.length ? `${product.attachments.length} 个` : '-'}</td><td><span style={{ color: product.systemProductId == null ? '#64748b' : '#0f766e' }}>{product.systemProductId == null ? '临时添加' : '系统产品库'}</span></td><td style={{ color: '#64748b', whiteSpace: 'nowrap' }}>{formatTime(product.updatedAt)}</td>
-            <td><div className="row-actions"><button className="icon-button" type="button" title="编辑客户产品" onClick={() => { setEditingProduct(product); setProductEditorOpen(true); }}><Edit3 size={14} /></button><button className="icon-button danger" type="button" title="删除客户产品" onClick={() => { void removeProduct(product); }}><Trash2 size={14} /></button></div></td>
+            <td><div className="row-actions"><button className="icon-button" type="button" title="编辑客户产品" onClick={() => openEditProduct(product)}><Edit3 size={14} /></button><button className="icon-button" type="button" title={activeCustomer ? '复制为客户新品' : '客户已停用，不能复制新品'} disabled={!activeCustomer} onClick={() => openCopyProduct(product)}><Copy size={14} /></button><button className="icon-button danger" type="button" title="删除客户产品" onClick={() => { void removeProduct(product); }}><Trash2 size={14} /></button></div></td>
           </tr>)}
         </tbody></table></div>
         {(loading || productLoading) && <div className="table-state">正在加载客户产品...</div>}
@@ -268,6 +321,6 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
     </div>
 
     <CustomerEditorModal open={customerEditorOpen} customer={editingCustomer} busy={customerBusy} onClose={() => { setCustomerEditorOpen(false); setEditingCustomer(null); }} onSave={saveCustomerProfile} />
-    <CustomerProductEditorModal open={productEditorOpen} product={editingProduct} systemProducts={systemProducts} enableAttachments onClose={() => { setProductEditorOpen(false); setEditingProduct(null); }} onSave={saveProduct} />
+    <CustomerProductEditorModal open={productEditorOpen} product={editingProduct ?? copyDraft} copyMode={Boolean(copyDraft)} copyFromImageURL={copySource?.imageRelativePath ? `/files/${copySource.imageRelativePath}` : null} systemProducts={systemProducts} enableAttachments onClose={closeProductEditor} onSave={saveProduct} onBatchSave={saveProductsBatch} />
   </div>;
 }

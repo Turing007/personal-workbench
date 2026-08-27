@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS orders (
   remark TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending_stock',
   label_printed_at TEXT,
+  source_sales_document_id INTEGER REFERENCES sales_documents(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -266,6 +267,7 @@ CREATE TABLE IF NOT EXISTS finance_receipts (
   received_at TEXT NOT NULL,
   amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
   payment_method TEXT NOT NULL DEFAULT '',
+  payee_name TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
@@ -422,6 +424,7 @@ CREATE TABLE IF NOT EXISTS quotation_items (
   quantity REAL NOT NULL CHECK (quantity >= 0),
   unit_price_cents INTEGER NOT NULL DEFAULT 0 CHECK (unit_price_cents >= 0),
   amount_cents INTEGER NOT NULL DEFAULT 0 CHECK (amount_cents >= 0),
+  tiered_prices_json TEXT,
   remark TEXT NOT NULL DEFAULT '',
   image_relative_path TEXT,
   image_original_name TEXT NOT NULL DEFAULT '',
@@ -565,7 +568,8 @@ type MigratedTable =
   | 'quotation_items'
   | 'sales_documents'
   | 'sales_document_items'
-  | 'payment_proofs';
+  | 'payment_proofs'
+  | 'finance_receipts';
 
 interface MigrationPreflight {
   schemaVersion: number;
@@ -607,9 +611,9 @@ function preflightMigration(database: DatabaseSync): MigrationPreflight {
     );
   }
   const parsedSchemaVersion = normalizedSchemaVersion === '' ? 0 : Number(normalizedSchemaVersion);
-  if (parsedSchemaVersion > 14) {
+  if (parsedSchemaVersion > 17) {
     throw new Error(
-      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version 14`,
+      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version 17`,
     );
   }
 
@@ -961,6 +965,26 @@ function migrateVersionFourteen(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '14', now);
 }
 
+function migrateVersionFifteen(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'orders', 'source_sales_document_id', 'INTEGER REFERENCES sales_documents(id) ON DELETE SET NULL');
+  database.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_source_sales_document_id
+      ON orders(source_sales_document_id)
+      WHERE source_sales_document_id IS NOT NULL;
+  `);
+  upsertSetting(database, 'schema_version', '15', now);
+}
+
+function migrateVersionSixteen(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'quotation_items', 'tiered_prices_json', 'TEXT');
+  upsertSetting(database, 'schema_version', '16', now);
+}
+
+function migrateVersionSeventeen(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'finance_receipts', 'payee_name', "TEXT NOT NULL DEFAULT ''");
+  upsertSetting(database, 'schema_version', '17', now);
+}
+
 export function migrateDatabase(database: DatabaseSync): void {
   if (database.isTransaction) {
     throw new Error('Database migration cannot run inside an active transaction');
@@ -1001,6 +1025,9 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionTwelve(transactionDatabase, now);
     migrateVersionThirteen(transactionDatabase, now);
     migrateVersionFourteen(transactionDatabase, now);
+    migrateVersionFifteen(transactionDatabase, now);
+    migrateVersionSixteen(transactionDatabase, now);
+    migrateVersionSeventeen(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

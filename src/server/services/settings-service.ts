@@ -2,6 +2,7 @@ import type { CompanySnapshot } from '../../shared/documents.js';
 import type { Readable } from 'node:stream';
 import { EMPTY_COMPANY_PROFILE, SettingsRepository } from '../db/settings-repository.js';
 import { FileStore } from '../files/file-store.js';
+import type { ContractTemplate } from '../../shared/contract.js';
 
 export type CompanyProfileInput = Partial<Pick<CompanySnapshot, 'name' | 'phone' | 'address' | 'defaultIssuer'>>;
 
@@ -22,6 +23,14 @@ export class SettingsService {
       ...input,
       logoRelativePath: current.logoRelativePath,
     });
+  }
+
+  getContractTemplate(): ContractTemplate {
+    return this.settings.getContractTemplate();
+  }
+
+  saveContractTemplate(value: unknown): ContractTemplate {
+    return this.settings.saveContractTemplate(value);
   }
 
   async replaceCompanyLogo(

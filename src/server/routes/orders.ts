@@ -20,12 +20,18 @@ import {
 import { normalizeOrderStatus, OrderCustomerError, OrderService } from '../services/order-service.js';
 import { orderDateKey } from '../services/order-number-service.js';
 import { assertMultipartFileNotTruncated, contractPartsOptions, imagePartsOptions } from './multipart-limits.js';
+import { PdfRenderer, PdfRendererError } from '../documents/pdf-renderer.js';
+import { renderContractHtml } from '../documents/contract-template.js';
+import type { SettingsRepository } from '../db/settings-repository.js';
 
 interface OrderRouteOptions {
   repositories: DatabaseRepositories;
   customerRepository?: CustomerRepository;
   customerProductRepository?: CustomerProductRepository;
   fileStore?: FileStore;
+  service?: OrderService;
+  settingsRepository?: SettingsRepository;
+  pdfRenderer?: Pick<PdfRenderer, 'render'>;
 }
 
 interface IdParams {
@@ -100,17 +106,22 @@ function parseRequirementAttachments(value: unknown, field: string) {
 function parseOrderInput(value: unknown, options: { allowEmptyOrderNo?: boolean } = {}): CreateOrderInput {
   const body = asRecord(value);
   if (!Array.isArray(body.items)) throw new ApiError(400, 'VALIDATION_ERROR', '订单至少需要一行产品', 'items');
+  // 草稿允许收件人暂缺，由服务层在发布时强制校验。
+  const isDraft = body.isDraft === true || body.isDraft === 'true';
   return {
     orderNo: options.allowEmptyOrderNo
       ? optionalText(body.orderNo, 'orderNo', '订单号')
       : requiredText(body.orderNo, 'orderNo', '订单号'),
     orderedAt: requiredText(body.orderedAt, 'orderedAt', '下单时间'),
+    isDraft: isDraft || undefined,
     customerId: optionalId(body.customerId, 'customerId'),
     customerName: optionalText(body.customerName, 'customerName', '客户名称'),
     customerContactName: optionalText(body.customerContactName, 'customerContactName', '客户联系人'),
     customerContactPhone: optionalText(body.customerContactPhone, 'customerContactPhone', '客户联系电话'),
     customerShippingInfo: optionalText(body.customerShippingInfo, 'customerShippingInfo', '客户常用收件信息'),
-    recipientName: requiredText(body.recipientName, 'recipientName', '收件人名称'),
+    recipientName: isDraft
+      ? optionalText(body.recipientName, 'recipientName', '收件人名称')
+      : requiredText(body.recipientName, 'recipientName', '收件人名称'),
     recipientInfo: optionalText(body.recipientInfo, 'recipientInfo', '收件信息'),
     amount: finiteNumber(body.amount, 'amount', '订单金额'),
     amountCents: optionalCents(body.amountCents, 'amountCents', '订单金额'),
@@ -142,6 +153,7 @@ function parseOrderInput(value: unknown, options: { allowEmptyOrderNo?: boolean 
 
 function serviceError(error: unknown): ApiError {
   if (error instanceof ApiError) return error;
+  if (error instanceof PdfRendererError) return new ApiError(500, error.code, error.message);
   if (error instanceof FileStoreError) {
     if (error.code === 'UNSUPPORTED_CONTRACT_TYPE') return new ApiError(415, error.code, error.message, 'file');
     if (error.code === 'CONTRACT_TOO_LARGE') return new ApiError(413, error.code, error.message, 'file');
@@ -156,7 +168,7 @@ function serviceError(error: unknown): ApiError {
     const status = error.code === 'CUSTOMER_NOT_FOUND' || error.code === 'CUSTOMER_PRODUCT_NOT_FOUND' ? 404 : 409;
     return new ApiError(status, error.code, error.message);
   }
-  if (/UNIQUE constraint failed|CHECK constraint failed/i.test(message)) return mapDatabaseError(error);
+  if (/UNIQUE constraint failed|CHECK constraint failed|FOREIGN KEY constraint failed/i.test(message)) return mapDatabaseError(error);
   return new ApiError(400, 'VALIDATION_ERROR', message || '请求数据无效');
 }
 
@@ -217,7 +229,9 @@ function multipartFieldText(part: MultipartFile, fieldName: string): string {
 }
 
 export async function registerOrderRoutes(app: FastifyInstance, options: OrderRouteOptions): Promise<void> {
-  const service = new OrderService(options);
+  const service = options.service ?? new OrderService(options);
+  const pdfRenderer = options.pdfRenderer ?? new PdfRenderer();
+  const settingsRepository = options.settingsRepository;
 
   app.get('/api/orders', async (request, reply) =>
     safeRoute(() => {
@@ -272,6 +286,32 @@ export async function registerOrderRoutes(app: FastifyInstance, options: OrderRo
     }, reply),
   );
 
+  app.post('/api/orders/:id/contracts/generate', async (request: FastifyRequest<{ Params: IdParams }>, reply) =>
+    safeRoute(async () => {
+      if (!settingsRepository) throw new ApiError(500, 'SETTINGS_UNAVAILABLE', '设置存储尚未配置');
+      const orderId = parseId(request.params.id);
+      const detail = options.repositories.getOrderDetail(orderId);
+      if (!detail) throw new ApiError(404, 'NOT_FOUND', '订单不存在');
+      // getOrderDetail 返回扁平结构：订单列在顶层，items/labels 等作为附加字段。
+      const orderRow = detail as unknown as Record<string, unknown>;
+      // 按当前模板渲染合同 PDF，并归档一份到订单合同附件，方便后续重复下载。
+      const html = renderContractHtml({
+        template: settingsRepository.getContractTemplate(),
+        company: settingsRepository.getCompanyProfile(),
+        order: orderRow,
+        items: detail.items as Record<string, unknown>[],
+        generatedAt: new Date().toISOString(),
+      });
+      const pdf = await pdfRenderer.render(html);
+      const filename = `${String(orderRow.order_no ?? orderId)}-购销合同.pdf`;
+      await service.uploadContract(orderId, Readable.from(pdf), filename, 'application/pdf');
+      return reply
+        .header('Content-Type', 'application/pdf')
+        .header('Content-Disposition', `attachment; filename="contract-${orderId}.pdf"`)
+        .send(pdf);
+    }, reply),
+  );
+
   app.get('/api/orders/:id', async (request: FastifyRequest<{ Params: IdParams }>, reply) =>
     safeRoute(() => {
       const order = service.get(parseId(request.params.id));
@@ -285,12 +325,24 @@ export async function registerOrderRoutes(app: FastifyInstance, options: OrderRo
       const orderId = parseId(request.params.id);
       const order = service.get(orderId);
       if (!order) throw new ApiError(404, 'NOT_FOUND', '订单不存在');
+      const financeRow = options.repositories.getOrderFinanceSummary(orderId) as Record<string, unknown> | undefined;
+      const financeSummary = financeRow ? {
+        orderId: Number(financeRow.order_id),
+        receivableCents: Number(financeRow.receivable_cents ?? 0),
+        receivedCents: Number(financeRow.received_cents ?? 0),
+        outstandingCents: Number(financeRow.outstanding_cents ?? 0),
+        paymentStatus: String(financeRow.payment_status ?? 'unpaid'),
+        proofStatus: String(financeRow.proof_status ?? 'none'),
+        invoiceStatus: String(financeRow.invoice_status ?? 'not_requested'),
+        updatedAt: String(financeRow.updated_at ?? ''),
+      } : null;
       return sendSuccess(reply, {
         ...order,
         paymentNote: String((order as Record<string, unknown>).payment_note ?? ''),
         paymentProofs: mapProofs(service.listPaymentProofs(orderId)),
         contracts: mapContracts(service.listContracts(orderId)),
         orderDetailImages: mapOrderDetailImages(service.listOrderDetailImages(orderId)),
+        financeSummary,
       });
     }, reply),
   );
@@ -298,6 +350,15 @@ export async function registerOrderRoutes(app: FastifyInstance, options: OrderRo
   app.put('/api/orders/:id', async (request: FastifyRequest<{ Params: IdParams }>, reply) =>
     safeRoute(async () => {
       const order = await service.update(parseId(request.params.id), parseOrderInput(request.body));
+      if (!order) throw new ApiError(404, 'NOT_FOUND', '订单不存在');
+      return sendSuccess(reply, order);
+    }, reply),
+  );
+
+  // 发布草稿订单：draft → pending_stock，进入正式流程。
+  app.post('/api/orders/:id/publish', async (request: FastifyRequest<{ Params: IdParams }>, reply) =>
+    safeRoute(() => {
+      const order = service.publish(parseId(request.params.id));
       if (!order) throw new ApiError(404, 'NOT_FOUND', '订单不存在');
       return sendSuccess(reply, order);
     }, reply),

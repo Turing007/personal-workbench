@@ -16,6 +16,12 @@ export interface DocumentImageDraft {
   file?: File;
 }
 
+export interface DocumentItemPriceTierDraft {
+  minQuantity: string;
+  maxQuantity: string;
+  unitPrice: string;
+}
+
 export interface DocumentItemDraft {
   clientKey: string;
   id?: number;
@@ -30,7 +36,9 @@ export interface DocumentItemDraft {
   packCount: string;
   quantity: string;
   unitPrice: string;
+  priceTiers?: DocumentItemPriceTierDraft[];
   remark: string;
+  freightPerBoxCents?: number | null;
   image: DocumentImageDraft;
 }
 
@@ -107,6 +115,7 @@ export interface DocumentItemPayload {
   imageMimeType: string;
   quantity: number;
   unitPriceCents: number;
+  priceTiers?: Array<{ minQuantity: number; maxQuantity: number | null; unitPriceCents: number }>;
   remark: string;
   sortOrder: number;
 }
@@ -190,6 +199,13 @@ function itemToDraft(
   prefix: string,
 ): DocumentItemDraft {
   const productCode = 'productCode' in item ? String(item.productCode ?? item.sku) : item.sku;
+  const priceTiers = 'priceTiers' in item && Array.isArray(item.priceTiers)
+    ? item.priceTiers.map((tier) => ({
+      minQuantity: String(tier.minQuantity),
+      maxQuantity: tier.maxQuantity == null ? '' : String(tier.maxQuantity),
+      unitPrice: centsToInput(tier.unitPriceCents),
+    }))
+    : undefined;
   return {
     clientKey: `${prefix}-${item.id}`,
     id: item.id,
@@ -204,6 +220,7 @@ function itemToDraft(
     packCount: item.packCount == null ? '' : String(item.packCount),
     quantity: String(item.quantity),
     unitPrice: centsToInput(item.unitPriceCents),
+    ...(priceTiers ? { priceTiers } : {}),
     remark: item.remark,
     image: {
       relativePath: item.imageRelativePath,
@@ -275,7 +292,18 @@ export function salesDocumentDetailToDraft(detail: SalesDocumentDetail): SalesDo
   };
 }
 
+function draftTiersToPayload(item: DocumentItemDraft): DocumentItemPayload['priceTiers'] {
+  const tiers = item.priceTiers?.filter((tier) => tier.minQuantity.trim() || tier.maxQuantity.trim() || tier.unitPrice.trim());
+  if (!tiers?.length) return undefined;
+  return tiers.map((tier) => ({
+    minQuantity: Number(tier.minQuantity || 0),
+    maxQuantity: tier.maxQuantity.trim() ? Number(tier.maxQuantity) : null,
+    unitPriceCents: inputToCents(tier.unitPrice),
+  }));
+}
+
 function itemToPayload(item: DocumentItemDraft, sortOrder: number): DocumentItemPayload {
+  const priceTiers = draftTiersToPayload(item);
   return {
     clientKey: item.clientKey,
     ...(item.id == null ? {} : { id: item.id }),
@@ -293,6 +321,7 @@ function itemToPayload(item: DocumentItemDraft, sortOrder: number): DocumentItem
     imageMimeType: item.image.file?.type || item.image.mimeType,
     quantity: Number(item.quantity || 0),
     unitPriceCents: inputToCents(item.unitPrice),
+    ...(priceTiers ? { priceTiers } : {}),
     remark: item.remark.trim(),
     sortOrder,
   };

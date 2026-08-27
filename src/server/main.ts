@@ -5,6 +5,7 @@ import { config } from './config.js';
 import { closeDatabase, openDatabase } from './db/connection.js';
 import { migrateDatabase } from './db/migrate.js';
 import { FileStore } from './files/file-store.js';
+import { closeSharedPdfRenderer } from './documents/pdf-renderer.js';
 import { createApp } from './app.js';
 
 export async function startServer() {
@@ -47,7 +48,10 @@ export async function startServer() {
     logger: true,
   });
 
-  app.addHook('onClose', async () => closeDatabase(database));
+  app.addHook('onClose', async () => {
+    await closeSharedPdfRenderer();
+    closeDatabase(database);
+  });
   await app.listen({ host: config.host, port: config.port });
   return { app, database };
 }

@@ -1,4 +1,4 @@
-import type { PaymentStatus } from './documents.js';
+import type { PaymentStatus, QuotationPriceTier } from './documents.js';
 
 const CENTS_PER_YUAN = 100;
 const BASIS_POINTS_PER_RATE = 10_000;
@@ -38,6 +38,25 @@ export function calculateLineAmountCents(quantity: number, unitPriceCents: numbe
   const amount = Math.round(quantity * unitPriceCents);
   assertNonNegativeCents(amount, '行金额');
   return amount;
+}
+
+export function resolveTierUnitPriceCents(
+  tiers: readonly QuotationPriceTier[] | undefined,
+  quantity: number,
+  fallbackCents: number,
+): number {
+  if (!tiers?.length) return fallbackCents;
+  assertQuantity(quantity);
+  assertNonNegativeCents(fallbackCents, '单价');
+  const sorted = [...tiers].sort((a, b) => a.minQuantity - b.minQuantity);
+  let matched: number | undefined;
+  // 阶梯价语义：数量达到更高门槛时按更高门槛的区间价，未命中任何区间时用基础单价。
+  for (const tier of sorted) {
+    if (quantity >= tier.minQuantity && (tier.maxQuantity == null || quantity <= tier.maxQuantity)) {
+      matched = tier.unitPriceCents;
+    }
+  }
+  return matched ?? fallbackCents;
 }
 
 export function calculateDocumentTotals(

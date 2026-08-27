@@ -49,6 +49,13 @@ async function readDataUrl(
   return `data:${mimeTypeForPath(relativePath)};base64,${content.toString('base64')}`;
 }
 
+function companyTitleFontSize(name: string): string {
+  // 页头中间列约 112mm，21pt 全角字符约 7.4mm 宽，最多容纳 15 个全角字符；超出时按比例缩小
+  const units = [...name].reduce((sum, char) => sum + (/[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(char) ? 1 : 0.55), 0);
+  if (units <= 15) return '21pt';
+  return `${Math.max(13, Math.round((15 / units) * 210) / 10)}pt`;
+}
+
 function detailRow(label: string, value: string, className = ''): string {
   if (!value) return '';
   return `<div class="detail ${className}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
@@ -62,6 +69,21 @@ function renderCustomFields(
     .filter((field) => field.placement === placement && (field.label || field.value))
     .map((field) => detailRow(field.label, field.value))
     .join('');
+}
+
+function formatQuantity(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toLocaleString('zh-CN', { maximumFractionDigits: 4 });
+}
+
+function renderPriceTiers(item: QuotationItem): string {
+  const tiers = [...(item.priceTiers ?? [])].sort((a, b) => a.minQuantity - b.minQuantity);
+  if (!tiers.length) return '<span class="image-placeholder">-</span>';
+  return tiers.map((tier) => {
+    const range = tier.maxQuantity == null
+      ? `${formatQuantity(tier.minQuantity)}+`
+      : `${formatQuantity(tier.minQuantity)}~${formatQuantity(tier.maxQuantity)}`;
+    return `<div class="tier-row"><span>${escapeHtml(range)}</span><strong>${escapeHtml(formatMoney(tier.unitPriceCents))}</strong></div>`;
+  }).join('');
 }
 
 const columns: readonly ColumnDefinition[] = [
@@ -78,6 +100,7 @@ const columns: readonly ColumnDefinition[] = [
   { key: 'specification', label: '规格', render: (item) => escapeHtml(item.specification) },
   { key: 'quantity', label: '数量', className: 'number', render: (item) => escapeHtml(item.quantity) },
   { key: 'unitPrice', label: '单价', className: 'money', render: (item) => escapeHtml(formatMoney(item.unitPriceCents)) },
+  { key: 'tierPrice', label: '数量区间价', className: 'tier-price', render: (item) => renderPriceTiers(item) },
   { key: 'amount', label: '金额', className: 'money', render: (item) => escapeHtml(formatMoney(item.amountCents)) },
   { key: 'remark', label: '备注', render: (item) => escapeHtml(item.remark) },
 ];
@@ -137,12 +160,11 @@ export async function renderQuotationHtml(
     @page { size: A4 portrait; margin: 10mm; }
     * { box-sizing: border-box; }
     body { margin: 0; color: #15181c; font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; font-size: 10.5pt; }
-    header { display: grid; grid-template-columns: 28mm 1fr auto; align-items: center; min-height: 25mm; border-bottom: 2px solid #1f2933; padding-bottom: 4mm; }
+    header { display: grid; grid-template-columns: 28mm 1fr 50mm; align-items: center; min-height: 25mm; border-bottom: 2px solid #1f2933; padding-bottom: 4mm; }
     .logo { width: 24mm; max-height: 20mm; object-fit: contain; justify-self: start; }
     .company { text-align: center; }
-    .company h1 { margin: 0; font-size: 21pt; font-weight: 700; }
+    .company h1 { margin: 0; font-size: ${companyTitleFontSize(quotation.companySnapshot.name)}; font-weight: 700; white-space: nowrap; }
     .company h2 { margin: 2mm 0 0; font-size: 16pt; }
-    .company-meta { min-width: 42mm; }
     .meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.8mm 7mm; padding: 4mm 0; }
     .detail { display: grid; grid-template-columns: auto 1fr; gap: 2mm; min-width: 0; }
     .detail span { color: #58616c; white-space: nowrap; }
@@ -154,6 +176,10 @@ export async function renderQuotationHtml(
     th, td { border: 1px solid #68717b; padding: 2.1mm 1.7mm; vertical-align: middle; overflow-wrap: anywhere; }
     th { background: #eef1f3; font-size: 9.5pt; white-space: nowrap; }
     td.number, td.money, th.number, th.money { text-align: right; white-space: nowrap; }
+    .tier-price .tier-row { display: flex; justify-content: space-between; gap: 3mm; white-space: nowrap; }
+    .tier-price .tier-row + .tier-row { margin-top: 0.8mm; }
+    .tier-price .tier-row span { color: #58616c; }
+    .tier-price .tier-row strong { font-weight: 600; }
     .image-column { width: 22mm; text-align: center; }
     .product-image { display: block; width: 18mm; height: 18mm; margin: auto; object-fit: contain; }
     .image-placeholder { color: #9aa1a8; }

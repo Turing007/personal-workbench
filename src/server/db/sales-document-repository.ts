@@ -179,6 +179,8 @@ function mapSummary(row: SqlRow): SalesDocumentSummary {
     totalCents: numberValue(row, 'total_cents'),
     outstandingCents: numberValue(row, 'outstanding_cents'),
     updatedAt: rowValue(row, 'updated_at'),
+    generatedOrderId: row.generated_order_id == null ? null : numberValue(row, 'generated_order_id'),
+    generatedOrderNo: row.generated_order_no == null ? null : rowValue(row, 'generated_order_no'),
   };
 }
 
@@ -262,11 +264,22 @@ export class SalesDocumentRepository {
     const total = Number(this.database.prepare(`SELECT COUNT(*) AS count FROM sales_documents s ${where}`).get(...values)?.count ?? 0);
     const rows = this.database.prepare(
       `SELECT s.id, s.number, s.document_status, s.payment_status, s.document_date, s.customer_id, s.customer_name,
-        s.purchase_order_no, s.total_cents, s.outstanding_cents, s.updated_at
-       FROM sales_documents s ${where}
+        s.purchase_order_no, s.total_cents, s.outstanding_cents, s.updated_at,
+        o.id AS generated_order_id, o.order_no AS generated_order_no
+       FROM sales_documents s
+       LEFT JOIN orders o ON o.source_sales_document_id = s.id
+       ${where}
        ORDER BY s.updated_at DESC, s.id DESC LIMIT ? OFFSET ?`,
     ).all(...values, pageSize, (page - 1) * pageSize) as unknown as SqlRow[];
     return { rows: rows.map(mapSummary), total, page, pageSize };
+  }
+
+  findGeneratedOrder(salesDocumentId: number): { id: number; orderNo: string } | undefined {
+    const row = this.database.prepare(
+      'SELECT id, order_no FROM orders WHERE source_sales_document_id = ?',
+    ).get(salesDocumentId) as SqlRow | undefined;
+    if (!row) return undefined;
+    return { id: numberValue(row, 'id'), orderNo: rowValue(row, 'order_no') };
   }
 
   get(id: number): SalesDocumentRepositoryDetail | undefined {

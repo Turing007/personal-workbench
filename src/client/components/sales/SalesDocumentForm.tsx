@@ -7,6 +7,7 @@ import type {
 } from '../../../shared/documents';
 import type { Customer, CustomerProduct, CustomerProductSaveInput, CustomerSaveInput } from '../../../shared/customers';
 import { calculateDocumentTotals } from '../../../shared/money';
+import { calculateFreightCents } from '../../../shared/order-prices';
 import type { DocumentItemDraft, SalesDocumentDraft } from '../../documents/document-drafts';
 import { createDocumentClientKey } from '../../documents/document-drafts';
 import CompanySnapshotFields from '../documents/CompanySnapshotFields';
@@ -70,6 +71,7 @@ function emptyLine(isTemporary = true): DocumentItemDraft {
     quantity: '1',
     unitPrice: '',
     remark: '',
+    freightPerBoxCents: null,
     image: { relativePath: null, originalName: '', mimeType: '' },
   };
 }
@@ -78,6 +80,20 @@ function parseNonNegative(value: string): number | null {
   if (!value.trim()) return 0;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function lineBoxCount(quantity: number, packCount: string): number | null {
+  const boxes = Number(packCount);
+  if (quantity <= 0 || !Number.isFinite(boxes) || boxes < 1) return null;
+  return Math.ceil(quantity / boxes);
+}
+
+function lineFreightCents(item: DocumentItemDraft): { boxes: number; freightPerBoxCents: number } | null {
+  if (item.freightPerBoxCents == null) return null;
+  const quantity = parseNonNegative(item.quantity);
+  if (quantity === null) return null;
+  const boxes = lineBoxCount(quantity, item.packCount);
+  return boxes == null ? null : { boxes, freightPerBoxCents: item.freightPerBoxCents };
 }
 
 export function createEmptySalesDocumentDraft(company?: CompanySnapshot): SalesDocumentDraft {
@@ -107,7 +123,7 @@ export function createEmptySalesDocumentDraft(company?: CompanySnapshot): SalesD
       showLogo: Boolean(companySnapshot.logoRelativePath),
       showCompanyPhone: Boolean(companySnapshot.phone),
       showCompanyAddress: Boolean(companySnapshot.address),
-      showProductImages: false,
+      showProductImages: true,
       columns: { ...DEFAULT_SALES_COLUMNS },
     },
     sourceQuotationId: null,
@@ -142,6 +158,19 @@ export default function SalesDocumentForm({
   useEffect(() => () => {
     localImageUrls.forEach((url) => URL.revokeObjectURL(url));
   }, [localImageUrls]);
+
+  const [shippingOverridden, setShippingOverridden] = useState(Boolean(value.id));
+  const calculatedFreightCents = useMemo(() => {
+    const freightLines = value.items
+      .map(lineFreightCents)
+      .filter((line): line is { boxes: number; freightPerBoxCents: number } => line != null);
+    if (!freightLines.length) return 0;
+    try {
+      return calculateFreightCents(freightLines);
+    } catch {
+      return 0;
+    }
+  }, [value.items]);
 
   const setDraft = <K extends keyof SalesDocumentDraft>(key: K, next: SalesDocumentDraft[K]) => {
     onChange({ ...value, [key]: next });
@@ -199,6 +228,7 @@ export default function SalesDocumentForm({
       specification: product.specification,
       packCount: product.packCount == null ? '' : String(product.packCount),
       unitPrice: product.finalPriceCents == null ? '' : (product.finalPriceCents / 100).toFixed(2),
+      freightPerBoxCents: product.freightPerBoxCents ?? null,
       image: { relativePath: product.imageRelativePath, originalName: '', mimeType: '' },
     };
     const replaceEmpty = value.items.length === 1 && !value.items[0].name.trim();
@@ -214,7 +244,7 @@ export default function SalesDocumentForm({
       contactName: customer?.contactName ?? '',
       contactPhone: customer?.contactPhone ?? '',
       customerAddress: customer?.shippingInfo ?? '',
-      items: value.items.map((item) => ({ ...item, customerProductId: null })),
+      items: value.items.map((item) => ({ ...item, customerProductId: null, freightPerBoxCents: null })),
     });
     setShowCustomerProductPicker(false);
   };
@@ -243,6 +273,13 @@ export default function SalesDocumentForm({
 
   const receivedCents = receipts.reduce((sum, receipt) => sum + receipt.amountCents, 0);
   const outstandingCents = Math.max(0, totals.totalCents - receivedCents);
+
+  useEffect(() => {
+    if (shippingOverridden) return;
+    const current = Math.round((parseNonNegative(value.shipping) ?? 0) * 100);
+    if (current !== calculatedFreightCents) setDraft('shipping', (calculatedFreightCents / 100).toFixed(2));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calculatedFreightCents, shippingOverridden, value.shipping]);
 
   const validate = (): boolean => {
     if (!value.documentDate) return setError('请选择开单日期'), false;
@@ -312,7 +349,7 @@ export default function SalesDocumentForm({
         showProductImages={value.displayConfig.showProductImages}
         onShowProductImagesChange={(showProductImages) => setDraft('displayConfig', { ...value.displayConfig, showProductImages })}
       />
-      <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 5 }}>
+      <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(56vh, 480px)', border: '1px solid #e2e8f0', borderRadius: 5 }}>
         <table style={{ width: '100%', minWidth: 1060, borderCollapse: 'collapse' }}>
           <thead><tr style={{ background: '#f8fafc', color: '#64748b', textAlign: 'left' }}>
             <th style={{ padding: 7, width: 30 }}>#</th><th style={{ padding: 7, width: 120 }}>产品代码</th><th style={{ padding: 7, minWidth: 180 }}>产品名称</th><th style={{ padding: 7, width: 150 }}>规格</th><th style={{ padding: 7, width: 76 }}>数量</th><th style={{ padding: 7, width: 105 }}>单价</th><th style={{ padding: 7, width: 110 }}>金额</th><th style={{ padding: 7, minWidth: 140 }}>备注</th><th style={{ padding: 7, width: 145 }}>操作</th>
@@ -350,7 +387,7 @@ export default function SalesDocumentForm({
     <section style={{ ...sectionStyle, gridTemplateColumns: 'minmax(0, 1fr) 300px', alignItems: 'start' }}>
       <label>备注<textarea rows={4} value={value.remark} onChange={(event) => setDraft('remark', event.target.value)} style={{ ...fieldStyle, resize: 'vertical' }} placeholder="交货、付款或其他说明" /></label>
       <div style={{ display: 'grid', gap: 8 }}>
-        <label style={{ display: 'grid', gridTemplateColumns: '1fr 100px', alignItems: 'center', gap: 8 }}>运费<input type="number" min="0" step="0.01" value={value.shipping} onChange={(event) => setDraft('shipping', event.target.value)} style={fieldStyle} /></label>
+        <label style={{ display: 'grid', gridTemplateColumns: '1fr 100px', alignItems: 'center', gap: 8 }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>运费{!shippingOverridden && <small style={{ color: '#0f766e' }}>自动</small>}</span><input type="number" min="0" step="0.01" value={value.shipping} onChange={(event) => { setShippingOverridden(true); setDraft('shipping', event.target.value); }} style={fieldStyle} /></label>
         <label style={{ display: 'grid', gridTemplateColumns: '1fr 100px', alignItems: 'center', gap: 8 }}>税率（%）<input type="number" min="0" max="100" step="0.01" value={value.taxRate} onChange={(event) => setDraft('taxRate', event.target.value)} style={fieldStyle} /></label>
         <DocumentTotals {...totals} receivedCents={receivedCents} outstandingCents={outstandingCents} showOutstanding />
       </div>

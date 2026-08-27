@@ -556,3 +556,118 @@ describe('按客户维护的产品 API', () => {
     })).statusCode).toBe(404);
   });
 });
+
+describe('批量创建客户产品', () => {
+  it('清单逐行创建产品，品名/规格/SKU 按行生效，其余资料与包装共享', async () => {
+    const { app } = await testApp();
+    const customer = await createCustomer(app, '批量客户');
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/customers/${customer.id}/products/batch`,
+      payload: {
+        items: [
+          { name: '迷你风扇-白色', specification: 'USB款', sku: 'WS-01' },
+          { name: ' 迷你风扇-黑色 ', specification: '', sku: '' },
+          { name: '迷你风扇-白色', specification: 'USB款' },
+        ],
+        packCount: 24,
+        finalPriceCents: 25900,
+        costPriceCents: 15000,
+        freightPerBoxCents: 800,
+        remark: '彩盒包装',
+        packaging: [
+          { id: 'pack-1', name: '彩盒', innerSize: '10x8x5', innerWeight: 120, outerSize: '50x40x30', outerWeight: 5200, packCount: 24 },
+        ],
+      },
+    });
+    expect(response.statusCode).toBe(201);
+    const items = response.json().data.items as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({
+      name: '迷你风扇-白色',
+      specification: 'USB款',
+      sku: 'WS-01',
+      customerId: customer.id,
+      systemProductId: null,
+      packCount: 24,
+      finalPriceCents: 25900,
+      costPriceCents: 15000,
+      freightPerBoxCents: 800,
+      remark: '彩盒包装',
+      completionStatus: 'complete',
+    });
+    expect(items[1]).toMatchObject({
+      name: '迷你风扇-黑色',
+      specification: '',
+      sku: '',
+      completionStatus: 'incomplete',
+    });
+    for (const item of items) {
+      expect(item.packaging).toEqual([expect.objectContaining({ name: '彩盒', packCount: 24 })]);
+    }
+    expect(items[0].id).not.toBe(items[1].id);
+
+    const list = await app.inject({ method: 'GET', url: `/api/customers/${customer.id}/products` });
+    expect(list.json().data.items).toHaveLength(2);
+  });
+
+  it('任一行与既有产品重名时整体拒绝，不落库', async () => {
+    const { app } = await testApp();
+    const customer = await createCustomer(app, '查重客户');
+    await createCustomerProduct(app, customer.id, productInput('电钻', '20V'));
+    const duplicate = await app.inject({
+      method: 'POST',
+      url: `/api/customers/${customer.id}/products/batch`,
+      payload: {
+        items: [
+          { name: '新品A', specification: '' },
+          { name: '电钻', specification: '20V' },
+        ],
+        packCount: null,
+        finalPriceCents: null,
+      },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json().error.code).toBe('CUSTOMER_PRODUCT_EXISTS');
+    expect(duplicate.json().error.message).toContain('电钻');
+
+    const list = await app.inject({ method: 'GET', url: `/api/customers/${customer.id}/products` });
+    expect(list.json().data.items).toHaveLength(1);
+  });
+
+  it('空清单、缺失品名的行、超上限和停用客户均被拒绝', async () => {
+    const { app } = await testApp();
+    const customer = await createCustomer(app, '边界客户');
+    const url = `/api/customers/${customer.id}/products/batch`;
+
+    const empty = await app.inject({ method: 'POST', url, payload: { items: [], packCount: null, finalPriceCents: null } });
+    expect(empty.statusCode).toBe(400);
+    expect(empty.json().error).toMatchObject({ code: 'VALIDATION_ERROR', field: 'items' });
+
+    const missingName = await app.inject({
+      method: 'POST',
+      url,
+      payload: { items: [{ name: '新品A' }, { specification: '没有品名' }], packCount: null, finalPriceCents: null },
+    });
+    expect(missingName.statusCode).toBe(400);
+    expect(missingName.json().error).toMatchObject({ code: 'VALIDATION_ERROR', field: 'items' });
+    expect(missingName.json().error.message).toContain('第 2 行');
+
+    const tooMany = await app.inject({
+      method: 'POST',
+      url,
+      payload: {
+        items: Array.from({ length: 51 }, (_, index) => ({ name: `产品${index + 1}` })),
+        packCount: null,
+        finalPriceCents: null,
+      },
+    });
+    expect(tooMany.statusCode).toBe(400);
+    expect(tooMany.json().error.field).toBe('items');
+
+    await app.inject({ method: 'PATCH', url: `/api/customers/${customer.id}/status`, payload: { isActive: false } });
+    const inactive = await app.inject({ method: 'POST', url, payload: { items: [{ name: '新品' }], packCount: null, finalPriceCents: null } });
+    expect(inactive.statusCode).toBe(409);
+    expect(inactive.json().error.code).toBe('CUSTOMER_INACTIVE');
+  });
+});

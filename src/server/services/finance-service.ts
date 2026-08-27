@@ -10,6 +10,7 @@ import type {
   OrderFinanceSummary,
   PaymentProofRecord,
   PaymentProofStatus,
+  PayeeBreakdownRow,
 } from '../../shared/finance.js';
 
 function now(): string { return new Date().toISOString(); }
@@ -113,6 +114,10 @@ export class FinanceService {
     return this.repository.list(filters);
   }
 
+  listPayeeBreakdown(): PayeeBreakdownRow[] {
+    return this.repository.listPayeeBreakdown();
+  }
+
   get(orderId: number): FinanceDetail | undefined {
     const order = this.repository.getOrder(orderId);
     if (!order) return undefined;
@@ -150,6 +155,7 @@ export class FinanceService {
       return proof;
     } catch (error) {
       await this.fileStore.deleteFile(stored.relativePath).catch(() => undefined);
+      if (/UNIQUE constraint failed.*payment_proofs/i.test(String(error))) throw new FinanceServiceError('PROOF_TRANSACTION_EXISTS', '该流水号已在此订单使用');
       throw error;
     }
   }
@@ -178,7 +184,7 @@ export class FinanceService {
     }
   }
 
-  approveProof(proofId: number): FinanceDetail {
+  approveProof(proofId: number, payeeName = ''): FinanceDetail {
     const proof = this.repository.getProof(proofId);
     if (!proof) throw new FinanceServiceError('PROOF_NOT_FOUND', '水单不存在');
     if (proof.status === 'approved') return this.get(proof.orderId)!;
@@ -193,7 +199,7 @@ export class FinanceService {
         const existing = this.repository.findReceiptByProof(database, proofId);
         if (!existing) {
           this.repository.insertReceipt(database, {
-            orderId: Number(current.order_id), paymentProofId: proofId, receivedAt: String(current.payment_date), amountCents: Number(current.amount_cents), paymentMethod: String(current.payment_method ?? ''), note: String(current.note ?? ''), createdAt: now(), updatedAt: now(),
+            orderId: Number(current.order_id), paymentProofId: proofId, receivedAt: String(current.payment_date), amountCents: Number(current.amount_cents), paymentMethod: String(current.payment_method ?? ''), payeeName: normalizeText(payeeName), note: String(current.note ?? ''), createdAt: now(), updatedAt: now(),
           });
         }
         this.repository.setProofReview(database, proofId, 'approved', '', now());
