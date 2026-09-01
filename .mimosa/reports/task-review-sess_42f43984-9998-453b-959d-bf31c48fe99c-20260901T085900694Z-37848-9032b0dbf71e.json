@@ -1,0 +1,829 @@
+{
+  "schema_version": "mimosa-task-review/v2",
+  "run_id": "20260901T085900694Z-37848-9032b0dbf71e",
+  "run_status": "inconclusive",
+  "errors": [
+    {
+      "stage": "scan",
+      "target": "src/shared/documents.ts",
+      "reason": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "src/shared/money.ts",
+      "reason": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "src/server/db/migrate.ts",
+      "reason": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "src/server/db/quotation-repository.ts",
+      "reason": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "src/server/services/quotation-service.ts",
+      "reason": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "src/server/documents/quotation-template.ts",
+      "reason": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "src/client/documents/document-drafts.ts",
+      "reason": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "src/client/components/quotations/quotation-lines.ts",
+      "reason": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "src/client/components/quotations/QuotationItemsModal.tsx",
+      "reason": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "src/client/components/documents/DocumentColumnSettings.tsx",
+      "reason": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "src/client/components/quotations/QuotationForm.tsx",
+      "reason": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "src/server/services/sales-document-service.ts",
+      "reason": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "tests/server/database.test.ts",
+      "reason": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "tests/server/quotations.test.ts",
+      "reason": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT"
+    },
+    {
+      "stage": "scan",
+      "target": "tests/server/quotation-routes.test.ts",
+      "reason": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT"
+    }
+  ],
+  "coverage": {
+    "schema_version": "mimosa-hook-coverage/v1",
+    "status": "partial",
+    "scope": "hook_observed_diff",
+    "baseline": {
+      "complete": true,
+      "captured_files": 157,
+      "candidate_limit": 5000,
+      "truncated": false,
+      "enumeration_error_count": 0,
+      "snapshot_error_count": 0,
+      "compensated_target_count": 15
+    },
+    "change_tracking": {
+      "touched_observed": 15,
+      "touched_retained": 15,
+      "truncated": false,
+      "bash_mutation": false,
+      "bash_discovered": 0,
+      "bash_discovery_limit": 80,
+      "bash_discovery_truncated": false
+    },
+    "candidates": {
+      "eligible_files": 15,
+      "selected_files": 15,
+      "limit": 20,
+      "truncated": false
+    },
+    "scanning": {
+      "required_files": 15,
+      "scanned_files": 0,
+      "skipped_files": 0,
+      "failed_files": 15,
+      "project_checks_required": 0,
+      "project_checks_completed": 0
+    },
+    "notification": {
+      "eligible_findings": 0,
+      "detailed_findings": 0,
+      "detail_limit": 3,
+      "truncated": false
+    },
+    "reason_counts": {
+      "scanner_failed": 15,
+      "project_check_failed": 15
+    },
+    "reasons": [
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "src/shared/documents.ts",
+        "detail": "spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "src/shared/money.ts",
+        "detail": "spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "src/server/db/migrate.ts",
+        "detail": "spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "src/server/db/quotation-repository.ts",
+        "detail": "spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "src/server/services/quotation-service.ts",
+        "detail": "spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "src/server/documents/quotation-template.ts",
+        "detail": "spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "src/client/documents/document-drafts.ts",
+        "detail": "spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "src/client/components/quotations/quotation-lines.ts",
+        "detail": "spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "src/client/components/quotations/QuotationItemsModal.tsx",
+        "detail": "spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "src/client/components/documents/DocumentColumnSettings.tsx",
+        "detail": "spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "src/client/components/quotations/QuotationForm.tsx",
+        "detail": "spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "src/server/services/sales-document-service.ts",
+        "detail": "spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "tests/server/database.test.ts",
+        "detail": "spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "tests/server/quotations.test.ts",
+        "detail": "spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "scanner_failed",
+        "stage": "scan",
+        "target": "tests/server/quotation-routes.test.ts",
+        "detail": "spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "src/shared/documents.ts",
+        "detail": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "src/shared/money.ts",
+        "detail": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "src/server/db/migrate.ts",
+        "detail": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "src/server/db/quotation-repository.ts",
+        "detail": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "src/server/services/quotation-service.ts",
+        "detail": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "src/server/documents/quotation-template.ts",
+        "detail": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "src/client/documents/document-drafts.ts",
+        "detail": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "src/client/components/quotations/quotation-lines.ts",
+        "detail": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "src/client/components/quotations/QuotationItemsModal.tsx",
+        "detail": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "src/client/components/documents/DocumentColumnSettings.tsx",
+        "detail": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "src/client/components/quotations/QuotationForm.tsx",
+        "detail": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "src/server/services/sales-document-service.ts",
+        "detail": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "tests/server/database.test.ts",
+        "detail": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "tests/server/quotations.test.ts",
+        "detail": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      },
+      {
+        "code": "project_check_failed",
+        "stage": "scan",
+        "target": "tests/server/quotation-routes.test.ts",
+        "detail": "scanner_failed: spawnSync C:\\Program Files\\nodejs\\node.exe ETIMEDOUT",
+        "affects_completion": true
+      }
+    ],
+    "reasons_truncated": false
+  },
+  "generated_at": "2026-09-01T08:59:00.694Z",
+  "session_id": "sess_42f43984-9998-453b-959d-bf31c48fe99c",
+  "target": ".",
+  "revision": "b35103e9094ca71c9cd021c47b182470a1f9242c",
+  "rules_version": "unavailable",
+  "diff_hash": "efdb34ebf4c63753ee3bab4328b298c1d1d922a1213dbe676fffe8108136283b",
+  "diff": {
+    "algorithm": "sha256",
+    "changed_file_count": 15,
+    "changed_files": [
+      {
+        "file": "src/client/components/documents/DocumentColumnSettings.tsx",
+        "ranges": [
+          {
+            "start": 6,
+            "end": 6
+          },
+          {
+            "start": 18,
+            "end": 18
+          }
+        ],
+        "before_hash": "9a703337844d501f526bfa2de551b19da95154ec3e882e484d46b6ef1779cb04",
+        "after_hash": "7f15c93fc2f13ebd612f08e90139603494282cc75a9bbae9a53274b2b1d1603a"
+      },
+      {
+        "file": "src/client/components/quotations/quotation-lines.ts",
+        "ranges": [
+          {
+            "start": 46,
+            "end": 46
+          },
+          {
+            "start": 48,
+            "end": 48
+          },
+          {
+            "start": 58,
+            "end": 59
+          }
+        ],
+        "before_hash": "692a9d014be54c6f99d35ddef195386248c71704d7876e613612ab816bc01cf6",
+        "after_hash": "6c4839c874fad1642174b40f0f8350360c2c3d81be62e56d3b23d03c7885ce7c"
+      },
+      {
+        "file": "src/client/components/quotations/QuotationForm.tsx",
+        "ranges": [
+          {
+            "start": 12,
+            "end": 12
+          },
+          {
+            "start": 15,
+            "end": 15
+          },
+          {
+            "start": 17,
+            "end": 17
+          },
+          {
+            "start": 104,
+            "end": 108
+          },
+          {
+            "start": 112,
+            "end": 112
+          },
+          {
+            "start": 145,
+            "end": 152
+          },
+          {
+            "start": 176,
+            "end": 176
+          },
+          {
+            "start": 191,
+            "end": 192
+          },
+          {
+            "start": 250,
+            "end": 250
+          },
+          {
+            "start": 262,
+            "end": 262
+          }
+        ],
+        "before_hash": "3bf52f19a2d9335a51c7a28feddd7d1c12b2c47db3b2445e8fc5f3363c6db335",
+        "after_hash": "6f5b0d5906938a75b704569635fa1f143e2526628f4428ed4b3ab32c22065557"
+      },
+      {
+        "file": "src/client/components/quotations/QuotationItemsModal.tsx",
+        "ranges": [
+          {
+            "start": 24,
+            "end": 24
+          },
+          {
+            "start": 232,
+            "end": 232
+          },
+          {
+            "start": 234,
+            "end": 234
+          }
+        ],
+        "before_hash": "5807ad251b2cbbbff0ff23da8eee5f07bfb91a03bfb27371f625eded5fed2d6f",
+        "after_hash": "53d10fdb75e2b19fd499f402ed05e9df1909775f58843087d67fef6c48afb2b9"
+      },
+      {
+        "file": "src/client/documents/document-drafts.ts",
+        "ranges": [
+          {
+            "start": 6,
+            "end": 6
+          },
+          {
+            "start": 66,
+            "end": 66
+          },
+          {
+            "start": 136,
+            "end": 136
+          },
+          {
+            "start": 224,
+            "end": 224
+          },
+          {
+            "start": 259,
+            "end": 259
+          },
+          {
+            "start": 346,
+            "end": 346
+          },
+          {
+            "start": 349,
+            "end": 350
+          }
+        ],
+        "before_hash": "20c220e9d291430f91b468811835429de637c0d6a9fb28c5e8a68d1cfaa45baf",
+        "after_hash": "3b1357d4673714789842a576348e64ac0137f12f191b251dfd14739e06aad81e"
+      },
+      {
+        "file": "src/server/db/migrate.ts",
+        "ranges": [
+          {
+            "start": 403,
+            "end": 403
+          },
+          {
+            "start": 615,
+            "end": 615
+          },
+          {
+            "start": 617,
+            "end": 617
+          },
+          {
+            "start": 989,
+            "end": 993
+          },
+          {
+            "start": 1037,
+            "end": 1037
+          }
+        ],
+        "before_hash": "8e59890aaa9de8f8daeb3c6c73eb53696be44e8ca21bc3c3d419e5c4ea8e063e",
+        "after_hash": "f409ea6d26175f9573d6cf7791acc0e934cdb6492770a44965d33b9736eeb3c7"
+      },
+      {
+        "file": "src/server/db/quotation-repository.ts",
+        "ranges": [
+          {
+            "start": 8,
+            "end": 8
+          },
+          {
+            "start": 49,
+            "end": 49
+          },
+          {
+            "start": 82,
+            "end": 82
+          },
+          {
+            "start": 237,
+            "end": 237
+          },
+          {
+            "start": 253,
+            "end": 253
+          },
+          {
+            "start": 265,
+            "end": 265
+          },
+          {
+            "start": 267,
+            "end": 267
+          },
+          {
+            "start": 280,
+            "end": 280
+          },
+          {
+            "start": 297,
+            "end": 297
+          },
+          {
+            "start": 310,
+            "end": 310
+          },
+          {
+            "start": 362,
+            "end": 362
+          },
+          {
+            "start": 373,
+            "end": 374
+          }
+        ],
+        "before_hash": "fd0a2a9d81eda7f56a57587e6ab2f409568129ac30b1f584e895ae0d3ba5e9bd",
+        "after_hash": "4399454c4a5403d1956ba8ee54eab6feb2bfb0072d6ede6bb35ff9f8e0f4b2a6"
+      },
+      {
+        "file": "src/server/documents/quotation-template.ts",
+        "ranges": [
+          {
+            "start": 2,
+            "end": 2
+          },
+          {
+            "start": 203,
+            "end": 203
+          }
+        ],
+        "before_hash": "3bd59325b2697c69f3a47ef87af07cf33a88d3fe33e4f70cf40ac2e58aa9ec46",
+        "after_hash": "66a48e3f894f76abba52ecf8f92138cd259cbff0f1a374891172c53aedea24d4"
+      },
+      {
+        "file": "src/server/services/quotation-service.ts",
+        "ranges": [
+          {
+            "start": 20,
+            "end": 20
+          },
+          {
+            "start": 24,
+            "end": 24
+          },
+          {
+            "start": 35,
+            "end": 35
+          },
+          {
+            "start": 123,
+            "end": 123
+          },
+          {
+            "start": 145,
+            "end": 145
+          },
+          {
+            "start": 235,
+            "end": 242
+          },
+          {
+            "start": 464,
+            "end": 464
+          },
+          {
+            "start": 554,
+            "end": 556
+          },
+          {
+            "start": 558,
+            "end": 558
+          },
+          {
+            "start": 576,
+            "end": 576
+          }
+        ],
+        "before_hash": "c2e57ad2236529aaa8f3c7e4977effa2f51d3c2a769e9f281485758200d76fb2",
+        "after_hash": "dfd885d0725f25bcc126621d4b394db55eb8f710f95a243f48c8fcb2a1aa75a5"
+      },
+      {
+        "file": "src/server/services/sales-document-service.ts",
+        "ranges": [
+          {
+            "start": 531,
+            "end": 532
+          }
+        ],
+        "before_hash": "a7b8af6b93438e0e4ec3701758f4fcb09f308c5d33c094686ca9d09e83b6ba70",
+        "after_hash": "8718e95ec922b6478d9bf061273326b63b6196f8d786e8eef017387051f56abb"
+      },
+      {
+        "file": "src/shared/documents.ts",
+        "ranges": [
+          {
+            "start": 3,
+            "end": 11
+          },
+          {
+            "start": 145,
+            "end": 145
+          },
+          {
+            "start": 168,
+            "end": 168
+          }
+        ],
+        "before_hash": "3dad058ac63f168cf862fa9f2a493f5a2299204ff21c86f01e138da08b38718a",
+        "after_hash": "34b7fba8a40c90ecf6b6cc7faea94a665fe3d16326028c70e63c4355d129aaa4"
+      },
+      {
+        "file": "src/shared/money.ts",
+        "ranges": [
+          {
+            "start": 1,
+            "end": 1
+          },
+          {
+            "start": 86,
+            "end": 107
+          }
+        ],
+        "before_hash": "f3b799239851fe4003b29f2006679f4ae527bbc00a509e6ddd499f834e76fca3",
+        "after_hash": "27bd3245d63f3dd509300e1ff56d313ebd4f6630cf1479570ed1692bb9da0fe7"
+      },
+      {
+        "file": "tests/server/database.test.ts",
+        "ranges": [
+          {
+            "start": 218,
+            "end": 218
+          },
+          {
+            "start": 300,
+            "end": 300
+          },
+          {
+            "start": 332,
+            "end": 332
+          },
+          {
+            "start": 417,
+            "end": 417
+          },
+          {
+            "start": 423,
+            "end": 423
+          },
+          {
+            "start": 428,
+            "end": 428
+          },
+          {
+            "start": 555,
+            "end": 555
+          },
+          {
+            "start": 574,
+            "end": 574
+          }
+        ],
+        "before_hash": "e378582ef72f9b73cd8fd1eee09e990dfb0d5e766dd0ba6f692e5823d6b48c78",
+        "after_hash": "523c2d61825dfde14b2a2df07e4d461f9a1a5da7406ae7ce0cdbcf00521c6401"
+      },
+      {
+        "file": "tests/server/quotation-routes.test.ts",
+        "ranges": [
+          {
+            "start": 43,
+            "end": 43
+          },
+          {
+            "start": 96,
+            "end": 96
+          },
+          {
+            "start": 107,
+            "end": 107
+          },
+          {
+            "start": 260,
+            "end": 260
+          },
+          {
+            "start": 275,
+            "end": 276
+          },
+          {
+            "start": 285,
+            "end": 286
+          }
+        ],
+        "before_hash": "0296850f6ec8c116912c5ed77d8a9d27c3558021479a11104070863030baf8fe",
+        "after_hash": "4a4f0e24ef108b97a21dad3924678d60022b1ea50d49b0c7fc66b41d58506865"
+      },
+      {
+        "file": "tests/server/quotations.test.ts",
+        "ranges": [
+          {
+            "start": 84,
+            "end": 84
+          },
+          {
+            "start": 112,
+            "end": 113
+          },
+          {
+            "start": 118,
+            "end": 124
+          },
+          {
+            "start": 210,
+            "end": 210
+          },
+          {
+            "start": 214,
+            "end": 214
+          },
+          {
+            "start": 237,
+            "end": 254
+          }
+        ],
+        "before_hash": "c4ae5b260f34633c420a1ab13229713b347e06e718227dd0c6bd787e211ae682",
+        "after_hash": "0e4afedbd0aea2648e63c40973c9c8be77fb8808b1e039f7a9a583b6baee556c"
+      }
+    ]
+  },
+  "timing": {
+    "started_at": "2026-09-01T08:58:57.980Z",
+    "completed_at": "2026-09-01T08:59:00.694Z",
+    "duration_ms": 2714,
+    "measurement": "hook_wall_clock"
+  },
+  "tokens": {
+    "input": 0,
+    "output": 0,
+    "total": 0,
+    "model_calls": 0,
+    "measurement": "known-zero"
+  },
+  "telemetry": {
+    "schemaVersion": "mimosa-gate-telemetry/v1",
+    "profile": "gate",
+    "operation": "Stop",
+    "outcome": "partial/INCONCLUSIVE",
+    "latencyMs": 2714,
+    "peakMemoryBytes": 103862272,
+    "memoryMeasurement": "max-observed-process-rss",
+    "scannedFiles": 0,
+    "cache": {
+      "hits": 0,
+      "misses": 0,
+      "measurement": "not-applicable"
+    },
+    "denyCount": 0,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "total": 0,
+      "modelCalls": 0,
+      "measurement": "known-zero"
+    }
+  },
+  "finding_count": 0,
+  "rewake_finding_count": 0,
+  "evidence_boundary": {
+    "scan": "candidate",
+    "static_fix_verification": "observed_static_only",
+    "runtime_verification": "not_performed"
+  },
+  "finding_events": [],
+  "findings": [],
+  "artifacts": {
+    "immutable_report": ".mimosa/reports/task-review-sess_42f43984-9998-453b-959d-bf31c48fe99c-20260901T085900694Z-37848-9032b0dbf71e.json",
+    "latest_report": ".mimosa/reports/task-review-sess_42f43984-9998-453b-959d-bf31c48fe99c.json",
+    "history_summary": ".mimosa/history/run-20260901T085900694Z-37848-9032b0dbf71e.json"
+  }
+}

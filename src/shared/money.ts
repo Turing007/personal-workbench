@@ -1,4 +1,4 @@
-import type { PaymentStatus, QuotationPriceTier } from './documents.js';
+import type { PaymentStatus, QuotationPriceTier, QuotationPriceType } from './documents.js';
 
 const CENTS_PER_YUAN = 100;
 const BASIS_POINTS_PER_RATE = 10_000;
@@ -81,6 +81,28 @@ export function calculateDocumentTotals(
   const totalCents = subtotalCents + taxCents + shippingCents;
   if (!Number.isSafeInteger(totalCents)) throw new RangeError('合计金额超出安全范围');
   return { subtotalCents, taxCents, shippingCents, totalCents };
+}
+
+/**
+ * 报价单合计：报价单不含数量，每行产品按数量 1 计价。
+ * 不含税价：税额 = 小计 × 税率；含税口径：录入单价即价税合计，反算不含税小计与税额。
+ */
+export function calculateQuotationTotals(
+  lines: readonly { unitPriceCents: number }[],
+  taxRateBps: number,
+  priceType: QuotationPriceType,
+): { subtotalCents: number; taxCents: number; shippingCents: number; totalCents: number } {
+  if (!Number.isInteger(taxRateBps) || taxRateBps < 0 || taxRateBps > BASIS_POINTS_PER_RATE) {
+    throw new RangeError('税率基点必须在 0 到 10000 之间');
+  }
+  const grossCents = lines.reduce((subtotal, line) => subtotal + calculateLineAmountCents(1, line.unitPriceCents), 0);
+  if (!Number.isSafeInteger(grossCents)) throw new RangeError('合计金额超出安全范围');
+  if (priceType === 'ex_tax') {
+    return calculateDocumentTotals(lines.map((line) => ({ quantity: 1, unitPriceCents: line.unitPriceCents })), taxRateBps);
+  }
+  const subtotalCents = Math.round(grossCents / (1 + taxRateBps / BASIS_POINTS_PER_RATE));
+  const taxCents = grossCents - subtotalCents;
+  return { subtotalCents, taxCents, shippingCents: 0, totalCents: grossCents };
 }
 
 export function calculateOutstandingCents(totalCents: number, receivedCents: number): number {

@@ -40,7 +40,7 @@ function quotationInput(overrides: Record<string, unknown> = {}) {
       showContactPhone: true,
       showTax: true,
       showTaxIncludedTotal: true,
-      columns: { image: true, name: true, sku: true, specification: true, quantity: true, unitPrice: true, amount: true, remark: true },
+      columns: { image: true, name: true, specification: true, unitPrice: true, tierPrice: true, remark: true },
     },
     items: [{
       clientKey: 'line-a',
@@ -49,7 +49,6 @@ function quotationInput(overrides: Record<string, unknown> = {}) {
       name: '临时产品',
       sku: 'TMP-1',
       specification: '标准',
-      quantity: 2,
       unitPriceCents: 1_000,
       remark: '',
       sortOrder: 0,
@@ -94,7 +93,7 @@ describe('quotation routes', () => {
     const created = await app.inject({ method: 'POST', url: '/api/quotations', payload: quotationInput() });
     expect(created.statusCode).toBe(201);
     const quotation = created.json().data;
-    expect(quotation).toMatchObject({ number: 'BJ20260809001', status: 'draft', totalCents: 2260 });
+    expect(quotation).toMatchObject({ number: 'BJ20260809001', status: 'draft', totalCents: 1130 });
 
     const listed = await app.inject({ method: 'GET', url: '/api/quotations?status=draft&q=华南&page=1&pageSize=10' });
     expect(listed.json().data).toMatchObject({ total: 1, page: 1, pageSize: 10 });
@@ -105,7 +104,7 @@ describe('quotation routes', () => {
       url: `/api/quotations/${quotation.id}`,
       payload: quotationInput({ customerName: '修改客户', taxRateBps: 0 }),
     });
-    expect(updated.json().data).toMatchObject({ customerName: '修改客户', totalCents: 2000 });
+    expect(updated.json().data).toMatchObject({ customerName: '修改客户', totalCents: 1000 });
     expect((await app.inject({ method: 'PATCH', url: `/api/quotations/${quotation.id}/status`, payload: { status: 'won' } })).json().data.status).toBe('won');
 
     const confirmation = await app.inject({ method: 'DELETE', url: `/api/quotations/${quotation.id}` });
@@ -258,12 +257,11 @@ describe('quotation routes', () => {
     database.close();
   });
 
-  it('saves quantity-tier prices, computes line amounts from the matching tier, and renders them', async () => {
+  it('saves quantity-tier price schedules, keeps the base unit price for totals, and renders them', async () => {
     const { app, database } = await createContext();
     const tiered = quotationInput();
     tiered.items = [{
       ...tiered.items[0],
-      quantity: 120,
       priceTiers: [
         { minQuantity: 1, maxQuantity: 99, unitPriceCents: 1_000 },
         { minQuantity: 100, unitPriceCents: 800 },
@@ -274,8 +272,8 @@ describe('quotation routes', () => {
       { minQuantity: 1, maxQuantity: 99, unitPriceCents: 1_000 },
       { minQuantity: 100, maxQuantity: null, unitPriceCents: 800 },
     ]);
-    expect(created.items[0].amountCents).toBe(96_000);
-    expect(created.subtotalCents).toBe(96_000);
+    expect(created.items[0].unitPriceCents).toBe(1_000);
+    expect(created.subtotalCents).toBe(1_000);
 
     const detail = (await app.inject({ method: 'GET', url: `/api/quotations/${created.id}` })).json().data;
     expect(detail.items[0].priceTiers).toHaveLength(2);
@@ -284,30 +282,8 @@ describe('quotation routes', () => {
     expect(html).toContain('数量区间价');
     expect(html).toContain('1~99');
     expect(html).toContain('100+');
-
-    const ladder = quotationInput();
-    ladder.items = [{
-      ...ladder.items[0],
-      quantity: 50,
-      priceTiers: [
-        { minQuantity: 1, unitPriceCents: 1_000 },
-        { minQuantity: 100, unitPriceCents: 800 },
-      ],
-    }];
-    const ladderSaved = (await app.inject({ method: 'POST', url: '/api/quotations', payload: ladder })).json().data;
-    expect(ladderSaved.items[0].amountCents).toBe(50_000);
-
-    const touching = quotationInput();
-    touching.items = [{
-      ...touching.items[0],
-      quantity: 99,
-      priceTiers: [
-        { minQuantity: 1, maxQuantity: 99, unitPriceCents: 1_000 },
-        { minQuantity: 99, maxQuantity: 500, unitPriceCents: 800 },
-      ],
-    }];
-    const touchingSaved = (await app.inject({ method: 'POST', url: '/api/quotations', payload: touching })).json().data;
-    expect(touchingSaved.items[0].amountCents).toBe(79_200);
+    expect(html).toContain('价格类型');
+    expect(html).toContain('不含税价');
 
     const duplicate = quotationInput();
     duplicate.items = [{

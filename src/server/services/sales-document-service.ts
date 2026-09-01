@@ -528,7 +528,8 @@ export class SalesDocumentService {
         specification: item.specification,
         parameters: item.parameters,
         imageUpload,
-        quantity: item.quantity,
+        // 报价单不含数量，复制为销售开单时数量默认 1，由业务在销售单中调整
+        quantity: 1,
         packCount: item.packCount,
         unitPriceCents: item.unitPriceCents,
         remark: item.remark,

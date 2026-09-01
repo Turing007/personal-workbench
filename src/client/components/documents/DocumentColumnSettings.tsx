@@ -3,7 +3,7 @@ import type { QuotationColumnKey, SalesDocumentColumnKey } from '../../../shared
 
 type ColumnKey = QuotationColumnKey | SalesDocumentColumnKey;
 
-export const DEFAULT_QUOTATION_COLUMNS: Record<QuotationColumnKey, boolean> = { image: true, name: true, sku: true, specification: true, quantity: true, unitPrice: true, tierPrice: true, amount: false, remark: true };
+export const DEFAULT_QUOTATION_COLUMNS: Record<QuotationColumnKey, boolean> = { image: true, name: true, specification: true, unitPrice: true, tierPrice: true, remark: true };
 export const DEFAULT_SALES_COLUMNS: Record<SalesDocumentColumnKey, boolean> = { productCode: true, productName: true, specification: true, quantity: true, unitPrice: true, amount: true, remark: true };
 
 export interface DocumentColumnSettingsProps {
@@ -15,7 +15,7 @@ export interface DocumentColumnSettingsProps {
   disabled?: boolean;
 }
 
-const quotationColumns: Array<[QuotationColumnKey, string]> = [['image', '图片'], ['name', '品名'], ['sku', 'SKU'], ['specification', '规格'], ['quantity', '数量'], ['unitPrice', '单价'], ['tierPrice', '数量区间价'], ['amount', '金额'], ['remark', '备注']];
+const quotationColumns: Array<[QuotationColumnKey, string]> = [['image', '图片'], ['name', '品名'], ['specification', '规格'], ['unitPrice', '单价'], ['tierPrice', '数量区间价'], ['remark', '备注']];
 const salesColumns: Array<[SalesDocumentColumnKey, string]> = [['productCode', '产品代码'], ['productName', '产品名称'], ['specification', '规格'], ['quantity', '数量'], ['unitPrice', '单价'], ['amount', '金额'], ['remark', '备注']];
 
 export default function DocumentColumnSettings({ kind, value, onChange, showProductImages, onShowProductImagesChange, disabled }: DocumentColumnSettingsProps) {

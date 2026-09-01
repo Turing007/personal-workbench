@@ -3,6 +3,7 @@ import type {
   QuotationCustomField,
   QuotationDetail,
   QuotationDisplayConfig,
+  QuotationPriceType,
   QuotationStatus,
   SalesDocumentDetail,
   SalesDocumentDisplayConfig,
@@ -62,6 +63,7 @@ export interface QuotationDraft {
   validUntil: string;
   remark: string;
   taxRate: string;
+  priceType: QuotationPriceType;
   subtotal: string;
   tax: string;
   total: string;
@@ -131,6 +133,7 @@ export interface QuotationDraftPayload {
   validUntil: string;
   remark: string;
   taxRateBps: number;
+  priceType: QuotationPriceType;
   companySnapshot: CompanySnapshot;
   displayConfig: QuotationDisplayConfig;
   items: DocumentItemPayload[];
@@ -218,7 +221,7 @@ function itemToDraft(
     specification: item.specification,
     parameters: typeof item.parameters === 'string' ? item.parameters : '',
     packCount: item.packCount == null ? '' : String(item.packCount),
-    quantity: String(item.quantity),
+    quantity: 'quantity' in item ? String(item.quantity) : '1',
     unitPrice: centsToInput(item.unitPriceCents),
     ...(priceTiers ? { priceTiers } : {}),
     remark: item.remark,
@@ -253,6 +256,7 @@ export function quotationDetailToDraft(detail: QuotationDetail): QuotationDraft 
     validUntil: detail.validUntil,
     remark: detail.remark,
     taxRate: basisPointsToInput(detail.taxRateBps),
+    priceType: detail.priceType ?? 'ex_tax',
     subtotal: centsToInput(detail.subtotalCents),
     tax: centsToInput(detail.taxCents),
     total: centsToInput(detail.totalCents),
@@ -339,9 +343,11 @@ export function quotationDraftToPayload(draft: QuotationDraft): QuotationDraftPa
     validUntil: draft.validUntil,
     remark: draft.remark.trim(),
     taxRateBps: inputToBasisPoints(draft.taxRate),
+    priceType: draft.priceType,
     companySnapshot: { ...draft.companySnapshot },
     displayConfig: { ...draft.displayConfig, columns: { ...draft.displayConfig.columns } },
-    items: draft.items.map(itemToPayload),
+    // 报价单按产品报价、不含数量，固定按 1 计价
+    items: draft.items.map((item, sortOrder) => itemToPayload({ ...item, quantity: '1' }, sortOrder)),
     customFields: draft.customFields.map((field, sortOrder) => ({
       placement: field.placement,
       label: field.label.trim(),

@@ -400,6 +400,7 @@ CREATE TABLE IF NOT EXISTS quotations (
   valid_until TEXT NOT NULL DEFAULT '',
   remark TEXT NOT NULL DEFAULT '',
   tax_rate_bps INTEGER NOT NULL DEFAULT 0 CHECK (tax_rate_bps BETWEEN 0 AND 10000),
+  price_type TEXT NOT NULL DEFAULT 'ex_tax' CHECK (price_type IN ('ex_tax', 'tax_included', 'tax_included_with_freight')),
   subtotal_cents INTEGER NOT NULL DEFAULT 0 CHECK (subtotal_cents >= 0),
   tax_cents INTEGER NOT NULL DEFAULT 0 CHECK (tax_cents >= 0),
   total_cents INTEGER NOT NULL DEFAULT 0 CHECK (total_cents >= 0),
@@ -611,9 +612,9 @@ function preflightMigration(database: DatabaseSync): MigrationPreflight {
     );
   }
   const parsedSchemaVersion = normalizedSchemaVersion === '' ? 0 : Number(normalizedSchemaVersion);
-  if (parsedSchemaVersion > 17) {
+  if (parsedSchemaVersion > 18) {
     throw new Error(
-      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version 17`,
+      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version 18`,
     );
   }
 
@@ -985,6 +986,11 @@ function migrateVersionSeventeen(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '17', now);
 }
 
+function migrateVersionEighteen(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'quotations', 'price_type', "TEXT NOT NULL DEFAULT 'ex_tax'");
+  upsertSetting(database, 'schema_version', '18', now);
+}
+
 export function migrateDatabase(database: DatabaseSync): void {
   if (database.isTransaction) {
     throw new Error('Database migration cannot run inside an active transaction');
@@ -1028,6 +1034,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionFifteen(transactionDatabase, now);
     migrateVersionSixteen(transactionDatabase, now);
     migrateVersionSeventeen(transactionDatabase, now);
+    migrateVersionEighteen(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

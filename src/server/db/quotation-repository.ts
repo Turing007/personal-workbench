@@ -5,6 +5,7 @@ import type {
   QuotationDisplayConfig,
   QuotationItem,
   QuotationPriceTier,
+  QuotationPriceType,
   QuotationStatus,
   QuotationSummary,
 } from '../../shared/documents.js';
@@ -18,9 +19,7 @@ export interface QuotationPersistenceItem {
   specification: string;
   parameters: string;
   packCount: number | null;
-  quantity: number;
   unitPriceCents: number;
-  amountCents: number;
   priceTiers: QuotationPriceTier[];
   remark: string;
   imageRelativePath: string | null;
@@ -47,6 +46,7 @@ export interface QuotationPersistenceInput {
   validUntil: string;
   remark: string;
   taxRateBps: number;
+  priceType: QuotationPriceType;
   subtotalCents: number;
   taxCents: number;
   totalCents: number;
@@ -79,6 +79,7 @@ export interface QuotationRepositoryDetail extends QuotationSummary {
   validUntil: string;
   remark: string;
   taxRateBps: number;
+  priceType: QuotationPriceType;
   subtotalCents: number;
   taxCents: number;
   companySnapshot: CompanySnapshot;
@@ -160,9 +161,7 @@ function mapItem(row: SqlRow): QuotationItem {
     parameters: rowValue(row, 'parameters'),
     packCount: row.pack_count == null ? null : numberValue(row, 'pack_count'),
     imageRelativePath: row.image_relative_path == null ? null : rowValue(row, 'image_relative_path'),
-    quantity: numberValue(row, 'quantity'),
     unitPriceCents: numberValue(row, 'unit_price_cents'),
-    amountCents: numberValue(row, 'amount_cents'),
     priceTiers: parsePriceTiers(row.tiered_prices_json),
     remark: rowValue(row, 'remark'),
     sortOrder: numberValue(row, 'sort_order'),
@@ -235,6 +234,7 @@ export class QuotationRepository {
       validUntil: rowValue(row, 'valid_until'),
       remark: rowValue(row, 'remark'),
       taxRateBps: numberValue(row, 'tax_rate_bps'),
+      priceType: (rowValue(row, 'price_type', 'ex_tax') as QuotationPriceType),
       subtotalCents: numberValue(row, 'subtotal_cents'),
       taxCents: numberValue(row, 'tax_cents'),
       customerProductsSyncedAt: row.customer_products_synced_at == null
@@ -250,7 +250,7 @@ export class QuotationRepository {
         showContactPhone: false,
         showTax: true,
         showTaxIncludedTotal: true,
-        columns: { image: true, name: true, sku: true, specification: true, quantity: true, unitPrice: true, tierPrice: true, amount: false, remark: true },
+        columns: { image: true, name: true, specification: true, unitPrice: true, tierPrice: true, remark: true },
       }),
       items: items.map(mapItem),
       customFields: customFields.map(mapCustomField),
@@ -262,9 +262,9 @@ export class QuotationRepository {
     const quotationId = lastInsertId(database.prepare(
       `INSERT INTO quotations
         (number, status, quotation_date, customer_id, customer_name, contact_name, contact_phone, customer_address,
-         valid_until, remark, tax_rate_bps, subtotal_cents, tax_cents, total_cents,
+         valid_until, remark, tax_rate_bps, price_type, subtotal_cents, tax_cents, total_cents,
          customer_products_synced_at, company_snapshot_json, display_config_json, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       record.number,
       record.status,
@@ -277,6 +277,7 @@ export class QuotationRepository {
       record.validUntil,
       record.remark,
       record.taxRateBps,
+      record.priceType,
       record.subtotalCents,
       record.taxCents,
       record.totalCents,
@@ -293,7 +294,7 @@ export class QuotationRepository {
   replace(database: DatabaseSync, id: number, record: QuotationPersistenceInput): boolean {
     const result = database.prepare(
       `UPDATE quotations SET status = ?, quotation_date = ?, customer_id = ?, customer_name = ?, contact_name = ?, contact_phone = ?,
-        customer_address = ?, valid_until = ?, remark = ?, tax_rate_bps = ?, subtotal_cents = ?, tax_cents = ?,
+        customer_address = ?, valid_until = ?, remark = ?, tax_rate_bps = ?, price_type = ?, subtotal_cents = ?, tax_cents = ?,
         total_cents = ?, customer_products_synced_at = ?, company_snapshot_json = ?, display_config_json = ?, updated_at = ? WHERE id = ?`,
     ).run(
       record.status,
@@ -306,6 +307,7 @@ export class QuotationRepository {
       record.validUntil,
       record.remark,
       record.taxRateBps,
+      record.priceType,
       record.subtotalCents,
       record.taxCents,
       record.totalCents,
@@ -357,6 +359,7 @@ export class QuotationRepository {
          quantity, unit_price_cents, amount_cents, tiered_prices_json, remark, image_relative_path, image_original_name, sort_order, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
+    // 报价单按产品报价、不含数量：历史列 quantity 固定写 1，行金额等于单价。
     record.items.forEach((item) => insertItem.run(
       quotationId,
       item.productId,
@@ -367,9 +370,9 @@ export class QuotationRepository {
       item.specification,
       item.parameters,
       item.packCount,
-      item.quantity,
+      1,
       item.unitPriceCents,
-      item.amountCents,
+      item.unitPriceCents,
       item.priceTiers.length ? JSON.stringify(item.priceTiers) : null,
       item.remark,
       item.imageRelativePath,

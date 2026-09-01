@@ -1,4 +1,5 @@
 import type { QuotationServiceDetail } from '../services/quotation-service.js';
+import { QUOTATION_PRICE_TYPE_LABELS } from '../../shared/documents.js';
 
 export interface QuotationTemplateOptions {
   readFile?: (relativePath: string) => Promise<Buffer>;
@@ -96,12 +97,9 @@ const columns: readonly ColumnDefinition[] = [
       : '<span class="image-placeholder">-</span>',
   },
   { key: 'name', label: '品名', render: (item) => escapeHtml(item.name) },
-  { key: 'sku', label: 'SKU', render: (item) => escapeHtml(item.sku) },
   { key: 'specification', label: '规格', render: (item) => escapeHtml(item.specification) },
-  { key: 'quantity', label: '数量', className: 'number', render: (item) => escapeHtml(item.quantity) },
   { key: 'unitPrice', label: '单价', className: 'money', render: (item) => escapeHtml(formatMoney(item.unitPriceCents)) },
   { key: 'tierPrice', label: '数量区间价', className: 'tier-price', render: (item) => renderPriceTiers(item) },
-  { key: 'amount', label: '金额', className: 'money', render: (item) => escapeHtml(formatMoney(item.amountCents)) },
   { key: 'remark', label: '备注', render: (item) => escapeHtml(item.remark) },
 ];
 
@@ -202,6 +200,7 @@ export async function renderQuotationHtml(
   <section class="meta-grid">
     ${detailRow('报价单号', quotation.number)}
     ${detailRow('报价日期', quotation.quotationDate)}
+    ${detailRow('价格类型', QUOTATION_PRICE_TYPE_LABELS[quotation.priceType] ?? '')}
     ${detailRow('客户名称', quotation.customerName)}
     ${detailRow('联系人', quotation.contactName)}
     ${contactPhone}

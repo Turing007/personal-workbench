@@ -79,11 +79,9 @@ function makeInput(overrides: Record<string, unknown> = {}) {
       columns: {
         image: true,
         name: true,
-        sku: true,
         specification: true,
-        quantity: true,
         unitPrice: true,
-        amount: true,
+        tierPrice: true,
         remark: true,
       },
     },
@@ -95,7 +93,6 @@ function makeInput(overrides: Record<string, unknown> = {}) {
         name: '临时配件',
         sku: 'TMP-1',
         specification: '标准',
-        quantity: 1,
         unitPrice: 50,
         remark: '',
         sortOrder: 0,
@@ -112,18 +109,19 @@ describe('quotation repository and service', () => {
     const quotation = await service.create(makeInput({
       taxRateBps: 1300,
       items: [
-        { clientKey: 'a', productId, isTemporary: false, name: '客户端名称', sku: '客户端 SKU', specification: '客户端规格', quantity: 2, unitPrice: 100, remark: '', sortOrder: 0 },
-        { clientKey: 'b', productId: null, isTemporary: true, name: '临时配件', sku: '', specification: '', quantity: 1, unitPrice: 50, remark: '', sortOrder: 1 },
+        { clientKey: 'a', productId, isTemporary: false, name: '客户端名称', sku: '客户端 SKU', specification: '客户端规格', unitPrice: 100, remark: '', sortOrder: 0 },
+        { clientKey: 'b', productId: null, isTemporary: true, name: '临时配件', sku: '', specification: '', unitPrice: 50, remark: '', sortOrder: 1 },
       ],
     }));
 
     expect(quotation.number).toBe('BJ20260808001');
-    expect(quotation.subtotalCents).toBe(25_000);
-    expect(quotation.taxCents).toBe(3_250);
-    expect(quotation.totalCents).toBe(28_250);
-    expect(quotation.subtotal).toBe(250);
-    expect(quotation.tax).toBe(32.5);
-    expect(quotation.total).toBe(282.5);
+    expect(quotation.priceType).toBe('ex_tax');
+    expect(quotation.subtotalCents).toBe(15_000);
+    expect(quotation.taxCents).toBe(1_950);
+    expect(quotation.totalCents).toBe(16_950);
+    expect(quotation.subtotal).toBe(150);
+    expect(quotation.tax).toBe(19.5);
+    expect(quotation.total).toBe(169.5);
     expect(quotation.items).toHaveLength(2);
     expect(quotation.items[0]).toMatchObject({
       productId,
@@ -133,7 +131,6 @@ describe('quotation repository and service', () => {
       specification: '20V 无刷',
       parameters: '扭矩：35N·m\n转速：0-1500rpm',
       unitPriceCents: 10_000,
-      amountCents: 20_000,
     });
     expect(quotation.customFields[0]).toMatchObject({ placement: 'footer', label: '付款方式', value: '预付款' });
     database.prepare("UPDATE products SET name = '产品库已修改', specification = '已修改规格', parameters = '已修改参数' WHERE id = ?").run(productId);
@@ -158,7 +155,6 @@ describe('quotation repository and service', () => {
         sku: '客户端填写 SKU',
         specification: '客户端填写规格',
         parameters: '客户端填写参数',
-        quantity: 1,
         unitPrice: 80,
         remark: '',
         sortOrder: 0,
@@ -178,7 +174,6 @@ describe('quotation repository and service', () => {
         sku: existingItem?.sku ?? '',
         specification: existingItem?.specification ?? '',
         parameters: existingItem?.parameters,
-        quantity: existingItem?.quantity ?? 1,
         unitPriceCents: existingItem?.unitPriceCents ?? 0,
         remark: existingItem?.remark ?? '',
         sortOrder: 0,
@@ -212,11 +207,11 @@ describe('quotation repository and service', () => {
     expect(service.list({ status: 'draft' }).total).toBe(1);
 
     const updated = await service.update(created.id, makeInput({ status: 'expired', customerName: '修改后的客户', items: [
-      { clientKey: 'c', productId: null, isTemporary: true, name: '新品', sku: '', specification: '大号', quantity: 2, unitPrice: 25, remark: '更新', sortOrder: 0 },
+      { clientKey: 'c', productId: null, isTemporary: true, name: '新品', sku: '', specification: '大号', unitPrice: 25, remark: '更新', sortOrder: 0 },
     ] }));
     expect(updated?.customerName).toBe('修改后的客户');
     expect(updated?.status).toBe('draft');
-    expect(updated?.items[0]?.amountCents).toBe(5_000);
+    expect(updated?.items[0]?.unitPriceCents).toBe(2_500);
     expect(service.updateStatus(created.id, 'sent')?.status).toBe('sent');
     expect(service.list({ status: 'draft' }).total).toBe(0);
     expect(service.list({ status: 'sent' }).rows[0]?.number).toBe(created.number);
@@ -237,9 +232,26 @@ describe('quotation repository and service', () => {
   it('rejects empty, negative, and invalid quotation values', async () => {
     const { service, database } = createContext();
     await expect(service.create(makeInput({ items: [] }))).rejects.toMatchObject({ field: 'items' });
-    await expect(service.create(makeInput({ items: [{ ...makeInput().items[0], quantity: -1 }] }))).rejects.toMatchObject({ field: 'items.0.quantity' });
     await expect(service.create(makeInput({ items: [{ ...makeInput().items[0], unitPriceCents: -1, unitPrice: undefined }] }))).rejects.toMatchObject({ field: 'items.0.unitPriceCents' });
     await expect(service.create(makeInput({ taxRateBps: 10001 }))).rejects.toMatchObject({ field: 'taxRateBps' });
+    await expect(service.create(makeInput({ priceType: 'bogus' }))).rejects.toMatchObject({ field: 'priceType' });
+    database.close();
+  });
+
+  it('derives ex-tax subtotal and tax when prices are quoted tax-included', async () => {
+    const { service, database } = createContext();
+    const quotation = await service.create(makeInput({
+      taxRateBps: 1300,
+      priceType: 'tax_included_with_freight',
+      items: [
+        { clientKey: 'a', productId: null, isTemporary: true, name: '含税产品', sku: '', specification: '', unitPrice: 113, remark: '', sortOrder: 0 },
+      ],
+    }));
+
+    expect(quotation.priceType).toBe('tax_included_with_freight');
+    expect(quotation.totalCents).toBe(11_300);
+    expect(quotation.subtotalCents).toBe(10_000);
+    expect(quotation.taxCents).toBe(1_300);
     database.close();
   });
 

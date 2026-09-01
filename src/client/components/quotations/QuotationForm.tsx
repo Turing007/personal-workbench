@@ -1,36 +1,29 @@
 import {
-  ArrowDown,
-  ArrowUp,
-  Columns3,
-  Copy,
+  Edit3,
   Image as ImageIcon,
-  Library,
   Plus,
   Save,
   Trash2,
   X,
 } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type {
   CompanySnapshot,
-  QuotationDisplayConfig,
+  QuotationPriceType,
   QuotationStatus,
 } from '../../../shared/documents';
+import { QUOTATION_PRICE_TYPE_LABELS } from '../../../shared/documents';
 import type { Customer, CustomerProduct, CustomerProductSaveInput, CustomerSaveInput } from '../../../shared/customers';
-import { calculateDocumentTotals, resolveTierUnitPriceCents } from '../../../shared/money';
-import type { DocumentImageDraft, DocumentItemDraft, DocumentItemPriceTierDraft, QuotationDraft as SharedQuotationDraft } from '../../documents/document-drafts';
+import { calculateQuotationTotals } from '../../../shared/money';
+import type { QuotationDraft as SharedQuotationDraft } from '../../documents/document-drafts';
 import { createDocumentClientKey } from '../../documents/document-drafts';
 import CompanySnapshotFields from '../documents/CompanySnapshotFields';
-import DocumentColumnSettings from '../documents/DocumentColumnSettings';
 import DocumentTotals from '../documents/DocumentTotals';
-import LibraryProductPicker, { type LibraryProductSelection } from '../documents/LibraryProductPicker';
 import CustomerSelector from '../customers/CustomerSelector';
-import CustomerProductPicker from '../customer-products/CustomerProductPicker';
-import CustomerProductEditorModal from '../customer-products/CustomerProductEditorModal';
+import QuotationItemsModal from './QuotationItemsModal';
+import { emptyLine, formatMoney, lineUnitPriceCents, parseNonNegative, validateQuotationLines, type QuotationLineDraft } from './quotation-lines';
 
-export interface QuotationLineDraft extends DocumentItemDraft {
-  image: DocumentImageDraft & { previewUrl?: string };
-}
+export type { QuotationLineDraft } from './quotation-lines';
 
 export interface QuotationCustomFieldDraft {
   clientKey?: string;
@@ -77,132 +70,17 @@ const sectionStyle = {
   background: 'var(--color-surface)',
 };
 
-function emptyLine(): QuotationLineDraft {
-  return {
-    clientKey: createDocumentClientKey('quotation-line'),
-    productId: null,
-    customerProductId: null,
-    isTemporary: true,
-    productCode: '',
-    name: '',
-    sku: '',
-    specification: '',
-    parameters: '',
-    packCount: '',
-    image: { relativePath: null, originalName: '', mimeType: '' },
-    quantity: '1',
-    unitPrice: '',
-    priceTiers: [],
-    remark: '',
-  };
-}
-
-function parseNonNegative(value: string): number | null {
-  if (!value.trim()) return 0;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
-}
-
-function parseTiers(item: QuotationLineDraft): Array<{ minQuantity: number; maxQuantity: number | null; unitPriceCents: number }> {
-  return (item.priceTiers ?? [])
-    .filter((tier) => tier.minQuantity.trim() || tier.maxQuantity.trim() || tier.unitPrice.trim())
-    .map((tier) => ({
-      minQuantity: Number(tier.minQuantity || 0),
-      maxQuantity: tier.maxQuantity.trim() ? Number(tier.maxQuantity) : null,
-      unitPriceCents: Math.max(0, Math.round((parseNonNegative(tier.unitPrice) ?? 0) * 100)),
-    }));
-}
-
-function lineUnitPriceCents(item: QuotationLineDraft): number {
-  const quantity = parseNonNegative(item.quantity) ?? 0;
-  const baseCents = Math.max(0, Math.round((parseNonNegative(item.unitPrice) ?? 0) * 100));
-  return resolveTierUnitPriceCents(parseTiers(item), quantity, baseCents);
-}
-
-function formatMoney(cents: number): string {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(cents / 100);
-}
-
 export default function QuotationForm({ customers, value, saving, onChange, onSave, onCancel, onSaveCustomerProduct, onCreateCustomer }: QuotationFormProps) {
-  const [pickerLineKey, setPickerLineKey] = useState<string>();
-  const [customerPickerLineKey, setCustomerPickerLineKey] = useState<string>();
-  const [customerEditorLineKey, setCustomerEditorLineKey] = useState<string>();
-  const [showColumns, setShowColumns] = useState(false);
+  const [itemsOpen, setItemsOpen] = useState(false);
+  const [itemsError, setItemsError] = useState('');
   const [error, setError] = useState('');
-  const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const setDraft = <K extends keyof QuotationDraft>(key: K, next: QuotationDraft[K]) => {
     onChange({ ...value, [key]: next });
   };
-  const updateLine = (clientKey: string, patch: Partial<QuotationLineDraft>) => {
-    setDraft('items', value.items.map((item) => item.clientKey === clientKey ? { ...item, ...patch } : item));
-  };
   const updateField = (clientKey: string, patch: Partial<QuotationCustomFieldDraft>) => {
     setDraft('customFields', value.customFields.map((field) => (field.clientKey ?? String(field.id)) === clientKey ? { ...field, ...patch } : field));
   };
-  const moveLine = (index: number, offset: -1 | 1) => {
-    const target = index + offset;
-    if (target < 0 || target >= value.items.length) return;
-    const items = [...value.items];
-    [items[index], items[target]] = [items[target], items[index]];
-    setDraft('items', items);
-  };
-  const duplicateLine = (index: number) => {
-    const source = value.items[index];
-    const duplicate = { ...source, id: undefined, clientKey: createDocumentClientKey('quotation-line'), priceTiers: (source.priceTiers ?? []).map((tier) => ({ ...tier })), image: { ...source.image, file: undefined } };
-    setDraft('items', [...value.items.slice(0, index + 1), duplicate, ...value.items.slice(index + 1)]);
-  };
-  const updateTier = (lineKey: string, tierIndex: number, patch: Partial<DocumentItemPriceTierDraft>) => {
-    setDraft('items', value.items.map((item) => item.clientKey === lineKey
-      ? { ...item, priceTiers: (item.priceTiers ?? []).map((tier, index) => index === tierIndex ? { ...tier, ...patch } : tier) }
-      : item));
-  };
-  const addTier = (lineKey: string) => {
-    setDraft('items', value.items.map((item) => item.clientKey === lineKey
-      ? { ...item, priceTiers: [...(item.priceTiers ?? []), { minQuantity: '', maxQuantity: '', unitPrice: '' }] }
-      : item));
-  };
-  const removeTier = (lineKey: string, tierIndex: number) => {
-    setDraft('items', value.items.map((item) => item.clientKey === lineKey
-      ? { ...item, priceTiers: (item.priceTiers ?? []).filter((_, index) => index !== tierIndex) }
-      : item));
-  };
-  const selectProduct = (lineKey: string, selection: LibraryProductSelection) => {
-    const { product, image } = selection;
-    updateLine(lineKey, {
-      productId: product.id,
-      customerProductId: null,
-      isTemporary: false,
-      name: product.name,
-      sku: product.sku,
-      specification: product.specification,
-      parameters: product.parameters ?? '',
-      image: {
-        relativePath: image?.relativePath ?? null,
-        originalName: image?.originalName ?? '',
-        mimeType: '',
-        previewUrl: image?.url,
-      },
-    });
-    setPickerLineKey(undefined);
-  };
-
-  const selectCustomerProduct = (lineKey: string, product: CustomerProduct) => {
-    updateLine(lineKey, {
-      productId: product.systemProductId,
-      customerProductId: product.id,
-      isTemporary: product.systemProductId == null,
-      productCode: product.sku,
-      name: product.name,
-      sku: product.sku,
-      specification: product.specification,
-      packCount: product.packCount == null ? '' : String(product.packCount),
-      unitPrice: product.finalPriceCents == null ? '' : (product.finalPriceCents / 100).toFixed(2),
-      image: { relativePath: product.imageRelativePath, originalName: '', mimeType: '' },
-    });
-    setCustomerPickerLineKey(undefined);
-  };
-
   const chooseCustomer = (customerId: number | null, customer?: Customer) => {
     onChange({
       ...value,
@@ -213,54 +91,35 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
       customerAddress: customer?.shippingInfo ?? '',
       items: value.items.map((item) => ({ ...item, customerProductId: null })),
     });
-    setCustomerPickerLineKey(undefined);
   };
 
-  const saveNewCustomerProduct = async (input: CustomerProductSaveInput) => {
-    if (!value.customerId) throw new Error('请先选择客户');
-    if (!onSaveCustomerProduct) throw new Error('当前页面暂不支持添加客户新品');
-    const saved = await onSaveCustomerProduct(value.customerId, input);
-    if (customerEditorLineKey) selectCustomerProduct(customerEditorLineKey, saved);
-    setCustomerEditorLineKey(undefined);
+  const updateItems = (items: QuotationLineDraft[]) => {
+    setItemsError('');
+    setDraft('items', items);
   };
 
   const totals = useMemo(() => {
-    const lines = value.items.map((item) => ({
-      quantity: parseNonNegative(item.quantity) ?? 0,
-      unitPriceCents: lineUnitPriceCents(item),
-    }));
     const taxRate = parseNonNegative(value.taxRate);
     try {
-      return calculateDocumentTotals(lines, Math.round((taxRate ?? 0) * 100));
+      return calculateQuotationTotals(
+        value.items.map((item) => ({ unitPriceCents: lineUnitPriceCents(item) })),
+        Math.round((taxRate ?? 0) * 100),
+        value.priceType,
+      );
     } catch {
       return { subtotalCents: 0, taxCents: 0, shippingCents: 0, totalCents: 0 };
     }
-  }, [value.items, value.taxRate]);
+  }, [value.items, value.taxRate, value.priceType]);
 
   const validate = (): boolean => {
     if (!value.customerName.trim()) return setError('请填写客户名称'), false;
     if (!value.quotationDate) return setError('请选择报价日期'), false;
-    if (!value.items.length) return setError('至少需要一行产品'), false;
-    const invalidIndex = value.items.findIndex((item) => !item.name.trim() || parseNonNegative(item.quantity) === null || parseNonNegative(item.unitPrice) === null);
-    if (invalidIndex >= 0) return setError(`第 ${invalidIndex + 1} 行产品信息或金额无效`), false;
-    const invalidTier = value.items.some((item) => (item.priceTiers ?? []).some((tier) => {
-      if (!tier.minQuantity.trim() && !tier.maxQuantity.trim() && !tier.unitPrice.trim()) return false;
-      const min = Number(tier.minQuantity);
-      const max = tier.maxQuantity.trim() ? Number(tier.maxQuantity) : null;
-      const price = Number(tier.unitPrice);
-      return !Number.isFinite(min) || min < 0
-        || (max !== null && (!Number.isFinite(max) || max < min))
-        || !Number.isFinite(price) || price < 0;
-    }));
-    if (invalidTier) return setError('数量区间价填写无效：区间数量需为非负数字、截止数量不小于起始数量、单价需为非负数字'), false;
-    const nonIncreasingTier = value.items.some((item) => {
-      const mins = (item.priceTiers ?? [])
-        .filter((tier) => tier.minQuantity.trim())
-        .map((tier) => Number(tier.minQuantity))
-        .sort((a, b) => a - b);
-      return mins.some((min, index) => index > 0 && min <= mins[index - 1]);
-    });
-    if (nonIncreasingTier) return setError('数量区间的起始数量必须从小到大递增（例如 1~99、100~499、500+）'), false;
+    const lineError = validateQuotationLines(value.items);
+    if (lineError) {
+      setItemsError(lineError);
+      setItemsOpen(true);
+      return false;
+    }
     const taxRate = parseNonNegative(value.taxRate);
     if (taxRate === null || taxRate > 100) return setError('税率必须在 0% 到 100% 之间'), false;
     setError('');
@@ -283,6 +142,14 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
         <label>报价日期<input type="date" value={value.quotationDate} onChange={(event) => setDraft('quotationDate', event.target.value)} style={fieldStyle} /></label>
         <label>有效期至<input type="date" value={value.validUntil} onChange={(event) => setDraft('validUntil', event.target.value)} style={fieldStyle} /></label>
       </div>
+      <div style={{ display: 'grid', gap: 6 }}>
+        <span style={{ fontSize: 12, color: '#64748b' }}>价格类型</span>
+        <div className="segmented" role="radiogroup" aria-label="价格类型">
+          {(Object.keys(QUOTATION_PRICE_TYPE_LABELS) as QuotationPriceType[]).map((type) => (
+            <button key={type} type="button" className={`segmented-item${value.priceType === type ? ' is-active' : ''}`} title={`按${QUOTATION_PRICE_TYPE_LABELS[type]}报价`} onClick={() => setDraft('priceType', type)}>{QUOTATION_PRICE_TYPE_LABELS[type]}</button>
+          ))}
+        </div>
+      </div>
       <CustomerSelector value={value.customerId} customers={customers} onChange={chooseCustomer} onCreateCustomer={onCreateCustomer} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
         <label>客户名称<input value={value.customerName} onChange={(event) => setDraft('customerName', event.target.value)} style={fieldStyle} placeholder="可手动补充" /></label>
@@ -300,66 +167,34 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
 
     <section style={sectionStyle}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <strong style={{ fontSize: 13 }}>产品明细</strong>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button type="button" className="icon-button" title="设置报价单显示列" onClick={() => setShowColumns((current) => !current)}><Columns3 size={15} /></button>
-          <button type="button" className="button" title="添加临时产品" onClick={() => setDraft('items', [...value.items, emptyLine()])}><Plus size={14} />临时产品</button>
-        </div>
+        <strong style={{ fontSize: 13 }}>产品明细<span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: '#64748b' }}>共 {value.items.length} 行</span></strong>
+        <button type="button" className="button" title="在弹窗中添加或编辑产品明细" onClick={() => setItemsOpen(true)}><Edit3 size={14} />编辑产品明细</button>
       </div>
-      {showColumns && <div style={{ padding: 8, background: '#f8fafc', borderRadius: 5 }}><DocumentColumnSettings kind="quotation" value={value.displayConfig.columns} onChange={(columns) => setDraft('displayConfig', { ...value.displayConfig, columns: columns as QuotationDisplayConfig['columns'] })} /></div>}
-      <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(56vh, 480px)', border: '1px solid #e2e8f0', borderRadius: 5 }}>
-        <table style={{ width: '100%', minWidth: 1290, borderCollapse: 'collapse' }}>
+      {value.items.length ? <div style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 5 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead><tr style={{ background: '#f8fafc', color: '#64748b', textAlign: 'left' }}>
-            <th style={{ padding: 7, width: 30 }}>#</th><th style={{ padding: 7, minWidth: 300 }}>产品</th><th style={{ padding: 7, width: 120 }}>SKU</th><th style={{ padding: 7, width: 95 }}>规格</th><th style={{ padding: 7, width: 72 }}>数量</th><th style={{ padding: 7, width: 100 }}>单价</th><th style={{ padding: 7, width: 214 }}>数量区间价</th><th style={{ padding: 7, width: 105 }}>金额</th><th style={{ padding: 7, minWidth: 130 }}>备注</th><th style={{ padding: 7, width: 154 }}>操作</th>
+            <th style={{ padding: 7, width: 30 }}>#</th><th style={{ padding: 7 }}>产品</th><th style={{ padding: 7, width: 150 }}>单价</th><th style={{ padding: 7, minWidth: 140 }}>备注</th>
           </tr></thead>
           <tbody>{value.items.map((item, index) => {
-            const quantity = parseNonNegative(item.quantity);
-            const unitPrice = parseNonNegative(item.unitPrice);
-            const amount = Math.round((quantity ?? 0) * lineUnitPriceCents(item));
+            const unitPriceCents = lineUnitPriceCents(item);
             const imageUrl = item.image.previewUrl ?? (item.image.relativePath ? `/files/${item.image.relativePath}` : undefined);
-            return <tr key={item.clientKey} style={{ borderTop: '1px solid #edf0f2', verticalAlign: 'top' }}>
+            const tierCount = (item.priceTiers ?? []).filter((tier) => tier.minQuantity.trim() || tier.maxQuantity.trim() || tier.unitPrice.trim()).length;
+            return <tr key={item.clientKey} style={{ borderTop: '1px solid #edf0f2' }}>
               <td style={{ padding: 7, color: '#94a3b8' }}>{index + 1}</td>
-              <td style={{ padding: 7 }}><div style={{ display: 'grid', gridTemplateColumns: '36px minmax(0, 1fr) auto', gap: 5, alignItems: 'center' }}>
-                <button type="button" title={imageUrl ? '更换产品图片' : '添加产品图片'} onClick={() => fileInputs.current[item.clientKey]?.click()} style={{ width: 36, height: 36, padding: 0, border: '1px solid #dbe3ea', borderRadius: 4, background: '#fff', display: 'grid', placeItems: 'center', overflow: 'hidden', cursor: 'pointer' }}>{imageUrl ? <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={15} color="#94a3b8" />}</button>
-                <input value={item.name} onChange={(event) => updateLine(item.clientKey, { name: event.target.value, isTemporary: item.productId == null })} style={fieldStyle} placeholder="品名" />
-                <div style={{ display: 'inline-flex', gap: 2 }}>
-                  <button type="button" className="icon-button" title="从客户产品库选择" onClick={() => setCustomerPickerLineKey(customerPickerLineKey === item.clientKey ? undefined : item.clientKey)}><span style={{ fontSize: 11, fontWeight: 700 }}>客</span></button>
-                  <button type="button" className="icon-button" title="从系统产品库选择" onClick={() => setPickerLineKey(pickerLineKey === item.clientKey ? undefined : item.clientKey)}><Library size={14} /></button>
+              <td style={{ padding: 7 }}><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ width: 32, height: 32, flexShrink: 0, border: '1px solid #e2e8f0', borderRadius: 4, background: '#fff', display: 'grid', placeItems: 'center', overflow: 'hidden' }}>{imageUrl ? <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={14} color="#cbd5e1" />}</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 550, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name.trim() || <span style={{ color: '#dc2626' }}>（未填写品名）</span>}</div>
+                  {item.specification.trim() && <div style={{ color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.specification}</div>}
                 </div>
-                <input ref={(node) => { fileInputs.current[item.clientKey] = node; }} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; updateLine(item.clientKey, { image: { relativePath: null, originalName: file.name, mimeType: file.type, file, previewUrl: URL.createObjectURL(file) }, isTemporary: true }); event.target.value = ''; }} />
-              </div>
-              {customerPickerLineKey === item.clientKey && <div style={{ position: 'relative' }}><div style={{ position: 'absolute', zIndex: 6, top: 5, left: 0, width: 430, maxHeight: 340, overflow: 'auto', border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff', boxShadow: '0 12px 28px rgba(15,23,42,.16)', padding: 8 }}>
-                <CustomerProductPicker customerId={value.customerId} value={item.customerProductId} onSelect={(product) => selectCustomerProduct(item.clientKey, product)} onAddNew={() => setCustomerEditorLineKey(item.clientKey)} />
-              </div></div>}
-              {pickerLineKey === item.clientKey && <div style={{ position: 'relative' }}><div style={{ position: 'absolute', zIndex: 5, top: 5, left: 0, width: 390, maxHeight: 260, overflow: 'auto', border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff', boxShadow: '0 12px 28px rgba(15,23,42,.16)', padding: 7 }}>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 5 }}><button type="button" className="icon-button" title="关闭产品库" onClick={() => setPickerLineKey(undefined)}><X size={14} /></button></div>
-                <LibraryProductPicker selectedProductId={item.productId} onSelect={(selection) => selectProduct(item.clientKey, selection)} />
-              </div></div>}
-              </td>
-              <td style={{ padding: 7 }}><input value={item.sku} onChange={(event) => updateLine(item.clientKey, { sku: event.target.value })} style={fieldStyle} /></td>
-              <td style={{ padding: 7 }}><input value={item.specification} onChange={(event) => updateLine(item.clientKey, { specification: event.target.value })} style={fieldStyle} /></td>
-              <td style={{ padding: 7 }}><input type="number" min="0" step="any" value={item.quantity} onChange={(event) => updateLine(item.clientKey, { quantity: event.target.value })} style={{ ...fieldStyle, borderColor: quantity === null ? '#dc2626' : '#dbe3ea' }} /></td>
-              <td style={{ padding: 7 }}><input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(event) => updateLine(item.clientKey, { unitPrice: event.target.value })} style={{ ...fieldStyle, borderColor: unitPrice === null ? '#dc2626' : '#dbe3ea' }} /></td>
-              <td style={{ padding: 7 }}>
-                <div style={{ display: 'grid', gap: 4 }}>
-                  {(item.priceTiers ?? []).map((tier, tierIndex) => <div key={tierIndex} style={{ display: 'grid', gridTemplateColumns: '56px 12px 56px 60px 24px', gap: 4, alignItems: 'center' }}>
-                    <input type="number" min="0" step="any" aria-label="区间起始数量" placeholder="≥" value={tier.minQuantity} onChange={(event) => updateTier(item.clientKey, tierIndex, { minQuantity: event.target.value })} style={fieldStyle} />
-                    <span style={{ textAlign: 'center', color: '#94a3b8' }}>~</span>
-                    <input type="number" min="0" step="any" aria-label="区间截止数量" placeholder="不限" value={tier.maxQuantity} onChange={(event) => updateTier(item.clientKey, tierIndex, { maxQuantity: event.target.value })} style={fieldStyle} />
-                    <input type="number" min="0" step="0.01" aria-label="区间单价（元）" placeholder="单价" value={tier.unitPrice} onChange={(event) => updateTier(item.clientKey, tierIndex, { unitPrice: event.target.value })} style={fieldStyle} />
-                    <button type="button" className="icon-button danger" title="删除数量区间" onClick={() => removeTier(item.clientKey, tierIndex)}><X size={13} /></button>
-                  </div>)}
-                  <button type="button" title="添加数量区间报价" onClick={() => addTier(item.clientKey)} style={{ justifySelf: 'start', display: 'inline-flex', alignItems: 'center', gap: 3, border: '1px dashed #cbd5e1', borderRadius: 4, background: '#f8fafc', padding: '3px 8px', cursor: 'pointer', color: '#475569', fontSize: 11 }}><Plus size={12} />区间价</button>
-                </div>
-              </td>
-              <td style={{ padding: 10, fontWeight: 650, whiteSpace: 'nowrap' }}>{formatMoney(amount)}</td>
-              <td style={{ padding: 7 }}><input value={item.remark} onChange={(event) => updateLine(item.clientKey, { remark: event.target.value })} style={fieldStyle} /></td>
-              <td style={{ padding: 7 }}><div style={{ display: 'flex', gap: 3 }}><button type="button" className="icon-button" title="上移产品行" disabled={index === 0} onClick={() => moveLine(index, -1)}><ArrowUp size={14} /></button><button type="button" className="icon-button" title="下移产品行" disabled={index === value.items.length - 1} onClick={() => moveLine(index, 1)}><ArrowDown size={14} /></button><button type="button" className="icon-button" title="复制产品行" onClick={() => duplicateLine(index)}><Copy size={14} /></button><button type="button" className="icon-button danger" title="删除产品行" onClick={() => setDraft('items', value.items.filter((line) => line.clientKey !== item.clientKey))}><Trash2 size={14} /></button></div></td>
+              </div></td>
+              <td style={{ padding: 7, whiteSpace: 'nowrap' }}>{formatMoney(unitPriceCents)}{tierCount > 0 && <span title="该行设置了数量区间价，供客户按量选择" style={{ marginLeft: 6, fontSize: 11, color: '#0f766e', background: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: 4, padding: '1px 5px' }}>区间价×{tierCount}</span>}</td>
+              <td style={{ padding: 7, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.remark || '-'}</td>
             </tr>;
           })}</tbody>
         </table>
-        {!value.items.length && <div style={{ padding: 24, textAlign: 'center', color: '#94a3b8' }}>暂无产品，点击“临时产品”添加或从系统产品库调用。</div>}
-      </div>
+      </div> : <button type="button" title="添加产品明细" onClick={() => setItemsOpen(true)} style={{ display: 'grid', placeItems: 'center', gap: 6, width: '100%', padding: 22, border: '1px dashed #cbd5e1', borderRadius: 5, background: '#f8fafc', color: '#64748b', font: 'inherit', fontSize: 12, cursor: 'pointer' }}><Plus size={18} color="#94a3b8" />暂无产品，点击添加产品明细</button>}
+      {itemsError && !itemsOpen && <div role="alert" style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 5, padding: '8px 10px' }}>{itemsError}（点击“编辑产品明细”修改）</div>}
     </section>
 
     <section style={sectionStyle}>
@@ -383,7 +218,17 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
       <button type="button" className="button" title="取消编辑" onClick={onCancel}><X size={15} />取消</button>
       <button type="button" className="button button-primary" title="保存报价单" disabled={saving} onClick={submit}><Save size={15} />{saving ? '正在保存' : '保存报价单'}</button>
     </div>
-    <CustomerProductEditorModal open={customerEditorLineKey != null} product={null} layer={40} onClose={() => setCustomerEditorLineKey(undefined)} onSave={saveNewCustomerProduct} />
+    <QuotationItemsModal
+      open={itemsOpen}
+      customerId={value.customerId}
+      items={value.items}
+      error={itemsError}
+      columns={value.displayConfig.columns}
+      onColumnsChange={(columns) => setDraft('displayConfig', { ...value.displayConfig, columns })}
+      onChange={updateItems}
+      onClose={() => setItemsOpen(false)}
+      onSaveCustomerProduct={onSaveCustomerProduct}
+    />
   </div>;
 }
 
@@ -402,6 +247,7 @@ export function createEmptyQuotationDraft(companySnapshot?: CompanySnapshot): Qu
     validUntil,
     remark: '',
     taxRate: '0',
+    priceType: 'ex_tax',
     subtotal: '0.00',
     tax: '0.00',
     total: '0.00',
@@ -413,7 +259,7 @@ export function createEmptyQuotationDraft(companySnapshot?: CompanySnapshot): Qu
       showContactPhone: true,
       showTax: true,
       showTaxIncludedTotal: true,
-      columns: { image: true, name: true, sku: true, specification: true, quantity: true, unitPrice: true, tierPrice: true, amount: false, remark: true },
+      columns: { image: true, name: true, specification: true, unitPrice: true, tierPrice: true, remark: true },
     },
     items: [emptyLine()],
     customFields: [],

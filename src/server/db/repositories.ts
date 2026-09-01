@@ -931,7 +931,7 @@ export class DatabaseRepositories {
       .prepare(
         `SELECT o.*, COALESCE((SELECT SUM(cli.total_count) FROM carton_labels cl JOIN carton_label_items cli ON cli.carton_label_id = cl.id WHERE cl.order_id = o.id), 0) AS total_quantity,
           COALESCE((SELECT MAX(cl.total_boxes) FROM carton_labels cl WHERE cl.order_id = o.id), 0) AS total_boxes
-         FROM orders o ${where} ORDER BY o.created_at DESC, o.id DESC LIMIT ? OFFSET ?`,
+         FROM orders o ${where} ORDER BY o.ordered_at DESC, o.id DESC LIMIT ? OFFSET ?`,
       )
       .all(...values, pageSize, (page - 1) * pageSize);
     return { rows, total: count, page, pageSize };
