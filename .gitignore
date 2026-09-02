@@ -17,3 +17,4 @@ data/dev-launch-diag.txt
 .workbuddy/
 .workbench-dev.pid
 .git-backup-*/
+.mimosa/
