@@ -282,8 +282,9 @@ describe('quotation routes', () => {
     expect(html).toContain('数量区间价');
     expect(html).toContain('1~99');
     expect(html).toContain('100+');
-    expect(html).toContain('价格类型');
-    expect(html).toContain('不含税价');
+    // 报价单按产品报价：不渲染小计/税额/价税合计等汇总
+    expect(html).not.toContain('价税合计');
+    expect(html).not.toContain('产品小计');
 
     const duplicate = quotationInput();
     duplicate.items = [{

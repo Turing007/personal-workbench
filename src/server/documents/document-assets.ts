@@ -17,6 +17,8 @@ export interface UploadedDocumentImage {
 export interface DocumentItemImageInput {
   key: string;
   productId?: number;
+  /** 行引用客户产品时提供，用于把客户产品自身图片纳入快照校验白名单。 */
+  customerProductId?: number;
   sourceRelativePath?: string;
   originalName?: string;
   mimeType?: string;
@@ -34,8 +36,9 @@ export interface PreparedDocumentAssetBatch {
 }
 
 export type ProductImageValidator = (
-  productId: number,
+  productId: number | undefined,
   relativePath: string,
+  customerProductId?: number,
 ) => boolean | Promise<boolean>;
 
 export class DocumentAssetError extends Error {
@@ -80,7 +83,7 @@ export class DocumentAssetManager {
         } else {
           const sourceRelativePath = input.sourceRelativePath as string;
           const productId = input.productId as number;
-          if (!(await this.validateProductImage(productId, sourceRelativePath))) {
+          if (!(await this.validateProductImage(productId, sourceRelativePath, input.customerProductId))) {
             throw new DocumentAssetError(
               'PRODUCT_IMAGE_MISMATCH',
               '所选产品图片不属于对应产品',
@@ -187,7 +190,10 @@ export class DocumentAssetManager {
     }
 
     if (!input.upload) {
-      if (!Number.isInteger(input.productId) || (input.productId as number) <= 0) {
+      // 来源可以是系统产品图片（需产品 ID）或客户产品图片（需客户产品 ID）
+      const hasSourceContext = (Number.isInteger(input.productId) && (input.productId as number) > 0)
+        || (Number.isInteger(input.customerProductId) && (input.customerProductId as number) > 0);
+      if (!hasSourceContext) {
         throw new DocumentAssetError('INVALID_DOCUMENT_ASSET', '产品库图片必须提供有效产品 ID');
       }
       if (!input.originalName?.trim() || !input.mimeType?.trim()) {

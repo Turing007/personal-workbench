@@ -20,6 +20,14 @@ const DEFAULT_COLORS = ['蓝', '红', '黄'];
 const DEFAULT_BATTERY_PLUGS = ['牧田', '德伟', '米沃奇'];
 const PRODUCT_ATTACHMENT_CATEGORIES = new Set(['manual', 'packaging-design', 'label-dieline', 'other']);
 
+/** 删除文件前限定目录白名单，防止数据库路径被篡改后越权删除存储目录外的文件。 */
+function assertDeletableImagePath(relativePath: string, expectedDirectory: string): void {
+  const normalized = relativePath.replaceAll('\\', '/');
+  if (!normalized.startsWith(`${expectedDirectory}/`)) {
+    throw new ApiError(400, 'INVALID_FILE_PATH', '附件路径不安全');
+  }
+}
+
 interface ProductRouteOptions {
   repositories: DatabaseRepositories;
   fileStore?: FileStore;
@@ -489,8 +497,9 @@ export async function registerProductRoutes(app: FastifyInstance, options: Produ
         if (!fileStore) throw new ApiError(503, 'FILE_STORE_UNAVAILABLE', '附件存储尚未配置');
         const productId = parseId(request.params.id);
         const imageId = parseId(request.params.imageId, 'imageId');
-        const relativePath = repositories.deleteProductImage(productId, imageId);
+        const relativePath = repositories.removeProductImage(productId, imageId);
         if (!relativePath) throw new ApiError(404, 'NOT_FOUND', '产品图片不存在');
+        assertDeletableImagePath(relativePath, 'product-images');
         await fileStore.deleteFile(relativePath);
         return sendSuccess(reply, null);
       }, reply),
@@ -578,8 +587,9 @@ export async function registerProductRoutes(app: FastifyInstance, options: Produ
         const packagingId = parseId(request.params.packagingId, 'packagingId');
         const imageId = parseId(request.params.imageId, 'imageId');
         if (!repositories.getProductPackaging(productId, packagingId)) throw new ApiError(404, 'NOT_FOUND', '包装不存在');
-        const relativePath = repositories.deleteProductPackagingImage(packagingId, imageId);
+        const relativePath = repositories.removeProductPackagingImage(packagingId, imageId);
         if (!relativePath) throw new ApiError(404, 'NOT_FOUND', '包装图片不存在');
+        assertDeletableImagePath(relativePath, 'product-packaging-images');
         await fileStore.deleteFile(relativePath);
         return sendSuccess(reply, null);
       }, reply),

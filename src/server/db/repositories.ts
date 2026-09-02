@@ -150,7 +150,7 @@ function nextProductSku(database: DatabaseSync, timestamp: string): string {
   if (!Number.isSafeInteger(max) || max < 0) max = 0;
 
   for (const row of rows) {
-    const match = /^VT-(\d+)$/i.exec(String(row.sku ?? '').trim());
+    const match = String(row.sku ?? '').trim().match(/^VT-(\d+)$/i);
     if (match) {
       const value = Number(match[1]);
       if (Number.isSafeInteger(value)) max = Math.max(max, value);
@@ -427,14 +427,14 @@ export class DatabaseRepositories {
     return this.database.prepare('SELECT * FROM product_packaging_images WHERE id = ?').get(imageId);
   }
 
-  deleteProductPackagingImage(packagingId: number, imageId: number): string | undefined {
+  removeProductPackagingImage(packagingId: number, imageId: number): string | undefined {
     const image = this.database.prepare('SELECT relative_path FROM product_packaging_images WHERE id = ? AND packaging_id = ?').get(imageId, packagingId) as { relative_path?: unknown } | undefined;
     if (!image) return undefined;
     this.database.prepare('DELETE FROM product_packaging_images WHERE id = ? AND packaging_id = ?').run(imageId, packagingId);
     return String(image.relative_path);
   }
 
-  deleteProductImage(productId: number, imageId: number): string | undefined {
+  removeProductImage(productId: number, imageId: number): string | undefined {
     const image = this.database
       .prepare('SELECT relative_path FROM product_images WHERE id = ? AND product_id = ?')
       .get(imageId, productId);

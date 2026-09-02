@@ -1,5 +1,4 @@
 import type { QuotationServiceDetail } from '../services/quotation-service.js';
-import { QUOTATION_PRICE_TYPE_LABELS } from '../../shared/documents.js';
 
 export interface QuotationTemplateOptions {
   readFile?: (relativePath: string) => Promise<Buffer>;
@@ -28,10 +27,6 @@ function formatMoney(cents: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
-}
-
-function formatTaxRate(basisPoints: number): string {
-  return `${(basisPoints / 100).toLocaleString('zh-CN', { maximumFractionDigits: 2 })}%`;
 }
 
 function mimeTypeForPath(relativePath: string): string {
@@ -142,12 +137,6 @@ export async function renderQuotationHtml(
     )).join('');
     return `<tr>${cells}</tr>`;
   }).join('');
-  const taxRows = quotation.displayConfig.showTax
-    ? `<div><span>税率（${escapeHtml(formatTaxRate(quotation.taxRateBps))}）</span><strong>${escapeHtml(formatMoney(quotation.taxCents))}</strong></div>`
-    : '';
-  const totalRow = quotation.displayConfig.showTaxIncludedTotal
-    ? `<div class="grand-total"><span>价税合计</span><strong>${escapeHtml(formatMoney(quotation.totalCents))}</strong></div>`
-    : '';
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -181,9 +170,6 @@ export async function renderQuotationHtml(
     .image-column { width: 22mm; text-align: center; }
     .product-image { display: block; width: 18mm; height: 18mm; margin: auto; object-fit: contain; }
     .image-placeholder { color: #9aa1a8; }
-    .summary { width: 76mm; margin: 4mm 0 0 auto; }
-    .summary div { display: flex; justify-content: space-between; gap: 8mm; padding: 1.5mm 0; }
-    .summary .grand-total { border-top: 1px solid #303841; margin-top: 1mm; padding-top: 2mm; font-size: 12pt; }
     .footer { display: grid; grid-template-columns: 1fr 1fr; gap: 2mm 7mm; margin-top: 5mm; padding-top: 3mm; border-top: 1px solid #a4aab0; }
     .remark { grid-column: 1 / -1; white-space: pre-wrap; }
   </style>
@@ -200,7 +186,6 @@ export async function renderQuotationHtml(
   <section class="meta-grid">
     ${detailRow('报价单号', quotation.number)}
     ${detailRow('报价日期', quotation.quotationDate)}
-    ${detailRow('价格类型', QUOTATION_PRICE_TYPE_LABELS[quotation.priceType] ?? '')}
     ${detailRow('客户名称', quotation.customerName)}
     ${detailRow('联系人', quotation.contactName)}
     ${contactPhone}
@@ -212,11 +197,6 @@ export async function renderQuotationHtml(
     <thead><tr>${tableHeader}</tr></thead>
     <tbody>${tableRows}</tbody>
   </table>
-  <section class="summary">
-    <div><span>产品小计</span><strong>${escapeHtml(formatMoney(quotation.subtotalCents))}</strong></div>
-    ${taxRows}
-    ${totalRow}
-  </section>
   <footer class="footer">
     ${footerFields}
     ${quotation.remark ? `<div class="detail remark"><span>备注</span><strong>${escapeHtml(quotation.remark)}</strong></div>` : ''}

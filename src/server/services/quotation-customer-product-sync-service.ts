@@ -98,7 +98,9 @@ export class QuotationCustomerProductSyncService {
 
     withTransaction(this.database, (database) => {
       for (const item of items.filter((candidate) => selectedIds.has(candidate.id))) {
-        const savepoint = `quotation_product_${item.id}`;
+        // SAVEPOINT 名称无法参数化：item.id 来自数据库自增主键，拼接前再做一次纯数字白名单校验
+        const savepoint = `quotation_product_${Number(item.id)}`;
+        if (!/^quotation_product_\d+$/.test(savepoint)) throw new Error('客户产品同步失败');
         database.exec(`SAVEPOINT ${savepoint}`);
         try {
           const existing = this.findExisting(customerId, item);

@@ -4,6 +4,7 @@ import {
   Download,
   Edit3,
   FileText,
+  PackageSearch,
   Plus,
   RefreshCw,
   Search,
@@ -12,12 +13,13 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CompanySnapshot, QuotationDetail, QuotationStatus, QuotationSummary } from '../../shared/documents';
+import type { CompanySnapshot, QuotationStatus, QuotationSummary } from '../../shared/documents';
 import type { Customer, CustomerSaveInput } from '../../shared/customers';
 import * as api from '../api';
 import { quotationDetailToDraft, quotationDraftToFormData, type QuotationDraft } from '../documents/document-drafts';
 import Modal from '../components/Modal';
 import QuotationForm, { createEmptyQuotationDraft } from '../components/quotations/QuotationForm';
+import QuotationProductDetailModal from '../components/quotations/QuotationProductDetailModal';
 import QuotationSyncModal from '../components/quotations/QuotationSyncModal';
 
 export interface QuotationPageProps {
@@ -42,10 +44,6 @@ const statusOptions: Array<{ value: 'all' | QuotationStatus; label: string }> = 
   { value: 'expired', label: '已失效' },
 ];
 
-function formatMoney(cents: number | undefined): string {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format((cents ?? 0) / 100);
-}
-
 function downloadBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -66,6 +64,7 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [draft, setDraft] = useState<QuotationDraft>(() => createEmptyQuotationDraft());
   const [syncQuotationId, setSyncQuotationId] = useState<number | null>(null);
+  const [productDetailId, setProductDetailId] = useState<number | null>(null);
 
   const notify = useCallback((message: string, tone: 'success' | 'error' | 'info' = 'info') => {
     onNotify?.(message, tone);
@@ -204,17 +203,16 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
     </div>
 
     <section className="table-panel">
-      <div className="table-scroll"><table className="data-table" style={{ minWidth: 1040 }}><thead><tr>{['报价单号', '日期', '客户', '产品数', '不含税', '含税合计', '状态', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
+      <div className="table-scroll"><table className="data-table" style={{ minWidth: 900 }}><thead><tr>{['报价单号', '日期', '客户', '产品数', '状态', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
         <tbody>{visibleRows.map((row) => <tr key={row.id}>
           <td className="strong-cell" style={{ color: '#0f766e' }}>{row.number}</td>
           <td>{row.quotationDate}</td>
           <td><strong style={{ display: 'block' }}>{row.customerName || '-'}</strong><small style={{ color: '#64748b' }}>{[row.contactName, row.contactPhone].filter(Boolean).join(' · ')}</small></td>
           <td>{row.itemCount ?? '-'}</td>
-          <td>{formatMoney(row.subtotalCents)}</td>
-          <td className="strong-cell">{formatMoney(row.totalCents)}</td>
           <td><select className="toolbar-select" aria-label={`${row.number}状态`} value={row.status} disabled={busyId === row.id} onChange={(event) => void setStatus(row, event.target.value as QuotationStatus)}><option value="draft">草稿</option><option value="sent">已发送</option><option value="won">已成交</option><option value="expired">已失效</option></select></td>
           <td style={{ color: '#64748b' }}>{row.updatedAt.replace('T', ' ').slice(0, 16)}</td>
           <td><div className="row-actions">
+            <button className="icon-button" type="button" title="产品详情" disabled={busyId === row.id} onClick={() => setProductDetailId(row.id)}><PackageSearch size={14} /></button>
             <button className="icon-button" type="button" title="编辑报价单" disabled={busyId === row.id} onClick={() => void openEdit(row.id)}><Edit3 size={14} /></button>
             <button className="icon-button" type="button" title="导出报价 PDF" disabled={busyId === row.id} onClick={() => void exportPdf(row)}><Download size={14} /></button>
             <button className="icon-button" type="button" title="同步到客户产品库" disabled={busyId === row.id} onClick={() => { if (!row.customerId) notify('这份报价单还没有选择正式客户，无法同步到客户产品库', 'error'); else setSyncQuotationId(row.id); }}><RefreshCw size={14} /></button>
@@ -242,5 +240,6 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
         onOpenCustomerProducts?.(customerId);
       }}
     />
+    <QuotationProductDetailModal open={productDetailId != null} quotationId={productDetailId} onClose={() => setProductDetailId(null)} />
   </div>;
 }

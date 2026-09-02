@@ -1,14 +1,5 @@
 export type QuotationStatus = 'draft' | 'sent' | 'won' | 'expired';
 
-/** 报价单价格口径：不含税价 / 含税不含运 / 含税含运。 */
-export type QuotationPriceType = 'ex_tax' | 'tax_included' | 'tax_included_with_freight';
-
-export const QUOTATION_PRICE_TYPE_LABELS: Record<QuotationPriceType, string> = {
-  ex_tax: '不含税价',
-  tax_included: '含税不含运',
-  tax_included_with_freight: '含税含运',
-};
-
 export type SalesDocumentStatus = 'draft' | 'issued' | 'void';
 
 export type PaymentStatus = 'unpaid' | 'partial' | 'paid';
@@ -142,7 +133,6 @@ export interface QuotationDetail extends QuotationSummary {
   validUntil: string;
   remark: string;
   taxRateBps: number;
-  priceType: QuotationPriceType;
   subtotalCents: number;
   taxCents: number;
   companySnapshot: CompanySnapshot;
@@ -165,7 +155,6 @@ export interface QuotationSaveInput {
   validUntil: string;
   remark: string;
   taxRateBps: number;
-  priceType?: QuotationPriceType;
   companySnapshot: CompanySnapshot;
   displayConfig: QuotationDisplayConfig;
   items: Array<QuotationItemInput>;

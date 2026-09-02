@@ -5,7 +5,6 @@ import type {
   QuotationDisplayConfig,
   QuotationItem,
   QuotationPriceTier,
-  QuotationPriceType,
   QuotationStatus,
   QuotationSummary,
 } from '../../shared/documents.js';
@@ -46,7 +45,6 @@ export interface QuotationPersistenceInput {
   validUntil: string;
   remark: string;
   taxRateBps: number;
-  priceType: QuotationPriceType;
   subtotalCents: number;
   taxCents: number;
   totalCents: number;
@@ -79,7 +77,6 @@ export interface QuotationRepositoryDetail extends QuotationSummary {
   validUntil: string;
   remark: string;
   taxRateBps: number;
-  priceType: QuotationPriceType;
   subtotalCents: number;
   taxCents: number;
   companySnapshot: CompanySnapshot;
@@ -234,7 +231,6 @@ export class QuotationRepository {
       validUntil: rowValue(row, 'valid_until'),
       remark: rowValue(row, 'remark'),
       taxRateBps: numberValue(row, 'tax_rate_bps'),
-      priceType: (rowValue(row, 'price_type', 'ex_tax') as QuotationPriceType),
       subtotalCents: numberValue(row, 'subtotal_cents'),
       taxCents: numberValue(row, 'tax_cents'),
       customerProductsSyncedAt: row.customer_products_synced_at == null
@@ -262,9 +258,9 @@ export class QuotationRepository {
     const quotationId = lastInsertId(database.prepare(
       `INSERT INTO quotations
         (number, status, quotation_date, customer_id, customer_name, contact_name, contact_phone, customer_address,
-         valid_until, remark, tax_rate_bps, price_type, subtotal_cents, tax_cents, total_cents,
+         valid_until, remark, tax_rate_bps, subtotal_cents, tax_cents, total_cents,
          customer_products_synced_at, company_snapshot_json, display_config_json, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       record.number,
       record.status,
@@ -277,7 +273,6 @@ export class QuotationRepository {
       record.validUntil,
       record.remark,
       record.taxRateBps,
-      record.priceType,
       record.subtotalCents,
       record.taxCents,
       record.totalCents,
@@ -294,7 +289,7 @@ export class QuotationRepository {
   replace(database: DatabaseSync, id: number, record: QuotationPersistenceInput): boolean {
     const result = database.prepare(
       `UPDATE quotations SET status = ?, quotation_date = ?, customer_id = ?, customer_name = ?, contact_name = ?, contact_phone = ?,
-        customer_address = ?, valid_until = ?, remark = ?, tax_rate_bps = ?, price_type = ?, subtotal_cents = ?, tax_cents = ?,
+        customer_address = ?, valid_until = ?, remark = ?, tax_rate_bps = ?, subtotal_cents = ?, tax_cents = ?,
         total_cents = ?, customer_products_synced_at = ?, company_snapshot_json = ?, display_config_json = ?, updated_at = ? WHERE id = ?`,
     ).run(
       record.status,
@@ -307,7 +302,6 @@ export class QuotationRepository {
       record.validUntil,
       record.remark,
       record.taxRateBps,
-      record.priceType,
       record.subtotalCents,
       record.taxCents,
       record.totalCents,

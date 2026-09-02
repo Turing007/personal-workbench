@@ -133,11 +133,22 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   const quotationRepository = new QuotationRepository(options.database);
   const salesDocumentRepository = new SalesDocumentRepository(options.database);
   const documentAssetManager = options.fileStore
-    ? new DocumentAssetManager(options.fileStore, (productId, relativePath) => Boolean(
-      options.database.prepare(
+    ? new DocumentAssetManager(options.fileStore, (productId, relativePath, customerProductId) => {
+      // 客户产品行：允许客户产品自己的图片，或其关联系统产品的图片
+      if (customerProductId != null) {
+        return Boolean(options.database.prepare(
+          `SELECT 1 FROM customer_products
+            WHERE id = ?
+              AND (image_relative_path = ?
+                OR (system_product_id IS NOT NULL AND EXISTS (
+                  SELECT 1 FROM product_images WHERE product_id = system_product_id AND relative_path = ?)))`,
+        ).get(customerProductId, relativePath, relativePath));
+      }
+      if (productId == null) return false;
+      return Boolean(options.database.prepare(
         'SELECT 1 FROM product_images WHERE product_id = ? AND relative_path = ?',
-      ).get(productId, relativePath),
-    ))
+      ).get(productId, relativePath));
+    })
     : undefined;
   const assetManager = documentAssetManager && options.fileStore
     ? {

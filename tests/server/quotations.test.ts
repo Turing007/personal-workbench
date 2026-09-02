@@ -115,7 +115,6 @@ describe('quotation repository and service', () => {
     }));
 
     expect(quotation.number).toBe('BJ20260808001');
-    expect(quotation.priceType).toBe('ex_tax');
     expect(quotation.subtotalCents).toBe(15_000);
     expect(quotation.taxCents).toBe(1_950);
     expect(quotation.totalCents).toBe(16_950);
@@ -234,24 +233,6 @@ describe('quotation repository and service', () => {
     await expect(service.create(makeInput({ items: [] }))).rejects.toMatchObject({ field: 'items' });
     await expect(service.create(makeInput({ items: [{ ...makeInput().items[0], unitPriceCents: -1, unitPrice: undefined }] }))).rejects.toMatchObject({ field: 'items.0.unitPriceCents' });
     await expect(service.create(makeInput({ taxRateBps: 10001 }))).rejects.toMatchObject({ field: 'taxRateBps' });
-    await expect(service.create(makeInput({ priceType: 'bogus' }))).rejects.toMatchObject({ field: 'priceType' });
-    database.close();
-  });
-
-  it('derives ex-tax subtotal and tax when prices are quoted tax-included', async () => {
-    const { service, database } = createContext();
-    const quotation = await service.create(makeInput({
-      taxRateBps: 1300,
-      priceType: 'tax_included_with_freight',
-      items: [
-        { clientKey: 'a', productId: null, isTemporary: true, name: '含税产品', sku: '', specification: '', unitPrice: 113, remark: '', sortOrder: 0 },
-      ],
-    }));
-
-    expect(quotation.priceType).toBe('tax_included_with_freight');
-    expect(quotation.totalCents).toBe(11_300);
-    expect(quotation.subtotalCents).toBe(10_000);
-    expect(quotation.taxCents).toBe(1_300);
     database.close();
   });
 
@@ -259,6 +240,65 @@ describe('quotation repository and service', () => {
     const { service, database } = createContext();
     const quotation = await service.create(makeInput());
     expect(quotation.items[0]?.imageRelativePath).toBeNull();
+    database.close();
+  });
+
+  it('passes customer product id through when snapshotting customer product images', async () => {
+    const { database, service } = createContext();
+    const preparedInputs: Array<Record<string, unknown>> = [];
+    const customerService = new QuotationService({
+      database,
+      repository: new QuotationRepository(database),
+      documentNumberRepository: new DocumentNumberRepository(database),
+      settingsRepository: new SettingsRepository(database),
+      assetManager: {
+        async prepareItemImages(_kind, inputs) {
+          preparedInputs.push(...inputs.map((input) => ({ ...input })));
+          return {
+            assets: inputs.map((input) => ({
+              key: input.key,
+              relativePath: `quotation-assets/${input.key}.png`,
+              originalName: 'customer.png',
+              mimeType: 'image/png',
+              size: 8,
+            })),
+            stagedFiles: [],
+            state: 'prepared' as const,
+          };
+        },
+        async commit(batch) { batch.state = 'committed'; return batch.assets; },
+        async rollback(batch) { batch.state = 'rolled-back'; },
+      },
+    });
+    const customerId = Number(database.prepare(
+      `INSERT INTO customers (name, created_at, updated_at) VALUES ('浙江良业-周斌', '2026-09-01', '2026-09-01')`,
+    ).run().lastInsertRowid);
+    const customerProductId = Number(database.prepare(
+      `INSERT INTO customer_products (customer_id, name, image_relative_path, created_at, updated_at)
+       VALUES (?, '玻璃胶枪-02款', 'customer-product-images/1/glass-gun.png', '2026-09-01', '2026-09-01')`,
+    ).run(customerId).lastInsertRowid);
+
+    const quotation = await customerService.create(makeInput({
+      customerId,
+      items: [{
+        clientKey: 'cp-line',
+        productId: null,
+        customerProductId,
+        isTemporary: true,
+        name: '玻璃胶枪-02款',
+        sku: '',
+        specification: '',
+        imageRelativePath: 'customer-product-images/1/glass-gun.png',
+        imageOriginalName: 'glass-gun.png',
+        imageMimeType: 'image/png',
+        unitPrice: 130,
+        remark: '',
+        sortOrder: 0,
+      }],
+    }));
+
+    expect(preparedInputs[0]).toMatchObject({ key: 'cp-line', customerProductId, sourceRelativePath: 'customer-product-images/1/glass-gun.png' });
+    expect(quotation.items[0]?.imageRelativePath).toBe('quotation-assets/cp-line.png');
     database.close();
   });
 

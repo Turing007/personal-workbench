@@ -170,7 +170,7 @@ describe('document asset manager', () => {
       },
     ]);
 
-    expect(validateProductImage).toHaveBeenCalledWith(7, source.relativePath);
+    expect(validateProductImage).toHaveBeenCalledWith(7, source.relativePath, undefined);
     expect(batch.assets).toHaveLength(2);
     await manager.commit(batch);
     await expect(store.readFile(batch.assets[0].relativePath)).resolves.toEqual(Buffer.from('library'));
@@ -181,8 +181,35 @@ describe('document asset manager', () => {
     expect(await pathExists(store.resolvePublicPath(batch.assets[1].relativePath))).toBe(false);
   });
 
-  it('rejects product images that do not belong to the selected product', async () => {
+  it('forwards customer product id to the image validator for customer product snapshots', async () => {
     const { store } = await makeStore();
+    const source = await store.saveImage(
+      Readable.from([Buffer.from('customer')]),
+      'customer-product',
+      'glass-gun.png',
+      'image/png',
+    );
+    const validateProductImage = vi.fn(async (_productId: number | undefined, relativePath: string, customerProductId?: number) =>
+      customerProductId === 21 && relativePath === source.relativePath);
+    const manager = new DocumentAssetManager(store, validateProductImage);
+    const batch = await manager.prepareItemImages('quotation-asset', [
+      {
+        key: 'customer-item',
+        customerProductId: 21,
+        sourceRelativePath: source.relativePath,
+        originalName: 'glass-gun.png',
+        mimeType: 'image/png',
+      },
+    ]);
+
+    expect(validateProductImage).toHaveBeenCalledWith(undefined, source.relativePath, 21);
+    expect(batch.assets).toHaveLength(1);
+    await manager.commit(batch);
+    await expect(store.readFile(batch.assets[0].relativePath)).resolves.toEqual(Buffer.from('customer'));
+    await manager.rollback(batch);
+  });
+
+  it('rejects product images that do not belong to the selected product', async () => {    const { store } = await makeStore();
     const source = await store.saveImage(
       Readable.from([Buffer.from('library')]),
       'product',

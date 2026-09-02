@@ -6,22 +6,18 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import type {
   CompanySnapshot,
-  QuotationPriceType,
   QuotationStatus,
 } from '../../../shared/documents';
-import { QUOTATION_PRICE_TYPE_LABELS } from '../../../shared/documents';
 import type { Customer, CustomerProduct, CustomerProductSaveInput, CustomerSaveInput } from '../../../shared/customers';
-import { calculateQuotationTotals } from '../../../shared/money';
 import type { QuotationDraft as SharedQuotationDraft } from '../../documents/document-drafts';
 import { createDocumentClientKey } from '../../documents/document-drafts';
 import CompanySnapshotFields from '../documents/CompanySnapshotFields';
-import DocumentTotals from '../documents/DocumentTotals';
 import CustomerSelector from '../customers/CustomerSelector';
 import QuotationItemsModal from './QuotationItemsModal';
-import { emptyLine, formatMoney, lineUnitPriceCents, parseNonNegative, validateQuotationLines, type QuotationLineDraft } from './quotation-lines';
+import { emptyLine, formatMoney, lineUnitPriceCents, validateQuotationLines, type QuotationLineDraft } from './quotation-lines';
 
 export type { QuotationLineDraft } from './quotation-lines';
 
@@ -98,19 +94,6 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
     setDraft('items', items);
   };
 
-  const totals = useMemo(() => {
-    const taxRate = parseNonNegative(value.taxRate);
-    try {
-      return calculateQuotationTotals(
-        value.items.map((item) => ({ unitPriceCents: lineUnitPriceCents(item) })),
-        Math.round((taxRate ?? 0) * 100),
-        value.priceType,
-      );
-    } catch {
-      return { subtotalCents: 0, taxCents: 0, shippingCents: 0, totalCents: 0 };
-    }
-  }, [value.items, value.taxRate, value.priceType]);
-
   const validate = (): boolean => {
     if (!value.customerName.trim()) return setError('请填写客户名称'), false;
     if (!value.quotationDate) return setError('请选择报价日期'), false;
@@ -120,8 +103,6 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
       setItemsOpen(true);
       return false;
     }
-    const taxRate = parseNonNegative(value.taxRate);
-    if (taxRate === null || taxRate > 100) return setError('税率必须在 0% 到 100% 之间'), false;
     setError('');
     return true;
   };
@@ -141,14 +122,6 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
         <label>报价日期<input type="date" value={value.quotationDate} onChange={(event) => setDraft('quotationDate', event.target.value)} style={fieldStyle} /></label>
         <label>有效期至<input type="date" value={value.validUntil} onChange={(event) => setDraft('validUntil', event.target.value)} style={fieldStyle} /></label>
-      </div>
-      <div style={{ display: 'grid', gap: 6 }}>
-        <span style={{ fontSize: 12, color: '#64748b' }}>价格类型</span>
-        <div className="segmented" role="radiogroup" aria-label="价格类型">
-          {(Object.keys(QUOTATION_PRICE_TYPE_LABELS) as QuotationPriceType[]).map((type) => (
-            <button key={type} type="button" className={`segmented-item${value.priceType === type ? ' is-active' : ''}`} title={`按${QUOTATION_PRICE_TYPE_LABELS[type]}报价`} onClick={() => setDraft('priceType', type)}>{QUOTATION_PRICE_TYPE_LABELS[type]}</button>
-          ))}
-        </div>
       </div>
       <CustomerSelector value={value.customerId} customers={customers} onChange={chooseCustomer} onCreateCustomer={onCreateCustomer} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
@@ -203,14 +176,9 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
       {!value.customFields.length && <span style={{ color: '#94a3b8' }}>没有自定义字段</span>}
     </section>
 
-    <section style={{ ...sectionStyle, gridTemplateColumns: 'minmax(0, 1fr) 280px', alignItems: 'start' }}>
-      <label>报价备注<textarea rows={4} value={value.remark} onChange={(event) => setDraft('remark', event.target.value)} style={{ ...fieldStyle, resize: 'vertical' }} placeholder="付款方式、交期或其他说明" /></label>
-      <div style={{ display: 'grid', gap: 7 }}>
-        <label style={{ display: 'grid', gridTemplateColumns: '1fr 90px', alignItems: 'center', gap: 8 }}>税率（%）<input type="number" min="0" max="100" step="0.01" value={value.taxRate} onChange={(event) => setDraft('taxRate', event.target.value)} style={fieldStyle} /></label>
-        <label style={{ display: 'flex', gap: 5, alignItems: 'center' }}><input type="checkbox" checked={value.displayConfig.showTax} onChange={(event) => setDraft('displayConfig', { ...value.displayConfig, showTax: event.target.checked })} />PDF 显示税额</label>
-        <label style={{ display: 'flex', gap: 5, alignItems: 'center' }}><input type="checkbox" checked={value.displayConfig.showTaxIncludedTotal} onChange={(event) => setDraft('displayConfig', { ...value.displayConfig, showTaxIncludedTotal: event.target.checked })} />PDF 显示含税合计</label>
-        <DocumentTotals subtotalCents={totals.subtotalCents} taxRateBps={Math.round((parseNonNegative(value.taxRate) ?? 0) * 100)} taxCents={totals.taxCents} totalCents={totals.totalCents} showTax={value.displayConfig.showTax} />
-      </div>
+    <section style={sectionStyle}>
+      <strong style={{ fontSize: 13 }}>报价备注</strong>
+      <label>备注<textarea rows={4} value={value.remark} onChange={(event) => setDraft('remark', event.target.value)} style={{ ...fieldStyle, resize: 'vertical' }} placeholder="付款方式、交期或其他说明" /></label>
     </section>
 
     {error && <div role="alert" style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 5, padding: '8px 10px' }}>{error}</div>}
@@ -247,7 +215,6 @@ export function createEmptyQuotationDraft(companySnapshot?: CompanySnapshot): Qu
     validUntil,
     remark: '',
     taxRate: '0',
-    priceType: 'ex_tax',
     subtotal: '0.00',
     tax: '0.00',
     total: '0.00',

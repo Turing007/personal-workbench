@@ -94,7 +94,7 @@ async function parseMultipartInput(request: FastifyRequest): Promise<SalesDocume
       payload = parseJsonPayload(part.value);
       continue;
     }
-    const match = /^itemImage\.(.+)$/.exec(part.fieldname);
+    const match = part.fieldname.match(/^itemImage\.(.+)$/);
     if (!match?.[1]) {
       await part.toBuffer();
       throw new ApiError(400, 'VALIDATION_ERROR', `不支持的文件字段：${part.fieldname}`, part.fieldname);
