@@ -682,6 +682,26 @@ export interface BackupResult {
 }
 
 export function createBackup() { return request<BackupResult>('/api/backups', { method: 'POST' }); }
+
+export interface AutoBackupFileInfo {
+  fileName: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+export interface AutoBackupStatus {
+  enabled: boolean;
+  running: boolean;
+  todayDone: boolean;
+  lastBackupAt: string | null;
+  lastResult: 'success' | 'failed' | null;
+  lastError: string | null;
+  keepCount: number;
+  files: AutoBackupFileInfo[];
+}
+
+export function getAutoBackupStatus() { return request<AutoBackupStatus>('/api/backups/auto/status'); }
+export function runAutoBackupNow() { return request<BackupResult & { createdAt: string }>('/api/backups/auto/run', { method: 'POST' }); }
 export async function previewBackup(file: File) {
   const form = new FormData();
   form.append('file', file);
