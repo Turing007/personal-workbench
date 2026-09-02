@@ -1,9 +1,9 @@
-import { ArrowDown, ArrowUp, Building2, Database, Download, ImageOff, Plus, RotateCcw, Save, ScrollText, Trash2, Upload } from 'lucide-react';
+import { ArrowDown, ArrowUp, Building2, CalendarClock, Database, Download, ImageOff, Plus, RotateCcw, Save, ScrollText, Trash2, Upload } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { CompanySnapshot } from '../../shared/documents';
 import { CONTRACT_PLACEHOLDERS, cloneDefaultContractTemplate, type ContractTemplate } from '../../shared/contract';
-import { getServiceVersion } from '../api';
+import { getAutoBackupStatus, getServiceVersion, runAutoBackupNow, type AutoBackupStatus } from '../api';
 import { formatDateTime } from '../../shared/formatters';
 
 const EMPTY_PROFILE: CompanySnapshot = { name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '' };
@@ -286,8 +286,71 @@ export default function SettingsPage({
       </div>
       </div>}
       {activeSection === 'storage' && <div className="settings-section card"><div className="settings-heading"><Database size={18} /><strong>本机数据</strong></div><p>数据和附件保存在本机，不连接云端。网页版服务只监听本机地址。</p><div className="setting-row"><span>服务地址</span><code>{window.location.origin}</code></div><div className="setting-row"><span>存储方式</span><span>SQLite + 本地附件目录</span></div></div>}
-      {activeSection === 'backup' && <div className="settings-section card"><div className="settings-heading"><Download size={18} /><strong>备份与恢复</strong></div><p>备份包含订单、产品、箱唛、打印历史、报价单、销售单及相关附件。恢复前会自动保留当前数据备份。</p><p style={{ color: 'var(--color-text-muted)', fontSize: 12 }}>{serviceVersion ? `当前服务版本 v${serviceVersion.version}${serviceVersion.mode === 'development' ? '（开发模式，源码即时生效）' : serviceVersion.buildTime ? `，构建于 ${formatDateTime(serviceVersion.buildTime)}` : ''}。若页面功能与预期不符，请关闭本程序后重新运行“启动个人工作台”。` : '正在读取服务版本...'}</p><div className="settings-actions"><button className="button button-primary" type="button" onClick={() => void onBackup?.()}><Download size={15} />创建备份</button><label className="button button-secondary"><RotateCcw size={15} />选择备份恢复<input type="file" accept=".zip,application/zip" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onRestore?.(file); event.target.value = ''; }} hidden /></label></div></div>}
+      {activeSection === 'backup' && <div style={{ display: 'grid', gap: 14 }}>
+        <AutoBackupCard />
+        <div className="settings-section card"><div className="settings-heading"><Download size={18} /><strong>手动备份与恢复</strong></div><p>备份包含订单、产品、箱唛、打印历史、报价单、销售单及相关附件。恢复前会自动保留当前数据备份。</p><p style={{ color: 'var(--color-text-muted)', fontSize: 12 }}>{serviceVersion ? `当前服务版本 v${serviceVersion.version}${serviceVersion.mode === 'development' ? '（开发模式，源码即时生效）' : serviceVersion.buildTime ? `，构建于 ${formatDateTime(serviceVersion.buildTime)}` : ''}。若页面功能与预期不符，请关闭本程序后重新运行“启动个人工作台”。` : '正在读取服务版本...'}</p><div className="settings-actions"><button className="button button-primary" type="button" onClick={() => void onBackup?.()}><Download size={15} />创建备份</button><label className="button button-secondary"><RotateCcw size={15} />选择备份恢复<input type="file" accept=".zip,application/zip" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onRestore?.(file); event.target.value = ''; }} hidden /></label></div></div>
+      </div>}
       </div>
     </section>
+  </div>;
+}
+
+/** 自动备份状态卡片：展示每日 03:00 自动备份的运行情况，支持立即执行一次。 */
+function AutoBackupCard() {
+  const [status, setStatus] = useState<AutoBackupStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState<'success' | 'error'>('success');
+  const [loadError, setLoadError] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const next = await getAutoBackupStatus();
+      setStatus(next);
+      setLoadError(false);
+    } catch {
+      setLoadError(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const runNow = async () => {
+    setBusy(true);
+    setMessage('');
+    try {
+      const result = await runAutoBackupNow();
+      setMessageType('success');
+      setMessage(`自动备份已创建：${result.fileName}`);
+      await load();
+    } catch (error) {
+      setMessageType('error');
+      setMessage(error instanceof Error ? error.message : '自动备份执行失败');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loadError) {
+    return <div className="settings-section card"><div className="settings-heading"><CalendarClock size={18} /><strong>自动备份</strong></div><p>无法获取自动备份状态（可能运行的是旧版本服务），重启工作台后可用。</p></div>;
+  }
+
+  return <div className="settings-section card">
+    <div className="settings-heading"><CalendarClock size={18} /><strong>自动备份</strong></div>
+    <p>每天凌晨 3:00 自动创建完整备份（含数据库和附件），启动时如果当天还没备份会立即补跑。最近 {status?.keepCount ?? 14} 份自动备份保留在数据目录的 backups 文件夹中，更早的自动清理。</p>
+    {!status ? <p>加载中...</p> : <div>
+      <div className="setting-row"><span>今天是否已备份</span><span>{status.running ? '正在备份…' : status.todayDone ? '✅ 已完成' : '⏳ 待执行'}</span></div>
+      <div className="setting-row"><span>最近一次自动备份</span><span>{status.lastBackupAt ? status.lastBackupAt.replace('T', ' ').slice(0, 19).replace('Z', '') : '—'}</span></div>
+      {status.lastResult === 'failed' && <div className="setting-row"><span>最近错误</span><span style={{ color: '#b91c1c' }}>{status.lastError ?? '未知错误'}</span></div>}
+      {status.files.length > 0 && <div className="setting-row" style={{ alignItems: 'flex-start' }}><span>最近备份文件</span><div style={{ display: 'grid', gap: 4, textAlign: 'right' }}>
+        {status.files.slice(0, 5).map((file) => <a key={file.fileName} href={`/api/backups/download/${encodeURIComponent(file.fileName)}`} style={{ fontSize: 12 }}>{file.fileName.slice('自动备份-个人工作台-'.length, -'.zip'.length)}（{(file.sizeBytes / 1024 / 1024).toFixed(1)} MB）</a>)}
+      </div></div>}
+      <div className="settings-actions" style={{ marginTop: 10 }}>
+        <button className="button button-primary" type="button" disabled={busy || status.running} onClick={() => void runNow()}>{busy || status.running ? '备份中…' : '立即备份一次'}</button>
+        <span role="status" style={{ color: messageType === 'error' ? '#b91c1c' : '#0f766e', fontSize: 12 }}>{message}</span>
+      </div>
+    </div>}
   </div>;
 }

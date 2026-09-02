@@ -3,11 +3,13 @@ import { basename, join } from 'node:path';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { BackupError, BackupService } from '../backup/backup-service.js';
+import { AutoBackupService } from '../backup/auto-backup-service.js';
 import { ApiError, sendFailure, sendSuccess } from './api-response.js';
 
 interface BackupRouteOptions {
   service: BackupService;
   backupsDirectory: string;
+  autoBackupService?: AutoBackupService;
 }
 
 function asBackupError(error: unknown): ApiError {
@@ -26,14 +28,33 @@ async function readMultipartBuffer(request: FastifyRequest): Promise<Buffer> {
 
 function safeBackupFileName(value: string): string {
   const fileName = basename(value);
-  if (fileName !== value || !/^个人工作台备份-[0-9TZ]+\.zip$/.test(fileName)) {
+  if (fileName !== value || !/^(?:个人工作台备份|自动备份-个人工作台)-[0-9TZ]+\.zip$/.test(fileName)) {
     throw new ApiError(400, 'INVALID_BACKUP_NAME', '备份文件名无效');
   }
   return fileName;
 }
 
 export async function registerBackupRoutes(app: FastifyInstance, options: BackupRouteOptions): Promise<void> {
-  const { service } = options;
+  const { service, autoBackupService } = options;
+
+  if (autoBackupService) {
+    app.get('/api/backups/auto/status', async (_request, reply) => {
+      try {
+        return sendSuccess(reply, await autoBackupService.getStatus());
+      } catch (error) {
+        return sendFailure(reply, asBackupError(error));
+      }
+    });
+
+    app.post('/api/backups/auto/run', async (_request, reply) => {
+      try {
+        const result = await autoBackupService.runNow();
+        return sendSuccess(reply, { ...result, downloadUrl: `/api/backups/download/${encodeURIComponent(result.fileName)}` }, 201);
+      } catch (error) {
+        return sendFailure(reply, asBackupError(error));
+      }
+    });
+  }
 
   app.post('/api/backups', async (_request, reply) => {
     try {

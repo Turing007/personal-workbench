@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "stop-20260902T043523233Z-35416-f2a49079578b",
+  "runId": "20260902T043523233Z-35416-f2a49079578b",
+  "runStatus": "completed",
+  "coverage": {
+    "status": "complete",
+    "reasons": []
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "Stop"
+  },
+  "revision": "c7ad358db25efb1c1f15bda645d471f15f8efd76",
+  "diffHash": "9780b81d03ac84dc68452eb6cc26ae949f3bb2c8aecf98c8738143cb8e39308a",
+  "rulesVersion": "unavailable",
+  "sessionHash": "17ca13cf464cff403203cb52877ec70e3b8af9465ead422c6e849a50fc90ddee",
+  "reportRef": ".mimosa/reports/task-review-sess_20df3d32-8200-4d7d-85d9-740a311e9ccc-20260902T043523233Z-35416-f2a49079578b.json",
+  "events": [],
+  "observedFindingIds": [],
+  "verifiedFiles": [
+    {
+      "file": "src/server/routes/products.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "src/server/services/order-service.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "src/server/routes/quotations.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "src/server/routes/sales-documents.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "src/server/db/repositories.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "src/server/services/quotation-customer-product-sync-service.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    }
+  ],
+  "recordedAt": "2026-09-02T04:35:23.843Z"
+}

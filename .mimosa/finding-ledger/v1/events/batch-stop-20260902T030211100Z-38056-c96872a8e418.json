@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "stop-20260902T030211100Z-38056-c96872a8e418",
+  "runId": "20260902T030211100Z-38056-c96872a8e418",
+  "runStatus": "completed",
+  "coverage": {
+    "status": "complete",
+    "reasons": []
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "Stop"
+  },
+  "revision": "1a6d28631b34db6325bf6aaaf316e1e6461d49dd",
+  "diffHash": "8354d2605991a8e107cdf0fb2ea90d0cba7416e59fbc1abd11993ead1fedd177",
+  "rulesVersion": "unavailable",
+  "sessionHash": "17ca13cf464cff403203cb52877ec70e3b8af9465ead422c6e849a50fc90ddee",
+  "reportRef": ".mimosa/reports/task-review-sess_20df3d32-8200-4d7d-85d9-740a311e9ccc-20260902T030211100Z-38056-c96872a8e418.json",
+  "events": [],
+  "observedFindingIds": [],
+  "verifiedFiles": [
+    {
+      "file": "src/client/components/quotations/QuotationProductDetailModal.tsx",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "src/client/pages/QuotationPage.tsx",
+      "direct": "complete",
+      "projectContext": "partial"
+    }
+  ],
+  "recordedAt": "2026-09-02T03:02:11.680Z"
+}

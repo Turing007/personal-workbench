@@ -7,6 +7,7 @@ import { MAX_CONTRACT_SIZE } from './config.js';
 import { createRepositories, type DatabaseRepositories } from './db/repositories.js';
 import { FileStore } from './files/file-store.js';
 import { BackupService } from './backup/backup-service.js';
+import { AutoBackupService } from './backup/auto-backup-service.js';
 import { DocumentAssetManager } from './documents/document-assets.js';
 import { QuotationRepository } from './db/quotation-repository.js';
 import { SalesDocumentRepository } from './db/sales-document-repository.js';
@@ -208,7 +209,17 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
       dataDirectory: options.dataDirectory,
       backupsDirectory: options.backupsDirectory,
     });
-    await registerBackupRoutes(app, { service: backupService, backupsDirectory: options.backupsDirectory });
+    // 每日自动备份：启动即补跑当天缺失的备份，之后每天 03:00（本机时间）触发。
+    const autoBackupService = new AutoBackupService({
+      database: options.database,
+      backupService,
+      backupsDirectory: options.backupsDirectory,
+    });
+    void autoBackupService.start().catch((error) => {
+      app.log.error(error, '自动备份初始化失败');
+    });
+    app.addHook('onClose', async () => autoBackupService.stop());
+    await registerBackupRoutes(app, { service: backupService, backupsDirectory: options.backupsDirectory, autoBackupService });
   }
 
   if (options.clientDirectory) {

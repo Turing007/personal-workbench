@@ -149,14 +149,14 @@ export class BackupService {
     this.backupsDirectory = resolve(options.backupsDirectory);
   }
 
-  async createBackup(): Promise<BackupFile> {
+  async createBackup(fileNamePrefix = '个人工作台备份-'): Promise<BackupFile> {
     await mkdir(this.backupsDirectory, { recursive: true });
     const filesDirectory = join(this.dataDirectory, 'files');
     await mkdir(filesDirectory, { recursive: true });
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'personal-workbench-backup-'));
     const snapshotPath = join(temporaryDirectory, DATABASE_ENTRY);
     const createdAt = new Date().toISOString();
-    const fileName = `个人工作台备份-${backupTimestamp(new Date(createdAt))}.zip`;
+    const fileName = `${fileNamePrefix}${backupTimestamp(new Date(createdAt))}.zip`;
     const filePath = join(this.backupsDirectory, fileName);
 
     try {
