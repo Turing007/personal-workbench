@@ -4,7 +4,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { BackupError, BackupService } from '../backup/backup-service.js';
 import { AutoBackupService } from '../backup/auto-backup-service.js';
-import { ApiError, sendFailure, sendSuccess } from './api-response.js';
+import { ApiError, asRecord, sendFailure, sendSuccess } from './api-response.js';
 
 interface BackupRouteOptions {
   service: BackupService;
@@ -43,6 +43,38 @@ export async function registerBackupRoutes(app: FastifyInstance, options: Backup
         return sendSuccess(reply, await autoBackupService.getStatus());
       } catch (error) {
         return sendFailure(reply, asBackupError(error));
+      }
+    });
+
+    app.get('/api/backups/auto/settings', async (_request, reply) => {
+      try {
+        return sendSuccess(reply, autoBackupService.getSettings());
+      } catch (error) {
+        return sendFailure(reply, asBackupError(error));
+      }
+    });
+
+    app.put('/api/backups/auto/settings', async (request, reply) => {
+      try {
+        const body = asRecord(request.body);
+        const input: { directory?: string; keepCount?: number } = {};
+        if ('directory' in body) {
+          if (body.directory !== null && typeof body.directory !== 'string') {
+            throw new ApiError(400, 'VALIDATION_ERROR', '备份目录必须是文本', 'directory');
+          }
+          input.directory = String(body.directory ?? '');
+        }
+        if ('keepCount' in body) {
+          const keep = Number(body.keepCount);
+          if (!Number.isInteger(keep)) {
+            throw new ApiError(400, 'VALIDATION_ERROR', '保留份数必须是整数', 'keepCount');
+          }
+          input.keepCount = keep;
+        }
+        return sendSuccess(reply, await autoBackupService.updateSettings(input));
+      } catch (error) {
+        if (error instanceof ApiError) return sendFailure(reply, error);
+        return sendFailure(reply, new ApiError(400, 'VALIDATION_ERROR', error instanceof Error ? error.message : '自动备份设置无效'));
       }
     });
 
@@ -91,14 +123,26 @@ export async function registerBackupRoutes(app: FastifyInstance, options: Backup
   app.get('/api/backups/download/:fileName', async (request: FastifyRequest<{ Params: { fileName: string } }>, reply) => {
     try {
       const fileName = safeBackupFileName(request.params.fileName);
-      const filePath = join(options.backupsDirectory, fileName);
-      try {
-        const fileStat = await stat(filePath);
-        if (!fileStat.isFile()) throw new ApiError(404, 'NOT_FOUND', '备份文件不存在');
-      } catch (error) {
-        if (error instanceof ApiError) throw error;
-        throw new ApiError(404, 'NOT_FOUND', '备份文件不存在');
+      // 自动备份可能保存在自定义目录：先找默认目录，找不到再找自定义目录（反之亦然）。
+      const candidateDirectories = [options.backupsDirectory];
+      if (autoBackupService) {
+        const customDirectory = autoBackupService.getSettings().directory;
+        if (customDirectory && candidateDirectories[0] !== customDirectory) candidateDirectories.push(customDirectory);
       }
+      let filePath: string | null = null;
+      for (const directory of candidateDirectories) {
+        const candidate = join(directory, fileName);
+        try {
+          const fileStat = await stat(candidate);
+          if (fileStat.isFile()) {
+            filePath = candidate;
+            break;
+          }
+        } catch {
+          // 尝试下一个候选目录
+        }
+      }
+      if (!filePath) throw new ApiError(404, 'NOT_FOUND', '备份文件不存在');
       const stream = createReadStream(filePath);
       stream.on('error', () => {
         if (!reply.sent) void reply.status(404).send({ ok: false, error: { code: 'NOT_FOUND', message: '备份文件不存在' } });

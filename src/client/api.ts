@@ -689,6 +689,11 @@ export interface AutoBackupFileInfo {
   createdAt: string;
 }
 
+export interface AutoBackupSettings {
+  directory: string;
+  keepCount: number;
+}
+
 export interface AutoBackupStatus {
   enabled: boolean;
   running: boolean;
@@ -697,11 +702,14 @@ export interface AutoBackupStatus {
   lastResult: 'success' | 'failed' | null;
   lastError: string | null;
   keepCount: number;
+  directory: string;
   files: AutoBackupFileInfo[];
 }
 
 export function getAutoBackupStatus() { return request<AutoBackupStatus>('/api/backups/auto/status'); }
 export function runAutoBackupNow() { return request<BackupResult & { createdAt: string }>('/api/backups/auto/run', { method: 'POST' }); }
+export function getAutoBackupSettings() { return request<AutoBackupSettings>('/api/backups/auto/settings'); }
+export function updateAutoBackupSettings(input: Partial<AutoBackupSettings>) { return request<AutoBackupSettings>('/api/backups/auto/settings', { method: 'PUT', body: JSON.stringify(input) }); }
 export async function previewBackup(file: File) {
   const form = new FormData();
   form.append('file', file);

@@ -3,7 +3,7 @@ import type { LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import type { CompanySnapshot } from '../../shared/documents';
 import { CONTRACT_PLACEHOLDERS, cloneDefaultContractTemplate, type ContractTemplate } from '../../shared/contract';
-import { getAutoBackupStatus, runAutoBackupNow, type AutoBackupStatus } from '../api';
+import { getAutoBackupStatus, runAutoBackupNow, updateAutoBackupSettings, type AutoBackupStatus } from '../api';
 
 const EMPTY_PROFILE: CompanySnapshot = { name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '' };
 
@@ -285,22 +285,29 @@ export default function SettingsPage({
   </div>;
 }
 
-/** 自动备份状态卡片：展示每日 03:00 自动备份的运行情况，支持立即执行一次。 */
+/** 自动备份状态卡片：展示每日 03:00 自动备份的运行情况，支持修改保留份数/备份目录并立即执行一次。 */
 function AutoBackupCard() {
   const [status, setStatus] = useState<AutoBackupStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
   const [loadError, setLoadError] = useState(false);
+  const [keepCountDraft, setKeepCountDraft] = useState('');
+  const [directoryDraft, setDirectoryDraft] = useState('');
+  const [settingsDirty, setSettingsDirty] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const next = await getAutoBackupStatus();
       setStatus(next);
+      setKeepCountDraft((current) => (settingsDirty ? current : String(next.keepCount)));
+      setDirectoryDraft((current) => (settingsDirty ? current : next.directory));
       setLoadError(false);
     } catch {
       setLoadError(true);
     }
+    // settingsDirty 变化不需要重新拉取
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -323,22 +330,49 @@ function AutoBackupCard() {
     }
   };
 
+  const saveSettings = async () => {
+    setBusy(true);
+    setMessage('');
+    try {
+      const keep = Number(keepCountDraft);
+      if (!Number.isInteger(keep) || keep < 1 || keep > 30) {
+        throw new Error('保留份数必须是 1 到 30 之间的整数');
+      }
+      await updateAutoBackupSettings({ keepCount: keep, directory: directoryDraft.trim() });
+      setMessageType('success');
+      setMessage('自动备份设置已保存');
+      setSettingsDirty(false);
+      await load();
+    } catch (error) {
+      setMessageType('error');
+      setMessage(error instanceof Error ? error.message : '自动备份设置保存失败');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loadError) {
     return <div className="settings-section card"><div className="settings-heading"><CalendarClock size={18} /><strong>自动备份</strong></div><p>无法获取自动备份状态（可能运行的是旧版本服务），重启工作台后可用。</p></div>;
   }
 
   return <div className="settings-section card">
     <div className="settings-heading"><CalendarClock size={18} /><strong>自动备份</strong></div>
-    <p>每天凌晨 3:00 自动创建完整备份（含数据库和附件），启动时如果当天还没备份会立即补跑。最近 {status?.keepCount ?? 14} 份自动备份保留在数据目录的 backups 文件夹中，更早的自动清理。</p>
+    <p>每天凌晨 3:00 自动创建完整备份（含数据库和附件），启动时如果当天还没备份会立即补跑。超过保留份数的最旧自动备份会自动清理。</p>
     {!status ? <p>加载中...</p> : <div>
       <div className="setting-row"><span>今天是否已备份</span><span>{status.running ? '正在备份…' : status.todayDone ? '✅ 已完成' : '⏳ 待执行'}</span></div>
       <div className="setting-row"><span>最近一次自动备份</span><span>{status.lastBackupAt ? status.lastBackupAt.replace('T', ' ').slice(0, 19).replace('Z', '') : '—'}</span></div>
       {status.lastResult === 'failed' && <div className="setting-row"><span>最近错误</span><span style={{ color: '#b91c1c' }}>{status.lastError ?? '未知错误'}</span></div>}
+      <div style={{ display: 'grid', gridTemplateColumns: '160px minmax(0, 1fr)', gap: 10, alignItems: 'center', margin: '12px 0' }}>
+        <label className="label" style={{ margin: 0 }}>保留份数（1-30）<input className="input" type="number" min={1} max={30} value={keepCountDraft} onChange={(event) => { setKeepCountDraft(event.target.value); setSettingsDirty(true); }} style={{ maxWidth: 120 }} /></label>
+        <label className="label" style={{ margin: 0 }}>备份目录（留空 = 默认 backups 文件夹）<input className="input" type="text" placeholder="例如 D:\\个人工作台备份" value={directoryDraft} onChange={(event) => { setDirectoryDraft(event.target.value); setSettingsDirty(true); }} /></label>
+      </div>
+      {status.directory && <div className="setting-row"><span>当前自定义目录</span><code style={{ fontSize: 12 }}>{status.directory}</code></div>}
       {status.files.length > 0 && <div className="setting-row" style={{ alignItems: 'flex-start' }}><span>最近备份文件</span><div style={{ display: 'grid', gap: 4, textAlign: 'right' }}>
         {status.files.slice(0, 5).map((file) => <a key={file.fileName} href={`/api/backups/download/${encodeURIComponent(file.fileName)}`} style={{ fontSize: 12 }}>{file.fileName.slice('自动备份-个人工作台-'.length, -'.zip'.length)}（{(file.sizeBytes / 1024 / 1024).toFixed(1)} MB）</a>)}
       </div></div>}
       <div className="settings-actions" style={{ marginTop: 10 }}>
         <button className="button button-primary" type="button" disabled={busy || status.running} onClick={() => void runNow()}>{busy || status.running ? '备份中…' : '立即备份一次'}</button>
+        <button className="button button-secondary" type="button" disabled={busy || !settingsDirty} onClick={() => void saveSettings()}>保存设置</button>
         <span role="status" style={{ color: messageType === 'error' ? '#b91c1c' : '#0f766e', fontSize: 12 }}>{message}</span>
       </div>
     </div>}
