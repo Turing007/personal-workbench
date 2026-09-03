@@ -149,15 +149,16 @@ export class BackupService {
     this.backupsDirectory = resolve(options.backupsDirectory);
   }
 
-  async createBackup(fileNamePrefix = '个人工作台备份-'): Promise<BackupFile> {
-    await mkdir(this.backupsDirectory, { recursive: true });
+  async createBackup(fileNamePrefix = '个人工作台备份-', targetDirectory?: string): Promise<BackupFile> {
+    const backupsDirectory = targetDirectory ? resolve(targetDirectory) : this.backupsDirectory;
+    await mkdir(backupsDirectory, { recursive: true });
     const filesDirectory = join(this.dataDirectory, 'files');
     await mkdir(filesDirectory, { recursive: true });
     const temporaryDirectory = await mkdtemp(join(tmpdir(), 'personal-workbench-backup-'));
     const snapshotPath = join(temporaryDirectory, DATABASE_ENTRY);
     const createdAt = new Date().toISOString();
     const fileName = `${fileNamePrefix}${backupTimestamp(new Date(createdAt))}.zip`;
-    const filePath = join(this.backupsDirectory, fileName);
+    const filePath = join(backupsDirectory, fileName);
 
     try {
       this.database.exec('PRAGMA wal_checkpoint(TRUNCATE);');

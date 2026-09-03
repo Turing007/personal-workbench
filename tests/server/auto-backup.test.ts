@@ -1,6 +1,6 @@
 import { mkdtemp, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -157,7 +157,7 @@ describe('AutoBackupService', () => {
     expect(scheduler.scheduled[0].delayMs).toBeLessThanOrEqual(msUntilNextThreeAm(new Date()) + 1000);
   });
 
-  it(`超过保留数量（${AUTO_BACKUP_KEEP}）时清理最旧的自动备份，不影响手动备份`, async () => {
+  it(`超过保留数量（默认 ${AUTO_BACKUP_KEEP} 份）时清理最旧的自动备份，不影响手动备份`, async () => {
     const { database, backupsDirectory, backupService } = await makeFixture();
     for (let i = 0; i < AUTO_BACKUP_KEEP + 2; i++) {
       const day = String(10 + i).padStart(2, '0');
@@ -180,6 +180,105 @@ describe('AutoBackupService', () => {
     const autoNames = names.filter((name) => name.startsWith(AUTO_BACKUP_PREFIX));
     expect(autoNames.length).toBe(AUTO_BACKUP_KEEP);
     expect(names.some((name) => name.startsWith('个人工作台备份-'))).toBe(true);
+  });
+
+  it('updateSettings 可修改保留份数并按新数量清理', async () => {
+    const { database, backupsDirectory, backupService } = await makeFixture();
+    // 预置 5 份自动备份
+    for (let i = 0; i < 5; i++) {
+      const day = String(10 + i).padStart(2, '0');
+      await touchAutoBackup(backupsDirectory, `2026-08-${day}T19:00:00Z`);
+    }
+    const scheduler = makeFakeScheduler();
+    let saved: { directory: string; keepCount: number } | null = null;
+    const service = new AutoBackupService({
+      database,
+      backupService,
+      backupsDirectory,
+      scheduleFn: scheduler.scheduleFn,
+      clearFn: scheduler.clearFn,
+      loadSettings: () => saved,
+      saveSettings: (settings) => { saved = settings; },
+    });
+
+    const settings = await service.updateSettings({ keepCount: 2 });
+    expect(settings.keepCount).toBe(2);
+    await service.runNow(); // 新增 1 份 = 6 份 → 清理到 2 份
+    const names = await readdir(backupsDirectory);
+    expect(names.filter((name) => name.startsWith(AUTO_BACKUP_PREFIX)).length).toBe(2);
+  });
+
+  it('自定义目录生效：新备份写入自定义目录并从那里清理', async () => {
+    const { database, backupsDirectory, backupService, directory } = await makeFixture();
+    const customDirectory = join(directory, 'custom-backup-target');
+    const scheduler = makeFakeScheduler();
+    let saved: { directory: string; keepCount: number } | null = { directory: customDirectory, keepCount: 2 };
+    const service = new AutoBackupService({
+      database,
+      backupService,
+      backupsDirectory,
+      scheduleFn: scheduler.scheduleFn,
+      clearFn: scheduler.clearFn,
+      loadSettings: () => saved,
+      saveSettings: (settings) => { saved = settings; },
+    });
+
+    const result = await service.runNow();
+
+    // 备份写入自定义目录，默认目录保持为空（或尚未创建）
+    const customNames = await readdir(customDirectory);
+    expect(customNames).toContain(result.fileName);
+    let defaultNames: string[] = [];
+    try {
+      defaultNames = await readdir(backupsDirectory);
+    } catch {
+      // 默认目录从未被创建也是合法状态
+    }
+    expect(defaultNames.filter((name) => name.endsWith('.zip'))).toEqual([]);
+    // 状态接口列出自定义目录中的文件
+    const status = await service.getStatus();
+    expect(status.directory).toBe(resolve(customDirectory));
+    expect(status.files.map((file) => file.fileName)).toContain(result.fileName);
+  });
+
+  it('updateSettings 拒绝无效保留份数并验证目录可写', async () => {
+    const { database, backupsDirectory, backupService, directory } = await makeFixture();
+    const scheduler = makeFakeScheduler();
+    const service = new AutoBackupService({
+      database,
+      backupService,
+      backupsDirectory,
+      scheduleFn: scheduler.scheduleFn,
+      clearFn: scheduler.clearFn,
+    });
+    await expect(service.updateSettings({ keepCount: 0 })).rejects.toThrow('保留份数');
+    await expect(service.updateSettings({ keepCount: 31 })).rejects.toThrow('保留份数');
+    // 不可写目录（占用/权限）应报错 —— 用一个"文件"充当目录路径
+    const blockedPath = join(directory, 'blocked');
+    await writeFile(blockedPath, 'not-a-directory');
+    await expect(service.updateSettings({ directory: blockedPath })).rejects.toThrow('备份目录不可用');
+    // 空目录字符串 = 恢复默认目录
+    const settings = await service.updateSettings({ directory: '' });
+    expect(settings.directory).toBe('');
+  });
+
+  it('getSettings 返回当前生效配置', async () => {
+    const { database, backupsDirectory, backupService } = await makeFixture();
+    const scheduler = makeFakeScheduler();
+    let saved: { directory: string; keepCount: number } | null = null;
+    const service = new AutoBackupService({
+      database,
+      backupService,
+      backupsDirectory,
+      scheduleFn: scheduler.scheduleFn,
+      clearFn: scheduler.clearFn,
+      loadSettings: () => saved,
+      saveSettings: (settings) => { saved = settings; },
+    });
+    expect(service.getSettings()).toEqual({ directory: '', keepCount: 3 });
+    await service.updateSettings({ directory: 'D:\\备份', keepCount: 5 });
+    expect(service.getSettings().keepCount).toBe(5);
+    expect(service.getSettings().directory).toContain('备份');
   });
 
   it('备份失败时记录 lastError，状态可查询且 running 复位', async () => {

@@ -210,10 +210,13 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
       backupsDirectory: options.backupsDirectory,
     });
     // 每日自动备份：启动即补跑当天缺失的备份，之后每天 03:00（本机时间）触发。
+    // 目录/保留数等设置持久化在 settings 表，重启后依然生效。
     const autoBackupService = new AutoBackupService({
       database: options.database,
       backupService,
       backupsDirectory: options.backupsDirectory,
+      loadSettings: () => settingsRepository.getAutoBackupSettings(),
+      saveSettings: (settings) => settingsRepository.saveAutoBackupSettings(settings),
     });
     void autoBackupService.start().catch((error) => {
       app.log.error(error, '自动备份初始化失败');

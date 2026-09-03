@@ -8,6 +8,28 @@ import {
 
 const COMPANY_PROFILE_KEY = 'company_profile';
 const CONTRACT_TEMPLATE_KEY = 'contract_template';
+const AUTO_BACKUP_SETTINGS_KEY = 'auto_backup_settings';
+
+export interface AutoBackupSettingsRecord {
+  /** 自定义备份目录；空字符串 = 默认目录（数据目录/backups）。 */
+  directory: string;
+  /** 保留份数（1-30）。 */
+  keepCount: number;
+}
+
+const DEFAULT_AUTO_BACKUP_SETTINGS: AutoBackupSettingsRecord = {
+  directory: '',
+  keepCount: 3,
+};
+
+function normalizeAutoBackupSettings(value: unknown): AutoBackupSettingsRecord {
+  const record = (value ?? {}) as Partial<AutoBackupSettingsRecord>;
+  const keepCount = Math.trunc(Number(record.keepCount ?? DEFAULT_AUTO_BACKUP_SETTINGS.keepCount));
+  return {
+    directory: typeof record.directory === 'string' ? record.directory.trim() : '',
+    keepCount: Number.isFinite(keepCount) ? keepCount : DEFAULT_AUTO_BACKUP_SETTINGS.keepCount,
+  };
+}
 
 export const EMPTY_COMPANY_PROFILE: CompanySnapshot = {
   name: '',
@@ -71,6 +93,27 @@ export class SettingsRepository {
       )
       .run(CONTRACT_TEMPLATE_KEY, JSON.stringify(template), new Date().toISOString());
     return template;
+  }
+
+  getAutoBackupSettings(): AutoBackupSettingsRecord {
+    const row = this.database.prepare('SELECT value FROM settings WHERE key = ?').get(AUTO_BACKUP_SETTINGS_KEY) as { value?: string } | undefined;
+    if (!row?.value) return { ...DEFAULT_AUTO_BACKUP_SETTINGS };
+    try {
+      return normalizeAutoBackupSettings(JSON.parse(row.value));
+    } catch {
+      return { ...DEFAULT_AUTO_BACKUP_SETTINGS };
+    }
+  }
+
+  saveAutoBackupSettings(value: Partial<AutoBackupSettingsRecord>): AutoBackupSettingsRecord {
+    const merged = normalizeAutoBackupSettings({ ...this.getAutoBackupSettings(), ...value });
+    this.database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(AUTO_BACKUP_SETTINGS_KEY, JSON.stringify(merged), new Date().toISOString());
+    return merged;
   }
 }
 
