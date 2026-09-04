@@ -8,6 +8,7 @@ import type { OrderContractDraft, OrderDraft, OrderItemDraft, OrderStatus } from
 import type { ProductRecord } from './components/ProductEditor';
 import type { Customer } from '../shared/customers';
 import OrdersPage, { fallbackLabels } from './pages/OrdersPage';
+import { getBatchAdvancePlan, type BatchAdvanceAction } from './order-workflow';
 import ProductsPage from './pages/ProductsPage';
 import CustomerProductsPage from './pages/CustomerProductsPage';
 import ShippingPage from './pages/ShippingPage';
@@ -147,6 +148,7 @@ export default function App() {
   const [statusCounts, setStatusCounts] = useState<Partial<Record<'all' | OrderStatus, number>>>({});
   const [customerProductsInitialCustomerId, setCustomerProductsInitialCustomerId] = useState<number | null>(null);
   const [shippingInitialOrder, setShippingInitialOrder] = useState<OrderDraft>();
+  const [shippingInitialOrders, setShippingInitialOrders] = useState<OrderDraft[]>();
   const [financeInitialOrderId, setFinanceInitialOrderId] = useState<number>();
   const [ordersInitialOrderId, setOrdersInitialOrderId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -395,6 +397,55 @@ export default function App() {
     }
     try { await advanceOrderStatus(Number(order.id), status); await loadOrders(); notify(`订单 ${order.orderNo} 已推进到下一状态`, 'success'); } catch (error) { notify((error as { message?: string }).message ?? '状态推进失败', 'error'); }
   };
+  // 批量推进：一键备货 / 一键打包 / 一键发货，逐单推进、单单容错，结束后统一汇总。
+  const batchAdvance = async (selected: OrderDraft[], action: BatchAdvanceAction) => {
+    const actionLabels = { stock: '备货', pack: '打包', ship: '发货' } as const;
+    const plan = getBatchAdvancePlan(selected, action);
+    // 一键发货：未填物流单号的订单无法直接发货（发货必须留单号），引导到发货工作区补录。
+    const untrackedOrders = action === 'ship'
+      ? plan.skipped
+        .filter((item) => item.reason === '缺少物流单号')
+        .map((item) => selected.find((order) => order.orderNo === item.orderNo))
+        .filter((order): order is OrderDraft => Boolean(order))
+      : [];
+    if (!plan.targets.length && !untrackedOrders.length) {
+      const reason = plan.skipped.length ? plan.skipped[0].reason : '当前状态不支持该操作';
+      notify(`所选订单没有可批量${actionLabels[action]}的订单（${reason}）`, 'error');
+      return;
+    }
+    const unprintedCount = action === 'ship' ? 0 : plan.targets.filter((target) => !target.order.labelPrintedAt).length;
+    const lines: string[] = [];
+    if (action === 'stock') lines.push(`确定对 ${plan.targets.length} 单执行“批量备货”吗？`, '备货：待备货 → 已备货');
+    if (action === 'pack') lines.push(`确定对 ${plan.targets.length} 单执行“批量打包”吗？`, '打包：已备货/待打包 → 完成打包，推进到待发货');
+    if (action === 'ship' && plan.targets.length) lines.push(`确定对 ${plan.targets.length} 单执行“批量发货”吗？`, '发货：待发货 → 已发货');
+    if (untrackedOrders.length) lines.push(`另有 ${untrackedOrders.length} 单未填物流单号，${plan.targets.length ? '发货后将' : '将'}打开发货工作区补录。`);
+    if (unprintedCount) lines.push(`注意：其中 ${unprintedCount} 单尚未打印箱唛（仅作提醒，不阻止流程）`);
+    if (!window.confirm(lines.join('\n'))) return;
+    let advanced = 0;
+    const failed: string[] = [];
+    for (const { order, steps } of plan.targets) {
+      try {
+        for (const step of steps) await advanceOrderStatus(Number(order.id), step);
+        advanced += 1;
+      } catch (error) {
+        failed.push(`${order.orderNo}（${(error as { message?: string }).message ?? '推进失败'}）`);
+      }
+    }
+    await loadOrders();
+    if (plan.targets.length) {
+      const parts = [`批量${actionLabels[action]}完成：成功 ${advanced} 单`];
+      if (untrackedOrders.length) parts.push(`${untrackedOrders.length} 单转入发货工作区补录物流单号`);
+      if (failed.length) {
+        notify(`${parts.join('，')}；失败 ${failed.length} 单：${failed.slice(0, 3).join('、')}${failed.length > 3 ? '等' : ''}`, 'error');
+      } else {
+        notify(parts.join('，'), 'success');
+      }
+    }
+    if (untrackedOrders.length) {
+      setShippingInitialOrders(untrackedOrders);
+      navigate('shipping');
+    }
+  };
   const saveOrderLabels = async (order: OrderDraft, labels: CartonLabel[]) => {
     try {
       const result = await saveLabels(Number(order.id), labels);
@@ -485,12 +536,12 @@ export default function App() {
 
   return <div className="app-layout"><Sidebar activeKey={active} onNavigate={navigate} companyName={companyProfile.name} logoUrl={companyProfile.logoRelativePath ? `/files/${companyProfile.logoRelativePath}` : undefined} mobileOpen={mobileNavOpen} onMobileOpenChange={setMobileNavOpen} /><main className="app-content">
     {active === 'finance' && <FinancePage onNotify={notify} initialOrderId={financeInitialOrderId} />}
-    {active === 'orders' && <OrdersPage orders={orders} customers={customers} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} />}
+    {active === 'orders' && <OrdersPage orders={orders} customers={customers} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} />}
     {active === 'quotations' && <QuotationPage onNotify={notify} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
     {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={async (orderId) => { await loadOrders(); setOrdersInitialOrderId(orderId); navigate('orders'); }} />}
     {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} onExport={exportProductLibrary} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} />}
     {active === 'customer-products' && <CustomerProductsPage customers={customers} systemProducts={products} initialCustomerId={customerProductsInitialCustomerId ?? undefined} loading={loading} onCustomersChanged={loadCustomers} onNotify={notify} />}
-    {active === 'shipping' && <ShippingPage orders={shippingOrders} initialOrder={shippingInitialOrder} onUpdateTracking={updateTracking} onConfirm={confirmShipping} />}
+    {active === 'shipping' && <ShippingPage orders={shippingOrders} initialOrder={shippingInitialOrder} initialOrders={shippingInitialOrders} onUpdateTracking={updateTracking} onConfirm={confirmShipping} />}
     {active === 'settings' && <SettingsPage onBackup={backup} onRestore={restore} onProfileChanged={setCompanyProfile} />}
   </main><MobileTabBar activeKey={active} onNavigate={navigate} onOpenMore={() => setMobileNavOpen(true)} /><Toast messages={messages} onDismiss={(id) => setMessages((current) => current.filter((item) => item.id !== id))} /></div>;
 }

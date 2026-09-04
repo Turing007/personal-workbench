@@ -96,6 +96,8 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
     if (statusCode === 413) {
       return sendFailure(reply, new ApiError(413, 'FILE_TOO_LARGE', '文件不能超过 20MB'));
     }
+    // 未映射的异常必须留痕，否则线上只剩一句“服务器处理请求失败”无从排查。
+    app.log.error(error);
     return sendFailure(reply, new ApiError(500, 'INTERNAL_ERROR', '服务器处理请求失败'));
   });
 
