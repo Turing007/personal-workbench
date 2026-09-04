@@ -370,7 +370,7 @@ function AutoBackupCard() {
     <p>每天凌晨 3:00 自动创建完整备份（含数据库和附件），启动时如果当天还没备份会立即补跑。超过保留份数的最旧自动备份会自动清理。</p>
     {!status ? <p>加载中...</p> : <div>
       <div className="setting-row"><span>今天是否已备份</span><span>{status.running ? '正在备份…' : status.todayDone ? '✅ 已完成' : '⏳ 待执行'}</span></div>
-      <div className="setting-row"><span>最近一次自动备份</span><span>{status.lastBackupAt ? status.lastBackupAt.replace('T', ' ').slice(0, 19).replace('Z', '') : '—'}</span></div>
+      <div className="setting-row"><span>最近一次自动备份</span><span>{status.lastBackupAt ? formatDateTime(status.lastBackupAt) : '—'}</span></div>
       {status.lastResult === 'failed' && <div className="setting-row"><span>最近错误</span><span style={{ color: '#b91c1c' }}>{status.lastError ?? '未知错误'}</span></div>}
       <div style={{ display: 'grid', gridTemplateColumns: '160px minmax(0, 1fr)', gap: 10, alignItems: 'center', margin: '12px 0' }}>
         <label className="label" style={{ margin: 0 }}>保留份数（1-30）<input className="input" type="number" min={1} max={30} value={keepCountDraft} onChange={(event) => { setKeepCountDraft(event.target.value); setSettingsDirty(true); }} style={{ maxWidth: 120 }} /></label>
