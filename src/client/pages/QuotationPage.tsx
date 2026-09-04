@@ -70,6 +70,14 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
     onNotify?.(message, tone);
   }, [onNotify]);
 
+  // 弹窗内快速新增客户后，同步进本页客户列表，避免清空后搜索不到新客户
+  const createCustomer = useCallback(async (input: CustomerSaveInput) => {
+    if (!onCreateCustomer) throw new Error('客户创建服务未配置');
+    const customer = await onCreateCustomer(input);
+    setCustomers((current) => (current.some((item) => item.id === customer.id) ? current : [...current, customer]));
+    return customer;
+  }, [onCreateCustomer]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -228,7 +236,7 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
     </section>
 
     <Modal open={editorOpen} title={draft.number ? `编辑报价 · ${draft.number}` : '新建报价单'} onClose={() => setEditorOpen(false)} width={1240}>
-      <QuotationForm customers={customers} value={draft} saving={busyId === (draft.id ?? -1)} onChange={setDraft} onSave={save} onCancel={() => setEditorOpen(false)} onSaveCustomerProduct={onSaveCustomerProduct} onCreateCustomer={onCreateCustomer} />
+      <QuotationForm customers={customers} value={draft} saving={busyId === (draft.id ?? -1)} onChange={setDraft} onSave={save} onCancel={() => setEditorOpen(false)} onSaveCustomerProduct={onSaveCustomerProduct} onCreateCustomer={createCustomer} />
     </Modal>
     <QuotationSyncModal
       open={syncQuotationId != null}
