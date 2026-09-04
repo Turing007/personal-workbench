@@ -917,13 +917,13 @@ export class DatabaseRepositories {
     }
     if (query) {
       conditions.push(`(
-        o.order_no LIKE ? OR o.recipient_name LIKE ? OR
+        o.order_no LIKE ? OR o.customer_name LIKE ? OR o.recipient_name LIKE ? OR
         o.recipient_info LIKE ? OR EXISTS (
           SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND
             (oi.name LIKE ? OR oi.sku LIKE ? OR oi.specification LIKE ?)
         )
       )`);
-      values.push(...Array(6).fill(`%${query}%`));
+      values.push(...Array(7).fill(`%${query}%`));
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const count = Number(this.database.prepare(`SELECT COUNT(*) AS count FROM orders o ${where}`).get(...values)?.count ?? 0);
