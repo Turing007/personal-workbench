@@ -114,8 +114,8 @@ export class FinanceService {
     return this.repository.list(filters);
   }
 
-  listPayeeBreakdown(): PayeeBreakdownRow[] {
-    return this.repository.listPayeeBreakdown();
+  listPayeeBreakdown(month?: string): PayeeBreakdownRow[] {
+    return this.repository.listPayeeBreakdown(month);
   }
 
   get(orderId: number): FinanceDetail | undefined {

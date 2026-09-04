@@ -1,6 +1,7 @@
 import { Download, ExternalLink, FileText, Image as ImageIcon, Package, Printer, Trash2, Truck, UserRound, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { FINANCE_PAYMENT_STATUS_LABELS, INVOICE_STATUS_LABELS, PAYMENT_PROOF_STATUS_LABELS } from '../../shared/finance';
+import { formatDateTime } from '../../shared/formatters';
 import Modal from './Modal';
 import OrderItemsTable from './OrderItemsTable';
 import type { OrderContractDraft, OrderDraft, OrderStatus } from './OrderForm';
@@ -109,7 +110,7 @@ export default function OrderDetailModal({
     <Modal open={open} title={`订单详情 · ${order.orderNo}`} onClose={onClose} width={900}>
       <div style={{ display: 'grid', gap: 16 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: 12 }}>
-          <div style={detailStyle}><span style={labelStyle}>订单状态</span><strong style={{ color: order.status === 'draft' ? '#64748b' : '#0f766e', fontSize: 13 }}>{order.status ? statusLabels[order.status] : '未设置'}</strong><span style={{ color: order.status === 'draft' ? '#64748b' : order.labelPrintedAt ? '#0f766e' : '#b45309', fontSize: 11 }}>{order.status === 'draft' ? '草稿订单，发布后进入正式流程' : order.labelPrintedAt ? `箱唛已打印 · ${order.labelPrintedAt.replace('T', ' ').slice(0, 16)}` : '箱唛待打印（不影响流程）'}</span></div>
+          <div style={detailStyle}><span style={labelStyle}>订单状态</span><strong style={{ color: order.status === 'draft' ? '#64748b' : '#0f766e', fontSize: 13 }}>{order.status ? statusLabels[order.status] : '未设置'}</strong><span style={{ color: order.status === 'draft' ? '#64748b' : order.labelPrintedAt ? '#0f766e' : '#b45309', fontSize: 11 }}>{order.status === 'draft' ? '草稿订单，发布后进入正式流程' : order.labelPrintedAt ? `箱唛已打印 · ${formatDateTime(order.labelPrintedAt)}` : '箱唛待打印（不影响流程）'}</span></div>
           <div style={detailStyle}><span style={labelStyle}>下单时间</span><strong style={{ fontSize: 13 }}>{formatDate(order.orderedAt)}</strong></div>
           <div style={detailStyle}><span style={labelStyle}>订单金额</span><strong style={{ fontSize: 13 }}>¥ {order.amount || '0.00'}</strong></div>
           <div style={detailStyle}><span style={labelStyle}>运费</span><strong style={{ fontSize: 13 }}>¥ {((order.shippingCents ?? 0) / 100).toFixed(2)}</strong></div>

@@ -541,6 +541,7 @@ CREATE INDEX IF NOT EXISTS idx_finance_invoice_files_invoice ON finance_invoice_
 CREATE INDEX IF NOT EXISTS idx_order_contracts_order ON order_contracts(order_id, created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_order_detail_images_order ON order_detail_images(order_id, created_at, id);
 CREATE INDEX IF NOT EXISTS idx_print_history_labels_history ON print_history_labels(print_history_id);
+CREATE INDEX IF NOT EXISTS idx_print_history_labels_order ON print_history_labels(order_id);
 CREATE INDEX IF NOT EXISTS idx_shipments_order ON shipments(order_id, shipped_at DESC);
 CREATE INDEX IF NOT EXISTS idx_batch_orders_batch ON shipment_batch_orders(batch_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_quotations_status_updated ON quotations(status, updated_at DESC, id DESC);

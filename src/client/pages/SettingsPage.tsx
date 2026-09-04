@@ -3,6 +3,8 @@ import type { LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { CompanySnapshot } from '../../shared/documents';
 import { CONTRACT_PLACEHOLDERS, cloneDefaultContractTemplate, type ContractTemplate } from '../../shared/contract';
+import { getServiceVersion } from '../api';
+import { formatDateTime } from '../../shared/formatters';
 
 const EMPTY_PROFILE: CompanySnapshot = { name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '' };
 
@@ -84,6 +86,15 @@ export default function SettingsPage({
   const [templateMessage, setTemplateMessage] = useState('');
   const [templateMessageType, setTemplateMessageType] = useState<'success' | 'error'>('success');
   const [activeSection, setActiveSection] = useState<SettingsSectionKey>('company');
+  const [serviceVersion, setServiceVersion] = useState<{ version: string; buildTime: string | null; mode: 'production' | 'development' }>();
+
+  useEffect(() => {
+    let active = true;
+    void getServiceVersion().then((info) => {
+      if (active) setServiceVersion({ version: info.version, buildTime: info.buildTime, mode: info.mode });
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
 
   const showMessage = (text: string, type: 'success' | 'error') => { setMessage(text); setMessageType(type); };
   const refreshProfile = async () => {
@@ -275,7 +286,7 @@ export default function SettingsPage({
       </div>
       </div>}
       {activeSection === 'storage' && <div className="settings-section card"><div className="settings-heading"><Database size={18} /><strong>本机数据</strong></div><p>数据和附件保存在本机，不连接云端。网页版服务只监听本机地址。</p><div className="setting-row"><span>服务地址</span><code>{window.location.origin}</code></div><div className="setting-row"><span>存储方式</span><span>SQLite + 本地附件目录</span></div></div>}
-      {activeSection === 'backup' && <div className="settings-section card"><div className="settings-heading"><Download size={18} /><strong>备份与恢复</strong></div><p>备份包含订单、产品、箱唛、打印历史、报价单、销售单及相关附件。恢复前会自动保留当前数据备份。</p><div className="settings-actions"><button className="button button-primary" type="button" onClick={() => void onBackup?.()}><Download size={15} />创建备份</button><label className="button button-secondary"><RotateCcw size={15} />选择备份恢复<input type="file" accept=".zip,application/zip" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onRestore?.(file); event.target.value = ''; }} hidden /></label></div></div>}
+      {activeSection === 'backup' && <div className="settings-section card"><div className="settings-heading"><Download size={18} /><strong>备份与恢复</strong></div><p>备份包含订单、产品、箱唛、打印历史、报价单、销售单及相关附件。恢复前会自动保留当前数据备份。</p><p style={{ color: 'var(--color-text-muted)', fontSize: 12 }}>{serviceVersion ? `当前服务版本 v${serviceVersion.version}${serviceVersion.mode === 'development' ? '（开发模式，源码即时生效）' : serviceVersion.buildTime ? `，构建于 ${formatDateTime(serviceVersion.buildTime)}` : ''}。若页面功能与预期不符，请关闭本程序后重新运行“启动个人工作台”。` : '正在读取服务版本...'}</p><div className="settings-actions"><button className="button button-primary" type="button" onClick={() => void onBackup?.()}><Download size={15} />创建备份</button><label className="button button-secondary"><RotateCcw size={15} />选择备份恢复<input type="file" accept=".zip,application/zip" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onRestore?.(file); event.target.value = ''; }} hidden /></label></div></div>}
       </div>
     </section>
   </div>;

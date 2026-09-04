@@ -658,7 +658,7 @@ export async function uploadFinanceProof(orderId: number | string, file: File, i
 
 export function updateFinanceProof(id: number, input: Record<string, unknown>) { return request<PaymentProofRecord & { url: string }>(`/api/finance/proofs/${id}`, { method: 'PUT', body: JSON.stringify(input) }); }
 export function approveFinanceProof(id: number, payeeName = '') { return request<ApiFinanceDetail>(`/api/finance/proofs/${id}/approve`, { method: 'POST', body: JSON.stringify({ payeeName }) }); }
-export function listReceivedByPayee() { return request<{ items: PayeeBreakdownRow[] }>('/api/finance/receipts/by-payee'); }
+export function listReceivedByPayee(month?: string) { return request<{ items: PayeeBreakdownRow[] }>(`/api/finance/receipts/by-payee${month ? `?month=${encodeURIComponent(month)}` : ''}`); }
 export function rejectFinanceProof(id: number, note: string) { return request<ApiFinanceDetail>(`/api/finance/proofs/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }); }
 export function voidFinanceProof(id: number, note: string) { return request<ApiFinanceDetail>(`/api/finance/proofs/${id}/void`, { method: 'POST', body: JSON.stringify({ note }) }); }
 export function deleteFinanceProof(id: number) { return request<PaymentProofRecord>(`/api/finance/proofs/${id}`, { method: 'DELETE' }); }
@@ -679,6 +679,10 @@ export interface BackupResult {
   createdAt: string;
   recordCounts: Record<string, number>;
   downloadUrl: string;
+}
+
+export function getServiceVersion() {
+  return request<{ status: string; version: string; buildTime: string | null; gitCommit: string | null; mode: 'production' | 'development' }>('/health');
 }
 
 export function createBackup() { return request<BackupResult>('/api/backups', { method: 'POST' }); }

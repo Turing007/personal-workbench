@@ -356,15 +356,25 @@ export class FinanceRepository {
     return (this.database.prepare('SELECT * FROM finance_receipts WHERE order_id = ? ORDER BY received_at DESC, id DESC').all(orderId) as SqlRow[]).map(mapReceipt);
   }
 
-  listPayeeBreakdown(): PayeeBreakdownRow[] {
+  listPayeeBreakdown(month?: string): PayeeBreakdownRow[] {
+    const values: Array<string | number> = [];
+    // 与统计卡片的“已收金额”口径一致：按订单下单月份过滤，而不是实际收款月份。
+    let join = '';
+    let where = '';
+    const trimmed = month?.trim();
+    if (trimmed) {
+      join = 'JOIN orders o ON o.id = finance_receipts.order_id';
+      where = 'WHERE substr(o.ordered_at, 1, 7) = ?';
+      values.push(trimmed);
+    }
     const rows = this.database.prepare(`
-      SELECT COALESCE(NULLIF(payee_name, ''), '未指定') AS payee_name,
+      SELECT COALESCE(NULLIF(finance_receipts.payee_name, ''), '未指定') AS payee_name,
         COUNT(*) AS receipt_count,
-        COALESCE(SUM(amount_cents), 0) AS amount_cents
-      FROM finance_receipts
-      GROUP BY COALESCE(NULLIF(payee_name, ''), '未指定')
+        COALESCE(SUM(finance_receipts.amount_cents), 0) AS amount_cents
+      FROM finance_receipts ${join} ${where}
+      GROUP BY COALESCE(NULLIF(finance_receipts.payee_name, ''), '未指定')
       ORDER BY amount_cents DESC, receipt_count DESC
-    `).all() as SqlRow[];
+    `).all(...values) as SqlRow[];
     return rows.map((row) => ({
       payeeName: stringValue(row, 'payee_name', '未指定'),
       receiptCount: numberValue(row, 'receipt_count'),

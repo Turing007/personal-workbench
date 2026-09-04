@@ -203,8 +203,9 @@ export async function registerFinanceRoutes(app: FastifyInstance, options: Finan
     return sendSuccess(reply, { ...detail, proofs: detail.proofs.map(mapProof), invoices: detail.invoices.map(mapInvoice) });
   }, reply));
 
-  app.get('/api/finance/receipts/by-payee', async (_request, reply) => safeRoute(() => {
-    return sendSuccess(reply, { items: service.listPayeeBreakdown() });
+  app.get('/api/finance/receipts/by-payee', async (request, reply) => safeRoute(() => {
+    const query = request.query as Record<string, string | undefined>;
+    return sendSuccess(reply, { items: service.listPayeeBreakdown(query.month) });
   }, reply));
 
   app.post('/api/finance/proofs/:id/reject', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(() => {

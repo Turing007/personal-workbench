@@ -169,6 +169,14 @@ describe('财务模块', () => {
       { payeeName: '未指定', receiptCount: 1, amountCents: 4000 },
     ]);
 
+    // 订单 ordered_at 为 2026-08-20：按月份过滤时命中 8 月、9 月为空。
+    const monthBreakdown = await app.inject({ method: 'GET', url: '/api/finance/receipts/by-payee?month=2026-08' });
+    expect(monthBreakdown.statusCode).toBe(200);
+    expect(monthBreakdown.json().data.items).toEqual(breakdown.json().data.items);
+    const otherMonth = await app.inject({ method: 'GET', url: '/api/finance/receipts/by-payee?month=2026-09' });
+    expect(otherMonth.statusCode).toBe(200);
+    expect(otherMonth.json().data.items).toEqual([]);
+
     const overview = await app.inject({ method: 'GET', url: '/api/finance/orders' });
     expect(overview.json().data.stats).toMatchObject({ receivedCents: 14000 });
     await app.close();

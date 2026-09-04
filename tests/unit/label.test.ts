@@ -191,6 +191,32 @@ describe('箱唛打印状态', () => {
     expect(repositories.history[0]).toMatchObject({ actionType: 'print', orderIds: [2] });
   });
 
+  it('箱唛 id 过期时降级为按提交内容记录，不阻断打印状态更新', () => {
+    const detail = printDetail(1, 'pending_stock');
+    const repositories = printRepository([detail]);
+    const service = new LabelService({ repositories: repositories as never });
+
+    service.recordPrintHistory({
+      orderIds: [1],
+      labels: [{
+        orderId: 1,
+        id: 999,
+        orderNo: 'SO-1',
+        recipientName: '收件人',
+        cartonNo: 2,
+        totalCartons: 3,
+        lines: [{ name: '产品', sku: 'SKU', packCount: 1, totalCount: 1 }],
+      }],
+    });
+
+    const recorded = repositories.history[0] as { labels: Array<{ labelId: number | null; boxNo: number; totalBoxes: number; snapshot: Record<string, unknown> }> };
+    expect(recorded.labels).toHaveLength(1);
+    expect(recorded.labels[0].labelId).toBeNull();
+    expect(recorded.labels[0].boxNo).toBe(2);
+    expect(recorded.labels[0].totalBoxes).toBe(3);
+    expect(recorded.labels[0].snapshot).toMatchObject({ cartonNo: 2, totalCartons: 3 });
+  });
+
   it('拒绝非法打印动作类型', () => {
     const detail = printDetail(1, 'label_pending');
     const repositories = printRepository([detail]);
