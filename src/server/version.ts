@@ -25,8 +25,7 @@ function packageVersion(): string {
   return cachedVersion;
 }
 
-/** 读取当前服务的版本信息；每次调用都重新读取构建信息，重建后无需重启即可读到新值。 */
-export function readVersionInfo(): WorkbenchVersionInfo {
+function readBuildInfoFromDisk(): WorkbenchVersionInfo {
   // tsx 直接运行 src 时是开发模式：源码即最新代码，没有构建产物版本。
   if (moduleDir.replaceAll('\\', '/').includes('/src/')) {
     return { version: packageVersion(), buildTime: null, gitCommit: null, mode: 'development' };
@@ -46,4 +45,12 @@ export function readVersionInfo(): WorkbenchVersionInfo {
   } catch {
     return { version: packageVersion(), buildTime: null, gitCommit: null, mode: 'production' };
   }
+}
+
+/** 进程启动时读取一次构建信息并缓存：/health 报告的是“正在运行的代码”的版本，重建后旧进程不会谎报新版本。 */
+const runningBuildInfo = readBuildInfoFromDisk();
+
+/** 读取当前服务的版本信息。 */
+export function readVersionInfo(): WorkbenchVersionInfo {
+  return runningBuildInfo;
 }
