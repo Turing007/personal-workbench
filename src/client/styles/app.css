@@ -2910,3 +2910,201 @@ select {
   .finance-toolbar { display: grid; grid-template-columns: 1fr 1fr; }
   .finance-toolbar .search-control { grid-column: 1 / -1; }
 }
+
+/* ===== 访问密码：登录门 / 未设置提示横幅 / 启动画面 ===== */
+.auth-gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  background: linear-gradient(160deg, #f2f7f6 0%, #e8f0ee 60%, #eef2f4 100%);
+}
+
+.auth-card {
+  width: min(360px, 100%);
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.auth-card-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  color: var(--color-accent);
+  background: rgba(14, 115, 118, .1);
+}
+
+.auth-card h1 { margin: 0; font-size: var(--text-lg); color: var(--color-text-strong); }
+.auth-card p { margin: 0; color: var(--color-text-muted); font-size: var(--text-sm); }
+.auth-card .label { display: grid; gap: 4px; }
+
+.auth-error {
+  margin: 0;
+  color: var(--color-danger-text, #b91c1c);
+  font-size: var(--text-xs);
+}
+
+.auth-submit { justify-content: center; }
+
+.auth-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-4) var(--space-4) 0;
+  padding: 10px var(--space-4);
+  border: 1px solid #f0d8a8;
+  border-radius: var(--radius-control);
+  background: #fdf6e7;
+  color: #8a5a00;
+  font-size: var(--text-xs);
+}
+
+.auth-banner button {
+  border: 0;
+  padding: 0;
+  color: var(--color-accent);
+  background: none;
+  font: inherit;
+  font-weight: var(--weight-semibold);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.app-splash {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 640px) {
+  .auth-card { padding: var(--space-6) var(--space-5); }
+  .auth-banner { margin: var(--space-3) var(--space-3) 0; }
+}
+
+/* ===== 移动端卡片视图：报价 / 销售单 / 产品 / 客户产品 / 发货 ===== */
+/* 桌面端沿用原有表格；≤900px 由卡片列表接管（与订单、财务页同一套双视图模式）。 */
+.quotation-card-list, .sales-doc-card-list, .products-card-list, .customer-product-card-list { display: none; }
+
+/* 发货工作区：桌面双栏（原先为内联样式，迁移到 CSS 以便手机端单列化） */
+.shipping-workspace { display: grid; grid-template-columns: minmax(300px, .8fr) minmax(420px, 1.2fr); gap: 14px; min-height: 480px; }
+.shipping-batch-order { grid-template-columns: minmax(0, 1fr) 160px 24px; align-items: center; gap: 8px; padding: 8px; }
+
+/* 客户产品页：桌面端左客户档案 + 右产品表格（原先为内联样式） */
+.customer-products-layout { min-height: 0; display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 10px; }
+
+@media (max-width: 900px) {
+  /* —— 报价单卡片 —— */
+  .quotation-table-desktop { display: none; }
+  .quotation-card-list { display: grid; gap: var(--space-4); padding: var(--space-4); }
+  .quotation-card {
+    display: grid;
+    gap: var(--space-4);
+    padding: var(--space-6);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+  }
+  .quotation-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+  .quotation-card-title { display: grid; gap: 2px; min-width: 0; }
+  .quotation-card-title strong { color: #0f766e; font-size: var(--text-md); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+  .quotation-card-title span { color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .quotation-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4) var(--space-6); }
+  .quotation-card-field { display: grid; gap: 2px; min-width: 0; }
+  .quotation-card-field span { color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .quotation-card-field strong { color: var(--color-text-strong); font-size: var(--text-sm); font-weight: var(--weight-medium); overflow-wrap: anywhere; }
+  .quotation-card-field em { font-style: normal; color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .quotation-card .row-actions { flex-wrap: wrap; gap: var(--space-4) var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--color-divider); }
+
+  /* —— 销售单卡片 —— */
+  .sales-doc-table-desktop { display: none; }
+  .sales-doc-card-list { display: grid; gap: var(--space-4); padding: var(--space-4); }
+  .sales-doc-card {
+    display: grid;
+    gap: var(--space-4);
+    padding: var(--space-6);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+  }
+  .sales-doc-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+  .sales-doc-card-title { display: grid; gap: 2px; min-width: 0; }
+  .sales-doc-card-title strong { color: #0f766e; font-size: var(--text-md); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+  .sales-doc-card-title span { color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .sales-doc-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4) var(--space-6); }
+  .sales-doc-card-field { display: grid; gap: 2px; min-width: 0; }
+  .sales-doc-card-field span { color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .sales-doc-card-field strong { color: var(--color-text-strong); font-size: var(--text-sm); font-weight: var(--weight-medium); overflow-wrap: anywhere; }
+  .sales-doc-card-field em { font-style: normal; color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .sales-doc-card-status { display: grid; gap: 4px; }
+  .sales-doc-card .row-actions { flex-wrap: wrap; gap: var(--space-4) var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--color-divider); }
+
+  /* —— 产品库卡片 —— */
+  .products-table-desktop { display: none; }
+  .products-card-list { display: grid; gap: var(--space-4); padding: var(--space-4); }
+  .product-card {
+    display: grid;
+    gap: var(--space-4);
+    padding: var(--space-6);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+  }
+  .product-card-head { display: flex; align-items: center; gap: var(--space-4); }
+  .product-card-title { display: grid; gap: 3px; min-width: 0; flex: 1; }
+  .product-card-title strong { color: var(--color-text-strong); font-size: var(--text-md); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+  .product-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4) var(--space-6); }
+  .product-card-field { display: grid; gap: 2px; min-width: 0; }
+  .product-card-field span { color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .product-card-field strong { color: var(--color-text-strong); font-size: var(--text-sm); font-weight: var(--weight-medium); overflow-wrap: anywhere; }
+  .product-card-packaging { display: grid; gap: 3px; padding: 8px 10px; border: 1px dashed var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-subtle); font-size: var(--text-2xs); color: var(--color-text-muted); }
+  .product-card-packaging strong { color: var(--color-text-strong); }
+  .product-card-packaging-more { font-size: var(--text-2xs); }
+  .product-card .row-actions { flex-wrap: wrap; gap: var(--space-4) var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--color-divider); }
+
+  /* —— 客户产品：客户档案堆叠到产品列表上方 —— */
+  .customer-products-layout { grid-template-columns: 1fr; }
+  .customer-list-scroll { max-height: 38vh !important; }
+  .customer-products-table-desktop { display: none; }
+  .customer-product-card-list { display: grid; gap: var(--space-4); padding: var(--space-4); }
+  .customer-product-card {
+    display: grid;
+    gap: var(--space-4);
+    padding: var(--space-6);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+  }
+  .customer-product-card-head { display: flex; align-items: center; gap: var(--space-3); }
+  .customer-product-card-head input[type='checkbox'] { flex: none; }
+  .customer-product-card-image { width: 46px; height: 40px; object-fit: contain; border: 1px solid #e2e8f0; border-radius: 4px; flex: none; }
+  .customer-product-card-title { display: grid; gap: 2px; min-width: 0; flex: 1; }
+  .customer-product-card-title strong { color: var(--color-text-strong); font-size: var(--text-sm); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+  .customer-product-card-title span { color: var(--color-text-muted); font-size: var(--text-2xs); overflow-wrap: anywhere; }
+  .customer-product-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4) var(--space-6); }
+  .customer-product-card-field { display: grid; gap: 2px; min-width: 0; }
+  .customer-product-card-field span { color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .customer-product-card-field strong { color: var(--color-text-strong); font-size: var(--text-sm); font-weight: var(--weight-medium); overflow-wrap: anywhere; }
+  .customer-product-card-field em { font-style: normal; color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .customer-product-card-remark { margin: 0; padding: 8px 10px; border-radius: var(--radius-control); background: var(--color-surface-subtle); color: var(--color-text-muted); font-size: var(--text-2xs); overflow-wrap: anywhere; }
+  .customer-product-card .row-actions { flex-wrap: wrap; gap: var(--space-4) var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--color-divider); }
+
+  /* —— 发货工作区：双栏改单列，物流单号整行铺开 —— */
+  .shipping-workspace { grid-template-columns: 1fr; min-height: 0; }
+  .shipping-batch-order { grid-template-columns: minmax(0, 1fr) 24px; }
+  .shipping-batch-order .shipping-tracking-input { grid-column: 1 / -1; }
+  .shipping-confirm-actions { flex-wrap: wrap; }
+}

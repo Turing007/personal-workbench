@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { CompanySnapshot } from '../../shared/documents.js';
 import {
@@ -9,6 +10,9 @@ import {
 const COMPANY_PROFILE_KEY = 'company_profile';
 const CONTRACT_TEMPLATE_KEY = 'contract_template';
 const AUTO_BACKUP_SETTINGS_KEY = 'auto_backup_settings';
+const AUTH_PASSWORD_HASH_KEY = 'auth_password_hash';
+// 仅是 settings 表里的键名；会话密钥的值在首次访问时用 crypto.randomBytes 生成并入库。
+const AUTH_SESSION_KEY_NAME = 'auth_session_key';
 
 export interface AutoBackupSettingsRecord {
   /** 自定义备份目录；空字符串 = 默认目录（数据目录/backups）。 */
@@ -114,6 +118,46 @@ export class SettingsRepository {
       )
       .run(AUTO_BACKUP_SETTINGS_KEY, JSON.stringify(merged), new Date().toISOString());
     return merged;
+  }
+
+  getPasswordHash(): string | null {
+    const row = this.database.prepare('SELECT value FROM settings WHERE key = ?').get(AUTH_PASSWORD_HASH_KEY) as { value?: string } | undefined;
+    return row?.value || null;
+  }
+
+  savePasswordHash(hash: string): void {
+    this.database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(AUTH_PASSWORD_HASH_KEY, hash, new Date().toISOString());
+  }
+
+  /** 首次调用时生成随机会话密钥并持久化，之后每次读取返回同一把密钥。 */
+  getSessionSecret(): string {
+    const row = this.database.prepare('SELECT value FROM settings WHERE key = ?').get(AUTH_SESSION_KEY_NAME) as { value?: string } | undefined;
+    if (row?.value) return row.value;
+    const secret = randomBytes(32).toString('hex');
+    this.database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(AUTH_SESSION_KEY_NAME, secret, new Date().toISOString());
+    return secret;
+  }
+
+  /** 轮换会话密钥：修改访问密码时调用，使所有已签发的旧会话失效。 */
+  rotateSessionSecret(): string {
+    const secret = randomBytes(32).toString('hex');
+    this.database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(AUTH_SESSION_KEY_NAME, secret, new Date().toISOString());
+    return secret;
   }
 }
 

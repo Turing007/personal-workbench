@@ -208,6 +208,14 @@ function toError(payload: unknown, fallback: string, status: number): ApiErrorSh
   return { code: `HTTP_${status}`, message: fallback };
 }
 
+// 访问密码会话失效时由服务端返回 401/AUTH_REQUIRED；这里广播全局事件，
+// App 监听后切换到登录界面。事件名导出以便测试与订阅方复用。
+export const AUTH_REQUIRED_EVENT = 'workbench:auth-required';
+
+function notifyAuthRequired(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT));
+}
+
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
@@ -215,10 +223,18 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   const text = await response.text();
   let payload: unknown = null;
   try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
-  if (!response.ok) throw toError(payload, response.statusText || '请求失败', response.status);
+  if (!response.ok) {
+    const error = toError(payload, response.statusText || '请求失败', response.status);
+    if (error.code === 'AUTH_REQUIRED') notifyAuthRequired();
+    throw error;
+  }
   if (payload && typeof payload === 'object' && 'ok' in payload) {
     const envelope = payload as { ok?: boolean; data?: T; error?: unknown };
-    if (envelope.ok === false) throw toError(payload, '请求失败', response.status);
+    if (envelope.ok === false) {
+      const error = toError(payload, '请求失败', response.status);
+      if (error.code === 'AUTH_REQUIRED') notifyAuthRequired();
+      throw error;
+    }
     return envelope.data as T;
   }
   return payload as T;
@@ -231,9 +247,39 @@ export async function requestBlob(path: string, init: RequestInit = {}): Promise
     const text = await response.text();
     let payload: unknown = text;
     try { payload = text ? JSON.parse(text) : null; } catch { /* Keep the response text for a useful fallback error. */ }
-    throw toError(payload, response.statusText || '下载失败', response.status);
+    const error = toError(payload, response.statusText || '下载失败', response.status);
+    if (error.code === 'AUTH_REQUIRED') notifyAuthRequired();
+    throw error;
   }
   return response.blob();
+}
+
+export interface AuthStatus {
+  configured: boolean;
+  authenticated: boolean;
+}
+
+export function getAuthStatus(): Promise<AuthStatus> {
+  return request<AuthStatus>('/api/auth/status');
+}
+
+export function setupAccessPassword(password: string): Promise<{ configured: boolean }> {
+  return request<{ configured: boolean }>('/api/auth/setup', { method: 'POST', body: JSON.stringify({ password }) });
+}
+
+export function loginWithPassword(password: string): Promise<{ authenticated: boolean }> {
+  return request<{ authenticated: boolean }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) });
+}
+
+export function changeAccessPassword(currentPassword: string, newPassword: string): Promise<{ configured: boolean }> {
+  return request<{ configured: boolean }>('/api/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+}
+
+export function logoutAccess(): Promise<{ authenticated: boolean }> {
+  return request<{ authenticated: boolean }>('/api/auth/logout', { method: 'POST' });
 }
 
 function asPackaging(row: Record<string, unknown> | undefined): PackagingOption {

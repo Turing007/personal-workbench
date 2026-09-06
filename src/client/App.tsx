@@ -3,6 +3,7 @@ import type { CompanySnapshot } from '../shared/documents';
 import Sidebar, { navigationKeys, type NavigationKey } from './components/Sidebar';
 import MobileTabBar from './components/MobileTabBar';
 import Toast, { type ToastMessage } from './components/Toast';
+import LoginGate from './components/LoginGate';
 import type { CartonLabel } from './components/LabelEditorModal';
 import type { OrderContractDraft, OrderDraft, OrderItemDraft, OrderStatus } from './components/OrderForm';
 import type { ProductRecord } from './components/ProductEditor';
@@ -17,11 +18,13 @@ import QuotationPage from './pages/QuotationPage';
 import SalesDocumentsPage from './pages/SalesDocumentsPage';
 import FinancePage from './pages/FinancePage';
 import {
+  AUTH_REQUIRED_EVENT,
   advanceOrderStatus,
   createBackup,
   deleteProduct,
   exportProducts,
   downloadProductImportTemplate,
+  getAuthStatus,
   getCustomers,
   getCompanyProfile,
   createCustomer,
@@ -154,6 +157,27 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState<ToastMessage[]>([]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [authState, setAuthState] = useState<'checking' | 'open' | 'locked'>('checking');
+  const [accessConfigured, setAccessConfigured] = useState(true);
+
+  // 启动时先问一次会话状态：已设置密码且未登录则先展示登录门，避免后台请求齐刷刷 401。
+  useEffect(() => {
+    let cancelled = false;
+    getAuthStatus()
+      .then((status) => {
+        if (cancelled) return;
+        setAccessConfigured(status.configured);
+        setAuthState(status.configured && !status.authenticated ? 'locked' : 'open');
+      })
+      .catch(() => { if (!cancelled) setAuthState('open'); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const handler = () => setAuthState('locked');
+    window.addEventListener(AUTH_REQUIRED_EVENT, handler);
+    return () => window.removeEventListener(AUTH_REQUIRED_EVENT, handler);
+  }, []);
 
   const navigate = useCallback((next: NavigationKey) => {
     // The customer id is a one-time hand-off from quotation sync. Clear it
@@ -209,7 +233,10 @@ export default function App() {
     finally { setLoading(false); }
   }, [notify]);
 
-  useEffect(() => { void Promise.all([loadProducts(), loadCustomers(), loadOrders(), loadCompanyProfile()]); }, [loadProducts, loadCustomers, loadOrders, loadCompanyProfile]);
+  useEffect(() => {
+    if (authState !== 'open') return;
+    void Promise.all([loadProducts(), loadCustomers(), loadOrders(), loadCompanyProfile()]);
+  }, [authState, loadProducts, loadCustomers, loadOrders, loadCompanyProfile]);
 
   const saveProductRecord = async (draft: ProductRecord, mode: 'draft' | 'active') => {
     try {
@@ -534,8 +561,17 @@ export default function App() {
     } catch (error) { notify((error as { message?: string }).message ?? '数据恢复失败', 'error'); }
   };
 
+  if (authState === 'checking') {
+    return <div className="app-splash" role="status">正在进入个人工作台...</div>;
+  }
+  if (authState === 'locked') {
+    // 登录成功后整页刷新，让所有模块在已登录状态下重新加载数据。
+    return <LoginGate mode="login" onUnlocked={() => window.location.reload()} />;
+  }
+
   return <div className="app-layout"><Sidebar activeKey={active} onNavigate={navigate} companyName={companyProfile.name} logoUrl={companyProfile.logoRelativePath ? `/files/${companyProfile.logoRelativePath}` : undefined} mobileOpen={mobileNavOpen} onMobileOpenChange={setMobileNavOpen} /><main className="app-content">
-    {active === 'finance' && <FinancePage onNotify={notify} initialOrderId={financeInitialOrderId} />}
+    {!accessConfigured && <div className="auth-banner">尚未设置访问密码，同一网络内的设备都能直接打开工作台。建议先在「设置 → 访问密码」中开启保护。<button type="button" onClick={() => navigate('settings')}>去设置</button></div>}
+    {active === 'finance' && <FinancePage onNotify={notify} initialOrderId={financeInitialOrderId} customers={customers} />}
     {active === 'orders' && <OrdersPage orders={orders} customers={customers} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} />}
     {active === 'quotations' && <QuotationPage onNotify={notify} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
     {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={async (orderId) => { await loadOrders(); setOrdersInitialOrderId(orderId); navigate('orders'); }} />}

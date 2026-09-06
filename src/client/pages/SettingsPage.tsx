@@ -1,9 +1,9 @@
-import { ArrowDown, ArrowUp, Building2, CalendarClock, Database, Download, ImageOff, Plus, RotateCcw, Save, ScrollText, Trash2, Upload } from 'lucide-react';
+import { ArrowDown, ArrowUp, Building2, CalendarClock, Database, Download, ImageOff, KeyRound, LogOut, Plus, RotateCcw, Save, ScrollText, Trash2, Upload } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import type { CompanySnapshot } from '../../shared/documents';
 import { CONTRACT_PLACEHOLDERS, cloneDefaultContractTemplate, type ContractTemplate } from '../../shared/contract';
-import { getAutoBackupStatus, getServiceVersion, runAutoBackupNow, updateAutoBackupSettings, type AutoBackupStatus } from '../api';
+import { getAutoBackupStatus, changeAccessPassword, getAuthStatus, getServiceVersion, logoutAccess, runAutoBackupNow, setupAccessPassword, updateAutoBackupSettings, type AuthStatus, type AutoBackupStatus } from '../api';
 import { formatDateTime } from '../../shared/formatters';
 
 const EMPTY_PROFILE: CompanySnapshot = { name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '' };
@@ -41,7 +41,7 @@ const defaultTemplateApi = {
   }),
 };
 
-type SettingsSectionKey = 'company' | 'contract' | 'storage' | 'backup';
+type SettingsSectionKey = 'company' | 'contract' | 'storage' | 'backup' | 'access';
 
 // 两级菜单：分组标题 → 菜单项，内容区一次只显示激活的板块。
 const SETTINGS_MENU_GROUPS: Array<{ label: string; items: Array<{ key: SettingsSectionKey; label: string; icon: LucideIcon }> }> = [
@@ -54,6 +54,7 @@ const SETTINGS_MENU_GROUPS: Array<{ label: string; items: Array<{ key: SettingsS
       { key: 'backup', label: '备份与恢复', icon: Download },
     ],
   },
+  { label: '安全', items: [{ key: 'access', label: '访问密码', icon: KeyRound }] },
 ];
 
 export interface SettingsPageProps {
@@ -290,6 +291,7 @@ export default function SettingsPage({
         <AutoBackupCard />
         <div className="settings-section card"><div className="settings-heading"><Download size={18} /><strong>手动备份与恢复</strong></div><p>备份包含订单、产品、箱唛、打印历史、报价单、销售单及相关附件。恢复前会自动保留当前数据备份。</p><p style={{ color: 'var(--color-text-muted)', fontSize: 12 }}>{serviceVersion ? `当前服务版本 v${serviceVersion.version}${serviceVersion.mode === 'development' ? '（开发模式，源码即时生效）' : serviceVersion.buildTime ? `，构建于 ${formatDateTime(serviceVersion.buildTime)}` : ''}。若页面功能与预期不符，请关闭本程序后重新运行“启动个人工作台”。` : '正在读取服务版本...'}</p><div className="settings-actions"><button className="button button-primary" type="button" onClick={() => void onBackup?.()}><Download size={15} />创建备份</button><label className="button button-secondary"><RotateCcw size={15} />选择备份恢复<input type="file" accept=".zip,application/zip" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onRestore?.(file); event.target.value = ''; }} hidden /></label></div></div>
       </div>}
+      {activeSection === 'access' && <AccessPasswordCard />}
       </div>
     </section>
   </div>;
@@ -386,5 +388,95 @@ function AutoBackupCard() {
         <span role="status" style={{ color: messageType === 'error' ? '#b91c1c' : '#0f766e', fontSize: 12 }}>{message}</span>
       </div>
     </div>}
+  </div>;
+}
+
+/** 访问密码卡片：首次创建密码，之后可修改密码或退出当前设备的登录。 */
+function AccessPasswordCard() {
+  const [status, setStatus] = useState<AuthStatus | null>(null);
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState<'success' | 'error'>('success');
+
+  const load = useCallback(async () => {
+    try {
+      setStatus(await getAuthStatus());
+    } catch {
+      setStatus({ configured: false, authenticated: false });
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const submitSetup = async () => {
+    if (next.length < 6) { setMessageType('error'); setMessage('密码至少 6 位'); return; }
+    if (next !== confirm) { setMessageType('error'); setMessage('两次输入的密码不一致'); return; }
+    setBusy(true); setMessage('');
+    try {
+      await setupAccessPassword(next);
+      setMessageType('success');
+      setMessage('访问密码已创建，之后打开工作台需要先登录');
+      setNext(''); setConfirm('');
+      await load();
+    } catch (error) {
+      setMessageType('error');
+      setMessage(error instanceof Error ? error.message : '设置失败');
+    } finally { setBusy(false); }
+  };
+
+  const submitChange = async () => {
+    if (next.length < 6) { setMessageType('error'); setMessage('新密码至少 6 位'); return; }
+    if (next !== confirm) { setMessageType('error'); setMessage('两次输入的密码不一致'); return; }
+    setBusy(true); setMessage('');
+    try {
+      await changeAccessPassword(current, next);
+      setMessageType('success');
+      setMessage('访问密码已更新，其他设备需要用新密码重新登录');
+      setCurrent(''); setNext(''); setConfirm('');
+    } catch (error) {
+      setMessageType('error');
+      setMessage(error instanceof Error ? error.message : '修改失败');
+    } finally { setBusy(false); }
+  };
+
+  const submitLogout = async () => {
+    setBusy(true); setMessage('');
+    try {
+      await logoutAccess();
+      window.location.reload();
+    } catch (error) {
+      setMessageType('error');
+      setMessage(error instanceof Error ? error.message : '退出失败');
+      setBusy(false);
+    }
+  };
+
+  return <div className="settings-section card">
+    <div className="settings-heading"><KeyRound size={18} /><strong>访问密码</strong></div>
+    <p>给工作台加一道访问密码后，打开页面或接口都需要先登录（通过手机访问时同样适用）。密码保存在本机数据库中，不会上传。</p>
+    {!status ? <p>加载中...</p> : status.configured ? (
+      <div style={{ display: 'grid', gap: 10, maxWidth: 420 }}>
+        <label className="label">当前访问密码<input className="input" type="password" disabled={busy} value={current} onChange={(event) => setCurrent(event.target.value)} /></label>
+        <label className="label">新密码（至少 6 位）<input className="input" type="password" disabled={busy} value={next} onChange={(event) => setNext(event.target.value)} /></label>
+        <label className="label">确认新密码<input className="input" type="password" disabled={busy} value={confirm} onChange={(event) => setConfirm(event.target.value)} /></label>
+        <div className="settings-actions">
+          <button className="button button-primary" type="button" disabled={busy || !current || !next} onClick={() => void submitChange()}>修改密码</button>
+          <button className="button button-secondary" type="button" disabled={busy} onClick={() => void submitLogout()}><LogOut size={15} />退出登录</button>
+          <span role="status" style={{ color: messageType === 'error' ? '#b91c1c' : '#0f766e', fontSize: 12 }}>{message}</span>
+        </div>
+      </div>
+    ) : (
+      <div style={{ display: 'grid', gap: 10, maxWidth: 420 }}>
+        <label className="label">设置访问密码（至少 6 位）<input className="input" type="password" disabled={busy} value={next} onChange={(event) => setNext(event.target.value)} /></label>
+        <label className="label">确认密码<input className="input" type="password" disabled={busy} value={confirm} onChange={(event) => setConfirm(event.target.value)} /></label>
+        <div className="settings-actions">
+          <button className="button button-primary" type="button" disabled={busy || !next} onClick={() => void submitSetup()}>开启访问密码</button>
+          <span role="status" style={{ color: messageType === 'error' ? '#b91c1c' : '#0f766e', fontSize: 12 }}>{message}</span>
+        </div>
+      </div>
+    )}
   </div>;
 }

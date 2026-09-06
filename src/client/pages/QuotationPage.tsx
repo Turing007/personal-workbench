@@ -211,7 +211,7 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
     </div>
 
     <section className="table-panel">
-      <div className="table-scroll"><table className="data-table" style={{ minWidth: 900 }}><thead><tr>{['报价单号', '日期', '客户', '产品数', '状态', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
+      <div className="table-scroll quotation-table-desktop"><table className="data-table" style={{ minWidth: 900 }}><thead><tr>{['报价单号', '日期', '客户', '产品数', '状态', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
         <tbody>{visibleRows.map((row) => <tr key={row.id}>
           <td className="strong-cell" style={{ color: '#0f766e' }}>{row.number}</td>
           <td>{row.quotationDate}</td>
@@ -231,6 +231,32 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
             <button className="icon-button danger" type="button" title="删除报价单" disabled={busyId === row.id} onClick={() => void remove(row)}><Trash2 size={14} /></button>
           </div></td>
         </tr>)}</tbody></table></div>
+      <div className="quotation-card-list">
+        {visibleRows.map((row) => <article key={row.id} className="quotation-card">
+          <div className="quotation-card-head">
+            <div className="quotation-card-title">
+              <strong>{row.number}</strong>
+              <span>{row.quotationDate} · 更新 {row.updatedAt.replace('T', ' ').slice(0, 16)}</span>
+            </div>
+            <select className="toolbar-select" aria-label={`${row.number}状态`} value={row.status} disabled={busyId === row.id} onChange={(event) => void setStatus(row, event.target.value as QuotationStatus)}><option value="draft">草稿</option><option value="sent">已发送</option><option value="won">已成交</option><option value="expired">已失效</option></select>
+          </div>
+          <div className="quotation-card-grid">
+            <div className="quotation-card-field"><span>客户</span><strong>{row.customerName || '-'}</strong><em>{[row.contactName, row.contactPhone].filter(Boolean).join(' · ')}</em></div>
+            <div className="quotation-card-field"><span>产品数</span><strong>{row.itemCount ?? '-'}</strong></div>
+          </div>
+          <div className="row-actions">
+            <button className="icon-button" type="button" title="产品详情" disabled={busyId === row.id} onClick={() => setProductDetailId(row.id)}><PackageSearch size={14} /></button>
+            <button className="icon-button" type="button" title="编辑报价单" disabled={busyId === row.id} onClick={() => void openEdit(row.id)}><Edit3 size={14} /></button>
+            <button className="icon-button" type="button" title="导出报价 PDF" disabled={busyId === row.id} onClick={() => void exportPdf(row)}><Download size={14} /></button>
+            <button className="icon-button" type="button" title="同步到客户产品库" disabled={busyId === row.id} onClick={() => { if (!row.customerId) notify('这份报价单还没有选择正式客户，无法同步到客户产品库', 'error'); else setSyncQuotationId(row.id); }}><RefreshCw size={14} /></button>
+            {row.status === 'draft' && <button className="icon-button" type="button" title="标记为已发送" disabled={busyId === row.id} onClick={() => void setStatus(row, 'sent')}><Send size={14} /></button>}
+            {row.status === 'sent' && <button className="icon-button" type="button" title="标记为已成交" disabled={busyId === row.id} onClick={() => void setStatus(row, 'won')}><CheckCircle2 size={14} /></button>}
+            {row.status !== 'expired' && row.status !== 'won' && <button className="icon-button" type="button" title="标记为已失效" disabled={busyId === row.id} onClick={() => void setStatus(row, 'expired')}><XCircle size={14} /></button>}
+            {row.status === 'won' && <button className="icon-button" type="button" title="复制为销售开单" disabled={busyId === row.id} onClick={() => void copyToSales(row)}><CopyPlus size={14} /></button>}
+            <button className="icon-button danger" type="button" title="删除报价单" disabled={busyId === row.id} onClick={() => void remove(row)}><Trash2 size={14} /></button>
+          </div>
+        </article>)}
+      </div>
       {loading && <div className="table-state">正在加载报价单...</div>}
       {!loading && !visibleRows.length && <div className="table-state">暂无符合条件的报价单，点击“新建报价”开始。</div>}
     </section>

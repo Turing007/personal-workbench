@@ -204,7 +204,7 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
     </div>
 
     <section className="table-panel">
-      <div className="table-scroll"><table className="data-table" style={{ minWidth: 1160 }}>
+      <div className="table-scroll sales-doc-table-desktop"><table className="data-table" style={{ minWidth: 1160 }}>
         <thead><tr>{['销售单号', '日期', '客户', '采购单号', '含税合计', '已收', '未付', '单据状态', '付款状态', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
         <tbody>{visibleRows.map((row) => {
           const receivedCents = Math.max(0, row.totalCents - row.outstandingCents);
@@ -229,6 +229,36 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
           </tr>;
         })}</tbody>
       </table></div>
+      <div className="sales-doc-card-list">
+        {visibleRows.map((row) => {
+          const receivedCents = Math.max(0, row.totalCents - row.outstandingCents);
+          return <article key={row.id} className="sales-doc-card">
+            <div className="sales-doc-card-head">
+              <div className="sales-doc-card-title">
+                <strong>{row.number}</strong>
+                <span>{row.documentDate} · 更新 {row.updatedAt.replace('T', ' ').slice(0, 16)}</span>
+              </div>
+              <span className={`badge ${row.paymentStatus === 'paid' ? 'badge-success' : row.paymentStatus === 'partial' ? 'badge-warning' : 'badge-neutral'}`}>{paymentStatusLabels[row.paymentStatus]}</span>
+            </div>
+            <div className="sales-doc-card-grid">
+              <div className="sales-doc-card-field"><span>客户</span><strong>{row.customerName || '-'}</strong><em>{row.purchaseOrderNo ? `采购单 ${row.purchaseOrderNo}` : ''}</em></div>
+              <div className="sales-doc-card-field"><span>含税合计</span><strong>{formatMoney(row.totalCents)}</strong></div>
+              <div className="sales-doc-card-field"><span>已收</span><strong>{formatMoney(receivedCents)}</strong></div>
+              <div className="sales-doc-card-field"><span>未付</span><strong style={row.outstandingCents > 0 ? { color: '#b45309' } : { color: '#0f766e' }}>{formatMoney(row.outstandingCents)}</strong></div>
+            </div>
+            <div className="sales-doc-card-status">
+              <select className="toolbar-select" aria-label={`${row.number}单据状态`} value={row.documentStatus} disabled={busyId === row.id || row.documentStatus === 'void'} onChange={(event) => void changeStatus(row, event.target.value as SalesDocumentStatus)}><option value="draft">草稿</option><option value="issued">已开单</option><option value="void">已作废</option></select>
+            </div>
+            <div className="row-actions">
+              <button className="icon-button" type="button" title={row.documentStatus === 'void' ? '查看销售单' : '编辑销售单'} disabled={busyId === row.id} onClick={() => void openEdit(row.id)}><Edit3 size={14} /></button>
+              <PdfDownloadButton number={row.number} download={() => downloadSalesDocumentPdf(row.id)} onError={(message) => notify(message, 'error')} disabled={busyId === row.id} />
+              {row.documentStatus === 'issued' && !row.generatedOrderNo && <button className="icon-button" type="button" title="从本销售单生成订单" disabled={busyId === row.id} onClick={() => void generateOrder(row)}><ClipboardList size={14} /></button>}
+              {row.generatedOrderId != null && row.generatedOrderNo && <button className="icon-button" type="button" title={`查看生成的订单 ${row.generatedOrderNo}`} disabled={busyId === row.id} onClick={() => void onOpenOrder?.(row.generatedOrderId!)}><ExternalLink size={14} /></button>}
+              {row.documentStatus !== 'void' && <button className="icon-button danger" type="button" title="删除销售单" disabled={busyId === row.id} onClick={() => void remove(row)}><Trash2 size={14} /></button>}
+            </div>
+          </article>;
+        })}
+      </div>
       {loading && <div className="table-state">正在加载销售单...</div>}
       {!loading && !visibleRows.length && <div className="table-state">暂无符合条件的销售单，可独立新建或从已成交报价复制。</div>}
     </section>

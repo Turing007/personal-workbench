@@ -28,6 +28,7 @@ import { registerSalesDocumentRoutes } from './routes/sales-documents.js';
 import { registerSettingsRoutes } from './routes/settings.js';
 import { registerCustomerRoutes } from './routes/customers.js';
 import { registerFinanceRoutes } from './routes/finance.js';
+import { registerAccessControl, registerAuthRoutes } from './routes/auth.js';
 import { FinanceService } from './services/finance-service.js';
 import { OrderService } from './services/order-service.js';
 import { DocumentCustomerService } from './services/document-customer-service.js';
@@ -62,6 +63,11 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
       fileSize: MAX_CONTRACT_SIZE,
     },
   });
+
+  // 访问控制钩子必须在所有路由（含静态托管）之前注册才会对它们生效。
+  const settingsRepository = new SettingsRepository(options.database);
+  await registerAccessControl(app, settingsRepository);
+  await registerAuthRoutes(app, { settings: settingsRepository });
 
   if (options.clientDirectory) {
     if (options.filesDirectory) {
@@ -115,7 +121,6 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   await registerCustomerRoutes(app, {
     service: new CustomerService(customerRepository),
   });
-  const settingsRepository = new SettingsRepository(options.database);
   const orderOptions = {
     repositories,
     customerRepository,

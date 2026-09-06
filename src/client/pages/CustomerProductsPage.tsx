@@ -282,7 +282,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
       <button className="button button-primary" type="button" title="新增客户" onClick={() => { setEditingCustomer(null); setCustomerEditorOpen(true); }}><Plus size={15} />新增客户</button>
     </div>
 
-    <div className="customer-products-layout" style={{ minHeight: 0, display: 'grid', gridTemplateColumns: '260px minmax(0, 1fr)', gap: 10 }}>
+    <div className="customer-products-layout">
       <section className="table-panel card customer-list-panel" style={{ minHeight: 420 }}>
         <div className="section-box-header customer-list-header"><span className="section-box-title">客户档案</span></div>
         <div className="customer-list-scroll" style={{ maxHeight: 'calc(100vh - 190px)' }}>
@@ -306,7 +306,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
           {selectedProductIds.length > 0 && <button className="button button-secondary" type="button" onClick={() => { void batchRemoveProducts(); }}><Trash2 size={14} />删除选中</button>}
           <button className="button button-primary" type="button" disabled={!activeCustomer} title="添加客户新品" onClick={openNewProduct}><Plus size={14} />添加客户产品</button>
         </div>
-        <div className="table-scroll"><table className="data-table customer-products-table" style={{ minWidth: 1240 }}><thead><tr><th style={{ width: 34 }}><input type="checkbox" disabled={!products.length} checked={allVisibleSelected} onChange={() => setSelectedProductIds(allVisibleSelected ? [] : products.map((product) => product.id))} aria-label="全选客户产品" /></th>{['状态', '图片', '品名', '规格', '客户 SKU', '包装', '装箱数', '成本价', '最近报价', '最终价格', '运费/箱', '备注', '附件', '来源', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead><tbody>
+        <div className="table-scroll customer-products-table-desktop"><table className="data-table customer-products-table" style={{ minWidth: 1240 }}><thead><tr><th style={{ width: 34 }}><input type="checkbox" disabled={!products.length} checked={allVisibleSelected} onChange={() => setSelectedProductIds(allVisibleSelected ? [] : products.map((product) => product.id))} aria-label="全选客户产品" /></th>{['状态', '图片', '品名', '规格', '客户 SKU', '包装', '装箱数', '成本价', '最近报价', '最终价格', '运费/箱', '备注', '附件', '来源', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead><tbody>
           {products.map((product) => <tr key={product.id}>
             <td><input type="checkbox" checked={selectedProductIds.includes(product.id)} onChange={() => setSelectedProductIds((current) => current.includes(product.id) ? current.filter((id) => id !== product.id) : [...current, product.id])} aria-label={`选择${product.name}`} /></td>
             <td><span style={{ display: 'inline-block', padding: '3px 6px', borderRadius: 4, background: product.completionStatus === 'complete' ? '#ecfdf5' : '#fff7ed', color: product.completionStatus === 'complete' ? '#047857' : '#b45309', whiteSpace: 'nowrap' }}>{product.completionStatus === 'complete' ? '已完善' : '待完善'}</span></td>
@@ -315,6 +315,35 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
             <td><div className="row-actions"><button className="icon-button" type="button" title="编辑客户产品" onClick={() => openEditProduct(product)}><Edit3 size={14} /></button><button className="icon-button" type="button" title={activeCustomer ? '复制为客户新品' : '客户已停用，不能复制新品'} disabled={!activeCustomer} onClick={() => openCopyProduct(product)}><Copy size={14} /></button><button className="icon-button danger" type="button" title="删除客户产品" onClick={() => { void removeProduct(product); }}><Trash2 size={14} /></button></div></td>
           </tr>)}
         </tbody></table></div>
+        <div className="customer-product-card-list">
+          {products.map((product) => <article key={product.id} className="customer-product-card">
+            <div className="customer-product-card-head">
+              <input type="checkbox" checked={selectedProductIds.includes(product.id)} onChange={() => setSelectedProductIds((current) => current.includes(product.id) ? current.filter((id) => id !== product.id) : [...current, product.id])} aria-label={`选择${product.name}`} />
+              {product.imageRelativePath ? <img className="customer-product-card-image" src={imageUrl(product.imageRelativePath)} alt={product.name} /> : <span className="product-no-image">—</span>}
+              <div className="customer-product-card-title">
+                <strong>{product.name || '-'}</strong>
+                <span>{product.specification || '-'}</span>
+              </div>
+              <span className={`badge ${product.completionStatus === 'complete' ? 'badge-success' : 'badge-warning'}`}>{product.completionStatus === 'complete' ? '已完善' : '待完善'}</span>
+            </div>
+            <div className="customer-product-card-grid">
+              <div className="customer-product-card-field"><span>客户 SKU</span><strong style={!product.sku ? { color: '#b45309' } : undefined}>{product.sku || '待完善'}</strong></div>
+              <div className="customer-product-card-field"><span>包装 / 装箱数</span><strong>{product.packaging.length ? product.packaging[0].name || `${product.packaging.length} 种` : '-'}{product.packCount == null ? <em style={{ color: '#b45309' }}>待完善</em> : ` · ${product.packCount} 个/箱`}</strong></div>
+              <div className="customer-product-card-field"><span>成本价</span><strong>{money(product.costPriceCents)}</strong></div>
+              <div className="customer-product-card-field"><span>最近报价</span><strong>{money(product.latestQuoteCents)}</strong></div>
+              <div className="customer-product-card-field"><span>最终价格</span><strong>{money(product.finalPriceCents)}</strong></div>
+              <div className="customer-product-card-field"><span>运费/箱</span><strong style={product.freightPerBoxCents == null ? { color: '#b45309' } : undefined}>{product.freightPerBoxCents == null ? '未设置' : `¥${(product.freightPerBoxCents / 100).toFixed(2)}`}</strong></div>
+              <div className="customer-product-card-field"><span>来源</span><strong style={{ color: product.systemProductId == null ? '#64748b' : '#0f766e' }}>{product.systemProductId == null ? '临时添加' : '系统产品库'}</strong><em>{product.attachments.length ? `${product.attachments.length} 个附件` : ''}</em></div>
+              <div className="customer-product-card-field"><span>更新时间</span><strong>{formatTime(product.updatedAt)}</strong></div>
+            </div>
+            {product.remark && <p className="customer-product-card-remark">{product.remark}</p>}
+            <div className="row-actions">
+              <button className="icon-button" type="button" title="编辑客户产品" onClick={() => openEditProduct(product)}><Edit3 size={14} /></button>
+              <button className="icon-button" type="button" title={activeCustomer ? '复制为客户新品' : '客户已停用，不能复制新品'} disabled={!activeCustomer} onClick={() => openCopyProduct(product)}><Copy size={14} /></button>
+              <button className="icon-button danger" type="button" title="删除客户产品" onClick={() => { void removeProduct(product); }}><Trash2 size={14} /></button>
+            </div>
+          </article>)}
+        </div>
         {(loading || productLoading) && <div className="table-state">正在加载客户产品...</div>}
         {!loading && !productLoading && !products.length && <div className="table-state">{productError || (selectedCustomer ? '当前客户暂无产品，可从系统产品库导入或直接添加新品。' : '请先在左侧选择客户。')}</div>}
       </section>

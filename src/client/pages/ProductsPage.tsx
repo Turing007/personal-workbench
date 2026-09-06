@@ -103,7 +103,7 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
       <button className="button button-primary" type="button" onClick={openNew}><Plus size={15} />添加产品</button>
     </div>
     <section className="table-panel">
-      <div className="table-scroll"><table className="data-table products-data-table"><thead><tr>{['SKU', '图片', '品名', '颜色', '插脚', '参数', '包装信息', '备注', '供应商', '价格', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
+      <div className="table-scroll products-table-desktop"><table className="data-table products-data-table"><thead><tr>{['SKU', '图片', '品名', '颜色', '插脚', '参数', '包装信息', '备注', '供应商', '价格', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
         <tbody>{filtered.map((product) => <tr key={product.id}>
           <td className="strong-cell"><button className="product-sku-button" type="button" onClick={() => setDetailProduct(product)} title="查看产品详情">{product.sku || '查看详情'}</button></td>
           <td>{product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProduct(product)} title="查看全部图片"><span className="product-image-thumb"><img src={product.images[0].url} alt={product.images[0].name} /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}</td>
@@ -124,6 +124,31 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
           <td>{product.purchasePrice ? `¥${product.purchasePrice}` : '—'}</td>
           <td><div className="row-actions"><button className="icon-button" title={product.status === 'draft' ? '继续编辑草稿' : '编辑产品'} type="button" onClick={() => openEdit(product)}><Edit3 size={14} /></button><button className="icon-button" title="复制产品为新建产品" type="button" onClick={() => openCopy(product)}><Copy size={14} /></button><button className="icon-button danger" title="删除产品" type="button" onClick={() => { if (window.confirm(`确定删除产品“${product.name || '未命名草稿'}”吗？`)) void onDelete(product); }}><Trash2 size={14} /></button></div></td>
         </tr>)}</tbody></table></div>
+      <div className="products-card-list">
+        {filtered.map((product) => <article key={product.id} className="product-card">
+          <div className="product-card-head">
+            {product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProduct(product)} title="查看全部图片"><span className="product-image-thumb"><img src={product.images[0].url} alt={product.images[0].name} /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}
+            <div className="product-card-title">
+              <strong>{product.status === 'draft' ? <>{product.name || '（未命名草稿）'}<span className="badge badge-warning">草稿</span></> : (product.name || '—')}</strong>
+              <button className="product-sku-button" type="button" onClick={() => setDetailProduct(product)} title="查看产品详情">{product.sku || '查看详情'}</button>
+            </div>
+          </div>
+          <div className="product-card-grid">
+            <div className="product-card-field"><span>颜色 / 插脚</span><strong>{[product.colors.join('、'), product.batteryPlugs.join('、')].filter(Boolean).join(' · ') || '—'}</strong></div>
+            <div className="product-card-field"><span>供应商 / 采购价</span><strong>{[product.supplier || '—', product.purchasePrice ? `¥${product.purchasePrice}` : ''].filter(Boolean).join(' · ')}</strong></div>
+          </div>
+          {product.parameters?.trim() && <button className="product-parameters-trigger" type="button" onClick={() => setParametersProduct(product)} title="查看完整参数"><span>参数详情</span><Copy size={13} /></button>}
+          {product.packaging.length > 0 && <div className="product-card-packaging">{product.packaging.slice(0, 1).map((item) => {
+            const display = packagingDisplay(item);
+            return <div className="product-card-packaging-line" key={item.id}><strong>{display.name}</strong><span>内盒 {display.innerSize} / 外箱 {display.outerSize}</span></div>;
+          })}{product.packaging.length > 1 && <span className="product-card-packaging-more">… 共 {product.packaging.length} 个包装</span>}</div>}
+          <div className="row-actions">
+            <button className="icon-button" title={product.status === 'draft' ? '继续编辑草稿' : '编辑产品'} type="button" onClick={() => openEdit(product)}><Edit3 size={14} /></button>
+            <button className="icon-button" title="复制产品为新建产品" type="button" onClick={() => openCopy(product)}><Copy size={14} /></button>
+            <button className="icon-button danger" title="删除产品" type="button" onClick={() => { if (window.confirm(`确定删除产品“${product.name || '未命名草稿'}”吗？`)) void onDelete(product); }}><Trash2 size={14} /></button>
+          </div>
+        </article>)}
+      </div>
       {loading && <div className="table-state">正在加载产品...</div>}
       {!loading && !filtered.length && <div className="table-state">暂无产品，点击“添加产品”开始维护。</div>}
     </section>
