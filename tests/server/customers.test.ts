@@ -30,6 +30,8 @@ function customerPayload(name = '张三') {
     contactName: '张先生',
     contactPhone: '13800000000',
     shippingInfo: '张三 13800000000 浙江省宁波市',
+    invoiceTitle: '张三工具经营部',
+    taxNo: '91330200MA2XYZ0C1F',
   };
 }
 
@@ -91,6 +93,8 @@ describe('客户档案 API', () => {
         contactName: '  张先生 ',
         contactPhone: ' 13800000000 ',
         shippingInfo: '  张三 浙江省宁波市  ',
+        invoiceTitle: '  张三工具经营部  ',
+        taxNo: '  91330200MA2XYZ0C1F  ',
       },
     });
 
@@ -101,6 +105,8 @@ describe('客户档案 API', () => {
       contactName: '张先生',
       contactPhone: '13800000000',
       shippingInfo: '张三 浙江省宁波市',
+      invoiceTitle: '张三工具经营部',
+      taxNo: '91330200MA2XYZ0C1F',
       isActive: true,
       productCount: 0,
       incompleteProductCount: 0,
@@ -140,6 +146,8 @@ describe('客户档案 API', () => {
         contactName: '张经理',
         contactPhone: '13900000000',
         shippingInfo: '浙江省金华市',
+        invoiceTitle: '张三工具店',
+        taxNo: '91330700MA2AB0C1D2',
       },
     });
     expect(updated.statusCode).toBe(200);
@@ -147,7 +155,58 @@ describe('客户档案 API', () => {
       id: created.id,
       name: '张三工具店',
       contactName: '张经理',
+      contactPhone: '13900000000',
+      shippingInfo: '浙江省金华市',
+      invoiceTitle: '张三工具店',
+      taxNo: '91330700MA2AB0C1D2',
       productCount: 2,
+    });
+  });
+
+  it('开票抬头与税号支持设置、读取和类型校验', async () => {
+    const { app } = await testApp();
+    const created = await createCustomer(app);
+
+    expect(created.invoiceTitle).toBe('张三工具经营部');
+    expect(created.taxNo).toBe('91330200MA2XYZ0C1F');
+
+    const keptByUpdate = await app.inject({
+      method: 'PUT',
+      url: `/api/customers/${created.id}`,
+      payload: { ...customerPayload('张三工具店') },
+    });
+    expect(keptByUpdate.statusCode).toBe(200);
+    expect(keptByUpdate.json().data.invoiceTitle).toBe('张三工具经营部');
+    expect(keptByUpdate.json().data.taxNo).toBe('91330200MA2XYZ0C1F');
+
+    const blank = await app.inject({
+      method: 'PUT',
+      url: `/api/customers/${created.id}`,
+      payload: { name: '张三工具店', contactName: '', contactPhone: '', shippingInfo: '', invoiceTitle: '', taxNo: '' },
+    });
+    expect(blank.statusCode).toBe(200);
+    expect(blank.json().data).toMatchObject({ invoiceTitle: '', taxNo: '' });
+
+    const invalidTitle = await app.inject({
+      method: 'POST',
+      url: '/api/customers',
+      payload: { ...customerPayload('发票校验'), invoiceTitle: 12345 },
+    });
+    expect(invalidTitle.statusCode).toBe(400);
+    expect(invalidTitle.json()).toMatchObject({
+      ok: false,
+      error: { code: 'VALIDATION_ERROR', field: 'invoiceTitle' },
+    });
+
+    const invalidTaxNo = await app.inject({
+      method: 'POST',
+      url: '/api/customers',
+      payload: { ...customerPayload('税号校验'), taxNo: { code: 'bad' } },
+    });
+    expect(invalidTaxNo.statusCode).toBe(400);
+    expect(invalidTaxNo.json()).toMatchObject({
+      ok: false,
+      error: { code: 'VALIDATION_ERROR', field: 'taxNo' },
     });
   });
 

@@ -27,6 +27,8 @@ const blank: CustomerSaveInput = {
   contactName: '',
   contactPhone: '',
   shippingInfo: '',
+  invoiceTitle: '',
+  taxNo: '',
 };
 
 export default function CustomerEditorModal({ open, customer, busy, onClose, onSave }: CustomerEditorModalProps) {
@@ -40,6 +42,8 @@ export default function CustomerEditorModal({ open, customer, busy, onClose, onS
       contactName: customer.contactName,
       contactPhone: customer.contactPhone,
       shippingInfo: customer.shippingInfo,
+      invoiceTitle: customer.invoiceTitle,
+      taxNo: customer.taxNo,
     } : blank);
     setError('');
   }, [customer, open]);
@@ -60,6 +64,8 @@ export default function CustomerEditorModal({ open, customer, busy, onClose, onS
         contactName: draft.contactName.trim(),
         contactPhone: draft.contactPhone.trim(),
         shippingInfo: draft.shippingInfo.trim(),
+        invoiceTitle: draft.invoiceTitle.trim(),
+        taxNo: draft.taxNo.trim(),
       });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String((reason as { message?: string })?.message ?? '保存客户失败'));
@@ -84,6 +90,10 @@ export default function CustomerEditorModal({ open, customer, busy, onClose, onS
         <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>联系电话<input value={draft.contactPhone} onChange={(event) => update('contactPhone', event.target.value)} style={inputStyle} /></label>
       </div>
       <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>收件信息<textarea rows={4} value={draft.shippingInfo} onChange={(event) => update('shippingInfo', event.target.value)} style={{ ...inputStyle, resize: 'vertical' }} placeholder="收件人、地址、电话等统一记录" /></label>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>开票抬头<input value={draft.invoiceTitle} onChange={(event) => update('invoiceTitle', event.target.value)} style={inputStyle} placeholder="开票时使用的单位抬头" /></label>
+        <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>税号<input value={draft.taxNo} onChange={(event) => update('taxNo', event.target.value)} style={inputStyle} placeholder="纳税人识别号" /></label>
+      </div>
     </div>
   </Modal>;
 }

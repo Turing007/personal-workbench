@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import archiver from 'archiver';
 import unzipper from 'unzipper';
 import { openDatabase } from '../db/connection.js';
+import { migrateDatabase } from '../db/migrate.js';
 
 const BACKUP_FORMAT_VERSION = 1;
 const DATABASE_ENTRY = 'workbench.sqlite';
@@ -14,6 +15,7 @@ const MANIFEST_ENTRY = 'manifest.json';
 const ATTACHMENTS_ENTRY_PREFIX = 'files/';
 
 const tableNames = [
+  'customers',
   'products',
   'product_packaging',
   'product_images',
@@ -205,6 +207,10 @@ export class BackupService {
     try {
       const manifest = await this.readManifest(temporaryDirectory);
       if (!await pathExists(restoredDatabase)) throw new BackupError('INVALID_BACKUP', '备份中缺少数据库文件');
+      // 旧备份可能缺少后续版本新增的客户字段等列，恢复前先迁移快照库，保证与当前主库列结构一致。
+      // 清单记录数缺项也被允许（见 validateDatabase），因此旧备份仍可恢复。
+      const restoredConnection = openDatabase(restoredDatabase);
+      try { migrateDatabase(restoredConnection); } finally { restoredConnection.close(); }
       await this.validateDatabase(restoredDatabase, manifest);
       await this.validateAttachmentManifest(extractedFiles, manifest);
       const safetyBackup = await this.createBackup();
@@ -338,7 +344,8 @@ export class BackupService {
       }
       for (const table of tableNames) {
         const expectedCount = manifest.recordCounts[table];
-        if (expectedCount === undefined) throw new BackupError('INVALID_BACKUP', `备份清单缺少记录数量：${table}`);
+        // 兼容旧备份：清单可能缺少后来新增表（如 customers）的记录数，此时跳过计数校验。
+        if (expectedCount === undefined) continue;
         const actualCount = Number(database.prepare(`SELECT COUNT(*) AS count FROM "${table}"`).get()?.count ?? 0);
         if (actualCount !== expectedCount) throw new BackupError('INVALID_BACKUP', `备份记录数量校验失败：${table}`);
       }

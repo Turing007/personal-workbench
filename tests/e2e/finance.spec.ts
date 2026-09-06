@@ -31,4 +31,70 @@ test.describe('财务管理工作台', () => {
     await expect(page.getByRole('dialog', { name: /订单详情/ })).toBeVisible();
     await expect(page.getByRole('button', { name: '打开财务详情' })).toBeVisible();
   });
+
+  test('客户开票信息自动带入，并可通过“调用客户开票信息”刷新', async ({ page }) => {
+    const stamp = Date.now();
+    const name = `E2E开票客户${stamp}`;
+    const customerResponse = await page.request.post('/api/customers', {
+      data: {
+        name,
+        contactName: '开票联系人',
+        contactPhone: '13800000000',
+        shippingInfo: '上海市浦东新区',
+        invoiceTitle: `抬头${stamp}`,
+        taxNo: `91310000${stamp}`,
+      },
+    });
+    expect(customerResponse.ok()).toBeTruthy();
+    const customer = (await customerResponse.json()).data;
+
+    const orderResponse = await page.request.post('/api/orders', {
+      data: {
+        orderNo: '',
+        orderedAt: new Date().toISOString(),
+        customerId: customer.id,
+        recipientName: '开票联系人',
+        recipientInfo: '上海市浦东新区',
+        amount: 100,
+        trackingNo: '',
+        paymentNote: '',
+        remark: '',
+        items: [{ name: 'E2E产品', sku: `E2E-${stamp}`, specification: '标准', packagingName: '', packCount: 10, quantity: 10, unitPriceCents: 1000 }],
+      },
+    });
+    expect(orderResponse.ok()).toBeTruthy();
+    const order = (await orderResponse.json()).data;
+    const orderId = Number(order.id ?? order.order_id);
+
+    await page.goto('/');
+    await page.getByRole('button', { name: '财务管理' }).click();
+    await page.getByRole('textbox', { name: '搜索订单号或客户' }).fill(name);
+    await page.getByRole('button', { name: '查看财务' }).first().click();
+
+    const dialog = page.getByRole('dialog', { name: /财务详情/ });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByPlaceholder('发票抬头')).toHaveValue(`抬头${stamp}`);
+    await expect(dialog.getByPlaceholder('税号')).toHaveValue(`91310000${stamp}`);
+    await expect(dialog.getByRole('button', { name: '调用客户开票信息' })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: '调用客户开票信息' })).toBeEnabled();
+
+    const updateResponse = await page.request.put(`/api/customers/${customer.id}`, {
+      data: {
+        name,
+        contactName: '开票联系人',
+        contactPhone: '13800000000',
+        shippingInfo: '上海市浦东新区',
+        invoiceTitle: `新抬头${stamp}`,
+        taxNo: `99991000${stamp}`,
+      },
+    });
+    expect(updateResponse.ok()).toBeTruthy();
+
+    await dialog.getByRole('button', { name: '调用客户开票信息' }).click();
+    await expect(dialog.getByPlaceholder('发票抬头')).toHaveValue(`新抬头${stamp}`);
+    await expect(dialog.getByPlaceholder('税号')).toHaveValue(`99991000${stamp}`);
+
+    await page.request.delete(`/api/orders/${orderId}`);
+    await page.request.delete(`/api/customers/${customer.id}`);
+  });
 });

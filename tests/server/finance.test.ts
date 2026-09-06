@@ -182,4 +182,25 @@ describe('财务模块', () => {
     await app.close();
     database.close();
   });
+
+  it('发票创建后保存客户开票快照，客户档案后续修改不回写已开发票', async () => {
+    const { database } = await setup();
+    const customerId = Number(database.prepare(
+      `INSERT INTO customers
+        (name, contact_name, contact_phone, shipping_info, invoice_title, tax_no, created_at, updated_at)
+       VALUES ('开票公司', '财务', '13800000000', '', '开票公司', '91330200MA2XYZ0C1F', '2026-09-04', '2026-09-04')`,
+    ).run().lastInsertRowid);
+    const orderId = insertOrder(database, 10000);
+    database.prepare('UPDATE orders SET customer_id = ? WHERE id = ?').run(customerId, orderId);
+
+    const service = new FinanceService({ database, repository: new FinanceRepository(database) });
+    const invoice = service.createInvoice(orderId, { invoiceType: '电子普通发票', title: '开票公司', taxNo: '91330200MA2XYZ0C1F', amountCents: 10000 });
+    expect(invoice).toMatchObject({ title: '开票公司', taxNo: '91330200MA2XYZ0C1F' });
+
+    database.prepare("UPDATE customers SET invoice_title = '新抬头', tax_no = '99999999' WHERE id = ?").run(customerId);
+    const persisted = service.get(orderId)!.invoices.find((item) => item.id === invoice.id);
+    expect(persisted).toMatchObject({ title: '开票公司', taxNo: '91330200MA2XYZ0C1F' });
+
+    database.close();
+  });
 });

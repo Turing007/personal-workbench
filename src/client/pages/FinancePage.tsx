@@ -21,6 +21,7 @@ import {
   type InvoiceStatus,
   type PayeeBreakdownRow,
 } from '../../shared/finance';
+import type { Customer } from '../../shared/customers';
 
 /** 按月偏移量平移 YYYY-MM，offset 为负表示往前翻 */
 function shiftMonth(month: string, offset: number): string {
@@ -32,11 +33,12 @@ function shiftMonth(month: string, offset: number): string {
 interface FinancePageProps {
   onNotify?: (message: string, tone?: 'success' | 'error' | 'info') => void;
   initialOrderId?: number;
+  customers?: Customer[];
 }
 
 const orderStatusLabels: Record<string, string> = { label_pending: '待打印箱唛', pending_stock: '待备货', stock_reported: '已备货', pending_packing: '待打包', ship_pending: '待发货', shipped: '已发货' };
 
-export default function FinancePage({ onNotify, initialOrderId }: FinancePageProps) {
+export default function FinancePage({ onNotify, initialOrderId, customers = [] }: FinancePageProps) {
   const [result, setResult] = useState<FinanceListResult>();
   const [query, setQuery] = useState('');
   const [paymentStatus, setPaymentStatus] = useState('');
@@ -75,6 +77,12 @@ export default function FinancePage({ onNotify, initialOrderId }: FinancePagePro
     receiptCount: (payeeRows ?? []).reduce((sum, row) => sum + row.receiptCount, 0),
     payeeCount: payeeRows?.length ?? 0,
   }), [payeeRows]);
+  const detailCustomer = useMemo(() => {
+    const raw = detail?.order.customer_id ?? detail?.order.customerId;
+    const numeric = Number(raw);
+    if (!detail || !Number.isSafeInteger(numeric) || numeric <= 0) return undefined;
+    return customers.find((customer) => customer.id === numeric);
+  }, [customers, detail]);
 
   return <div className="page-shell finance-page">
     <div className="page-toolbar finance-toolbar"><div><strong className="page-title">财务管理</strong><span className="page-subtitle">核验客户水单、登记收款并跟踪发票</span></div><div className="search-control"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索订单号或客户" /></div><div className="month-control" role="group" aria-label="按月筛选">{month ? <button className="icon-button" type="button" title="上一月" onClick={() => setMonth(shiftMonth(month, -1))}><ChevronLeft size={15} /></button> : null}<input type="month" className="toolbar-select month-input" aria-label="筛选月份" value={month} onChange={(event) => setMonth(event.target.value)} />{month ? <button className="icon-button" type="button" title="下一月" onClick={() => setMonth(shiftMonth(month, 1))}><ChevronRight size={15} /></button> : null}<button className="icon-button" type="button" title={month ? '显示全部月份' : '回到当前月'} onClick={() => setMonth((value) => (value ? '' : currentMonth()))}>{month ? <X size={15} /> : '全部'}</button></div><select className="toolbar-select" aria-label="付款状态" value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value)}><option value="">全部付款</option>{Object.entries(FINANCE_PAYMENT_STATUS_LABELS).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select><select className="toolbar-select" aria-label="水单状态" value={proofStatus} onChange={(event) => setProofStatus(event.target.value)}><option value="">全部水单</option>{Object.entries(PAYMENT_PROOF_STATUS_LABELS).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select><select className="toolbar-select" aria-label="发票状态" value={invoiceStatus} onChange={(event) => setInvoiceStatus(event.target.value)}><option value="">全部发票</option>{Object.entries(INVOICE_STATUS_LABELS).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select><button className="icon-button" type="button" title="刷新财务列表" disabled={loading} onClick={() => void load()}><RefreshCw size={15} /></button></div>
@@ -88,7 +96,7 @@ export default function FinancePage({ onNotify, initialOrderId }: FinancePagePro
         <div><span>付款状态</span><b className={badgeClass(detail.finance.paymentStatus)}>{FINANCE_PAYMENT_STATUS_LABELS[detail.finance.paymentStatus]}</b></div>
       </div>
       <PaymentProofEditor detail={detail} onRefresh={refreshDetail} onNotify={onNotify} />
-      <InvoiceEditor detail={detail} onRefresh={refreshDetail} onNotify={onNotify} />
+      <InvoiceEditor detail={detail} customer={detailCustomer} onRefresh={refreshDetail} onNotify={onNotify} />
     </div>}</Modal>
     <Modal open={payeeOpen} title={month ? `已收金额 · 按收款人（${month}）` : '已收金额 · 按收款人（全部月份）'} onClose={() => setPayeeOpen(false)} width={560}>
       {payeeLoading ? <div className="table-state">正在加载收款明细...</div> : payeeRows && payeeRows.length > 0 ? <div className="finance-payee-breakdown">

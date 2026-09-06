@@ -7,6 +7,8 @@ export interface Customer {
   contactName: string;
   contactPhone: string;
   shippingInfo: string;
+  invoiceTitle: string;
+  taxNo: string;
   isActive: boolean;
   productCount: number;
   incompleteProductCount: number;
@@ -19,6 +21,8 @@ export interface CustomerSaveInput {
   contactName: string;
   contactPhone: string;
   shippingInfo: string;
+  invoiceTitle: string;
+  taxNo: string;
   confirmDuplicateName?: boolean;
 }
 

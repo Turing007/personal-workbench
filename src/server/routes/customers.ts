@@ -40,6 +40,8 @@ function parseCustomerInput(value: unknown): CustomerSaveInput {
     contactName: body.contactName as string,
     contactPhone: body.contactPhone as string,
     shippingInfo: body.shippingInfo as string,
+    invoiceTitle: body.invoiceTitle as string,
+    taxNo: body.taxNo as string,
     confirmDuplicateName: body.confirmDuplicateName as boolean | undefined,
   };
 }

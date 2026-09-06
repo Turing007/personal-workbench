@@ -558,6 +558,7 @@ CREATE INDEX IF NOT EXISTS idx_sales_receipt_files_receipt ON sales_receipt_file
 `;
 
 type MigratedTable =
+  | 'customers'
   | 'products'
   | 'product_images'
   | 'customer_products'
@@ -613,9 +614,9 @@ function preflightMigration(database: DatabaseSync): MigrationPreflight {
     );
   }
   const parsedSchemaVersion = normalizedSchemaVersion === '' ? 0 : Number(normalizedSchemaVersion);
-  if (parsedSchemaVersion > 18) {
+  if (parsedSchemaVersion > 19) {
     throw new Error(
-      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version 18`,
+      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version 19`,
     );
   }
 
@@ -992,6 +993,12 @@ function migrateVersionEighteen(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '18', now);
 }
 
+function migrateVersionNineteen(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'customers', 'invoice_title', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(database, 'customers', 'tax_no', "TEXT NOT NULL DEFAULT ''");
+  upsertSetting(database, 'schema_version', '19', now);
+}
+
 export function migrateDatabase(database: DatabaseSync): void {
   if (database.isTransaction) {
     throw new Error('Database migration cannot run inside an active transaction');
@@ -1036,6 +1043,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionSixteen(transactionDatabase, now);
     migrateVersionSeventeen(transactionDatabase, now);
     migrateVersionEighteen(transactionDatabase, now);
+    migrateVersionNineteen(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)
