@@ -288,6 +288,7 @@ export class OrderService {
       paymentNote: String(detail.payment_note ?? ''),
       orderDetail: String(detail.order_detail ?? ''),
       remark: String(detail.remark ?? ''),
+      settlementType: String(detail.settlement_type ?? 'corporate'),
       items: items.map((item) => ({
         customerProductId: item.customer_product_id == null ? null : Number(item.customer_product_id),
         name: String(item.name ?? ''),

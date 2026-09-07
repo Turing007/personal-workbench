@@ -4,6 +4,7 @@ import { getNextOrderNumber, deleteOrderDetailImage } from '../api';
 import { calculateOrderBoxes } from '../../shared/order-calculations';
 import { calculateFreightCents, calculateOrderLineAmountCents, calculateOrderTotalCents } from '../../shared/order-prices';
 import { dateInputValue, dateOnlyValue } from '../../shared/date-input';
+import { ORDER_SETTLEMENT_LABELS, isSettlementType, type OrderSettlementType } from '../../shared/settlement';
 import type { Customer, CustomerProduct as CustomerProductRecord, CustomerProductAttachment, CustomerProductSaveInput, CustomerSaveInput } from '../../shared/customers';
 import ImagePasteUpload, { type ImageAttachment } from './ImagePasteUpload';
 import CustomerProductEditorModal from './customer-products/CustomerProductEditorModal';
@@ -91,6 +92,8 @@ export interface OrderDraft {
   customerContactName?: string;
   customerContactPhone?: string;
   customerShippingInfo?: string;
+  /** 结算方式：corporate 对公（需开票）/ personal 对私（无需开票），历史订单默认 corporate */
+  settlementType?: OrderSettlementType;
   orderDetail: string;
   orderDetailImages: OrderDetailImageDraft[];
   recipientName: string;
@@ -146,7 +149,7 @@ function makeItem(product?: CustomerProductRecord): OrderItemDraft {
 
 function defaultDraft(value: Partial<OrderDraft> | undefined): OrderDraft {
   return {
-    orderNo: value?.orderNo ?? '', orderNoAuto: value?.orderNoAuto ?? (!value?.id && !value?.orderNo), orderedAt: dateOnlyValue(value?.orderedAt ?? dateInputValue()), customerId: value?.customerId ?? null, customerName: value?.customerName ?? '', customerContactName: value?.customerContactName ?? '', customerContactPhone: value?.customerContactPhone ?? '', customerShippingInfo: value?.customerShippingInfo ?? '', orderDetail: value?.orderDetail ?? '', orderDetailImages: value?.orderDetailImages ?? [], recipientName: value?.recipientName ?? '', recipientInfo: value?.recipientInfo ?? '', amount: value?.amount ?? '', shippingCents: value?.shippingCents ?? 0, trackingNo: value?.trackingNo ?? '', paymentNote: value?.paymentNote ?? '', paymentProofs: value?.paymentProofs ?? [], remark: value?.remark ?? '', items: value?.items ?? [], contracts: value?.contracts ?? [], deletedContractIds: value?.deletedContractIds ?? [], status: value?.status ?? 'pending_stock', id: value?.id,
+    orderNo: value?.orderNo ?? '', orderNoAuto: value?.orderNoAuto ?? (!value?.id && !value?.orderNo), orderedAt: dateOnlyValue(value?.orderedAt ?? dateInputValue()), customerId: value?.customerId ?? null, customerName: value?.customerName ?? '', customerContactName: value?.customerContactName ?? '', customerContactPhone: value?.customerContactPhone ?? '', customerShippingInfo: value?.customerShippingInfo ?? '', settlementType: isSettlementType(value?.settlementType) ? value.settlementType : 'corporate', orderDetail: value?.orderDetail ?? '', orderDetailImages: value?.orderDetailImages ?? [], recipientName: value?.recipientName ?? '', recipientInfo: value?.recipientInfo ?? '', amount: value?.amount ?? '', shippingCents: value?.shippingCents ?? 0, trackingNo: value?.trackingNo ?? '', paymentNote: value?.paymentNote ?? '', paymentProofs: value?.paymentProofs ?? [], remark: value?.remark ?? '', items: value?.items ?? [], contracts: value?.contracts ?? [], deletedContractIds: value?.deletedContractIds ?? [], status: value?.status ?? 'pending_stock', id: value?.id,
   };
 }
 
@@ -341,6 +344,10 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
           <CustomerSelector value={draft.customerId ?? null} customers={customers} onChange={selectCustomer} onCreateCustomer={onCreateCustomer} />
           <label style={labelStyle}>订单号<input style={controlStyle} value={draft.orderNo} onChange={(event) => { const orderNo = event.target.value; update('orderNo', orderNo); update('orderNoAuto', !orderNo.trim()); }} placeholder="自动生成，可手动修改" /></label>
           <label style={labelStyle}>下单时间<input type="date" style={{ ...controlStyle, minWidth: 0 }} value={draft.orderedAt} onChange={(event) => update('orderedAt', event.target.value)} /></label>
+          <label style={labelStyle}>结算方式<select aria-label="结算方式" style={controlStyle} value={draft.settlementType ?? 'corporate'} onChange={(event) => update('settlementType', event.target.value === 'personal' ? 'personal' : 'corporate')}>
+            <option value="corporate">{ORDER_SETTLEMENT_LABELS.corporate}（需要开票）</option>
+            <option value="personal">{ORDER_SETTLEMENT_LABELS.personal}（无需开票）</option>
+          </select></label>
         </div>
         <div className="order-form-grid order-form-grid-recipient">
           <label style={labelStyle}>收件人名称<input style={controlStyle} value={draft.recipientName} onChange={(event) => update('recipientName', event.target.value)} placeholder="箱唛显示名称" /></label>

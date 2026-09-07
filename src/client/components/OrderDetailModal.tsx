@@ -1,6 +1,7 @@
 import { Download, ExternalLink, FileText, Image as ImageIcon, Package, Printer, Trash2, Truck, UserRound, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { FINANCE_PAYMENT_STATUS_LABELS, INVOICE_STATUS_LABELS, PAYMENT_PROOF_STATUS_LABELS } from '../../shared/finance';
+import { ORDER_SETTLEMENT_LABELS, invoiceDisplayLabel } from '../../shared/settlement';
 import { formatDateTime } from '../../shared/formatters';
 import Modal from './Modal';
 import OrderItemsTable from './OrderItemsTable';
@@ -129,9 +130,10 @@ export default function OrderDetailModal({
             <div style={detailStyle}><span style={labelStyle}>未收金额</span><strong style={{ fontSize: 13, color: order.financeSummary.outstandingCents > 0 ? '#92400e' : '#15803d' }}>{`¥ ${(order.financeSummary.outstandingCents / 100).toFixed(2)}`}</strong></div>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <span style={{ padding: '3px 8px', borderRadius: 999, background: '#f1f5f9', color: '#475569', fontSize: 11 }}>结算：{ORDER_SETTLEMENT_LABELS[order.settlementType ?? 'corporate']}</span>
             <span style={{ padding: '3px 8px', borderRadius: 999, background: '#f1f5f9', color: '#475569', fontSize: 11 }}>付款：{FINANCE_PAYMENT_STATUS_LABELS[financePaymentStatus]}</span>
             <span style={{ padding: '3px 8px', borderRadius: 999, background: '#f1f5f9', color: '#475569', fontSize: 11 }}>水单:{' '}{PAYMENT_PROOF_STATUS_LABELS[financeProofStatus]}</span>
-            <span style={{ padding: '3px 8px', borderRadius: 999, background: '#f1f5f9', color: '#475569', fontSize: 11 }}>发票：{INVOICE_STATUS_LABELS[financeInvoiceStatus]}</span>
+            <span style={{ padding: '3px 8px', borderRadius: 999, background: '#f1f5f9', color: '#475569', fontSize: 11 }}>发票：{invoiceDisplayLabel(order.settlementType, financeInvoiceStatus)}</span>
           </div>
         </section>}
 

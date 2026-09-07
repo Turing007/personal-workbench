@@ -151,6 +151,8 @@ export interface FinanceListRow {
   proofStatus: FinanceProofStatus;
   invoiceStatus: InvoiceStatus;
   orderStatus: string;
+  /** 订单结算方式：corporate 对公（需开票）/ personal 对私（无需开票） */
+  settlementType: string;
   updatedAt: string;
 }
 

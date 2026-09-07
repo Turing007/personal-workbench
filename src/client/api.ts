@@ -381,6 +381,7 @@ export function draftToInput(draft: OrderDraft) {
     paymentNote: draft.paymentNote,
     orderDetail: draft.orderDetail,
     remark: draft.remark,
+    settlementType: draft.settlementType === 'personal' ? 'personal' : 'corporate',
     items: draft.items.map((item) => ({ customerProductId: item.customerProductId ?? (item.productId ? Number(item.productId) : null), name: item.name.trim(), sku: item.sku.trim(), specification: item.specification.trim(), packCount: Math.max(1, Math.trunc(item.packSize)), quantity: Math.max(1, Math.trunc(item.quantity)), unitPriceCents: Math.max(0, Math.trunc(item.unitPriceCents ?? 0)), freightPerBoxCents: Math.max(0, Math.trunc(item.freightPerBoxCents ?? 0)), packaging: item.packaging?.length ? item.packaging.map((pack) => ({ name: pack.name, innerSize: pack.innerSize, innerWeight: Number(pack.innerWeight) || 0, outerSize: pack.outerSize, outerWeight: Number(pack.outerWeight) || 0, packCount: Math.max(1, Math.trunc(pack.packSize)) })) : [{ name: '', packCount: Math.max(1, Math.trunc(item.packSize)) }], remark: item.remark }))
     , orderAttachments: draft.items.flatMap((item) => (item.customerProductAttachments ?? []).map((attachment) => ({ category: attachment.category, sourceCustomerProductId: item.customerProductId ?? null, relativePath: attachment.relativePath, originalName: attachment.originalName, mimeType: attachment.mimeType, size: attachment.size })))
   };

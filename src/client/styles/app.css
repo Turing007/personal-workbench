@@ -2816,7 +2816,7 @@ select {
 
 /* ===== 订单表单：响应式网格与产品明细行 ===== */
 .order-form-grid { display: grid; gap: var(--space-5); }
-.order-form-grid-main { grid-template-columns: minmax(260px, 1.5fr) minmax(150px, .9fr) minmax(130px, .7fr); }
+.order-form-grid-main { grid-template-columns: minmax(240px, 1.4fr) minmax(150px, .9fr) minmax(130px, .7fr) minmax(140px, .8fr); }
 .order-form-grid-recipient { grid-template-columns: minmax(150px, .8fr) minmax(280px, 2fr) minmax(150px, .8fr); }
 .order-form-grid-attachments { grid-template-columns: minmax(240px, 1fr) minmax(320px, 1.25fr); align-items: start; }
 

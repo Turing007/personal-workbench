@@ -614,9 +614,9 @@ function preflightMigration(database: DatabaseSync): MigrationPreflight {
     );
   }
   const parsedSchemaVersion = normalizedSchemaVersion === '' ? 0 : Number(normalizedSchemaVersion);
-  if (parsedSchemaVersion > 19) {
+  if (parsedSchemaVersion > 20) {
     throw new Error(
-      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version 19`,
+      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version 20`,
     );
   }
 
@@ -999,6 +999,13 @@ function migrateVersionNineteen(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '19', now);
 }
 
+function migrateVersionTwenty(database: DatabaseSync, now: string): void {
+  // 对公/对私结算方式：对公开票、对私免开票；历史订单默认对公（此前全部订单都跟踪发票）。
+  // 必须经 ALTER 追加到表尾，不能写进 schemaSql 中段，否则备份按位置复制会列错位。
+  addColumnIfMissing(database, 'orders', 'settlement_type', "TEXT NOT NULL DEFAULT 'corporate' CHECK (settlement_type IN ('corporate', 'personal'))");
+  upsertSetting(database, 'schema_version', '20', now);
+}
+
 export function migrateDatabase(database: DatabaseSync): void {
   if (database.isTransaction) {
     throw new Error('Database migration cannot run inside an active transaction');
@@ -1044,6 +1051,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionSeventeen(transactionDatabase, now);
     migrateVersionEighteen(transactionDatabase, now);
     migrateVersionNineteen(transactionDatabase, now);
+    migrateVersionTwenty(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

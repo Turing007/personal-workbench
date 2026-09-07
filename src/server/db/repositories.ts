@@ -95,6 +95,8 @@ export interface CreateOrderInput {
   paymentNote?: string;
   orderDetail?: string;
   remark?: string;
+  /** 结算方式：corporate 对公（需开票）/ personal 对私（免开票），历史订单默认 corporate */
+  settlementType?: string;
   orderAttachments?: OrderAttachmentInput[];
   sourceSalesDocumentId?: number | null;
   /** 草稿订单：宽松校验，status 存为 draft，发布后回到正式流程。 */
@@ -563,6 +565,7 @@ export class DatabaseRepositories {
   createOrder(input: CreateOrderInput) {
     const timestamp = now();
     const status = input.isDraft ? 'draft' : 'pending_stock';
+    const settlementType = input.settlementType === 'personal' ? 'personal' : 'corporate';
     return withTransaction(this.database, (database) => {
       const orderNo = input.orderNo.trim() || this.orderNumbers.next();
       const amountCents = input.amountCents ?? Math.round((input.amount ?? 0) * 100);
@@ -572,8 +575,8 @@ export class DatabaseRepositories {
         `INSERT INTO orders
           (customer_id, customer_name, customer_contact_name, customer_contact_phone, customer_shipping_info,
            order_no, ordered_at, recipient_name, recipient_info, amount, amount_cents, shipping_cents,
-           tracking_no, payment_note, order_detail, remark, status, source_sales_document_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           tracking_no, payment_note, order_detail, remark, status, source_sales_document_id, settlement_type, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
           .run(
             input.customerId ?? null,
@@ -594,6 +597,7 @@ export class DatabaseRepositories {
             input.remark ?? '',
             status,
             input.sourceSalesDocumentId ?? null,
+            settlementType,
             timestamp,
             timestamp,
           ),
@@ -672,6 +676,7 @@ export class DatabaseRepositories {
 
   updateOrder(orderId: number, input: UpdateOrderInput) {
     const timestamp = now();
+    const settlementType = input.settlementType === 'personal' ? 'personal' : 'corporate';
     return withTransaction(this.database, (database) => {
       const existing = database.prepare('SELECT id FROM orders WHERE id = ?').get(orderId);
       if (!existing) return undefined;
@@ -683,7 +688,7 @@ export class DatabaseRepositories {
           `UPDATE orders SET customer_id = ?, customer_name = ?, customer_contact_name = ?, customer_contact_phone = ?,
             customer_shipping_info = ?, order_no = ?, ordered_at = ?,
             recipient_name = ?, recipient_info = ?, amount = ?, amount_cents = ?, shipping_cents = ?,
-            tracking_no = ?, payment_note = ?, order_detail = ?, remark = ?, updated_at = ? WHERE id = ?`,
+            tracking_no = ?, payment_note = ?, order_detail = ?, remark = ?, settlement_type = ?, updated_at = ? WHERE id = ?`,
         )
         .run(
           input.customerId ?? null,
@@ -702,6 +707,7 @@ export class DatabaseRepositories {
           input.paymentNote ?? '',
           input.orderDetail ?? '',
           input.remark ?? '',
+          settlementType,
           timestamp,
           orderId,
         );
