@@ -7,18 +7,20 @@ interface CustomerPayload {
   contactPhone: string;
 }
 
-async function fetchFirstCustomer(page: import('@playwright/test').Page): Promise<CustomerPayload | null> {
-  const response = await page.request.get('/api/customers');
-  const { data } = (await response.json()) as { data: { items: CustomerPayload[] } };
-  return data.items[0] ?? null;
-}
-
 test.describe('报价单客户选择', () => {
   test('新建报价单：选择已有客户后自动填充客户信息并保存', async ({ page }) => {
+    // 并行用例共享同一个隔离数据库，直接抓“第一个客户”会被其它用例的清理删掉；
+    // 这里自建客户再走“选择已有客户”流程，保证测试独立。
+    const stamp = Date.now();
+    const name = `E2E已有客户${stamp}`;
+    const created = await page.request.post('/api/customers', {
+      data: { name, contactName: '已有联系人', contactPhone: '13600000000', shippingInfo: '广州市天河区' },
+    });
+    expect(created.ok()).toBeTruthy();
+    const target = (await created.json()).data as CustomerPayload;
+
     await page.goto('/');
     await page.getByRole('button', { name: '报价单' }).click();
-    const target = await fetchFirstCustomer(page);
-    test.skip(!target, '暂无客户档案，跳过选择流程验证');
 
     await page.getByRole('button', { name: '新建报价' }).click();
     const dialog = page.getByRole('dialog', { name: '新建报价单' });
@@ -26,13 +28,13 @@ test.describe('报价单客户选择', () => {
 
     const selector = dialog.getByRole('textbox', { name: '客户', exact: true });
     await selector.click();
-    await selector.fill(target!.name.slice(0, 2));
-    await dialog.getByRole('option').filter({ hasText: target!.name }).first().click();
+    await selector.fill(target.name.slice(0, 2));
+    await dialog.getByRole('option').filter({ hasText: target.name }).first().click();
 
-    await expect(dialog.getByRole('textbox', { name: '客户名称' })).toHaveValue(target!.name);
-    await expect(dialog.getByRole('textbox', { name: '联系人', exact: true })).toHaveValue(target!.contactName ?? '');
+    await expect(dialog.getByRole('textbox', { name: '客户名称' })).toHaveValue(target.name);
+    await expect(dialog.getByRole('textbox', { name: '联系人', exact: true })).toHaveValue(target.contactName ?? '');
     // “联系电话”在“公司显示”区块也有一份（公司自己的电话），客户区块在前，取第一个
-    await expect(dialog.getByRole('textbox', { name: '联系电话', exact: true }).first()).toHaveValue(target!.contactPhone ?? '');
+    await expect(dialog.getByRole('textbox', { name: '联系电话', exact: true }).first()).toHaveValue(target.contactPhone ?? '');
 
     await dialog.getByRole('button', { name: /编辑产品明细/ }).click();
     const itemsDialog = page.getByRole('dialog', { name: '产品明细' });
@@ -51,9 +53,10 @@ test.describe('报价单客户选择', () => {
     if (number) {
       const list = await page.request.get('/api/quotations?q=' + encodeURIComponent(number));
       const { data: listData } = (await list.json()) as { data: { rows: Array<{ id: number; number: string }> } };
-      const created = listData.rows.find((row) => row.number === number);
-      if (created) await page.request.delete(`/api/quotations/${created.id}`);
+      const quotation = listData.rows.find((row) => row.number === number);
+      if (quotation) await page.request.delete(`/api/quotations/${quotation.id}`);
     }
+    await page.request.delete(`/api/customers/${target.id}`);
   });
 
   test('新建报价单：快速新增客户后自动选中并保存', async ({ page }) => {
