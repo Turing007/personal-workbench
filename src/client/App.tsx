@@ -17,6 +17,7 @@ import SettingsPage from './pages/SettingsPage';
 import QuotationPage from './pages/QuotationPage';
 import SalesDocumentsPage from './pages/SalesDocumentsPage';
 import FinancePage from './pages/FinancePage';
+import StockPage from './pages/StockPage';
 import {
   AUTH_REQUIRED_EVENT,
   advanceOrderStatus,
@@ -573,6 +574,7 @@ export default function App() {
     {!accessConfigured && <div className="auth-banner">尚未设置访问密码，同一网络内的设备都能直接打开工作台。建议先在「设置 → 访问密码」中开启保护。<button type="button" onClick={() => navigate('settings')}>去设置</button></div>}
     {active === 'finance' && <FinancePage onNotify={notify} initialOrderId={financeInitialOrderId} customers={customers} />}
     {active === 'orders' && <OrdersPage orders={orders} customers={customers} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} />}
+    {active === 'stock' && <StockPage onNotify={notify} systemProducts={products} />}
     {active === 'quotations' && <QuotationPage onNotify={notify} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
     {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={async (orderId) => { await loadOrders(); setOrdersInitialOrderId(orderId); navigate('orders'); }} />}
     {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} onExport={exportProductLibrary} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} />}

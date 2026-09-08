@@ -614,9 +614,9 @@ function preflightMigration(database: DatabaseSync): MigrationPreflight {
     );
   }
   const parsedSchemaVersion = normalizedSchemaVersion === '' ? 0 : Number(normalizedSchemaVersion);
-  if (parsedSchemaVersion > 20) {
+  if (parsedSchemaVersion > 21) {
     throw new Error(
-      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version 20`,
+      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version 21`,
     );
   }
 
@@ -1006,6 +1006,13 @@ function migrateVersionTwenty(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '20', now);
 }
 
+function migrateVersionTwentyOne(database: DatabaseSync, now: string): void {
+  // 备货模块：客户产品报给供应商的产品名称（与客户产品名称可以不同，空串时备货表回退系统产品名）。
+  // 必须经 ALTER 追加到表尾，不能写进 schemaSql 中段，否则备份按位置复制会列错位。
+  addColumnIfMissing(database, 'customer_products', 'supplier_product_name', "TEXT NOT NULL DEFAULT ''");
+  upsertSetting(database, 'schema_version', '21', now);
+}
+
 export function migrateDatabase(database: DatabaseSync): void {
   if (database.isTransaction) {
     throw new Error('Database migration cannot run inside an active transaction');
@@ -1052,6 +1059,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionEighteen(transactionDatabase, now);
     migrateVersionNineteen(transactionDatabase, now);
     migrateVersionTwenty(transactionDatabase, now);
+    migrateVersionTwentyOne(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

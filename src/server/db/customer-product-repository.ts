@@ -14,6 +14,7 @@ interface CustomerProductRow extends Record<string, unknown> {
   customer_id: number;
   system_product_id: number | null;
   name: string;
+  supplier_product_name: string;
   specification: string;
   sku: string;
   pack_count: number | null;
@@ -49,6 +50,7 @@ const customerProductSelect = `
     cp.customer_id,
     cp.system_product_id,
     cp.name,
+    cp.supplier_product_name,
     cp.specification,
     cp.sku,
     cp.pack_count,
@@ -93,6 +95,7 @@ function mapCustomerProduct(row: CustomerProductRow | undefined): CustomerProduc
     customerId: Number(row.customer_id),
     systemProductId: row.system_product_id === null ? null : Number(row.system_product_id),
     name: String(row.name ?? ''),
+    supplierProductName: String(row.supplier_product_name ?? ''),
     specification: String(row.specification ?? ''),
     sku: String(row.sku ?? ''),
     packCount: row.pack_count === null ? null : Number(row.pack_count),
@@ -175,13 +178,14 @@ export class CustomerProductRepository {
     const timestamp = new Date().toISOString();
     const result = this.database.prepare(`
       INSERT INTO customer_products
-        (customer_id, system_product_id, name, specification, sku, pack_count,
+        (customer_id, system_product_id, name, supplier_product_name, specification, sku, pack_count,
          final_price_cents, cost_price_cents, freight_per_box_cents, packaging_json, image_relative_path, remark, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       customerId,
       input.systemProductId ?? null,
       input.name,
+      input.supplierProductName ?? '',
       input.specification,
       input.sku,
       input.packCount,
@@ -202,9 +206,9 @@ export class CustomerProductRepository {
     return withTransaction(this.database, (database) => {
       const insert = database.prepare(`
         INSERT INTO customer_products
-          (customer_id, system_product_id, name, specification, sku, pack_count,
+          (customer_id, system_product_id, name, supplier_product_name, specification, sku, pack_count,
            final_price_cents, cost_price_cents, freight_per_box_cents, packaging_json, image_relative_path, remark, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       const created: CustomerProduct[] = [];
       for (const input of inputs) {
@@ -213,6 +217,7 @@ export class CustomerProductRepository {
           customerId,
           input.systemProductId ?? null,
           input.name,
+          input.supplierProductName ?? '',
           input.specification,
           input.sku,
           input.packCount,
@@ -235,11 +240,12 @@ export class CustomerProductRepository {
     const existing = this.getById(id);
     const result = this.database.prepare(`
       UPDATE customer_products
-      SET name = ?, specification = ?, sku = ?, pack_count = ?, final_price_cents = ?,
+      SET name = ?, supplier_product_name = ?, specification = ?, sku = ?, pack_count = ?, final_price_cents = ?,
           cost_price_cents = ?, freight_per_box_cents = ?, packaging_json = ?, image_relative_path = ?, remark = ?, updated_at = ?
       WHERE id = ?
     `).run(
       input.name,
+      input.supplierProductName ?? existing?.supplierProductName ?? '',
       input.specification,
       input.sku,
       input.packCount,
@@ -255,19 +261,34 @@ export class CustomerProductRepository {
     return result.changes ? this.getById(id) : undefined;
   }
 
+  /** 建立或清除与系统产品的映射，并同步写入报供名称（备货模块补关联用）。 */
+  setSystemProduct(
+    id: number,
+    systemProductId: number | null,
+    supplierProductName: string,
+  ): CustomerProduct | undefined {
+    const result = this.database.prepare(`
+      UPDATE customer_products
+      SET system_product_id = ?, supplier_product_name = ?, updated_at = ?
+      WHERE id = ?
+    `).run(systemProductId, supplierProductName, new Date().toISOString(), id);
+    return result.changes ? this.getById(id) : undefined;
+  }
+
   createFromSystemProduct(customerId: number, systemProductId: number, overrides?: CustomerProductSaveInput): CustomerProduct {
     const product = this.getSystemProductImport(systemProductId);
     if (!product) throw new SystemProductNotFoundError();
     const timestamp = new Date().toISOString();
     const result = this.database.prepare(`
       INSERT INTO customer_products
-        (customer_id, system_product_id, name, specification, sku, pack_count,
+        (customer_id, system_product_id, name, supplier_product_name, specification, sku, pack_count,
          final_price_cents, cost_price_cents, freight_per_box_cents, packaging_json, image_relative_path, remark, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       customerId,
       product.id,
       overrides?.name ?? product.name,
+      overrides?.supplierProductName ?? '',
       overrides?.specification ?? product.specification,
       overrides?.sku ?? product.sku,
       overrides?.packCount ?? product.pack_count,

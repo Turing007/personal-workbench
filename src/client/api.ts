@@ -1,5 +1,6 @@
 import type { OrderStatus } from '../shared/domain';
 import { calculateOrderAmountCents } from '../shared/order-prices';
+import type { StockPreparation } from '../shared/stock';
 import type {
   Customer,
   CustomerProduct as SharedCustomerProduct,
@@ -507,6 +508,7 @@ function customerProductInput(product: CustomerProductSaveInput) {
   return {
     ...(product.systemProductId === undefined ? {} : { systemProductId: product.systemProductId }),
     name: product.name.trim(),
+    supplierProductName: (product.supplierProductName ?? '').trim(),
     specification: product.specification.trim(),
     sku: product.sku.trim(),
     packCount: product.packCount,
@@ -590,6 +592,20 @@ export function deleteCustomerProduct(id: number) {
 
 export function deleteCustomerProducts(customerId: number, ids: number[]) {
   return request<{ deletedCount: number }>(`/api/customers/${customerId}/products/batch-delete`, { method: 'POST', body: JSON.stringify({ ids }) });
+}
+
+/** 备货模块补关联：建立客户产品与系统产品的映射并写入报供名称；systemProductId 传 null 表示清除映射。 */
+export function linkCustomerProductToSystem(id: number | string, systemProductId: number | null, supplierProductName: string) {
+  return request<SharedCustomerProduct>(`/api/customer-products/${id}/link`, { method: 'POST', body: JSON.stringify({ systemProductId, supplierProductName }) })
+    .then(mapCustomerProduct);
+}
+
+export function getStockPreparation(date: string | 'all') {
+  return request<StockPreparation>(`/api/stock/preparation?date=${encodeURIComponent(date)}`);
+}
+
+export function exportStockPreparation(date: string | 'all') {
+  return requestBlob(`/api/stock/preparation/export?date=${encodeURIComponent(date)}`);
 }
 
 function parseDimensionTriplet(value: string) {

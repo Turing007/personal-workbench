@@ -266,6 +266,64 @@ describe('按客户维护的产品 API', () => {
     });
   });
 
+  it('报供名称随导入和编辑保存，link 接口为临时产品建立映射', async () => {
+    const { app, database } = await testApp();
+    const customer = await createCustomer(app, '王五');
+    const systemProductId = insertSystemProduct(database);
+
+    const created = await app.inject({
+      method: 'POST',
+      url: `/api/customers/${customer.id}/products/from-library/complete`,
+      payload: { ...productInput('王五电钻', '20V', { supplierProductName: ' 报供用无刷电钻 ' }), systemProductId },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().data).toMatchObject({ systemProductId, supplierProductName: '报供用无刷电钻' });
+
+    const edited = await app.inject({
+      method: 'PUT',
+      url: `/api/customer-products/${created.json().data.id}`,
+      payload: productInput('王五电钻', '20V', { supplierProductName: '报供名V2' }),
+    });
+    expect(edited.statusCode).toBe(200);
+    expect(edited.json().data.supplierProductName).toBe('报供名V2');
+
+    const keptWhenAbsent = await app.inject({
+      method: 'PUT',
+      url: `/api/customer-products/${created.json().data.id}`,
+      payload: productInput('王五电钻', '20V'),
+    });
+    expect(keptWhenAbsent.statusCode).toBe(200);
+    expect(keptWhenAbsent.json().data.supplierProductName).toBe('报供名V2');
+
+    const temp = await app.inject({
+      method: 'POST',
+      url: `/api/customers/${customer.id}/products`,
+      payload: productInput('手工录入品', ''),
+    });
+    expect(temp.statusCode).toBe(201);
+    const otherSystemProduct = await app.inject({
+      method: 'POST',
+      url: '/api/products',
+      payload: {
+        name: '手工关联品',
+        specification: '通用',
+        sku: '',
+        supplier: '德乙堡',
+        status: 'active',
+        packaging: [{ name: '彩盒', innerSize: '', innerWeight: 0, outerSize: '', outerWeight: 0, packCount: 50 }],
+      },
+    });
+    expect(otherSystemProduct.statusCode).toBe(201);
+    const otherSystemProductId = Number(otherSystemProduct.json().data.id);
+    const linked = await app.inject({
+      method: 'POST',
+      url: `/api/customer-products/${temp.json().data.id}/link`,
+      payload: { systemProductId: otherSystemProductId, supplierProductName: '手工报供名' },
+    });
+    expect(linked.statusCode).toBe(200);
+    expect(linked.json().data).toMatchObject({ systemProductId: otherSystemProductId, supplierProductName: '手工报供名' });
+  });
+
   it('优先返回客户产品图片快照，快照为空时回退到系统产品第一张图片', async () => {
     const { app, database } = await testApp();
     const customer = await createCustomer(app, '张三');

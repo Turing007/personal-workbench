@@ -3,6 +3,7 @@ import {
   ChevronRight,
   ClipboardList,
   FileSpreadsheet,
+  PackageOpen,
   ReceiptText,
   WalletCards,
   PackageCheck,
@@ -14,7 +15,7 @@ import {
 import type { ComponentType } from 'react';
 import { useState } from 'react';
 
-export type NavigationKey = 'orders' | 'finance' | 'quotations' | 'sales-documents' | 'products' | 'customer-products' | 'shipping' | 'settings';
+export type NavigationKey = 'orders' | 'stock' | 'finance' | 'quotations' | 'sales-documents' | 'products' | 'customer-products' | 'shipping' | 'settings';
 
 export interface SidebarItem {
   key: NavigationKey;
@@ -32,11 +33,12 @@ export interface SidebarProps {
   onMobileOpenChange?: (open: boolean) => void;
 }
 
-/* 按业务流程排序：报价 → 开单 → 订单 → 发货 → 收款，其后是资料库与设置 */
+/* 按业务流程排序：报价 → 开单 → 订单 → 备货 → 发货 → 收款，其后是资料库与设置 */
 const items: SidebarItem[] = [
   { key: 'quotations', label: '报价单', icon: ReceiptText },
   { key: 'sales-documents', label: '销售开单', icon: FileSpreadsheet },
   { key: 'orders', label: '订单管理', icon: ClipboardList },
+  { key: 'stock', label: '备货', icon: PackageOpen },
   { key: 'shipping', label: '发货管理', icon: PackageCheck },
   { key: 'finance', label: '财务管理', icon: WalletCards },
   { key: 'products', label: '产品库', icon: Boxes },

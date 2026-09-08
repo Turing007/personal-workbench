@@ -28,6 +28,9 @@ import { registerSalesDocumentRoutes } from './routes/sales-documents.js';
 import { registerSettingsRoutes } from './routes/settings.js';
 import { registerCustomerRoutes } from './routes/customers.js';
 import { registerFinanceRoutes } from './routes/finance.js';
+import { registerStockRoutes } from './routes/stock.js';
+import { StockRepository } from './db/stock-repository.js';
+import { StockPreparationService } from './services/stock-service.js';
 import { registerAccessControl, registerAuthRoutes } from './routes/auth.js';
 import { FinanceService } from './services/finance-service.js';
 import { OrderService } from './services/order-service.js';
@@ -115,6 +118,7 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
     service: new CustomerProductService(
       customerProductRepository,
       customerRepository,
+      (systemProductId) => Boolean(repositories.getProduct(systemProductId)),
     ),
     fileStore: options.fileStore,
   });
@@ -137,6 +141,9 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   });
   await registerLabelRoutes(app, { repositories });
   await registerShippingRoutes(app, { repositories });
+  await registerStockRoutes(app, {
+    service: new StockPreparationService(new StockRepository(options.database)),
+  });
 
   const quotationRepository = new QuotationRepository(options.database);
   const salesDocumentRepository = new SalesDocumentRepository(options.database);
