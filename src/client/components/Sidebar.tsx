@@ -10,6 +10,7 @@ import {
   ShoppingBag,
   Menu,
   X,
+  LogOut,
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 import { useState } from 'react';
@@ -22,6 +23,12 @@ export interface SidebarItem {
   icon: ComponentType<{ size?: number; strokeWidth?: number }>;
 }
 
+export interface SidebarUser {
+  username: string;
+  displayName: string;
+  role: 'admin' | 'member';
+}
+
 export interface SidebarProps {
   activeKey: NavigationKey;
   onNavigate: (key: NavigationKey) => void;
@@ -30,6 +37,8 @@ export interface SidebarProps {
   logoUrl?: string;
   mobileOpen?: boolean;
   onMobileOpenChange?: (open: boolean) => void;
+  user?: SidebarUser | null;
+  onLogout?: () => void;
 }
 
 /* 按业务流程排序：报价 → 开单 → 订单 → 发货 → 收款，其后是资料库与设置 */
@@ -46,7 +55,7 @@ const items: SidebarItem[] = [
 
 export const navigationKeys: NavigationKey[] = items.map((item) => item.key);
 
-export default function Sidebar({ activeKey, onNavigate, collapsed = false, companyName = '个人工作台', logoUrl, mobileOpen: mobileOpenProp, onMobileOpenChange }: SidebarProps) {
+export default function Sidebar({ activeKey, onNavigate, collapsed = false, companyName = '个人工作台', logoUrl, mobileOpen: mobileOpenProp, onMobileOpenChange, user, onLogout }: SidebarProps) {
   const [logoFailed, setLogoFailed] = useState(false);
   const [internalMobileOpen, setInternalMobileOpen] = useState(false);
   const mobileOpen = mobileOpenProp ?? internalMobileOpen;
@@ -92,6 +101,29 @@ export default function Sidebar({ activeKey, onNavigate, collapsed = false, comp
             );
           })}
         </nav>
+        {user && (
+          <div className={`sidebar-user${collapsed ? ' is-collapsed' : ''}`}>
+            <span className="sidebar-user-avatar" title={user.displayName || user.username}>
+              {(user.displayName || user.username).slice(0, 1).toUpperCase()}
+            </span>
+            {!collapsed && (
+              <span className="sidebar-user-meta">
+                <strong className="sidebar-user-name">{user.displayName || user.username}</strong>
+                <small className="sidebar-user-role">{user.role === 'admin' ? '管理员' : '成员'}</small>
+              </span>
+            )}
+            <button
+              type="button"
+              className="sidebar-user-logout"
+              title="退出登录"
+              aria-label="退出登录"
+              onClick={() => onLogout?.()}
+            >
+              <LogOut size={16} strokeWidth={1.8} />
+              {!collapsed && <span>退出</span>}
+            </button>
+          </div>
+        )}
       </aside>
     </>
   );

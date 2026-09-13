@@ -140,7 +140,8 @@ CREATE TABLE IF NOT EXISTS orders (
   label_printed_at TEXT,
   source_sales_document_id INTEGER REFERENCES sales_documents(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  created_by TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS order_number_sequences (
@@ -380,6 +381,25 @@ CREATE TABLE IF NOT EXISTS settings (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL DEFAULT '',
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
+  is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS document_number_sequences (
   document_type TEXT NOT NULL CHECK (document_type IN ('quotation', 'sales')),
   sequence_date TEXT NOT NULL,
@@ -554,6 +574,8 @@ CREATE INDEX IF NOT EXISTS idx_sales_document_items_document ON sales_document_i
 CREATE INDEX IF NOT EXISTS idx_sales_document_items_product ON sales_document_items(product_id);
 CREATE INDEX IF NOT EXISTS idx_sales_receipts_document ON sales_receipts(sales_document_id, received_at, id);
 CREATE INDEX IF NOT EXISTS idx_sales_receipt_files_receipt ON sales_receipt_files(receipt_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, expires_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
 `;
 
 type MigratedTable =
@@ -612,9 +634,9 @@ function preflightMigration(database: DatabaseSync): MigrationPreflight {
     );
   }
   const parsedSchemaVersion = normalizedSchemaVersion === '' ? 0 : Number(normalizedSchemaVersion);
-  if (parsedSchemaVersion > 18) {
+  if (parsedSchemaVersion > 19) {
     throw new Error(
-      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version 18`,
+      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version 19`,
     );
   }
 
@@ -991,6 +1013,12 @@ function migrateVersionEighteen(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '18', now);
 }
 
+function migrateVersionNineteen(database: DatabaseSync, now: string): void {
+  // created_by 必须追加在表尾：备份恢复按列位置 INSERT（见既有约定）。
+  addColumnIfMissing(database, 'orders', 'created_by', "TEXT NOT NULL DEFAULT ''");
+  upsertSetting(database, 'schema_version', '19', now);
+}
+
 export function migrateDatabase(database: DatabaseSync): void {
   if (database.isTransaction) {
     throw new Error('Database migration cannot run inside an active transaction');
@@ -1035,6 +1063,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionSixteen(transactionDatabase, now);
     migrateVersionSeventeen(transactionDatabase, now);
     migrateVersionEighteen(transactionDatabase, now);
+    migrateVersionNineteen(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

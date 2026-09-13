@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/server/app';
 import { migrateDatabase } from '../../src/server/db/migrate';
 import { FileStore } from '../../src/server/files/file-store';
+import { authInject, setupAdmin } from './helpers/auth';
 
 interface TestContext {
   app: FastifyInstance;
@@ -20,6 +21,7 @@ async function testApp(fileStore?: FileStore): Promise<TestContext> {
   const database = new DatabaseSync(':memory:');
   migrateDatabase(database);
   const app = await createApp({ database, fileStore });
+  await setupAdmin(app);
   const context = { app, database };
   contexts.push(context);
   return context;
@@ -50,7 +52,7 @@ function multipartAttachment(filename: string, bytes: Buffer) {
 }
 
 async function createCustomer(app: FastifyInstance, name: string): Promise<Record<string, unknown>> {
-  const response = await app.inject({
+  const response = await authInject(app, {
     method: 'POST',
     url: '/api/customers',
     payload: {
@@ -84,7 +86,7 @@ async function createCustomerProduct(
   customerId: unknown,
   input: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const response = await app.inject({
+  const response = await authInject(app, {
     method: 'POST',
     url: `/api/customers/${customerId}/products`,
     payload: input,
@@ -151,7 +153,7 @@ describe('按客户维护的产品 API', () => {
       finalPriceCents: 25900,
     }));
 
-    const incomplete = await app.inject({
+    const incomplete = await authInject(app, {
       method: 'GET',
       url: `/api/customers/${zhang.id}/products?status=incomplete&q=20V`,
     });
@@ -164,7 +166,7 @@ describe('按客户维护的产品 API', () => {
       }),
     ]);
 
-    const complete = await app.inject({
+    const complete = await authInject(app, {
       method: 'GET',
       url: `/api/customers/${zhang.id}/products?status=complete&q=ZS-002`,
     });
@@ -178,7 +180,7 @@ describe('按客户维护的产品 API', () => {
     const customer = await createCustomer(app, '运费客户');
     const created = await createCustomerProduct(app, customer.id, productInput('运费产品', '标准', { freightPerBoxCents: 1250 }));
     expect(created.freightPerBoxCents).toBe(1250);
-    const updated = await app.inject({ method: 'PUT', url: `/api/customer-products/${created.id}`, payload: productInput('运费产品', '标准', { freightPerBoxCents: 800 }) });
+    const updated = await authInject(app, { method: 'PUT', url: `/api/customer-products/${created.id}`, payload: productInput('运费产品', '标准', { freightPerBoxCents: 800 }) });
     expect(updated.statusCode).toBe(200);
     expect(updated.json().data.freightPerBoxCents).toBe(800);
   });
@@ -187,18 +189,18 @@ describe('按客户维护的产品 API', () => {
     const { app } = await testApp();
     const customer = await createCustomer(app, '张三');
 
-    expect((await app.inject({
+    expect((await authInject(app, {
       method: 'POST',
       url: `/api/customers/${customer.id}/products`,
       payload: productInput('电钻', '12V'),
     })).statusCode).toBe(201);
-    expect((await app.inject({
+    expect((await authInject(app, {
       method: 'POST',
       url: `/api/customers/${customer.id}/products`,
       payload: productInput('电钻', '20V'),
     })).statusCode).toBe(201);
 
-    const duplicate = await app.inject({
+    const duplicate = await authInject(app, {
       method: 'POST',
       url: `/api/customers/${customer.id}/products`,
       payload: productInput(' 电钻 ', ' 20V '),
@@ -213,7 +215,7 @@ describe('按客户维护的产品 API', () => {
     const otherCustomer = await createCustomer(app, '李四');
     const systemProductId = insertSystemProduct(database);
 
-    const first = await app.inject({
+    const first = await authInject(app, {
       method: 'POST',
       url: `/api/customers/${customer.id}/products/from-library`,
       payload: { systemProductId },
@@ -234,20 +236,20 @@ describe('按客户维护的产品 API', () => {
     });
     expect(first.json().data.packaging).toHaveLength(2);
 
-    const duplicate = await app.inject({
+    const duplicate = await authInject(app, {
       method: 'POST',
       url: `/api/customers/${customer.id}/products/from-library`,
       payload: { systemProductId },
     });
     expect(duplicate.statusCode).toBe(409);
     expect(duplicate.json().error.code).toBe('CUSTOMER_PRODUCT_EXISTS');
-    expect((await app.inject({
+    expect((await authInject(app, {
       method: 'POST',
       url: `/api/customers/${otherCustomer.id}/products/from-library`,
       payload: { systemProductId },
     })).statusCode).toBe(201);
 
-    const edited = await app.inject({
+    const edited = await authInject(app, {
       method: 'PUT',
       url: `/api/customer-products/${first.json().data.id}`,
       payload: productInput('张三专用电钻', '20V', {
@@ -283,9 +285,9 @@ describe('按客户维护的产品 API', () => {
        VALUES (?, ?, ?, '', ?, ?, ?)`,
     ).run(customer.id, '快照图片产品', '18V', 'customers/snapshot.png', now, now).lastInsertRowid);
 
-    const fallback = await app.inject({ method: 'GET', url: `/api/customer-products/${fallbackId}` });
+    const fallback = await authInject(app, { method: 'GET', url: `/api/customer-products/${fallbackId}` });
     expect(fallback.json().data.imageRelativePath).toBe('products/second.png');
-    const snapshot = await app.inject({ method: 'GET', url: `/api/customer-products/${snapshotId}` });
+    const snapshot = await authInject(app, { method: 'GET', url: `/api/customer-products/${snapshotId}` });
     expect(snapshot.json().data.imageRelativePath).toBe('customers/snapshot.png');
   });
 
@@ -303,7 +305,7 @@ describe('按客户维护的产品 API', () => {
       [productInput('产品', '', { systemProductId: 1 }), 'systemProductId'],
     ] as const;
     for (const [payload, field] of cases) {
-      const response = await app.inject({
+      const response = await authInject(app, {
         method: 'POST',
         url: `/api/customers/${customer.id}/products`,
         payload,
@@ -312,16 +314,16 @@ describe('按客户维护的产品 API', () => {
       expect(response.json().error).toMatchObject({ code: 'VALIDATION_ERROR', field });
     }
 
-    expect((await app.inject({
+    expect((await authInject(app, {
       method: 'GET',
       url: `/api/customers/${customer.id}/products?status=unknown`,
     })).statusCode).toBe(400);
-    expect((await app.inject({
+    expect((await authInject(app, {
       method: 'POST',
       url: `/api/customers/${customer.id}/products/from-library`,
       payload: { systemProductId: 0 },
     })).statusCode).toBe(400);
-    expect((await app.inject({
+    expect((await authInject(app, {
       method: 'GET',
       url: '/api/customers/999/products',
     })).statusCode).toBe(404);
@@ -335,7 +337,7 @@ describe('按客户维护的产品 API', () => {
       packaging: [{ name: '彩盒', innerSize: '20x10x8', innerWeight: 1.2, outerSize: '42x32x28', outerWeight: 8, packCount: 24 }],
     }));
     expect(created).toMatchObject({ costPriceCents: 1234, packaging: [expect.objectContaining({ name: '彩盒', packCount: 24 })] });
-    const updated = await app.inject({
+    const updated = await authInject(app, {
       method: 'PUT',
       url: `/api/customer-products/${created.id}`,
       payload: productInput('临时产品', '标准', { costPriceCents: 1500, packaging: [{ name: '木箱', innerSize: '', innerWeight: 0, outerSize: '', outerWeight: 9, packCount: 12 }] }),
@@ -358,7 +360,7 @@ describe('按客户维护的产品 API', () => {
       attachments: [],
     });
 
-    const uploaded = await app.inject({
+    const uploaded = await authInject(app, {
       method: 'POST',
       url: `/api/customer-products/${created.id}/attachments`,
       ...multipartAttachment('客户包装说明.pdf', Buffer.from('customer attachment')),
@@ -374,14 +376,14 @@ describe('按客户维护的产品 API', () => {
     expect(relativePath).toMatch(/^customer-product-attachments\//);
     await expect(fileStore.readFile(relativePath)).resolves.toEqual(Buffer.from('customer attachment'));
 
-    const fetched = await app.inject({ method: 'GET', url: `/api/customer-products/${created.id}` });
+    const fetched = await authInject(app, { method: 'GET', url: `/api/customer-products/${created.id}` });
     expect(fetched.statusCode).toBe(200);
     expect(fetched.json().data).toMatchObject({
       remark: '客户指定蓝色包装，出货前拍照确认',
       attachments: [expect.objectContaining({ originalName: '客户包装说明.pdf', relativePath })],
     });
 
-    const updated = await app.inject({
+    const updated = await authInject(app, {
       method: 'PUT',
       url: `/api/customer-products/${created.id}`,
       payload: productInput('专用产品', '标准', { remark: '客户指定红色包装' }),
@@ -390,13 +392,13 @@ describe('按客户维护的产品 API', () => {
     expect(updated.json().data.remark).toBe('客户指定红色包装');
 
     const attachmentId = uploaded.json().data.id as number;
-    const deleted = await app.inject({
+    const deleted = await authInject(app, {
       method: 'DELETE',
       url: `/api/customer-products/${created.id}/attachments/${attachmentId}`,
     });
     expect(deleted.statusCode).toBe(200);
     await expect(fileStore.readFile(relativePath)).rejects.toThrow();
-    expect((await app.inject({ method: 'GET', url: `/api/customer-products/${created.id}` })).json().data.attachments).toEqual([]);
+    expect((await authInject(app, { method: 'GET', url: `/api/customer-products/${created.id}` })).json().data.attachments).toEqual([]);
   });
 
   it('客户产品图片可上传、替换和清空，并且不会删除系统产品图片', async () => {
@@ -406,7 +408,7 @@ describe('按客户维护的产品 API', () => {
     const { app, database } = await testApp(fileStore);
     const customer = await createCustomer(app, '张三');
     const systemProductId = insertSystemProduct(database);
-    const imported = await app.inject({
+    const imported = await authInject(app, {
       method: 'POST',
       url: `/api/customers/${customer.id}/products/from-library`,
       payload: { systemProductId },
@@ -415,7 +417,7 @@ describe('按客户维护的产品 API', () => {
     await mkdir(join(directory, 'files', 'products'), { recursive: true });
     await writeFile(join(directory, 'files', 'products', 'second.png'), Buffer.from('system'));
 
-    const first = await app.inject({
+    const first = await authInject(app, {
       method: 'POST',
       url: `/api/customer-products/${customerProductId}/images`,
       ...multipartImage('first.png', Buffer.from('first')),
@@ -425,7 +427,7 @@ describe('按客户维护的产品 API', () => {
     expect(firstPath).toMatch(/^customer-product-images\//);
     await expect(fileStore.readFile(firstPath)).resolves.toEqual(Buffer.from('first'));
 
-    const second = await app.inject({
+    const second = await authInject(app, {
       method: 'POST',
       url: `/api/customer-products/${customerProductId}/images`,
       ...multipartImage('second.png', Buffer.from('second')),
@@ -435,7 +437,7 @@ describe('按客户维护的产品 API', () => {
     await expect(fileStore.readFile(firstPath)).rejects.toThrow();
     await expect(fileStore.readFile(secondPath)).resolves.toEqual(Buffer.from('second'));
 
-    const cleared = await app.inject({
+    const cleared = await authInject(app, {
       method: 'PUT',
       url: `/api/customer-products/${customerProductId}`,
       payload: productInput('无刷电钻', '20V', { imageRelativePath: null }),
@@ -446,13 +448,13 @@ describe('按客户维护的产品 API', () => {
     await expect(readFile(join(directory, 'files', 'products', 'second.png'))).resolves.toEqual(Buffer.from('system'));
 
     const temporary = await createCustomerProduct(app, customer.id, productInput('临时图片产品', '标准'));
-    const uploaded = await app.inject({
+    const uploaded = await authInject(app, {
       method: 'POST',
       url: `/api/customer-products/${temporary.id}/images`,
       ...multipartImage('temporary.png', Buffer.from('temporary')),
     });
     const temporaryPath = uploaded.json().data.imageRelativePath as string;
-    await app.inject({ method: 'DELETE', url: `/api/customer-products/${temporary.id}` });
+    await authInject(app, { method: 'DELETE', url: `/api/customer-products/${temporary.id}` });
     await expect(fileStore.readFile(temporaryPath)).rejects.toThrow();
   });
 
@@ -462,11 +464,11 @@ describe('按客户维护的产品 API', () => {
     const first = await createCustomerProduct(app, customer.id, productInput('电钻', '12V'));
     const second = await createCustomerProduct(app, customer.id, productInput('电钻', '20V'));
 
-    const fetched = await app.inject({ method: 'GET', url: `/api/customer-products/${first.id}` });
+    const fetched = await authInject(app, { method: 'GET', url: `/api/customer-products/${first.id}` });
     expect(fetched.statusCode).toBe(200);
     expect(fetched.json().data).toMatchObject({ id: first.id, customerId: customer.id });
 
-    const duplicate = await app.inject({
+    const duplicate = await authInject(app, {
       method: 'PUT',
       url: `/api/customer-products/${second.id}`,
       payload: productInput(' 电钻 ', ' 12V '),
@@ -474,8 +476,8 @@ describe('按客户维护的产品 API', () => {
     expect(duplicate.statusCode).toBe(409);
     expect(duplicate.json().error.code).toBe('CUSTOMER_PRODUCT_EXISTS');
 
-    expect((await app.inject({ method: 'GET', url: '/api/customer-products/999' })).statusCode).toBe(404);
-    expect((await app.inject({
+    expect((await authInject(app, { method: 'GET', url: '/api/customer-products/999' })).statusCode).toBe(404);
+    expect((await authInject(app, {
       method: 'PUT',
       url: '/api/customer-products/999',
       payload: productInput('不存在', ''),
@@ -491,30 +493,30 @@ describe('按客户维护的产品 API', () => {
     const foreign = await createCustomerProduct(app, li.id, productInput('角磨机', '100mm'));
 
     for (const ids of [[first.id, foreign.id], [first.id, 999]]) {
-      const rejected = await app.inject({
+      const rejected = await authInject(app, {
         method: 'POST',
         url: `/api/customers/${zhang.id}/products/batch-delete`,
         payload: { ids },
       });
       expect(rejected.statusCode).toBe(404);
-      expect((await app.inject({ method: 'GET', url: `/api/customer-products/${first.id}` })).statusCode).toBe(200);
+      expect((await authInject(app, { method: 'GET', url: `/api/customer-products/${first.id}` })).statusCode).toBe(200);
     }
 
-    const deleted = await app.inject({
+    const deleted = await authInject(app, {
       method: 'POST',
       url: `/api/customers/${zhang.id}/products/batch-delete`,
       payload: { ids: [first.id, second.id] },
     });
     expect(deleted.statusCode).toBe(200);
     expect(deleted.json().data).toEqual({ deletedCount: 2 });
-    expect((await app.inject({ method: 'GET', url: `/api/customer-products/${first.id}` })).statusCode).toBe(404);
+    expect((await authInject(app, { method: 'GET', url: `/api/customer-products/${first.id}` })).statusCode).toBe(404);
   });
 
   it('删除客户产品只解除目录关联，不删除系统产品或订单历史快照', async () => {
     const { app, database } = await testApp();
     const customer = await createCustomer(app, '张三');
     const systemProductId = insertSystemProduct(database);
-    const imported = await app.inject({
+    const imported = await authInject(app, {
       method: 'POST',
       url: `/api/customers/${customer.id}/products/from-library`,
       payload: { systemProductId },
@@ -532,7 +534,7 @@ describe('按客户维护的产品 API', () => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(orderId, customerProductId, '历史电钻', 'OLD-SKU', '旧规格', 10, 2, now, now).lastInsertRowid);
 
-    const deleted = await app.inject({ method: 'DELETE', url: `/api/customer-products/${customerProductId}` });
+    const deleted = await authInject(app, { method: 'DELETE', url: `/api/customer-products/${customerProductId}` });
     expect(deleted.statusCode).toBe(200);
     expect(database.prepare('SELECT id FROM products WHERE id = ?').get(systemProductId)).toBeDefined();
     expect(database.prepare(
@@ -548,8 +550,8 @@ describe('按客户维护的产品 API', () => {
 
   it('不再暴露旧的全局客户产品列表和新增接口', async () => {
     const { app } = await testApp();
-    expect((await app.inject({ method: 'GET', url: '/api/customer-products' })).statusCode).toBe(404);
-    expect((await app.inject({
+    expect((await authInject(app, { method: 'GET', url: '/api/customer-products' })).statusCode).toBe(404);
+    expect((await authInject(app, {
       method: 'POST',
       url: '/api/customer-products',
       payload: productInput('旧接口产品', ''),
@@ -561,7 +563,7 @@ describe('批量创建客户产品', () => {
   it('清单逐行创建产品，品名/规格/SKU 按行生效，其余资料与包装共享', async () => {
     const { app } = await testApp();
     const customer = await createCustomer(app, '批量客户');
-    const response = await app.inject({
+    const response = await authInject(app, {
       method: 'POST',
       url: `/api/customers/${customer.id}/products/batch`,
       payload: {
@@ -607,7 +609,7 @@ describe('批量创建客户产品', () => {
     }
     expect(items[0].id).not.toBe(items[1].id);
 
-    const list = await app.inject({ method: 'GET', url: `/api/customers/${customer.id}/products` });
+    const list = await authInject(app, { method: 'GET', url: `/api/customers/${customer.id}/products` });
     expect(list.json().data.items).toHaveLength(2);
   });
 
@@ -615,7 +617,7 @@ describe('批量创建客户产品', () => {
     const { app } = await testApp();
     const customer = await createCustomer(app, '查重客户');
     await createCustomerProduct(app, customer.id, productInput('电钻', '20V'));
-    const duplicate = await app.inject({
+    const duplicate = await authInject(app, {
       method: 'POST',
       url: `/api/customers/${customer.id}/products/batch`,
       payload: {
@@ -631,7 +633,7 @@ describe('批量创建客户产品', () => {
     expect(duplicate.json().error.code).toBe('CUSTOMER_PRODUCT_EXISTS');
     expect(duplicate.json().error.message).toContain('电钻');
 
-    const list = await app.inject({ method: 'GET', url: `/api/customers/${customer.id}/products` });
+    const list = await authInject(app, { method: 'GET', url: `/api/customers/${customer.id}/products` });
     expect(list.json().data.items).toHaveLength(1);
   });
 
@@ -640,11 +642,11 @@ describe('批量创建客户产品', () => {
     const customer = await createCustomer(app, '边界客户');
     const url = `/api/customers/${customer.id}/products/batch`;
 
-    const empty = await app.inject({ method: 'POST', url, payload: { items: [], packCount: null, finalPriceCents: null } });
+    const empty = await authInject(app, { method: 'POST', url, payload: { items: [], packCount: null, finalPriceCents: null } });
     expect(empty.statusCode).toBe(400);
     expect(empty.json().error).toMatchObject({ code: 'VALIDATION_ERROR', field: 'items' });
 
-    const missingName = await app.inject({
+    const missingName = await authInject(app, {
       method: 'POST',
       url,
       payload: { items: [{ name: '新品A' }, { specification: '没有品名' }], packCount: null, finalPriceCents: null },
@@ -653,7 +655,7 @@ describe('批量创建客户产品', () => {
     expect(missingName.json().error).toMatchObject({ code: 'VALIDATION_ERROR', field: 'items' });
     expect(missingName.json().error.message).toContain('第 2 行');
 
-    const tooMany = await app.inject({
+    const tooMany = await authInject(app, {
       method: 'POST',
       url,
       payload: {
@@ -665,8 +667,8 @@ describe('批量创建客户产品', () => {
     expect(tooMany.statusCode).toBe(400);
     expect(tooMany.json().error.field).toBe('items');
 
-    await app.inject({ method: 'PATCH', url: `/api/customers/${customer.id}/status`, payload: { isActive: false } });
-    const inactive = await app.inject({ method: 'POST', url, payload: { items: [{ name: '新品' }], packCount: null, finalPriceCents: null } });
+    await authInject(app, { method: 'PATCH', url: `/api/customers/${customer.id}/status`, payload: { isActive: false } });
+    const inactive = await authInject(app, { method: 'POST', url, payload: { items: [{ name: '新品' }], packCount: null, finalPriceCents: null } });
     expect(inactive.statusCode).toBe(409);
     expect(inactive.json().error.code).toBe('CUSTOMER_INACTIVE');
   });

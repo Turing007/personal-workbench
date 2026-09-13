@@ -42,6 +42,8 @@
   --color-accent-hover: #0a5f57;
   --color-accent-soft: #e9f6f3;
   --color-accent-border: #b9e3dc;
+  /* 填充用主色：与文字/图标用主色分离，深色模式下分别取深浅两个值。 */
+  --color-accent-fill: #0e7368;
 
   /* 状态色 */
   --color-success: #15803d;
@@ -113,6 +115,107 @@
   --breakpoint-wide: 1180px;
   --breakpoint-tablet: 900px;
   --breakpoint-phone: 640px;
+
+  /* 历史内联色值的语义化中间层：浅色模式保持原视觉，深色模式统一切换。 */
+  --tone-border-soft: #e2e8f0;
+  --tone-border-cool: #cbd5e1;
+  --tone-surface-frost: #f8fafc;
+  --tone-surface-tint: #fbfdff;
+  --tone-text-strong: #334155;
+  --tone-text-medium: #475569;
+  --tone-text-soft: #64748b;
+  --tone-text-faint: #94a3b8;
+  --tone-accent-text: #0f766e;
+  --tone-danger-text: #b91c1c;
+  --tone-row-border: #dbe3ea;
+
+  /* 订单流程状态胶囊：草稿/待备货/已备货/待打包 各自的语义色 */
+  --status-draft: #64748b;
+  --status-draft-soft: #f1f5f9;
+  --status-pending-stock: #7c3aed;
+  --status-pending-stock-soft: #f5f3ff;
+  --status-stock-reported: #0891b2;
+  --status-stock-reported-soft: #ecfeff;
+  --status-pending-packing: #ea580c;
+  --status-pending-packing-soft: #fff7ed;
+}
+
+/* ===== 深色模式：跟随系统 ===== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-page: #0e1116;
+    --color-grouped: #151a21;
+    --color-surface: #171c24;
+    --color-surface-subtle: #1c222b;
+    --color-surface-raised: #1a2028;
+    --color-surface-hover: #222936;
+    --color-text: #e5e9f0;
+    --color-text-strong: #f3f6fb;
+    --color-text-secondary: #a3adbd;
+    --color-text-muted: #71809a;
+    --color-border: rgba(148, 163, 184, .17);
+    --color-border-strong: rgba(148, 163, 184, .26);
+    --color-divider: rgba(148, 163, 184, .10);
+    --color-border-subtle: rgba(148, 163, 184, .10);
+    --color-border-control: rgba(148, 163, 184, .24);
+    --color-control-border: rgba(148, 163, 184, .24);
+
+    --color-accent: #3edbc9;
+    --color-accent-hover: #6ce7d8;
+    --color-accent-soft: rgba(45, 212, 191, .13);
+    --color-accent-border: rgba(45, 212, 191, .34);
+    --color-accent-fill: #0f7d71;
+
+    --color-success: #4ade80;
+    --color-success-soft: rgba(74, 222, 128, .12);
+    --color-success-border: rgba(74, 222, 128, .30);
+    --color-warning: #fbbf24;
+    --color-warning-soft: rgba(251, 191, 36, .12);
+    --color-warning-border: rgba(251, 191, 36, .30);
+    --color-danger: #f87171;
+    --color-danger-strong: #ef4444;
+    --color-danger-soft: rgba(248, 113, 113, .12);
+    --color-danger-border: rgba(248, 113, 113, .32);
+    --color-info: #93c5fd;
+    --color-info-soft: rgba(147, 197, 253, .12);
+    --color-info-border: rgba(147, 197, 253, .30);
+    --color-neutral-pill: rgba(148, 163, 184, .14);
+    --color-warning-text: #fcd34d;
+    --color-danger-text: #fca5a5;
+    --color-link: #3edbc9;
+    --color-focus: #3edbc9;
+    --color-focus-ring: rgba(62, 219, 201, .22);
+    --color-overlay: rgba(2, 6, 14, .62);
+
+    --control-bg: #1c222b;
+    --control-border: rgba(148, 163, 184, .24);
+    --control-focus-ring: 0 0 0 3px rgba(62, 219, 201, .20);
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px -8px rgba(0, 0, 0, .42);
+    --shadow-popover: 0 2px 6px rgba(0, 0, 0, .34), 0 18px 44px -12px rgba(0, 0, 0, .55);
+    --shadow-modal: 0 4px 12px rgba(0, 0, 0, .38), 0 32px 90px -16px rgba(0, 0, 0, .62);
+
+    --tone-border-soft: rgba(148, 163, 184, .20);
+    --tone-border-cool: rgba(148, 163, 184, .30);
+    --tone-surface-frost: #1c222b;
+    --tone-surface-tint: #1a2028;
+    --tone-text-strong: #d4dae4;
+    --tone-text-medium: #b3bccb;
+    --tone-text-soft: #96a1b5;
+    --tone-text-faint: #75819c;
+    --tone-accent-text: #3edbc9;
+    --tone-danger-text: #fca5a5;
+    --tone-row-border: rgba(148, 163, 184, .18);
+
+    --status-draft: #94a3b8;
+    --status-draft-soft: rgba(148, 163, 184, .13);
+    --status-pending-stock: #a78bfa;
+    --status-pending-stock-soft: rgba(167, 139, 250, .13);
+    --status-stock-reported: #22d3ee;
+    --status-stock-reported-soft: rgba(34, 211, 238, .12);
+    --status-pending-packing: #fb923c;
+    --status-pending-packing-soft: rgba(251, 146, 60, .13);
+  }
 }
 
 * { box-sizing: border-box; }

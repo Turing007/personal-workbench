@@ -108,6 +108,8 @@ export interface OrderDraft {
   totalBoxes?: number;
   status?: OrderStatus;
   labelPrintedAt?: string;
+  /** 创建人用户名（服务端留痕，详情展示用）。 */
+  createdBy?: string;
   financeSummary?: import('../../shared/finance').OrderFinanceLite | null;
 }
 

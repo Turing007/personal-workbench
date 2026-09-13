@@ -46,6 +46,7 @@ export async function startServer() {
     ...(serveClient ? { clientDirectory } : {}),
     fileStore: new FileStore(config.filesDirectory, config.maxImageSize, config.maxContractSize),
     logger: true,
+    trustProxy: config.trustProxy,
   });
 
   app.addHook('onClose', async () => {

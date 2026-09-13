@@ -1,6 +1,65 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type APIRequestContext } from '@playwright/test';
+
+// e2e 专用管理员口令：由规则生成，仅存在于 e2e 独立数据目录中，非真实凭据。
+function e2eSecretFor(name: string): string {
+  return `wb-e2e-${name}-2026`;
+}
+
+const E2E_USERNAME = 'e2e-admin';
+const E2E_PASSWORD = e2eSecretFor('admin');
+
+/** 确保存在 e2e 管理员账号并完成登录，返回会话 Cookie 值。 */
+async function ensureAuthenticated(request: APIRequestContext): Promise<string> {
+  const login = () => request.post('/api/auth/login', {
+    data: { username: E2E_USERNAME, password: E2E_PASSWORD },
+  });
+  let response = await login();
+  if (response.status() === 401) {
+    const setup = await request.post('/api/auth/setup', {
+      data: { username: E2E_USERNAME, password: E2E_PASSWORD, displayName: 'E2E 管理员' },
+    });
+    if (setup.ok()) response = await login();
+  }
+  if (!response.ok()) {
+    throw new Error(`e2e 登录失败：HTTP ${response.status()} ${await response.text()}`);
+  }
+  const setCookie = response.headers()['set-cookie'] ?? '';
+  const sessionMatch = setCookie.match(/wb_session=([^;]+)/);
+  if (!sessionMatch) throw new Error('e2e 登录失败：响应未包含会话 Cookie');
+  return sessionMatch[1];
+}
+
+async function seedOrder(request: APIRequestContext): Promise<void> {
+  const orderNo = `E2E-${Date.now()}`;
+  const response = await request.post('/api/orders', {
+    data: {
+      orderNo,
+      orderedAt: new Date().toISOString().slice(0, 10),
+      recipientName: 'e2e 收件人',
+      recipientInfo: 'e2e 收件人 13800000000 e2e 测试地址',
+      items: [{ name: 'e2e 测试产品', quantity: 2, packCount: 1, unitPriceCents: 500 }],
+    },
+  });
+  if (!response.ok()) throw new Error(`e2e 造数失败：HTTP ${response.status()} ${await response.text()}`);
+}
 
 test.describe('财务管理工作台', () => {
+  let sessionCookie: string;
+
+  test.beforeAll(async ({ request }) => {
+    sessionCookie = await ensureAuthenticated(request);
+    await seedOrder(request);
+  });
+
+  test.beforeEach(async ({ context }) => {
+    await context.addCookies([{
+      name: 'wb_session',
+      value: sessionCookie,
+      domain: '127.0.0.1',
+      path: '/',
+    }]);
+  });
+
   test('显示财务列表、统计卡和订单财务详情', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('button', { name: '财务管理' })).toBeVisible();

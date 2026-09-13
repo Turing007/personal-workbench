@@ -414,7 +414,7 @@ export class SalesDocumentService {
     return detail ? asDetail(detail) : undefined;
   }
 
-  async createOrderFromSalesDocument(salesDocumentId: number) {
+  async createOrderFromSalesDocument(salesDocumentId: number, createdBy?: string) {
     if (!this.orderService) {
       throw new SalesDocumentServiceError('ORDER_SERVICE_REQUIRED', '生成订单需要配置订单服务');
     }
@@ -452,6 +452,7 @@ export class SalesDocumentService {
       shippingCents,
       remark: remarkParts.join('；'),
       sourceSalesDocumentId: salesDocumentId,
+      createdBy: createdBy ?? '',
       items: document.items.map((item) => ({
         customerProductId: item.customerProductId,
         name: item.name,

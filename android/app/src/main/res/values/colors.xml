@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand_teal">#0E7368</color>
+    <color name="brand_teal_dark">#0A5F57</color>
+    <color name="page_background">#F4F5F7</color>
+    <color name="text_main">#171A20</color>
+    <color name="text_secondary">#556070</color>
+    <color name="text_muted">#8A93A2</color>
+    <color name="danger">#B42318</color>
+    <color name="success">#15803D</color>
+</resources>

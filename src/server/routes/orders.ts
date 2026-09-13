@@ -248,7 +248,9 @@ export async function registerOrderRoutes(app: FastifyInstance, options: OrderRo
 
   app.post('/api/orders', async (request, reply) =>
     safeRoute(async () => {
-      const order = await service.create(parseOrderInput(request.body, { allowEmptyOrderNo: true }));
+      const input = parseOrderInput(request.body, { allowEmptyOrderNo: true });
+      // 创建人来自会话，而非请求体，保证留痕可信。
+      const order = await service.create({ ...input, createdBy: request.user?.username ?? '' });
       return sendSuccess(reply, order, 201);
     }, reply),
   );

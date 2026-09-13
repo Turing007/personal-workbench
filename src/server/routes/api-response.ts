@@ -30,8 +30,10 @@ export function sendSuccess<T>(reply: FastifyReply, data: T, statusCode = 200): 
   return reply.status(statusCode).send({ ok: true, data } satisfies ApiSuccess<T>);
 }
 
-export function sendFailure(reply: FastifyReply, error: ApiError | Error, statusCode = 500): FastifyReply {
-  const apiError = error instanceof ApiError ? error : new ApiError(statusCode, 'INTERNAL_ERROR', error.message);
+export function sendFailure(reply: FastifyReply, error: unknown, statusCode = 500): FastifyReply {
+  const apiError = error instanceof ApiError
+    ? error
+    : new ApiError(statusCode, 'INTERNAL_ERROR', error instanceof Error ? error.message : '服务器处理请求失败');
   const body: ApiFailure = {
     ok: false,
     error: {

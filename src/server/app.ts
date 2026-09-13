@@ -1,9 +1,12 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
+import cookie from '@fastify/cookie';
 import type { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { MAX_CONTRACT_SIZE } from './config.js';
+import { AuthService, SESSION_COOKIE } from './auth/auth-service.js';
+import { UserRepository } from './auth/user-repository.js';
 import { createRepositories, type DatabaseRepositories } from './db/repositories.js';
 import { FileStore } from './files/file-store.js';
 import { BackupService } from './backup/backup-service.js';
@@ -13,6 +16,7 @@ import { QuotationRepository } from './db/quotation-repository.js';
 import { SalesDocumentRepository } from './db/sales-document-repository.js';
 import { SettingsRepository } from './db/settings-repository.js';
 import { ApiError, sendFailure } from './routes/api-response.js';
+import { AUTH_PUBLIC_PATHS, registerAuthRoutes } from './routes/auth.js';
 import { registerCustomerProductRoutes } from './routes/customer-products.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerProductRoutes } from './routes/products.js';
@@ -48,11 +52,36 @@ export interface AppOptions {
   backupsDirectory?: string;
   clientDirectory?: string;
   logger?: boolean;
+  /** 反向代理（如 Caddy）部署时置 true，使 Cookie 的 secure 属性跟随 X-Forwarded-Proto。 */
+  trustProxy?: boolean;
 }
 
 export async function createApp(options: AppOptions): Promise<FastifyInstance> {
-  const app = Fastify({ logger: options.logger ?? false });
+  const app = Fastify({ logger: options.logger ?? false, trustProxy: options.trustProxy ?? false });
   const repositories = options.repositories ?? createRepositories(options.database);
+  const authService = new AuthService(new UserRepository(options.database));
+
+  await app.register(cookie);
+
+  // 鉴权门：/api/* 与 /files/* 需要有效会话；静态资源与健康检查保持公开，
+  // 登录页本身也依赖静态资源才能渲染。
+  app.addHook('onRequest', async (request, reply) => {
+    const pathname = request.url.split('?')[0];
+    const isApi = pathname.startsWith('/api/');
+    const isFiles = pathname.startsWith('/files/');
+    if (!isApi && !isFiles) return;
+    if (isApi && AUTH_PUBLIC_PATHS.has(pathname)) return;
+    const user = authService.resolveSession(request.cookies[SESSION_COOKIE]);
+    if (!user) {
+      return reply.status(401).send({
+        ok: false,
+        error: { code: 'AUTH_REQUIRED', message: '请先登录' },
+      });
+    }
+    request.user = user;
+  });
+
+  await registerAuthRoutes(app, { service: authService });
 
   await app.register(multipart, {
     limits: {

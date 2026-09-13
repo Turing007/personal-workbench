@@ -7,6 +7,7 @@ import { migrateDatabase } from '../../src/server/db/migrate';
 import { registerCustomerRoutes } from '../../src/server/routes/customers';
 import { CustomerService } from '../../src/server/services/customer-service';
 import { getCustomerProductCompletionStatus } from '../../src/shared/customers';
+import { authInject, setupAdmin } from './helpers/auth';
 
 interface TestContext {
   app: FastifyInstance;
@@ -19,6 +20,7 @@ async function testApp(): Promise<TestContext> {
   const database = new DatabaseSync(':memory:');
   migrateDatabase(database);
   const app = await createApp({ database });
+  await setupAdmin(app);
   const context = { app, database };
   contexts.push(context);
   return context;
@@ -34,7 +36,7 @@ function customerPayload(name = '张三') {
 }
 
 async function createCustomer(app: FastifyInstance, name = '张三'): Promise<Record<string, unknown>> {
-  const response = await app.inject({
+  const response = await authInject(app, {
     method: 'POST',
     url: '/api/customers',
     payload: customerPayload(name),
@@ -83,7 +85,7 @@ afterEach(async () => {
 describe('客户档案 API', () => {
   it('创建、搜索、查看和编辑客户，并返回产品统计', async () => {
     const { app, database } = await testApp();
-    const createdResponse = await app.inject({
+    const createdResponse = await authInject(app, {
       method: 'POST',
       url: '/api/customers',
       payload: {
@@ -118,7 +120,7 @@ describe('客户档案 API', () => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(created.id, '角磨机', '125mm', 'ZS-002', 4, 25900, now, now);
 
-    const listed = await app.inject({ method: 'GET', url: '/api/customers?q=1380000' });
+    const listed = await authInject(app, { method: 'GET', url: '/api/customers?q=1380000' });
     expect(listed.statusCode).toBe(200);
     expect(listed.json().data.items).toEqual([
       expect.objectContaining({
@@ -128,11 +130,11 @@ describe('客户档案 API', () => {
       }),
     ]);
 
-    const fetched = await app.inject({ method: 'GET', url: `/api/customers/${created.id}` });
+    const fetched = await authInject(app, { method: 'GET', url: `/api/customers/${created.id}` });
     expect(fetched.statusCode).toBe(200);
     expect(fetched.json().data).toMatchObject({ productCount: 2, incompleteProductCount: 1 });
 
-    const updated = await app.inject({
+    const updated = await authInject(app, {
       method: 'PUT',
       url: `/api/customers/${created.id}`,
       payload: {
@@ -154,7 +156,7 @@ describe('客户档案 API', () => {
   it('名称必填，其他文本字段类型错误时返回字段级校验错误', async () => {
     const { app } = await testApp();
 
-    const missingName = await app.inject({
+    const missingName = await authInject(app, {
       method: 'POST',
       url: '/api/customers',
       payload: { ...customerPayload(), name: '   ' },
@@ -165,7 +167,7 @@ describe('客户档案 API', () => {
       error: { code: 'VALIDATION_ERROR', field: 'name' },
     });
 
-    const invalidPhone = await app.inject({
+    const invalidPhone = await authInject(app, {
       method: 'POST',
       url: '/api/customers',
       payload: { ...customerPayload(), contactPhone: 13800000000 },
@@ -181,7 +183,7 @@ describe('客户档案 API', () => {
     const { app } = await testApp();
     await createCustomer(app);
 
-    const duplicate = await app.inject({
+    const duplicate = await authInject(app, {
       method: 'POST',
       url: '/api/customers',
       payload: customerPayload('  张三 '),
@@ -192,14 +194,14 @@ describe('客户档案 API', () => {
       error: { code: 'CUSTOMER_NAME_EXISTS', field: 'name' },
     });
 
-    const confirmed = await app.inject({
+    const confirmed = await authInject(app, {
       method: 'POST',
       url: '/api/customers',
       payload: { ...customerPayload(), confirmDuplicateName: true },
     });
     expect(confirmed.statusCode).toBe(201);
 
-    const listed = await app.inject({ method: 'GET', url: '/api/customers?q=张三' });
+    const listed = await authInject(app, { method: 'GET', url: '/api/customers?q=张三' });
     expect(listed.json().data.items).toHaveLength(2);
   });
 
@@ -208,7 +210,7 @@ describe('客户档案 API', () => {
     const first = await createCustomer(app, '华南五金');
     const second = await createCustomer(app, '华东五金');
 
-    const duplicate = await app.inject({
+    const duplicate = await authInject(app, {
       method: 'PUT',
       url: `/api/customers/${second.id}`,
       payload: customerPayload('  华南五金  '),
@@ -223,10 +225,10 @@ describe('客户档案 API', () => {
       },
     });
 
-    const unchanged = await app.inject({ method: 'GET', url: `/api/customers/${second.id}` });
+    const unchanged = await authInject(app, { method: 'GET', url: `/api/customers/${second.id}` });
     expect(unchanged.json().data.name).toBe('华东五金');
 
-    const confirmed = await app.inject({
+    const confirmed = await authInject(app, {
       method: 'PUT',
       url: `/api/customers/${second.id}`,
       payload: { ...customerPayload('华南五金'), confirmDuplicateName: true },
@@ -260,7 +262,7 @@ describe('客户档案 API', () => {
     database.prepare('UPDATE customers SET is_active = 0, updated_at = ? WHERE id = ?')
       .run('2026-08-11T11:00:00.000Z', inactive.id);
 
-    const response = await app.inject({ method: 'GET', url: '/api/customers?includeInactive=1' });
+    const response = await authInject(app, { method: 'GET', url: '/api/customers?includeInactive=1' });
     expect(response.statusCode).toBe(200);
     expect(response.json().data.items.map((customer: { id: number }) => customer.id)).toEqual([
       newest.id,
@@ -302,7 +304,7 @@ describe('客户档案 API', () => {
       finalPriceCents: 1,
     })).toBe('incomplete');
 
-    const response = await app.inject({ method: 'GET', url: `/api/customers/${customer.id}` });
+    const response = await authInject(app, { method: 'GET', url: `/api/customers/${customer.id}` });
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toMatchObject({
       productCount: 6,
@@ -321,7 +323,7 @@ describe('客户档案 API', () => {
     await createCustomer(app, '反斜杠\\客户');
     await createCustomer(app, '普通客户');
 
-    const response = await app.inject({
+    const response = await authInject(app, {
       method: 'GET',
       url: `/api/customers?${new URLSearchParams({ q: query })}`,
     });
@@ -334,7 +336,7 @@ describe('客户档案 API', () => {
     '/api/customers?includeInactive=1&includeInactive=0',
   ])('重复查询参数返回 400 VALIDATION_ERROR：%s', async (url) => {
     const { app } = await testApp();
-    const response = await app.inject({ method: 'GET', url });
+    const response = await authInject(app, { method: 'GET', url });
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({ ok: false, error: { code: 'VALIDATION_ERROR' } });
   });
@@ -344,6 +346,7 @@ describe('客户档案 API', () => {
     ['includeInactive', { includeInactive: { value: '1' } }],
   ])('%s 为非字符串时返回 400 VALIDATION_ERROR', async (field, query) => {
     const { app } = await customQueryApp(query);
+    // customQueryApp 是未接鉴权门的裸应用，无需会话。
     const response = await app.inject({ method: 'GET', url: '/api/customers' });
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({
@@ -356,7 +359,7 @@ describe('客户档案 API', () => {
     const { app } = await testApp();
     const customer = await createCustomer(app);
 
-    const deactivated = await app.inject({
+    const deactivated = await authInject(app, {
       method: 'PATCH',
       url: `/api/customers/${customer.id}/status`,
       payload: { isActive: false },
@@ -364,15 +367,15 @@ describe('客户档案 API', () => {
     expect(deactivated.statusCode).toBe(200);
     expect(deactivated.json().data.isActive).toBe(false);
 
-    const activeOnly = await app.inject({ method: 'GET', url: '/api/customers' });
+    const activeOnly = await authInject(app, { method: 'GET', url: '/api/customers' });
     expect(activeOnly.json().data.items).toHaveLength(0);
 
-    const all = await app.inject({ method: 'GET', url: '/api/customers?includeInactive=1' });
+    const all = await authInject(app, { method: 'GET', url: '/api/customers?includeInactive=1' });
     expect(all.json().data.items).toEqual([
       expect.objectContaining({ id: customer.id, isActive: false }),
     ]);
 
-    const activated = await app.inject({
+    const activated = await authInject(app, {
       method: 'PATCH',
       url: `/api/customers/${customer.id}/status`,
       payload: { isActive: true },
@@ -385,7 +388,7 @@ describe('客户档案 API', () => {
     const { app, database } = await testApp();
     const customer = await createCustomer(app, '可删除客户');
 
-    const response = await app.inject({ method: 'DELETE', url: `/api/customers/${customer.id}` });
+    const response = await authInject(app, { method: 'DELETE', url: `/api/customers/${customer.id}` });
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toEqual({ mode: 'deleted', id: customer.id });
     expect(database.prepare('SELECT 1 FROM customers WHERE id = ?').get(customer.id)).toBeUndefined();
@@ -426,7 +429,7 @@ describe('客户档案 API', () => {
         ).run(customer.id, `SO-${customer.id}`, 'draft', '2026-08-11', '{}', '{}', now, now);
       }
 
-      const response = await app.inject({ method: 'DELETE', url: `/api/customers/${customer.id}` });
+      const response = await authInject(app, { method: 'DELETE', url: `/api/customers/${customer.id}` });
       expect(response.statusCode).toBe(200);
       expect(response.json().data).toEqual({
         mode: 'deactivated',
@@ -443,10 +446,10 @@ describe('客户档案 API', () => {
   it('不存在的客户在详情、编辑、状态和删除接口均返回 NOT_FOUND', async () => {
     const { app } = await testApp();
     const responses = await Promise.all([
-      app.inject({ method: 'GET', url: '/api/customers/999' }),
-      app.inject({ method: 'PUT', url: '/api/customers/999', payload: customerPayload() }),
-      app.inject({ method: 'PATCH', url: '/api/customers/999/status', payload: { isActive: false } }),
-      app.inject({ method: 'DELETE', url: '/api/customers/999' }),
+      authInject(app, { method: 'GET', url: '/api/customers/999' }),
+      authInject(app, { method: 'PUT', url: '/api/customers/999', payload: customerPayload() }),
+      authInject(app, { method: 'PATCH', url: '/api/customers/999/status', payload: { isActive: false } }),
+      authInject(app, { method: 'DELETE', url: '/api/customers/999' }),
     ]);
 
     for (const response of responses) {

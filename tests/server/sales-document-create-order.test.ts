@@ -7,6 +7,7 @@ import { createApp } from '../../src/server/app.js';
 import { openDatabase } from '../../src/server/db/connection.js';
 import { migrateDatabase } from '../../src/server/db/migrate.js';
 import { FileStore } from '../../src/server/files/file-store.js';
+import { authInject, setupAdmin } from './helpers/auth';
 import type { FastifyInstance } from 'fastify';
 
 const directories: string[] = [];
@@ -23,6 +24,7 @@ async function setup(): Promise<{ database: DatabaseSync; app: FastifyInstance }
   migrateDatabase(database);
   const fileStore = new FileStore(join(directory, 'files'));
   const app = await createApp({ database, filesDirectory: join(directory, 'files'), fileStore });
+  await setupAdmin(app);
   return { database, app };
 }
 
@@ -114,7 +116,7 @@ describe('销售单生成订单', () => {
       ],
     });
 
-    const response = await app.inject({ method: 'POST', url: `/api/sales-documents/${documentId}/create-order` });
+    const response = await authInject(app, { method: 'POST', url: `/api/sales-documents/${documentId}/create-order` });
     expect(response.statusCode).toBe(201);
     const order = response.json().data;
     expect(order.order_no).toMatch(/^SO/);
@@ -133,7 +135,7 @@ describe('销售单生成订单', () => {
     expect(finance.receivable_cents).toBe(52500);
     expect(finance.outstanding_cents).toBe(52500);
 
-    const listResponse = await app.inject({ method: 'GET', url: '/api/sales-documents' });
+    const listResponse = await authInject(app, { method: 'GET', url: '/api/sales-documents' });
     const row = (listResponse.json().data.rows as Array<{ id: number; generatedOrderNo: string | null }>).find((entry) => entry.id === documentId);
     expect(row?.generatedOrderNo).toBe(order.order_no);
     await app.close();
@@ -145,9 +147,9 @@ describe('销售单生成订单', () => {
     const documentId = insertSalesDocument(database, {
       items: [{ name: '样品', quantity: 1, unitPriceCents: 1000 }],
     });
-    const first = await app.inject({ method: 'POST', url: `/api/sales-documents/${documentId}/create-order` });
+    const first = await authInject(app, { method: 'POST', url: `/api/sales-documents/${documentId}/create-order` });
     expect(first.statusCode).toBe(201);
-    const second = await app.inject({ method: 'POST', url: `/api/sales-documents/${documentId}/create-order` });
+    const second = await authInject(app, { method: 'POST', url: `/api/sales-documents/${documentId}/create-order` });
     expect(second.statusCode).toBe(409);
     expect(second.json().error.code).toBe('ORDER_ALREADY_GENERATED');
     expect(second.json().error.message).toContain(first.json().data.order_no);
@@ -161,7 +163,7 @@ describe('销售单生成订单', () => {
       status: 'draft',
       items: [{ name: '样品', quantity: 1, unitPriceCents: 1000 }],
     });
-    const response = await app.inject({ method: 'POST', url: `/api/sales-documents/${documentId}/create-order` });
+    const response = await authInject(app, { method: 'POST', url: `/api/sales-documents/${documentId}/create-order` });
     expect(response.statusCode).toBe(409);
     expect(response.json().error.code).toBe('SALES_DOCUMENT_NOT_ISSUED');
     await app.close();
@@ -173,7 +175,7 @@ describe('销售单生成订单', () => {
     const documentId = insertSalesDocument(database, {
       items: [{ name: '布料', quantity: 2.5, unitPriceCents: 1000 }],
     });
-    const response = await app.inject({ method: 'POST', url: `/api/sales-documents/${documentId}/create-order` });
+    const response = await authInject(app, { method: 'POST', url: `/api/sales-documents/${documentId}/create-order` });
     expect(response.statusCode).toBe(409);
     expect(response.json().error.code).toBe('ORDER_QUANTITY_INVALID');
     expect(response.json().error.message).toContain('2.5');
@@ -183,7 +185,7 @@ describe('销售单生成订单', () => {
 
   it('销售单不存在时返回 404', async () => {
     const { database, app } = await setup();
-    const response = await app.inject({ method: 'POST', url: '/api/sales-documents/9999/create-order' });
+    const response = await authInject(app, { method: 'POST', url: '/api/sales-documents/9999/create-order' });
     expect(response.statusCode).toBe(404);
     expect(response.json().error.code).toBe('SALES_DOCUMENT_NOT_FOUND');
     await app.close();

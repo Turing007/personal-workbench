@@ -180,7 +180,7 @@ export async function registerSalesDocumentRoutes(app: FastifyInstance, options:
   }, reply));
 
   app.post('/api/sales-documents/:id/create-order', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(async () => (
-    sendSuccess(reply, await options.service.createOrderFromSalesDocument(parseId(request.params.id)), 201)
+    sendSuccess(reply, await options.service.createOrderFromSalesDocument(parseId(request.params.id), request.user?.username ?? ''), 201)
   ), reply));
 
   app.delete('/api/sales-documents/:id', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(async () => {

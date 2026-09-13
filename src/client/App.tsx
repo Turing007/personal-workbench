@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CompanySnapshot } from '../shared/documents';
+import AuthGate from './components/auth/AuthGate';
 import Sidebar, { navigationKeys, type NavigationKey } from './components/Sidebar';
 import MobileTabBar from './components/MobileTabBar';
 import Toast, { type ToastMessage } from './components/Toast';
@@ -57,7 +58,7 @@ import {
   updateShippingTracking,
   confirmShippingBatch,
 } from './api';
-import type { ApiOrderDetail, ApiOrderRow } from './api';
+import type { ApiOrderDetail, ApiOrderRow, AuthUser } from './api';
 
 function createId(prefix: string) { return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 
@@ -112,6 +113,7 @@ function mapOrderDetail(row: ApiOrderDetail | ApiOrderRow): OrderDraft {
         invoiceStatus: String(rawFinance.invoiceStatus ?? rawFinance.invoice_status ?? 'not_requested'),
         updatedAt: String(rawFinance.updatedAt ?? rawFinance.updated_at ?? ''),
       } as import('./../shared/finance').OrderFinanceLite : null,
+      createdBy: String(raw.created_by ?? raw.createdBy ?? '') || undefined,
   };
 }
 
@@ -137,7 +139,13 @@ function initialActiveNav(): NavigationKey {
   return 'orders';
 }
 
-export default function App() {
+interface WorkbenchProps {
+  user: AuthUser;
+  onLogout: () => void;
+}
+
+/** 登录后的工作台主体：数据加载必须发生在会话就绪之后，所以独立成组件。 */
+function Workbench({ user, onLogout }: WorkbenchProps) {
   const [active, setActive] = useState<NavigationKey>(initialActiveNav);
   const [orders, setOrders] = useState<OrderDraft[]>([]);
   const [products, setProducts] = useState<ProductRecord[]>([]);
@@ -170,9 +178,13 @@ export default function App() {
   }, []);
 
   const notify = useCallback((message: string, kind: ToastMessage['kind'] = 'info') => {
-    const id = createId('toast');
-    setMessages((current) => [...current, { id, message, kind }]);
-    window.setTimeout(() => setMessages((current) => current.filter((item) => item.id !== id)), 4200);
+    // 同文案去重：并发请求同时失败时只弹一条，避免 toast 堆叠刷屏。
+    setMessages((current) => {
+      if (current.some((item) => item.message === message)) return current;
+      const id = createId('toast');
+      window.setTimeout(() => setMessages((current2) => current2.filter((item) => item.id !== id)), 4200);
+      return [...current, { id, message, kind }];
+    });
   }, []);
 
   const loadProducts = useCallback(async (): Promise<boolean> => {
@@ -482,7 +494,7 @@ export default function App() {
     } catch (error) { notify((error as { message?: string }).message ?? '数据恢复失败', 'error'); }
   };
 
-  return <div className="app-layout"><Sidebar activeKey={active} onNavigate={navigate} companyName={companyProfile.name} logoUrl={companyProfile.logoRelativePath ? `/files/${companyProfile.logoRelativePath}` : undefined} mobileOpen={mobileNavOpen} onMobileOpenChange={setMobileNavOpen} /><main className="app-content">
+  return <div className="app-layout"><Sidebar activeKey={active} onNavigate={navigate} companyName={companyProfile.name} logoUrl={companyProfile.logoRelativePath ? `/files/${companyProfile.logoRelativePath}` : undefined} mobileOpen={mobileNavOpen} onMobileOpenChange={setMobileNavOpen} user={user} onLogout={onLogout} /><main className="app-content">
     {active === 'finance' && <FinancePage onNotify={notify} initialOrderId={financeInitialOrderId} />}
     {active === 'orders' && <OrdersPage orders={orders} customers={customers} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => { void recordHistory(labels); }} />}
     {active === 'quotations' && <QuotationPage onNotify={notify} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
@@ -490,6 +502,11 @@ export default function App() {
     {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} onExport={exportProductLibrary} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} />}
     {active === 'customer-products' && <CustomerProductsPage customers={customers} systemProducts={products} initialCustomerId={customerProductsInitialCustomerId ?? undefined} loading={loading} onCustomersChanged={loadCustomers} onNotify={notify} />}
     {active === 'shipping' && <ShippingPage orders={shippingOrders} initialOrder={shippingInitialOrder} onUpdateTracking={updateTracking} onConfirm={confirmShipping} />}
-    {active === 'settings' && <SettingsPage onBackup={backup} onRestore={restore} onProfileChanged={setCompanyProfile} />}
+    {active === 'settings' && <SettingsPage onBackup={backup} onRestore={restore} onProfileChanged={setCompanyProfile} currentUser={user} />}
   </main><MobileTabBar activeKey={active} onNavigate={navigate} onOpenMore={() => setMobileNavOpen(true)} /><Toast messages={messages} onDismiss={(id) => setMessages((current) => current.filter((item) => item.id !== id))} /></div>;
+}
+
+/** 会话门卫在最外层：未登录只渲染登录页，登录成功才挂载工作台并开始加载数据。 */
+export default function App() {
+  return <AuthGate>{({ user, onLogout }) => <Workbench key={user.id} user={user} onLogout={onLogout} />}</AuthGate>;
 }

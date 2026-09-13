@@ -27,11 +27,11 @@ export interface StatusCardsProps {
 }
 
 const definitions: Array<Omit<StatusCardItem, 'count'>> = [
-  { key: 'all', label: '全部订单', tone: 'var(--color-info)', toneSoft: 'var(--color-info-soft)', icon: Archive },
-  { key: 'draft', label: '草稿', tone: '#64748b', toneSoft: '#f1f5f9', icon: PencilLine },
-  { key: 'pending_stock', label: '待备货', tone: '#7c3aed', toneSoft: '#f5f3ff', icon: ClipboardCheck },
-  { key: 'stock_reported', label: '已备货', tone: '#0891b2', toneSoft: '#ecfeff', icon: Box },
-  { key: 'pending_packing', label: '待打包', tone: '#ea580c', toneSoft: '#fff7ed', icon: PackageOpen },
+  { key: 'all', label: '全部订单', tone: 'var(--color-accent)', toneSoft: 'var(--color-accent-soft)', icon: Archive },
+  { key: 'draft', label: '草稿', tone: 'var(--status-draft)', toneSoft: 'var(--status-draft-soft)', icon: PencilLine },
+  { key: 'pending_stock', label: '待备货', tone: 'var(--status-pending-stock)', toneSoft: 'var(--status-pending-stock-soft)', icon: ClipboardCheck },
+  { key: 'stock_reported', label: '已备货', tone: 'var(--status-stock-reported)', toneSoft: 'var(--status-stock-reported-soft)', icon: Box },
+  { key: 'pending_packing', label: '待打包', tone: 'var(--status-pending-packing)', toneSoft: 'var(--status-pending-packing-soft)', icon: PackageOpen },
   { key: 'ship_pending', label: '待发货', tone: 'var(--color-danger-strong)', toneSoft: 'var(--color-danger-soft)', icon: Truck },
   { key: 'shipped', label: '已发货', tone: 'var(--color-success)', toneSoft: 'var(--color-success-soft)', icon: CheckCircle2 },
 ];

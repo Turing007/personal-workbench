@@ -49,6 +49,8 @@ export type AllowedContractMimeType = (typeof ALLOWED_CONTRACT_MIME_TYPES)[numbe
 export interface WorkbenchConfig {
   host: string;
   port: number;
+  /** 反向代理部署时置 true，Cookie 的 secure 属性跟随代理协议。 */
+  trustProxy: boolean;
   projectDirectory: string;
   dataDirectory: string;
   databasePath: string;
@@ -82,6 +84,7 @@ export function createConfig(projectDirectory = process.cwd()): WorkbenchConfig 
     // 监听所有网卡，手机连同一局域网即可访问；如只想本机使用可设 WORKBENCH_HOST=127.0.0.1。
     host: process.env.WORKBENCH_HOST ?? '0.0.0.0',
     port: Number(process.env.WORKBENCH_PORT ?? 52341),
+    trustProxy: process.env.WORKBENCH_TRUST_PROXY === '1',
     projectDirectory: projectRoot,
     dataDirectory,
     databasePath: join(dataDirectory, 'workbench.sqlite'),

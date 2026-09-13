@@ -7,6 +7,7 @@ import { createApp } from '../../src/server/app.js';
 import { openDatabase } from '../../src/server/db/connection.js';
 import { migrateDatabase } from '../../src/server/db/migrate.js';
 import { FileStore } from '../../src/server/files/file-store.js';
+import { authInject, setupAdmin } from './helpers/auth';
 import { FinanceRepository } from '../../src/server/db/finance-repository.js';
 import { FinanceService } from '../../src/server/services/finance-service.js';
 import type { DatabaseSync } from 'node:sqlite';
@@ -24,6 +25,7 @@ async function setup() {
   migrateDatabase(database);
   const fileStore = new FileStore(join(directory, 'files'));
   const app = await createApp({ database, filesDirectory: join(directory, 'files'), fileStore });
+  await setupAdmin(app);
   return { database, app, fileStore };
 }
 
@@ -47,10 +49,10 @@ describe('财务模块', () => {
     form.append('amountCents', '10000');
     form.append('paymentMethod', '银行转账');
     form.append('transactionNo', 'TX-001');
-    const uploaded = await app.inject({ method: 'POST', url: `/api/finance/orders/${orderId}/proofs`, payload: form as unknown as BodyInit, headers: Object.fromEntries(form.entries()) });
+    const uploaded = await authInject(app, { method: 'POST', url: `/api/finance/orders/${orderId}/proofs`, payload: form as unknown as BodyInit, headers: Object.fromEntries(form.entries()) });
     expect(uploaded.statusCode).toBe(201);
     const proofId = uploaded.json().data.id;
-    const approved = await app.inject({ method: 'POST', url: `/api/finance/proofs/${proofId}/approve`, payload: {} });
+    const approved = await authInject(app, { method: 'POST', url: `/api/finance/proofs/${proofId}/approve`, payload: {} });
     expect(approved.statusCode).toBe(200);
     expect(approved.json().data.finance).toMatchObject({ receivedCents: 10000, outstandingCents: 0, paymentStatus: 'paid' });
     expect(database.prepare('SELECT COUNT(*) AS count FROM finance_receipts WHERE payment_proof_id = ?').get(proofId)?.count).toBe(1);
@@ -73,7 +75,7 @@ describe('财务模块', () => {
 
   it('修改订单金额后财务应收、未收与付款状态同步更新', async () => {
     const { database, app } = await setup();
-    const created = await app.inject({
+    const created = await authInject(app, {
       method: 'POST',
       url: '/api/orders',
       payload: {
@@ -92,7 +94,7 @@ describe('财务模块', () => {
     const orderId = Number(created.json().data.id);
     const orderNo = String(created.json().data.order_no);
 
-    const initialList = await app.inject({ method: 'GET', url: '/api/finance/orders' });
+    const initialList = await authInject(app, { method: 'GET', url: '/api/finance/orders' });
     expect(initialList.json().data.rows).toEqual([
       expect.objectContaining({ orderId, receivableCents: 10000, receivedCents: 0, outstandingCents: 10000, paymentStatus: 'unpaid' }),
     ]);
@@ -103,12 +105,12 @@ describe('财务模块', () => {
     form.append('amountCents', '4000');
     form.append('paymentMethod', '银行转账');
     form.append('transactionNo', `TX-${orderId}`);
-    const uploaded = await app.inject({ method: 'POST', url: `/api/finance/orders/${orderId}/proofs`, payload: form as unknown as BodyInit, headers: Object.fromEntries(form.entries()) });
+    const uploaded = await authInject(app, { method: 'POST', url: `/api/finance/orders/${orderId}/proofs`, payload: form as unknown as BodyInit, headers: Object.fromEntries(form.entries()) });
     expect(uploaded.statusCode).toBe(201);
-    const approved = await app.inject({ method: 'POST', url: `/api/finance/proofs/${uploaded.json().data.id}/approve`, payload: {} });
+    const approved = await authInject(app, { method: 'POST', url: `/api/finance/proofs/${uploaded.json().data.id}/approve`, payload: {} });
     expect(approved.statusCode).toBe(200);
 
-    const updated = await app.inject({
+    const updated = await authInject(app, {
       method: 'PUT',
       url: `/api/orders/${orderId}`,
       payload: {
@@ -125,14 +127,14 @@ describe('财务模块', () => {
     });
     expect(updated.statusCode).toBe(200);
 
-    const list = await app.inject({ method: 'GET', url: '/api/finance/orders' });
+    const list = await authInject(app, { method: 'GET', url: '/api/finance/orders' });
     expect(list.json().data.rows).toEqual([
       expect.objectContaining({ orderId, receivableCents: 20000, receivedCents: 4000, outstandingCents: 16000, paymentStatus: 'partial' }),
     ]);
     const stats = list.json().data.stats;
     expect(stats).toMatchObject({ receivableCents: 20000, receivedCents: 4000, outstandingCents: 16000 });
 
-    const detail = await app.inject({ method: 'GET', url: `/api/orders/${orderId}/detail` });
+    const detail = await authInject(app, { method: 'GET', url: `/api/orders/${orderId}/detail` });
     expect(detail.json().data.financeSummary).toMatchObject({ receivableCents: 20000, outstandingCents: 16000, paymentStatus: 'partial' });
     await app.close();
     database.close();
@@ -148,10 +150,10 @@ describe('财务模块', () => {
       form.append('amountCents', String(amountCents));
       form.append('paymentMethod', '银行转账');
       form.append('transactionNo', `TX-${orderId}`);
-      const uploaded = await app.inject({ method: 'POST', url: `/api/finance/orders/${orderId}/proofs`, payload: form as unknown as BodyInit, headers: Object.fromEntries(form.entries()) });
+      const uploaded = await authInject(app, { method: 'POST', url: `/api/finance/orders/${orderId}/proofs`, payload: form as unknown as BodyInit, headers: Object.fromEntries(form.entries()) });
       expect(uploaded.statusCode).toBe(201);
       const proofId = uploaded.json().data.id;
-      const approved = await app.inject({ method: 'POST', url: `/api/finance/proofs/${proofId}/approve`, payload: payeeName === undefined ? {} : { payeeName } });
+      const approved = await authInject(app, { method: 'POST', url: `/api/finance/proofs/${proofId}/approve`, payload: payeeName === undefined ? {} : { payeeName } });
       expect(approved.statusCode).toBe(200);
       return proofId;
     };
@@ -162,14 +164,14 @@ describe('财务模块', () => {
     expect(database.prepare('SELECT payee_name FROM finance_receipts WHERE payment_proof_id = ?').get(firstProof)?.payee_name).toBe('对公户');
     expect(database.prepare('SELECT payee_name FROM finance_receipts WHERE payment_proof_id = ?').get(secondProof)?.payee_name).toBe('');
 
-    const breakdown = await app.inject({ method: 'GET', url: '/api/finance/receipts/by-payee' });
+    const breakdown = await authInject(app, { method: 'GET', url: '/api/finance/receipts/by-payee' });
     expect(breakdown.statusCode).toBe(200);
     expect(breakdown.json().data.items).toEqual([
       { payeeName: '对公户', receiptCount: 1, amountCents: 10000 },
       { payeeName: '未指定', receiptCount: 1, amountCents: 4000 },
     ]);
 
-    const overview = await app.inject({ method: 'GET', url: '/api/finance/orders' });
+    const overview = await authInject(app, { method: 'GET', url: '/api/finance/orders' });
     expect(overview.json().data.stats).toMatchObject({ receivedCents: 14000 });
     await app.close();
     database.close();

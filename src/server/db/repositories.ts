@@ -99,6 +99,8 @@ export interface CreateOrderInput {
   sourceSalesDocumentId?: number | null;
   /** 草稿订单：宽松校验，status 存为 draft，发布后回到正式流程。 */
   isDraft?: boolean;
+  /** 创建人用户名，由服务端从会话注入，不接受客户端提交。 */
+  createdBy?: string;
   items: OrderItemInput[];
 }
 
@@ -572,8 +574,8 @@ export class DatabaseRepositories {
         `INSERT INTO orders
           (customer_id, customer_name, customer_contact_name, customer_contact_phone, customer_shipping_info,
            order_no, ordered_at, recipient_name, recipient_info, amount, amount_cents, shipping_cents,
-           tracking_no, payment_note, order_detail, remark, status, source_sales_document_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           tracking_no, payment_note, order_detail, remark, status, source_sales_document_id, created_at, updated_at, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
           .run(
             input.customerId ?? null,
@@ -596,6 +598,7 @@ export class DatabaseRepositories {
             input.sourceSalesDocumentId ?? null,
             timestamp,
             timestamp,
+            input.createdBy ?? '',
           ),
       );
       database.prepare(`

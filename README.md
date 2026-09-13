@@ -87,14 +87,58 @@ http://127.0.0.1:52341/
 
 ## 手机端使用
 
-手机连上和电脑相同的 Wi-Fi 后，直接用手机浏览器访问启动脚本提示的局域网地址（例如 `http://192.168.1.10:52341/`）即可，无需安装任何 App。
+两种方式，二选一即可：
+
+**方式一：安卓 App（推荐）**。安装项目提供的 APK（`个人工作台-手机版.apk`，由 `android/` 目录构建，构建方法见下节），首次打开时填入工作台地址（如 `http://192.168.1.10:52341` 或 `https://你的域名`），之后从桌面图标全屏进入，支持拍照/选图上传、备份下载、返回键后退。重新打包 APK 的方法：
+
+```bash
+# 前提：~/.workbench-android/ 已有 JDK17、Android cmdline-tools、Gradle（一次性安装）
+export JAVA_HOME=~/.workbench-android/jdk17
+export ANDROID_HOME=~/.workbench-android/android-sdk
+cd android && ../.workbench-android/downloads/gradle-8.9/bin/gradle assembleRelease
+# 产物：android/app/build/outputs/apk/release/app-release.apk
+```
+
+**方式二：手机浏览器**。连上和电脑相同的 Wi-Fi 后访问启动脚本提示的局域网地址；部署到服务器后则访问 `https://你的域名`，在浏览器菜单选“添加到主屏幕”可全屏打开（PWA）。
+
+共同说明：
 
 - 手机端为底部 Tab 导航：订单、报价、发货、财务为高频入口，其余模块在“更多”抽屉里。
 - 订单列表和财务列表在窄屏自动切换为卡片视图；订单表单自动折为单列，产品明细行带字段小标签。
-- 在手机浏览器里选择“添加到主屏幕”，即可像 App 一样全屏打开（已内置 PWA 清单和图标）。
+- 界面自动跟随系统深浅色。
+- 首次访问会引导创建管理员账号（首个账号自动成为管理员），之后所有页面都需要登录；更多账号在「设置 → 账号与安全」管理。
 - 箱唛打印仍建议在连接打印机的电脑上操作，手机端可查看箱唛数据。
-- 如果手机打不开地址，多为 Windows 防火墙拦截，需放行 TCP 52341 端口。
-- 局域网内的其他设备也能访问该地址。应用本身没有登录鉴权，若介意请在路由器上做好网络隔离，或设置 `WORKBENCH_HOST=127.0.0.1` 恢复仅本机访问。
+- 局域网直连时如手机打不开地址，多为 Windows 防火墙拦截，需放行 TCP 52341 端口；如只想本机使用，可设置 `WORKBENCH_HOST=127.0.0.1`。
+
+## 服务器部署（手机随时访问）
+
+把服务端部署到云服务器后，手机和电脑在任何有网络的地方都能使用，不再依赖家里电脑开机。
+
+**购买建议**：腾讯云/阿里云轻量应用服务器，2核2G 即可；区域选 **香港**（免域名备案，配合免费 sslip.io 域名实现自动 HTTPS）；系统镜像 Ubuntu 24.04。购买后在控制台防火墙放行 22、80、443 端口，并安装 Docker。
+
+**一键部署**（在本机项目目录的 Git Bash 中执行）：
+
+```bash
+bash scripts/deploy-to-server.sh root@服务器IP 服务器IP的sslip域名
+# 示例：服务器 IP 是 1.2.3.4 时，sslip 域名写作 1-2-3-4.sslip.io
+bash scripts/deploy-to-server.sh root@1.2.3.4 1-2-3-4.sslip.io
+```
+
+脚本会把代码上传到服务器的 `~/workbench`，用 Docker Compose 启动「工作台 + Caddy」两个容器：Caddy 自动申请并续期 Let's Encrypt HTTPS 证书，工作台数据保存在 `workbench-data` 数据卷中。
+
+**首次使用**：浏览器打开 `https://你的域名`，页面会引导创建第一个账号（自动成为管理员），在「设置 → 账号与安全」里可以为家人/同事创建更多账号。
+
+**把电脑上的旧数据迁到服务器**：电脑上「设置 → 备份与恢复 → 创建备份」下载 ZIP → 打开服务器站点 → 管理员账号「设置 → 选择备份恢复」上传 ZIP。账号数据不随备份迁移，恢复后用服务器上的账号登录即可。
+
+**日常维护**（SSH 到服务器后，在 `~/workbench` 目录）：
+
+```bash
+docker compose logs -f workbench   # 查看日志
+docker compose pull && docker compose up -d --build   # 更新到最新代码重新部署
+docker volume ls                   # 数据卷列表（数据在 workbench-data 卷里）
+```
+
+服务器上的每日自动备份沿用「设置 → 备份与恢复」中的配置，备份文件在数据卷内，建议每月下载一份 ZIP 存到本地做异地容灾。
 
 ## 数据和备份
 

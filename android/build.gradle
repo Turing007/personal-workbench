@@ -1,0 +1,4 @@
+// 安卓壳工程：只依赖 Android SDK 自带组件，零第三方依赖，保证构建轻快。
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}

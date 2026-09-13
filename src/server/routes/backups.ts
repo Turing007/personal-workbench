@@ -5,6 +5,7 @@ import { stat } from 'node:fs/promises';
 import { BackupError, BackupService } from '../backup/backup-service.js';
 import { AutoBackupService } from '../backup/auto-backup-service.js';
 import { ApiError, asRecord, sendFailure, sendSuccess } from './api-response.js';
+import { requireAdmin } from './auth.js';
 
 interface BackupRouteOptions {
   service: BackupService;
@@ -113,6 +114,8 @@ export async function registerBackupRoutes(app: FastifyInstance, options: Backup
 
   app.post('/api/backups/restore', async (request, reply) => {
     try {
+      // 恢复会覆盖全库，属于破坏性操作，仅管理员可执行。
+      requireAdmin(request);
       const result = await service.restoreBackup(await readMultipartBuffer(request));
       return sendSuccess(reply, result);
     } catch (error) {

@@ -208,14 +208,32 @@ function toError(payload: unknown, fallback: string, status: number): ApiErrorSh
   return { code: `HTTP_${status}`, message: fallback };
 }
 
+type UnauthorizedHandler = () => void;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+/** 会话失效时由 App 注册的回调接管（切换到登录界面）。 */
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
+  unauthorizedHandler = handler;
+}
+
+function handleMaybeUnauthorized(path: string, status: number): void {
+  if (status === 401 && !path.startsWith('/api/auth/') && unauthorizedHandler) unauthorizedHandler();
+}
+
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const response = await fetch(path, { ...init, headers });
+  if (!response.ok) {
+    handleMaybeUnauthorized(path, response.status);
+    const text = await response.text();
+    let payload: unknown = null;
+    try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
+    throw toError(payload, response.statusText || '请求失败', response.status);
+  }
   const text = await response.text();
   let payload: unknown = null;
   try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
-  if (!response.ok) throw toError(payload, response.statusText || '请求失败', response.status);
   if (payload && typeof payload === 'object' && 'ok' in payload) {
     const envelope = payload as { ok?: boolean; data?: T; error?: unknown };
     if (envelope.ok === false) throw toError(payload, '请求失败', response.status);
@@ -228,6 +246,7 @@ export async function requestBlob(path: string, init: RequestInit = {}): Promise
   const headers = new Headers(init.headers);
   const response = await fetch(path, { ...init, headers });
   if (!response.ok) {
+    handleMaybeUnauthorized(path, response.status);
     const text = await response.text();
     let payload: unknown = text;
     try { payload = text ? JSON.parse(text) : null; } catch { /* Keep the response text for a useful fallback error. */ }
@@ -899,6 +918,56 @@ export function deleteCompanyLogo() {
 export function getDocumentCustomerSuggestions(q = '') {
   return request<{ items: DocumentCustomerSuggestion[] }>(`/api/document-customers/suggestions?q=${encodeURIComponent(q.trim())}`)
     .then((result) => result.items);
+}
+
+export interface AuthUser {
+  id: number;
+  username: string;
+  displayName: string;
+  role: 'admin' | 'member';
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuthStatus {
+  initialized: boolean;
+}
+
+export function getAuthStatus() {
+  return request<AuthStatus>('/api/auth/status');
+}
+
+export function setupFirstAdmin(input: { username: string; password: string; displayName?: string }) {
+  return request<{ user: AuthUser }>('/api/auth/setup', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function login(input: { username: string; password: string }) {
+  return request<{ user: AuthUser }>('/api/auth/login', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function logout() {
+  return request<null>('/api/auth/logout', { method: 'POST' });
+}
+
+export function fetchCurrentUser() {
+  return request<{ user: AuthUser }>('/api/auth/me');
+}
+
+export function changeOwnPassword(input: { currentPassword: string; newPassword: string }) {
+  return request<{ user: AuthUser }>('/api/auth/password', { method: 'PUT', body: JSON.stringify(input) });
+}
+
+export function listUsers() {
+  return request<{ users: AuthUser[] }>('/api/auth/users');
+}
+
+export function createManagedUser(input: { username: string; password: string; displayName?: string; role: 'admin' | 'member' }) {
+  return request<{ user: AuthUser }>('/api/auth/users', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function updateManagedUser(id: number, patch: { displayName?: string; password?: string; role?: 'admin' | 'member'; isActive?: boolean }) {
+  return request<{ user: AuthUser }>(`/api/auth/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
 }
 
 export const getQuotationDetail = getQuotation;
