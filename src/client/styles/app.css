@@ -1698,7 +1698,7 @@ select {
   white-space: nowrap;
 }
 
-.sidebar-nav { display: grid; gap: 3px; flex: 1; align-content: start; }
+.sidebar-nav { display: grid; gap: 3px; }
 
 .sidebar-item {
   position: relative;
@@ -2722,34 +2722,25 @@ select {
     z-index: var(--z-sidebar);
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    border-top: 1px solid var(--color-border-subtle);
+    border-top: 1px solid var(--color-border);
     padding-bottom: env(safe-area-inset-bottom);
-    /* 毛玻璃底：列表从 Tab 栏下滑时透出柔和背景 */
-    background: color-mix(in srgb, var(--color-surface) 86%, transparent);
-    -webkit-backdrop-filter: blur(18px) saturate(1.35);
-    backdrop-filter: blur(18px) saturate(1.35);
-  }
-  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .mobile-tabbar { background: var(--color-surface); box-shadow: 0 -6px 24px -14px rgba(16, 24, 40, .22); }
+    background: var(--color-surface);
+    box-shadow: 0 -6px 24px -14px rgba(16, 24, 40, .22);
   }
 
   .mobile-tab-item {
     display: grid;
     justify-items: center;
     gap: 3px;
-    min-height: 50px;
-    padding: 9px 0 7px;
+    padding: 8px 0 6px;
     border: 0;
     color: var(--color-text-muted);
     background: none;
     font: inherit;
     font-size: var(--text-2xs);
     cursor: pointer;
-    transition: color var(--ease-standard), transform var(--ease-standard);
     -webkit-tap-highlight-color: transparent;
   }
-
-  .mobile-tab-item:active { transform: scale(.94); }
 
   .mobile-tab-item.is-active {
     color: var(--color-accent);
@@ -3020,7 +3011,7 @@ select {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 6px;
+  margin-top: auto;
   padding: 10px 10px 2px;
   border-top: 1px solid rgba(148, 163, 184, .14);
 }
@@ -3071,33 +3062,6 @@ select {
 .settings-account-form { display: grid; gap: 12px; max-width: 420px; }
 .settings-account-hint { margin: 0; font-size: var(--text-xs); color: var(--color-text-muted); }
 
-/* ===== 手机端体验强化：大标题、触控目标、防缩放 ===== */
-@media (max-width: 640px) {
-  :root {
-    --control-height: 42px;
-    --control-height-sm: 38px;
-    --control-height-md: 44px;
-    --control-height-lg: 48px;
-  }
-
-  /* iOS 聚焦时字号 ≥16px 才不会触发自动放大 */
-  .search-control input,
-  .toolbar-select,
-  .input,
-  .textarea,
-  .select { font-size: 16px; }
-
-  .page-title { font-size: 24px; }
-  .page-subtitle { font-size: var(--text-sm); }
-
-  .order-card {
-    border-radius: 18px;
-    padding: var(--space-7);
-  }
-
-  .button { min-height: 42px; }
-}
-
 /* ===== 骨架屏 ===== */
 .skeleton {
   border-radius: 8px;
@@ -3140,9 +3104,9 @@ select {
   border-radius: var(--radius-card);
   background: #ffffff;
   padding: 6px;
-/* 访问密码登录门样式已由多账号 AuthGate 的样式取代（见上方登录 / 管理员初始化段）。 */
+}
 
-/* ===== 移动端卡片视图：报价 / 销售单 / 产品 / 客户产品 / 发货 ===== */
+/* 访问密码登录门样式已由多账号 AuthGate 的样式取代（见上方登录 / 管理员初始化段）。 */
 
 /* ===== 移动端卡片视图：报价 / 销售单 / 产品 / 客户产品 / 发货 ===== */
 /* 桌面端沿用原有表格；≤900px 由卡片列表接管（与订单、财务页同一套双视图模式）。 */

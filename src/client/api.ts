@@ -917,6 +917,15 @@ export function deleteSalesReceiptFile(id: number | string) {
   return request<null>(`/api/sales-receipt-files/${id}`, { method: 'DELETE' });
 }
 
+export interface NetworkAddresses {
+  addresses: string[];
+}
+
+/** 本机局域网访问地址列表（供「手机连接」二维码使用）。 */
+export function getNetworkAddresses() {
+  return request<NetworkAddresses>('/api/settings/network-addresses');
+}
+
 export function getCompanyProfile() {
   return request<CompanySnapshot>('/api/settings/company-profile');
 }

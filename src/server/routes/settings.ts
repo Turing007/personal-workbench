@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
+import { networkInterfaces } from 'node:os';
 import { FileStoreError } from '../files/file-store.js';
 import { normalizeContractTemplate } from '../../shared/contract.js';
+import { config } from '../config.js';
 import type { CompanyProfileInput, SettingsService } from '../services/settings-service.js';
 import {
   ApiError,
@@ -11,6 +13,26 @@ import {
   sendSuccess,
 } from './api-response.js';
 import { imageFileOptions } from './multipart-limits.js';
+
+/** 收集本机局域网 IPv4 地址并拼成工作台访问地址，供「手机连接」二维码使用。
+ *  家庭路由器多为 192.168.x.x，排在前；172.x 常见于 WSL/虚拟网卡，排后。 */
+function collectLanAddresses(): string[] {
+  const addresses: string[] = [];
+  for (const list of Object.values(networkInterfaces())) {
+    for (const item of list ?? []) {
+      if (item.family !== 'IPv4' || item.internal) continue;
+      if (item.address.startsWith('169.254.')) continue;
+      addresses.push(`http://${item.address}:${config.port}`);
+    }
+  }
+  return addresses.sort((a, b) => rank(a) - rank(b));
+
+  function rank(url: string): number {
+    if (url.includes('//192.168.')) return 0;
+    if (url.includes('//10.')) return 1;
+    return 2;
+  }
+}
 
 interface SettingsRouteOptions {
   service: SettingsService;
@@ -69,6 +91,10 @@ async function safeRoute<T>(
 }
 
 export async function registerSettingsRoutes(app: FastifyInstance, options: SettingsRouteOptions): Promise<void> {
+  app.get('/api/settings/network-addresses', async (_request, reply) =>
+    safeRoute(() => sendSuccess(reply, { addresses: collectLanAddresses() }), reply),
+  );
+
   app.get('/api/settings/company-profile', async (_request, reply) =>
     safeRoute(() => sendSuccess(reply, options.service.getCompanyProfile()), reply),
   );

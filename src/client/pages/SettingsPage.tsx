@@ -9,6 +9,7 @@ import {
   changeOwnPassword,
   createManagedUser,
   getAutoBackupStatus,
+  getNetworkAddresses,
   getServiceVersion,
   listUsers,
   runAutoBackupNow,
@@ -313,11 +314,22 @@ export default function SettingsPage({
   </div>;
 }
 
-/** 手机连接：展示服务地址与二维码，手机扫码或安装 App 后填入即可访问同一份数据。 */
+/** 手机连接：展示局域网/服务器地址与二维码，手机 App 扫码或手动填入即可访问同一份数据。 */
 function MobileConnectCard() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copied, setCopied] = useState(false);
-  const serverUrl = typeof window === 'undefined' ? '' : window.location.origin;
+  const [lanAddresses, setLanAddresses] = useState<string[]>([]);
+  const browserUrl = typeof window === 'undefined' ? '' : window.location.origin;
+  // 优先展示局域网地址：手机扫本机 127.0.0.1 的二维码是连不上的。
+  const serverUrl = lanAddresses[0] ?? browserUrl;
+
+  useEffect(() => {
+    let active = true;
+    getNetworkAddresses().then((result) => {
+      if (active && result.addresses.length) setLanAddresses(result.addresses);
+    }).catch(() => { /* 获取失败时回退为当前浏览器地址 */ });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (!canvasRef.current || !serverUrl) return;
@@ -343,12 +355,23 @@ function MobileConnectCard() {
       <canvas ref={canvasRef} className="settings-mobile-qrcode" aria-label="服务地址二维码" />
       <div style={{ display: 'grid', gap: 10, alignContent: 'start' }}>
         <div className="setting-row" style={{ alignItems: 'center' }}>
-          <span>服务地址</span>
+          <span>{lanAddresses.length > 1 ? '局域网地址（多选一）' : '局域网地址'}</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <code style={{ fontSize: 12, wordBreak: 'break-all' }}>{serverUrl}</code>
             <button className="icon-button" type="button" title="复制地址" onClick={() => void copy()}><Copy size={14} /></button>
           </div>
         </div>
+        {lanAddresses.length > 1 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {lanAddresses.map((address) => (
+            <button
+              key={address}
+              type="button"
+              className={address === serverUrl ? 'chip is-selected' : 'chip'}
+              style={{ fontSize: 11 }}
+              onClick={() => setLanAddresses((current) => [address, ...current.filter((item) => item !== address)])}
+            >{address}</button>
+          ))}
+        </div>}
         {copied && <span style={{ color: 'var(--tone-accent-text)', fontSize: 12 }}>已复制到剪贴板</span>}
         <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: 'var(--color-text-secondary)', display: 'grid', gap: 6 }}>
           <li>手机与工作台服务器网络互通（同一局域网，或已部署到公网服务器）。</li>
