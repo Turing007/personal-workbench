@@ -6,6 +6,10 @@ import multipart from '@fastify/multipart';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { openDatabase } from '../../src/server/db/connection';
 import { migrateDatabase } from '../../src/server/db/migrate';
+import { CustomerRepository } from '../../src/server/db/customer-repository';
+import { CustomerProductRepository } from '../../src/server/db/customer-product-repository';
+import { QuotationRepository } from '../../src/server/db/quotation-repository';
+import { QuotationCustomerProductSyncService } from '../../src/server/services/quotation-customer-product-sync-service';
 import { QuotationService } from '../../src/server/services/quotation-service';
 import { renderQuotationHtml } from '../../src/server/documents/quotation-template';
 import { registerQuotationRoutes, type QuotationRouteOptions } from '../../src/server/routes/quotations';
@@ -69,7 +73,17 @@ async function createContext(overrides: Partial<QuotationRouteOptions> = {}) {
   const service = overrides.service ?? new QuotationService({ database });
   const app = Fastify();
   await app.register(multipart, { limits: { files: 20, fileSize: 10 * 1024 * 1024 } });
-  await registerQuotationRoutes(app, { service, ...overrides });
+  const options: QuotationRouteOptions = {
+    service,
+    // 默认装配同步服务，供客户产品同步路由的用例使用。
+    customerProductSyncService: new QuotationCustomerProductSyncService(database, {
+      quotationRepository: new QuotationRepository(database),
+      customerRepository: new CustomerRepository(database),
+      customerProductRepository: new CustomerProductRepository(database),
+    }),
+    ...overrides,
+  };
+  await registerQuotationRoutes(app, options);
   return { app, database, service };
 }
 
@@ -112,6 +126,49 @@ describe('quotation routes', () => {
     expect(confirmation.json().error.code).toBe('CONFIRMATION_REQUIRED');
     expect((await app.inject({ method: 'DELETE', url: `/api/quotations/${quotation.id}`, payload: { confirmed: true } })).statusCode).toBe(200);
     expect((await app.inject({ method: 'GET', url: `/api/quotations/${quotation.id}` })).statusCode).toBe(404);
+    await app.close();
+    database.close();
+  });
+
+  it('客户产品同步接口拒绝畸形 selection，正常选择不受影响', async () => {
+    const { app, database } = await createContext();
+    const now = '2026-09-13T00:00:00.000Z';
+    const customerId = Number(database.prepare(
+      "INSERT INTO customers (name, is_active, created_at, updated_at) VALUES ('同步客户', 1, ?, ?)",
+    ).run(now, now).lastInsertRowid);
+
+    const created = await app.inject({ method: 'POST', url: '/api/quotations', payload: quotationInput({ customerId }) });
+    expect(created.statusCode).toBe(201);
+    const quotation = created.json().data;
+
+    // 非整数成员（含注入样式的字符串与对象）在路由层即被拒绝。
+    const malformed = await app.inject({
+      method: 'POST',
+      url: `/api/quotations/${quotation.id}/customer-products/sync`,
+      payload: { quotationItemIds: ['1; DROP TABLE users', { evil: true }] },
+    });
+    expect(malformed.statusCode).toBe(400);
+    expect(malformed.json().error).toMatchObject({ code: 'VALIDATION_ERROR', field: 'quotationItemIds' });
+
+    // 整数但不属于该报价单的产品行 → 400 QUOTATION_ITEM_NOT_FOUND。
+    const unknownItem = await app.inject({
+      method: 'POST',
+      url: `/api/quotations/${quotation.id}/customer-products/sync`,
+      payload: { quotationItemIds: [999999] },
+    });
+    expect(unknownItem.statusCode).toBe(400);
+    expect(unknownItem.json().error.code).toBe('QUOTATION_ITEM_NOT_FOUND');
+
+    // 合法选择正常同步，证明校验没有误伤正常路径。
+    const itemId = Number(quotation.items[0].id);
+    const synced = await app.inject({
+      method: 'POST',
+      url: `/api/quotations/${quotation.id}/customer-products/sync`,
+      payload: { quotationItemIds: [itemId] },
+    });
+    expect(synced.statusCode).toBe(200);
+    expect(synced.json().data.summary).toMatchObject({ created: 1, failed: 0 });
+
     await app.close();
     database.close();
   });

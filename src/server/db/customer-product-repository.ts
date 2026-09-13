@@ -318,7 +318,7 @@ export class CustomerProductRepository {
         (customer_id, system_product_id, name, specification, sku, pack_count,
          latest_quote_cents, final_price_cents, cost_price_cents, freight_per_box_cents, packaging_json, source_quotation_id, image_relative_path, remark,
          last_synced_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       customerId,
       input.systemProductId ?? null,
