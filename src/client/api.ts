@@ -1,5 +1,6 @@
 import type { OrderStatus } from '../shared/domain';
 import { calculateOrderAmountCents } from '../shared/order-prices';
+import type { StockPreparation } from '../shared/stock';
 import type {
   Customer,
   CustomerProduct as SharedCustomerProduct,
@@ -208,16 +209,12 @@ function toError(payload: unknown, fallback: string, status: number): ApiErrorSh
   return { code: `HTTP_${status}`, message: fallback };
 }
 
-type UnauthorizedHandler = () => void;
-let unauthorizedHandler: UnauthorizedHandler | null = null;
+// 访问密码/账号会话失效时由服务端返回 401/AUTH_REQUIRED；这里广播全局事件，
+// AuthGate 监听后切换到登录界面。事件名导出以便测试与订阅方复用。
+export const AUTH_REQUIRED_EVENT = 'workbench:auth-required';
 
-/** 会话失效时由 App 注册的回调接管（切换到登录界面）。 */
-export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
-  unauthorizedHandler = handler;
-}
-
-function handleMaybeUnauthorized(path: string, status: number): void {
-  if (status === 401 && !path.startsWith('/api/auth/') && unauthorizedHandler) unauthorizedHandler();
+function notifyAuthRequired(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT));
 }
 
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -225,7 +222,6 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const response = await fetch(path, { ...init, headers });
   if (!response.ok) {
-    handleMaybeUnauthorized(path, response.status);
     const text = await response.text();
     let payload: unknown = null;
     try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
@@ -236,7 +232,11 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
   if (payload && typeof payload === 'object' && 'ok' in payload) {
     const envelope = payload as { ok?: boolean; data?: T; error?: unknown };
-    if (envelope.ok === false) throw toError(payload, '请求失败', response.status);
+    if (envelope.ok === false) {
+      const error = toError(payload, '请求失败', response.status);
+      if (error.code === 'AUTH_REQUIRED') notifyAuthRequired();
+      throw error;
+    }
     return envelope.data as T;
   }
   return payload as T;
@@ -246,11 +246,12 @@ export async function requestBlob(path: string, init: RequestInit = {}): Promise
   const headers = new Headers(init.headers);
   const response = await fetch(path, { ...init, headers });
   if (!response.ok) {
-    handleMaybeUnauthorized(path, response.status);
     const text = await response.text();
     let payload: unknown = text;
     try { payload = text ? JSON.parse(text) : null; } catch { /* Keep the response text for a useful fallback error. */ }
-    throw toError(payload, response.statusText || '下载失败', response.status);
+    const error = toError(payload, response.statusText || '下载失败', response.status);
+    if (error.code === 'AUTH_REQUIRED') notifyAuthRequired();
+    throw error;
   }
   return response.blob();
 }
@@ -354,6 +355,7 @@ export function draftToInput(draft: OrderDraft) {
     paymentNote: draft.paymentNote,
     orderDetail: draft.orderDetail,
     remark: draft.remark,
+    settlementType: draft.settlementType === 'personal' ? 'personal' : 'corporate',
     items: draft.items.map((item) => ({ customerProductId: item.customerProductId ?? (item.productId ? Number(item.productId) : null), name: item.name.trim(), sku: item.sku.trim(), specification: item.specification.trim(), packCount: Math.max(1, Math.trunc(item.packSize)), quantity: Math.max(1, Math.trunc(item.quantity)), unitPriceCents: Math.max(0, Math.trunc(item.unitPriceCents ?? 0)), freightPerBoxCents: Math.max(0, Math.trunc(item.freightPerBoxCents ?? 0)), packaging: item.packaging?.length ? item.packaging.map((pack) => ({ name: pack.name, innerSize: pack.innerSize, innerWeight: Number(pack.innerWeight) || 0, outerSize: pack.outerSize, outerWeight: Number(pack.outerWeight) || 0, packCount: Math.max(1, Math.trunc(pack.packSize)) })) : [{ name: '', packCount: Math.max(1, Math.trunc(item.packSize)) }], remark: item.remark }))
     , orderAttachments: draft.items.flatMap((item) => (item.customerProductAttachments ?? []).map((attachment) => ({ category: attachment.category, sourceCustomerProductId: item.customerProductId ?? null, relativePath: attachment.relativePath, originalName: attachment.originalName, mimeType: attachment.mimeType, size: attachment.size })))
   };
@@ -479,6 +481,7 @@ function customerProductInput(product: CustomerProductSaveInput) {
   return {
     ...(product.systemProductId === undefined ? {} : { systemProductId: product.systemProductId }),
     name: product.name.trim(),
+    supplierProductName: (product.supplierProductName ?? '').trim(),
     specification: product.specification.trim(),
     sku: product.sku.trim(),
     packCount: product.packCount,
@@ -562,6 +565,20 @@ export function deleteCustomerProduct(id: number) {
 
 export function deleteCustomerProducts(customerId: number, ids: number[]) {
   return request<{ deletedCount: number }>(`/api/customers/${customerId}/products/batch-delete`, { method: 'POST', body: JSON.stringify({ ids }) });
+}
+
+/** 备货模块补关联：建立客户产品与系统产品的映射并写入报供名称；systemProductId 传 null 表示清除映射。 */
+export function linkCustomerProductToSystem(id: number | string, systemProductId: number | null, supplierProductName: string) {
+  return request<SharedCustomerProduct>(`/api/customer-products/${id}/link`, { method: 'POST', body: JSON.stringify({ systemProductId, supplierProductName }) })
+    .then(mapCustomerProduct);
+}
+
+export function getStockPreparation(date: string | 'all') {
+  return request<StockPreparation>(`/api/stock/preparation?date=${encodeURIComponent(date)}`);
+}
+
+export function exportStockPreparation(date: string | 'all') {
+  return requestBlob(`/api/stock/preparation/export?date=${encodeURIComponent(date)}`);
 }
 
 function parseDimensionTriplet(value: string) {
@@ -677,7 +694,7 @@ export async function uploadFinanceProof(orderId: number | string, file: File, i
 
 export function updateFinanceProof(id: number, input: Record<string, unknown>) { return request<PaymentProofRecord & { url: string }>(`/api/finance/proofs/${id}`, { method: 'PUT', body: JSON.stringify(input) }); }
 export function approveFinanceProof(id: number, payeeName = '') { return request<ApiFinanceDetail>(`/api/finance/proofs/${id}/approve`, { method: 'POST', body: JSON.stringify({ payeeName }) }); }
-export function listReceivedByPayee() { return request<{ items: PayeeBreakdownRow[] }>('/api/finance/receipts/by-payee'); }
+export function listReceivedByPayee(month?: string) { return request<{ items: PayeeBreakdownRow[] }>(`/api/finance/receipts/by-payee${month ? `?month=${encodeURIComponent(month)}` : ''}`); }
 export function rejectFinanceProof(id: number, note: string) { return request<ApiFinanceDetail>(`/api/finance/proofs/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }); }
 export function voidFinanceProof(id: number, note: string) { return request<ApiFinanceDetail>(`/api/finance/proofs/${id}/void`, { method: 'POST', body: JSON.stringify({ note }) }); }
 export function deleteFinanceProof(id: number) { return request<PaymentProofRecord>(`/api/finance/proofs/${id}`, { method: 'DELETE' }); }
@@ -698,6 +715,10 @@ export interface BackupResult {
   createdAt: string;
   recordCounts: Record<string, number>;
   downloadUrl: string;
+}
+
+export function getServiceVersion() {
+  return request<{ status: string; version: string; buildTime: string | null; gitCommit: string | null; mode: 'production' | 'development' }>('/health');
 }
 
 export function createBackup() { return request<BackupResult>('/api/backups', { method: 'POST' }); }

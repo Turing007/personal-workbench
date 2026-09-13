@@ -54,6 +54,7 @@ export class CustomerProductService {
   constructor(
     private readonly repository: CustomerProductRepository,
     private readonly customerRepository: CustomerRepository,
+    private readonly systemProductExists: (systemProductId: number) => boolean = () => true,
   ) {}
 
   list(customerId: number, filters: CustomerProductListFilters = {}): CustomerProduct[] {
@@ -155,6 +156,27 @@ export class CustomerProductService {
     return this.repository.delete(id);
   }
 
+  /** 备货模块补关联：一次性建立与系统产品的映射并填写报供名称；传 null 表示清除映射。 */
+  linkSystemProduct(id: number, input: { systemProductId: unknown; supplierProductName?: unknown }): CustomerProduct {
+    const existing = this.repository.getById(id);
+    if (!existing) throw new CustomerProductNotFoundError();
+    if (input.systemProductId === null || input.systemProductId === '') {
+      return this.repository.setSystemProduct(id, null, '')!;
+    }
+    const systemProductId = normalizePositiveId(input.systemProductId, 'systemProductId');
+    if (!this.systemProductExists(systemProductId)) throw new SystemProductNotFoundError();
+    const mapped = this.repository.findBySystemProduct(existing.customerId, systemProductId);
+    if (mapped && mapped.id !== id) {
+      throw new CustomerProductExistsError('该客户已有其他产品关联此系统产品，请先解除那条关联');
+    }
+    const supplierProductName = input.supplierProductName === undefined || input.supplierProductName === null
+      ? ''
+      : normalizeText(input.supplierProductName, 'supplierProductName', '供应商产品名称');
+    const updated = this.repository.setSystemProduct(id, systemProductId, supplierProductName);
+    if (!updated) throw new CustomerProductNotFoundError();
+    return updated;
+  }
+
   setImagePath(id: number, imageRelativePath: string | null): CustomerProduct | undefined {
     return this.repository.setImagePath(id, imageRelativePath);
   }
@@ -235,6 +257,9 @@ function normalizeInput(input: CustomerProductSaveInput): CustomerProductSaveInp
   return {
     systemProductId: input.systemProductId ?? null,
     name: normalizeText(input.name, 'name', '品名', true),
+    supplierProductName: input.supplierProductName === undefined
+      ? undefined
+      : normalizeText(input.supplierProductName, 'supplierProductName', '供应商产品名称'),
     specification: normalizeText(input.specification, 'specification', '规格'),
     sku: normalizeText(input.sku, 'sku', 'SKU'),
     packCount: normalizeNullableInteger(input.packCount, 'packCount', '装箱数', true),

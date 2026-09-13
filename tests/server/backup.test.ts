@@ -48,6 +48,18 @@ function insertProduct(database: DatabaseSync, name: string): number {
   return Number(result.lastInsertRowid);
 }
 
+function insertCustomer(database: DatabaseSync, name: string): number {
+  const timestamp = new Date().toISOString();
+  const result = database
+    .prepare(
+      `INSERT INTO customers
+        (name, contact_name, contact_phone, shipping_info, invoice_title, tax_no, created_at, updated_at)
+       VALUES (?, '联系', '13800000000', '收货地址', '客户开票抬头', '91330200MA2XYZ0C1F', ?, ?)`,
+    )
+    .run(name, timestamp, timestamp);
+  return Number(result.lastInsertRowid);
+}
+
 function createService(dataDirectory: string, database: DatabaseSync): BackupService {
   return new BackupService({
     database,
@@ -87,6 +99,7 @@ describe('backup and restore', () => {
     migrateDatabase(database);
     const productId = insertProduct(database, '原始产品');
     insertDocumentFixtures(database);
+    const customerId = insertCustomer(database, '备份客户');
     database
       .prepare(
         `INSERT INTO product_images
@@ -109,6 +122,7 @@ describe('backup and restore', () => {
 
     expect(manifest.formatVersion).toBe(1);
     expect(manifest.databaseFile).toBe('workbench.sqlite');
+    expect(manifest.recordCounts.customers).toBe(1);
     expect(manifest.recordCounts.products).toBe(1);
     expect(manifest.recordCounts.product_images).toBe(1);
     expect(manifest.recordCounts.document_number_sequences).toBe(1);
@@ -135,6 +149,8 @@ describe('backup and restore', () => {
     expect(database.prepare('SELECT COUNT(*) AS count FROM quotations').get()?.count).toBe(1);
     expect(database.prepare('SELECT COUNT(*) AS count FROM sales_documents').get()?.count).toBe(1);
     expect(database.prepare('SELECT COUNT(*) AS count FROM sales_receipt_files').get()?.count).toBe(1);
+    expect(database.prepare('SELECT invoice_title, tax_no FROM customers WHERE id = ?').get(customerId))
+      .toEqual({ invoice_title: '客户开票抬头', tax_no: '91330200MA2XYZ0C1F' });
     await expect(readFile(join(productDirectory, 'original.png'))).resolves.toEqual(Buffer.from('old'));
     await expect(readFile(join(paymentDirectory, 'payment.png'))).resolves.toEqual(Buffer.from('paid'));
     await expect(readFile(join(productDirectory, 'later.png'))).rejects.toThrow();
@@ -172,6 +188,74 @@ describe('backup and restore', () => {
 
     expect(database.prepare('SELECT COUNT(*) AS count FROM products').get()?.count).toBe(1);
     await expect(readFile(join(filesDirectory, 'current.png'))).resolves.toEqual(Buffer.from('current'));
+    database.close();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  });
+
+  it('restores an older snapshot missing customer invoice columns and customer record count', async () => {
+    const dataDirectory = await makeTemporaryDirectory();
+    const database = openDatabase(join(dataDirectory, 'workbench.sqlite'));
+    migrateDatabase(database);
+
+    // 模拟旧版(v18)备份：customers 表缺少 invoice_title/tax_no，且清单未提供 customers 记录数。
+    const legacyDirectory = await makeTemporaryDirectory();
+    const legacyPath = join(legacyDirectory, 'workbench.sqlite');
+    const legacy = openDatabase(legacyPath);
+    legacy.exec(`
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO settings (key, value, updated_at)
+      VALUES ('schema_version', '18', '2026-09-04');
+      INSERT INTO settings (key, value, updated_at)
+      VALUES ('customer_products_v6_initialized', '1', '2026-09-04');
+
+      CREATE TABLE customers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        contact_name TEXT NOT NULL DEFAULT '',
+        contact_phone TEXT NOT NULL DEFAULT '',
+        shipping_info TEXT NOT NULL DEFAULT '',
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO customers (name, created_at, updated_at)
+      VALUES ('旧版客户', '2026-09-04', '2026-09-04');
+
+      CREATE TABLE customer_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+        name TEXT NOT NULL,
+        sku TEXT NOT NULL DEFAULT '',
+        specification TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    legacy.close();
+
+    const legacyBuffer = await readFile(legacyPath);
+    const backupBuffer = await makeZip([
+      { name: 'workbench.sqlite', content: legacyBuffer },
+      {
+        name: 'manifest.json',
+        content: JSON.stringify({
+          formatVersion: 1,
+          createdAt: new Date().toISOString(),
+          databaseFile: 'workbench.sqlite',
+          recordCounts: {},
+          attachments: [],
+        }),
+      },
+    ]);
+
+    const service = createService(dataDirectory, database);
+    await expect(service.restoreBackup(backupBuffer)).resolves.toMatchObject<{ safetyBackup: { fileName: string } }>({ safetyBackup: { fileName: expect.stringMatching(/^个人工作台备份-/) } });
+    const restored = database.prepare("SELECT name, invoice_title, tax_no FROM customers WHERE name = '旧版客户'").get() as { name: string; invoice_title: string; tax_no: string };
+    expect(restored).toEqual({ name: '旧版客户', invoice_title: '', tax_no: '' });
     database.close();
     await new Promise((resolve) => setTimeout(resolve, 25));
   });

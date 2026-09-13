@@ -7,6 +7,8 @@ export interface Customer {
   contactName: string;
   contactPhone: string;
   shippingInfo: string;
+  invoiceTitle: string;
+  taxNo: string;
   isActive: boolean;
   productCount: number;
   incompleteProductCount: number;
@@ -19,6 +21,8 @@ export interface CustomerSaveInput {
   contactName: string;
   contactPhone: string;
   shippingInfo: string;
+  invoiceTitle: string;
+  taxNo: string;
   confirmDuplicateName?: boolean;
 }
 
@@ -27,6 +31,7 @@ export interface CustomerProduct {
   customerId: number;
   systemProductId: number | null;
   name: string;
+  supplierProductName: string;
   specification: string;
   sku: string;
   packCount: number | null;
@@ -48,6 +53,8 @@ export interface CustomerProduct {
 export interface CustomerProductSaveInput {
   systemProductId?: number | null;
   name: string;
+  /** 报给供应商的产品名称；留空时备货表回退使用系统产品名。 */
+  supplierProductName?: string;
   specification: string;
   sku: string;
   packCount: number | null;

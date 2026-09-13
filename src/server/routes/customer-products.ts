@@ -95,6 +95,7 @@ function parseProductInput(value: unknown): CustomerProductSaveInput {
       ? { systemProductId: body.systemProductId as number | null }
       : {}),
     name: body.name as string,
+    supplierProductName: body.supplierProductName as string | undefined,
     specification: body.specification as string,
     sku: body.sku as string,
     packCount: body.packCount as number | null,
@@ -233,6 +234,18 @@ export async function registerCustomerProductRoutes(
     ) {
       await options.fileStore.deleteFile(existing.imageRelativePath);
     }
+    return sendSuccess(reply, product);
+  }, reply));
+
+  app.post('/api/customer-products/:id/link', async (
+    request: FastifyRequest<{ Params: { id: string }; Body: Record<string, unknown> }>,
+    reply,
+  ) => safeRoute(() => {
+    const body = asRecord(request.body ?? {});
+    const product = options.service.linkSystemProduct(parseId(request.params.id), {
+      systemProductId: body.systemProductId,
+      supplierProductName: body.supplierProductName,
+    });
     return sendSuccess(reply, product);
   }, reply));
 

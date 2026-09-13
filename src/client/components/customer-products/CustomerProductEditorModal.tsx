@@ -98,6 +98,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
   const [systemProductId, setSystemProductId] = useState<number | null>(null);
   const [systemProductQuery, setSystemProductQuery] = useState('');
   const [systemProductPickerOpen, setSystemProductPickerOpen] = useState(false);
+  const [supplierProductName, setSupplierProductName] = useState('');
   const [name, setName] = useState('');
   const [specification, setSpecification] = useState('');
   const [sku, setSku] = useState('');
@@ -131,6 +132,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
     setSystemProductId(product?.systemProductId ?? null);
     setSystemProductQuery('');
     setSystemProductPickerOpen(false);
+    setSupplierProductName(product?.supplierProductName ?? '');
     setName(product?.name ?? '');
     setSpecification(product?.specification ?? '');
     setSku(product?.sku ?? '');
@@ -281,6 +283,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
         await onSave({
           systemProductId,
           name: name.trim(),
+          supplierProductName: supplierProductName.trim(),
           specification: specification.trim(),
           sku: sku.trim(),
           packCount: count,
@@ -368,6 +371,9 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
         <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>客户 SKU<input value={sku} onChange={(event) => setSku(event.target.value)} style={inputStyle} /></label>
         <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>规格<input value={specification} onChange={(event) => setSpecification(event.target.value)} style={inputStyle} /></label>
       </div>}
+      {!batchMode && <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>供应商产品名称
+        <input value={supplierProductName} onChange={(event) => setSupplierProductName(event.target.value)} style={inputStyle} placeholder="报给供应商的名称，留空则按系统产品名报供（备货表使用）" />
+      </label>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
         <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>装箱数<input type="number" min={1} step={1} value={packCount} onChange={(event) => setPackCount(event.target.value)} style={inputStyle} placeholder="待完善" /></label>
         <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>成本价（元）<input type="number" min={0} step="0.01" value={costPrice} onChange={(event) => setCostPrice(event.target.value)} style={inputStyle} placeholder="待完善" /></label>

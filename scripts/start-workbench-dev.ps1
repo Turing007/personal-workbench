@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 
 $Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $DevPidFile = Join-Path $Root '.workbench-dev.pid'
@@ -6,6 +6,12 @@ $ProdPidFile = Join-Path $Root '.workbench.pid'
 $VitePort = 52342
 $ServerPort = 52341
 $DevUrl = "http://127.0.0.1:$VitePort/"
+
+$SourceVersion = '0.0.0'
+try {
+  $pkg = Get-Content -Raw -LiteralPath (Join-Path $Root 'package.json') | ConvertFrom-Json
+  if ($pkg.version) { $SourceVersion = [string]$pkg.version }
+} catch { }
 
 function Test-DevReady {
   try {
@@ -49,6 +55,7 @@ try {
       $oldProcess = Get-Process -Id $oldPid -ErrorAction SilentlyContinue
       if ($oldProcess -and (Test-DevReady)) {
         Write-Host "Dev mode is already running: $DevUrl"
+        Write-Host "源码版本: v$SourceVersion（开发模式，修改源码后即时生效）"
         Start-Process $DevUrl
         exit 0
       }
@@ -95,6 +102,7 @@ try {
   }
 
   Write-Host "Dev mode started: $DevUrl"
+  Write-Host "源码版本: v$SourceVersion（开发模式，修改源码后即时生效）"
   Write-Host 'Edits to src are hot-reloaded automatically - no rebuild needed.'
   Start-Process $DevUrl
   exit 0

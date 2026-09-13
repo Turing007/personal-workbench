@@ -153,6 +153,36 @@ describe('订单号基础设施', () => {
     database.close();
   });
 
+  it('订单结算方式支持对公/对私，默认对公并可随订单更新', async () => {
+    const { app, database } = await makeContext();
+
+    const personal = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput({ settlementType: 'personal' }) });
+    expect(personal.statusCode).toBe(201);
+    expect(personal.json().data.settlement_type).toBe('personal');
+    const personalId = Number(personal.json().data.id);
+    const personalOrderNo = String(personal.json().data.order_no);
+
+    const corporate = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput() });
+    expect(corporate.statusCode).toBe(201);
+    expect(corporate.json().data.settlement_type).toBe('corporate');
+
+    const invalid = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput({ settlementType: 'unknown' }) });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json()).toMatchObject({
+      ok: false,
+      error: { code: 'VALIDATION_ERROR', field: 'settlementType' },
+    });
+
+    const updated = await app.inject({
+      method: 'PUT',
+      url: `/api/orders/${personalId}`,
+      payload: orderInput({ orderNo: personalOrderNo, settlementType: 'corporate' }),
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().data.settlement_type).toBe('corporate');
+    database.close();
+  });
+
   it('旧待打印箱唛订单点击进入备货后可正常推进', async () => {
     const { app, database } = await makeContext();
     const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput() });

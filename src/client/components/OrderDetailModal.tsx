@@ -1,6 +1,8 @@
 import { Download, ExternalLink, FileText, Image as ImageIcon, Package, Printer, Trash2, Truck, UserRound, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { FINANCE_PAYMENT_STATUS_LABELS, INVOICE_STATUS_LABELS, PAYMENT_PROOF_STATUS_LABELS } from '../../shared/finance';
+import { ORDER_SETTLEMENT_LABELS, invoiceDisplayLabel } from '../../shared/settlement';
+import { formatDateTime } from '../../shared/formatters';
 import Modal from './Modal';
 import OrderItemsTable from './OrderItemsTable';
 import type { OrderContractDraft, OrderDraft, OrderStatus } from './OrderForm';
@@ -109,7 +111,7 @@ export default function OrderDetailModal({
     <Modal open={open} title={`订单详情 · ${order.orderNo}`} onClose={onClose} width={900}>
       <div style={{ display: 'grid', gap: 16 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: 12 }}>
-          <div style={detailStyle}><span style={labelStyle}>订单状态</span><strong style={{ color: order.status === 'draft' ? 'var(--tone-text-soft)' : 'var(--tone-accent-text)', fontSize: 13 }}>{order.status ? statusLabels[order.status] : '未设置'}</strong><span style={{ color: order.status === 'draft' ? 'var(--tone-text-soft)' : order.labelPrintedAt ? 'var(--tone-accent-text)' : '#b45309', fontSize: 11 }}>{order.status === 'draft' ? '草稿订单，发布后进入正式流程' : order.labelPrintedAt ? `箱唛已打印 · ${order.labelPrintedAt.replace('T', ' ').slice(0, 16)}` : '箱唛待打印（不影响流程）'}</span></div>
+          <div style={detailStyle}><span style={labelStyle}>订单状态</span><strong style={{ color: order.status === 'draft' ? 'var(--tone-text-soft)' : 'var(--tone-accent-text)', fontSize: 13 }}>{order.status ? statusLabels[order.status] : '未设置'}</strong><span style={{ color: order.status === 'draft' ? 'var(--tone-text-soft)' : order.labelPrintedAt ? 'var(--tone-accent-text)' : '#b45309', fontSize: 11 }}>{order.status === 'draft' ? '草稿订单，发布后进入正式流程' : order.labelPrintedAt ? `箱唛已打印 · ${formatDateTime(order.labelPrintedAt)}` : '箱唛待打印（不影响流程）'}</span></div>
           <div style={detailStyle}><span style={labelStyle}>下单时间</span><strong style={{ fontSize: 13 }}>{formatDate(order.orderedAt)}</strong>{order.createdBy && <span style={{ color: 'var(--tone-text-soft)', fontSize: 11 }}>创建人 · {order.createdBy}</span>}</div>
           <div style={detailStyle}><span style={labelStyle}>订单金额</span><strong style={{ fontSize: 13 }}>¥ {order.amount || '0.00'}</strong></div>
           <div style={detailStyle}><span style={labelStyle}>运费</span><strong style={{ fontSize: 13 }}>¥ {((order.shippingCents ?? 0) / 100).toFixed(2)}</strong></div>
@@ -128,9 +130,10 @@ export default function OrderDetailModal({
             <div style={detailStyle}><span style={labelStyle}>未收金额</span><strong style={{ fontSize: 13, color: order.financeSummary.outstandingCents > 0 ? '#92400e' : '#15803d' }}>{`¥ ${(order.financeSummary.outstandingCents / 100).toFixed(2)}`}</strong></div>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <span style={{ padding: '3px 8px', borderRadius: 999, background: '#f1f5f9', color: '#475569', fontSize: 11 }}>结算：{ORDER_SETTLEMENT_LABELS[order.settlementType ?? 'corporate']}</span>
             <span style={{ padding: '3px 8px', borderRadius: 999, background: '#f1f5f9', color: '#475569', fontSize: 11 }}>付款：{FINANCE_PAYMENT_STATUS_LABELS[financePaymentStatus]}</span>
             <span style={{ padding: '3px 8px', borderRadius: 999, background: '#f1f5f9', color: '#475569', fontSize: 11 }}>水单:{' '}{PAYMENT_PROOF_STATUS_LABELS[financeProofStatus]}</span>
-            <span style={{ padding: '3px 8px', borderRadius: 999, background: '#f1f5f9', color: '#475569', fontSize: 11 }}>发票：{INVOICE_STATUS_LABELS[financeInvoiceStatus]}</span>
+            <span style={{ padding: '3px 8px', borderRadius: 999, background: '#f1f5f9', color: '#475569', fontSize: 11 }}>发票：{invoiceDisplayLabel(order.settlementType, financeInvoiceStatus)}</span>
           </div>
         </section>}
 

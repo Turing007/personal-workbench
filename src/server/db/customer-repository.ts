@@ -7,6 +7,8 @@ interface CustomerRow extends Record<string, unknown> {
   contact_name: string;
   contact_phone: string;
   shipping_info: string;
+  invoice_title: string;
+  tax_no: string;
   is_active: number;
   product_count: number;
   incomplete_product_count: number;
@@ -30,6 +32,8 @@ const customerSelect = `
     c.contact_name,
     c.contact_phone,
     c.shipping_info,
+    c.invoice_title,
+    c.tax_no,
     c.is_active,
     c.created_at,
     c.updated_at,
@@ -61,6 +65,8 @@ function mapCustomer(row: CustomerRow | undefined): Customer | undefined {
     contactName: String(row.contact_name ?? ''),
     contactPhone: String(row.contact_phone ?? ''),
     shippingInfo: String(row.shipping_info ?? ''),
+    invoiceTitle: String(row.invoice_title ?? ''),
+    taxNo: String(row.tax_no ?? ''),
     isActive: Boolean(row.is_active),
     productCount: Number(row.product_count ?? 0),
     incompleteProductCount: Number(row.incomplete_product_count ?? 0),
@@ -119,13 +125,15 @@ export class CustomerRepository {
     const timestamp = new Date().toISOString();
     const result = this.database.prepare(`
       INSERT INTO customers
-        (name, contact_name, contact_phone, shipping_info, is_active, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 1, ?, ?)
+        (name, contact_name, contact_phone, shipping_info, invoice_title, tax_no, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
     `).run(
       input.name,
       input.contactName,
       input.contactPhone,
       input.shippingInfo,
+      input.invoiceTitle,
+      input.taxNo,
       timestamp,
       timestamp,
     );
@@ -135,13 +143,15 @@ export class CustomerRepository {
   update(id: number, input: CustomerSaveInput): Customer | undefined {
     const result = this.database.prepare(`
       UPDATE customers
-      SET name = ?, contact_name = ?, contact_phone = ?, shipping_info = ?, updated_at = ?
+      SET name = ?, contact_name = ?, contact_phone = ?, shipping_info = ?, invoice_title = ?, tax_no = ?, updated_at = ?
       WHERE id = ?
     `).run(
       input.name,
       input.contactName,
       input.contactPhone,
       input.shippingInfo,
+      input.invoiceTitle,
+      input.taxNo,
       new Date().toISOString(),
       id,
     );

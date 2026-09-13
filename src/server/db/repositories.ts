@@ -95,6 +95,8 @@ export interface CreateOrderInput {
   paymentNote?: string;
   orderDetail?: string;
   remark?: string;
+  /** 结算方式：corporate 对公（需开票）/ personal 对私（免开票），历史订单默认 corporate */
+  settlementType?: string;
   orderAttachments?: OrderAttachmentInput[];
   sourceSalesDocumentId?: number | null;
   /** 草稿订单：宽松校验，status 存为 draft，发布后回到正式流程。 */
@@ -565,6 +567,7 @@ export class DatabaseRepositories {
   createOrder(input: CreateOrderInput) {
     const timestamp = now();
     const status = input.isDraft ? 'draft' : 'pending_stock';
+    const settlementType = input.settlementType === 'personal' ? 'personal' : 'corporate';
     return withTransaction(this.database, (database) => {
       const orderNo = input.orderNo.trim() || this.orderNumbers.next();
       const amountCents = input.amountCents ?? Math.round((input.amount ?? 0) * 100);
@@ -574,8 +577,8 @@ export class DatabaseRepositories {
         `INSERT INTO orders
           (customer_id, customer_name, customer_contact_name, customer_contact_phone, customer_shipping_info,
            order_no, ordered_at, recipient_name, recipient_info, amount, amount_cents, shipping_cents,
-           tracking_no, payment_note, order_detail, remark, status, source_sales_document_id, created_at, updated_at, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           tracking_no, payment_note, order_detail, remark, status, source_sales_document_id, settlement_type, created_at, updated_at, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
           .run(
             input.customerId ?? null,
@@ -596,6 +599,7 @@ export class DatabaseRepositories {
             input.remark ?? '',
             status,
             input.sourceSalesDocumentId ?? null,
+            settlementType,
             timestamp,
             timestamp,
             input.createdBy ?? '',
@@ -675,6 +679,7 @@ export class DatabaseRepositories {
 
   updateOrder(orderId: number, input: UpdateOrderInput) {
     const timestamp = now();
+    const settlementType = input.settlementType === 'personal' ? 'personal' : 'corporate';
     return withTransaction(this.database, (database) => {
       const existing = database.prepare('SELECT id FROM orders WHERE id = ?').get(orderId);
       if (!existing) return undefined;
@@ -686,7 +691,7 @@ export class DatabaseRepositories {
           `UPDATE orders SET customer_id = ?, customer_name = ?, customer_contact_name = ?, customer_contact_phone = ?,
             customer_shipping_info = ?, order_no = ?, ordered_at = ?,
             recipient_name = ?, recipient_info = ?, amount = ?, amount_cents = ?, shipping_cents = ?,
-            tracking_no = ?, payment_note = ?, order_detail = ?, remark = ?, updated_at = ? WHERE id = ?`,
+            tracking_no = ?, payment_note = ?, order_detail = ?, remark = ?, settlement_type = ?, updated_at = ? WHERE id = ?`,
         )
         .run(
           input.customerId ?? null,
@@ -705,6 +710,7 @@ export class DatabaseRepositories {
           input.paymentNote ?? '',
           input.orderDetail ?? '',
           input.remark ?? '',
+          settlementType,
           timestamp,
           orderId,
         );
@@ -920,19 +926,21 @@ export class DatabaseRepositories {
     }
     if (query) {
       conditions.push(`(
-        o.order_no LIKE ? OR o.recipient_name LIKE ? OR
+        o.order_no LIKE ? OR o.customer_name LIKE ? OR o.recipient_name LIKE ? OR
         o.recipient_info LIKE ? OR EXISTS (
           SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND
             (oi.name LIKE ? OR oi.sku LIKE ? OR oi.specification LIKE ?)
         )
       )`);
-      values.push(...Array(6).fill(`%${query}%`));
+      values.push(...Array(7).fill(`%${query}%`));
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const count = Number(this.database.prepare(`SELECT COUNT(*) AS count FROM orders o ${where}`).get(...values)?.count ?? 0);
     const rows = this.database
       .prepare(
-        `SELECT o.*, COALESCE((SELECT SUM(cli.total_count) FROM carton_labels cl JOIN carton_label_items cli ON cli.carton_label_id = cl.id WHERE cl.order_id = o.id), 0) AS total_quantity,
+        `SELECT o.*,
+          COALESCE(o.label_printed_at, (SELECT MAX(ph.printed_at) FROM print_histories ph JOIN print_history_labels phl ON phl.print_history_id = ph.id WHERE phl.order_id = o.id)) AS label_printed_at,
+          COALESCE((SELECT SUM(cli.total_count) FROM carton_labels cl JOIN carton_label_items cli ON cli.carton_label_id = cl.id WHERE cl.order_id = o.id), 0) AS total_quantity,
           COALESCE((SELECT MAX(cl.total_boxes) FROM carton_labels cl WHERE cl.order_id = o.id), 0) AS total_boxes
          FROM orders o ${where} ORDER BY o.ordered_at DESC, o.id DESC LIMIT ? OFFSET ?`,
       )

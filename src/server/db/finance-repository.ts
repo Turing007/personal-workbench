@@ -270,7 +270,7 @@ export class FinanceRepository {
     const rows = this.database.prepare(`
       SELECT o.id AS order_id, o.order_no, o.customer_name, o.ordered_at AS order_date,
         f.receivable_cents, f.received_cents, f.outstanding_cents, f.payment_status,
-        f.proof_status, f.invoice_status, o.status AS order_status, f.updated_at
+        f.proof_status, f.invoice_status, o.status AS order_status, o.settlement_type, f.updated_at
       FROM order_finance f JOIN orders o ON o.id = f.order_id ${where}
       ORDER BY f.updated_at DESC, f.id DESC LIMIT ? OFFSET ?
     `).all(...values, pageSize, (page - 1) * pageSize) as SqlRow[];
@@ -279,7 +279,8 @@ export class FinanceRepository {
         COALESCE(SUM(f.received_cents), 0) AS received_cents,
         COALESCE(SUM(f.outstanding_cents), 0) AS outstanding_cents,
         COALESCE(SUM((SELECT COUNT(*) FROM payment_proofs p WHERE p.order_id = f.order_id AND p.status = 'pending')), 0) AS pending_proof_count,
-        COALESCE(SUM(CASE WHEN f.invoice_status IN ('incomplete', 'pending_issue', 'issued') THEN 1 ELSE 0 END), 0) AS pending_invoice_count
+        COALESCE(SUM(CASE WHEN f.invoice_status IN ('incomplete', 'pending_issue', 'issued')
+          AND COALESCE(o.settlement_type, 'corporate') <> 'personal' THEN 1 ELSE 0 END), 0) AS pending_invoice_count
       FROM order_finance f JOIN orders o ON o.id = f.order_id ${where}
     `).get(...values) as SqlRow;
     const stats: FinanceListStats = {
@@ -293,7 +294,7 @@ export class FinanceRepository {
       rows: rows.map((row): FinanceListRow => ({
         orderId: numberValue(row, 'order_id'), orderNo: stringValue(row, 'order_no'), customerName: stringValue(row, 'customer_name'), orderDate: stringValue(row, 'order_date'),
         receivableCents: numberValue(row, 'receivable_cents'), receivedCents: numberValue(row, 'received_cents'), outstandingCents: numberValue(row, 'outstanding_cents'),
-        paymentStatus: stringValue(row, 'payment_status') as FinanceListRow['paymentStatus'], proofStatus: stringValue(row, 'proof_status') as FinanceListRow['proofStatus'], invoiceStatus: stringValue(row, 'invoice_status') as FinanceListRow['invoiceStatus'], orderStatus: stringValue(row, 'order_status'), updatedAt: stringValue(row, 'updated_at'),
+        paymentStatus: stringValue(row, 'payment_status') as FinanceListRow['paymentStatus'], proofStatus: stringValue(row, 'proof_status') as FinanceListRow['proofStatus'], invoiceStatus: stringValue(row, 'invoice_status') as FinanceListRow['invoiceStatus'], orderStatus: stringValue(row, 'order_status'), settlementType: stringValue(row, 'settlement_type', 'corporate'), updatedAt: stringValue(row, 'updated_at'),
       })), total, page, pageSize, stats,
     };
   }
@@ -356,15 +357,25 @@ export class FinanceRepository {
     return (this.database.prepare('SELECT * FROM finance_receipts WHERE order_id = ? ORDER BY received_at DESC, id DESC').all(orderId) as SqlRow[]).map(mapReceipt);
   }
 
-  listPayeeBreakdown(): PayeeBreakdownRow[] {
+  listPayeeBreakdown(month?: string): PayeeBreakdownRow[] {
+    const values: Array<string | number> = [];
+    // 与统计卡片的“已收金额”口径一致：按订单下单月份过滤，而不是实际收款月份。
+    let join = '';
+    let where = '';
+    const trimmed = month?.trim();
+    if (trimmed) {
+      join = 'JOIN orders o ON o.id = finance_receipts.order_id';
+      where = 'WHERE substr(o.ordered_at, 1, 7) = ?';
+      values.push(trimmed);
+    }
     const rows = this.database.prepare(`
-      SELECT COALESCE(NULLIF(payee_name, ''), '未指定') AS payee_name,
+      SELECT COALESCE(NULLIF(finance_receipts.payee_name, ''), '未指定') AS payee_name,
         COUNT(*) AS receipt_count,
-        COALESCE(SUM(amount_cents), 0) AS amount_cents
-      FROM finance_receipts
-      GROUP BY COALESCE(NULLIF(payee_name, ''), '未指定')
+        COALESCE(SUM(finance_receipts.amount_cents), 0) AS amount_cents
+      FROM finance_receipts ${join} ${where}
+      GROUP BY COALESCE(NULLIF(finance_receipts.payee_name, ''), '未指定')
       ORDER BY amount_cents DESC, receipt_count DESC
-    `).all() as SqlRow[];
+    `).all(...values) as SqlRow[];
     return rows.map((row) => ({
       payeeName: stringValue(row, 'payee_name', '未指定'),
       receiptCount: numberValue(row, 'receipt_count'),

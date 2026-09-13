@@ -4,10 +4,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import type { CompanySnapshot } from '../../shared/documents';
 import { CONTRACT_PLACEHOLDERS, cloneDefaultContractTemplate, type ContractTemplate } from '../../shared/contract';
+import { formatDateTime } from '../../shared/formatters';
 import {
   changeOwnPassword,
   createManagedUser,
   getAutoBackupStatus,
+  getServiceVersion,
   listUsers,
   runAutoBackupNow,
   updateAutoBackupSettings,
@@ -100,6 +102,15 @@ export default function SettingsPage({
   const [templateMessage, setTemplateMessage] = useState('');
   const [templateMessageType, setTemplateMessageType] = useState<'success' | 'error'>('success');
   const [activeSection, setActiveSection] = useState<SettingsSectionKey>('company');
+  const [serviceVersion, setServiceVersion] = useState<{ version: string; buildTime: string | null; mode: 'production' | 'development' }>();
+
+  useEffect(() => {
+    let active = true;
+    void getServiceVersion().then((info) => {
+      if (active) setServiceVersion({ version: info.version, buildTime: info.buildTime, mode: info.mode });
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
 
   const showMessage = (text: string, type: 'success' | 'error') => { setMessage(text); setMessageType(type); };
   const refreshProfile = async () => {
@@ -295,7 +306,7 @@ export default function SettingsPage({
       {activeSection === 'storage' && <div className="settings-section card"><div className="settings-heading"><Database size={18} /><strong>运行环境</strong></div><p>数据保存在服务端（SQLite + 附件目录），所有设备登录后访问同一份数据。</p><div className="setting-row"><span>服务地址</span><code>{window.location.origin}</code></div><div className="setting-row"><span>存储方式</span><span>SQLite + 服务端附件目录</span></div></div>}
       {activeSection === 'backup' && <div style={{ display: 'grid', gap: 14 }}>
         <AutoBackupCard />
-        <div className="settings-section card"><div className="settings-heading"><Download size={18} /><strong>手动备份与恢复</strong></div><p>备份包含订单、产品、箱唛、打印历史、报价单、销售单及相关附件。恢复前会自动保留当前数据备份。</p><div className="settings-actions"><button className="button button-primary" type="button" onClick={() => void onBackup?.()}><Download size={15} />创建备份</button><label className="button button-secondary"><RotateCcw size={15} />选择备份恢复<input type="file" accept=".zip,application/zip" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onRestore?.(file); event.target.value = ''; }} hidden /></label></div></div>
+        <div className="settings-section card"><div className="settings-heading"><Download size={18} /><strong>手动备份与恢复</strong></div><p>备份包含订单、产品、箱唛、打印历史、报价单、销售单及相关附件。恢复前会自动保留当前数据备份。</p><p style={{ color: 'var(--color-text-muted)', fontSize: 12 }}>{serviceVersion ? `当前服务版本 v${serviceVersion.version}${serviceVersion.mode === 'development' ? '（开发模式，源码即时生效）' : serviceVersion.buildTime ? `，构建于 ${formatDateTime(serviceVersion.buildTime)}` : ''}。若页面功能与预期不符，请关闭本程序后重新运行“启动个人工作台”。` : '正在读取服务版本...'}</p><div className="settings-actions"><button className="button button-primary" type="button" onClick={() => void onBackup?.()}><Download size={15} />创建备份</button><label className="button button-secondary"><RotateCcw size={15} />选择备份恢复<input type="file" accept=".zip,application/zip" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onRestore?.(file); event.target.value = ''; }} hidden /></label></div></div>
       </div>}
       </div>
     </section>
@@ -631,7 +642,7 @@ function AutoBackupCard() {
     <p>每天凌晨 3:00 自动创建完整备份（含数据库和附件），启动时如果当天还没备份会立即补跑。超过保留份数的最旧自动备份会自动清理。</p>
     {!status ? <p>加载中...</p> : <div>
       <div className="setting-row"><span>今天是否已备份</span><span>{status.running ? '正在备份…' : status.todayDone ? '✅ 已完成' : '⏳ 待执行'}</span></div>
-      <div className="setting-row"><span>最近一次自动备份</span><span>{status.lastBackupAt ? status.lastBackupAt.replace('T', ' ').slice(0, 19).replace('Z', '') : '—'}</span></div>
+      <div className="setting-row"><span>最近一次自动备份</span><span>{status.lastBackupAt ? formatDateTime(status.lastBackupAt) : '—'}</span></div>
       {status.lastResult === 'failed' && <div className="setting-row"><span>最近错误</span><span style={{ color: 'var(--tone-danger-text)' }}>{status.lastError ?? '未知错误'}</span></div>}
       <div style={{ display: 'grid', gridTemplateColumns: '160px minmax(0, 1fr)', gap: 10, alignItems: 'center', margin: '12px 0' }}>
         <label className="label" style={{ margin: 0 }}>保留份数（1-30）<input className="input" type="number" min={1} max={30} value={keepCountDraft} onChange={(event) => { setKeepCountDraft(event.target.value); setSettingsDirty(true); }} style={{ maxWidth: 120 }} /></label>

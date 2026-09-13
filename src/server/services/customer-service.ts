@@ -70,6 +70,8 @@ function normalizeCustomerInput(input: CustomerSaveInput): CustomerSaveInput {
     contactName: normalizeText(input.contactName, 'contactName', '联系人'),
     contactPhone: normalizeText(input.contactPhone, 'contactPhone', '联系电话'),
     shippingInfo: normalizeText(input.shippingInfo, 'shippingInfo', '常用收件信息'),
+    invoiceTitle: normalizeText(input.invoiceTitle, 'invoiceTitle', '开票抬头'),
+    taxNo: normalizeText(input.taxNo, 'taxNo', '税号'),
     confirmDuplicateName: input.confirmDuplicateName === true,
   };
 }

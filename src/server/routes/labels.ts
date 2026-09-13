@@ -9,7 +9,7 @@ import {
   sendFailure,
   sendSuccess,
 } from './api-response.js';
-import { LabelService, type LabelInput } from '../services/label-service.js';
+import { LabelService, type LabelInput, type PrintHistoryLabelInput } from '../services/label-service.js';
 
 interface LabelRouteOptions {
   repositories: DatabaseRepositories;
@@ -115,7 +115,7 @@ export async function registerLabelRoutes(app: FastifyInstance, options: LabelRo
       const rawLabels = body.labels;
       const labels = rawLabels === undefined ? undefined : (() => {
         if (!Array.isArray(rawLabels)) throw new ApiError(400, 'VALIDATION_ERROR', 'labels 必须是数组', 'labels');
-        return rawLabels.map((label) => asRecord(label) as { id?: number | string; labelId?: number | string; orderId?: number | string });
+        return rawLabels.map((label) => asRecord(label) as PrintHistoryLabelInput);
       })();
       const rawActionType = body.actionType;
       if (rawActionType !== undefined && rawActionType !== 'print' && rawActionType !== 'first-print') {

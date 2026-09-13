@@ -35,10 +35,24 @@ export interface LabelInput {
   lines?: LabelLineInput[];
 }
 
+export interface PrintHistoryLabelInput {
+  id?: number | string;
+  labelId?: number | string;
+  orderId?: number | string;
+  orderNo?: string;
+  recipientName?: string;
+  boxNo?: number;
+  cartonNo?: number;
+  totalBoxes?: number;
+  totalCartons?: number;
+  lines?: LabelLineInput[];
+  items?: LabelLineInput[];
+}
+
 export interface PrintHistoryInput {
   actionType?: string;
   orderIds?: number[];
-  labels?: Array<{ id?: number | string; labelId?: number | string; orderId?: number | string }>;
+  labels?: PrintHistoryLabelInput[];
 }
 
 function numberOr(value: unknown, fallback: number): number {
@@ -311,10 +325,22 @@ export class LabelService {
       if (supplied.length) {
         supplied.forEach((label) => {
           const id = Number(label.id ?? label.labelId);
-          const persisted = detail.labels.find((entry) => Number(entry.id) === id);
-          const source = persisted ? mapLabel(detail, persisted) : undefined;
-          if (!source) throw new Error(`箱唛不存在：${id}`);
-          snapshots.push({ labelId: source.id, orderId, orderNo: source.orderNo, boxNo: source.boxNo, totalBoxes: source.totalBoxes, snapshot: { orderId, orderNo: source.orderNo, recipientName: source.recipientName, cartonNo: source.cartonNo, totalCartons: source.totalCartons, items: source.items } });
+          const persisted = Number.isSafeInteger(id) && id > 0
+            ? detail.labels.find((entry) => Number(entry.id) === id)
+            : undefined;
+          if (persisted) {
+            const source = mapLabel(detail, persisted);
+            snapshots.push({ labelId: source.id, orderId, orderNo: source.orderNo, boxNo: source.boxNo, totalBoxes: source.totalBoxes, snapshot: { orderId, orderNo: source.orderNo, recipientName: source.recipientName, cartonNo: source.cartonNo, totalCartons: source.totalCartons, items: source.items } });
+            return;
+          }
+          // 箱唛重新保存后 id 会全部重新生成，客户端可能携带过期 id；
+          // 此时降级为按客户端提交内容记录快照，避免打印记录整体失败导致状态无法更新。
+          const cartonNo = numberOr(label.cartonNo ?? label.boxNo, 1);
+          const totalCartons = numberOr(label.totalCartons ?? label.totalBoxes, Math.max(cartonNo, supplied.length));
+          const orderNo = String(label.orderNo ?? detail.order_no ?? '');
+          const recipientName = String(label.recipientName ?? detail.recipient_name ?? '');
+          const items = label.lines ?? label.items ?? [];
+          snapshots.push({ labelId: null, orderId, orderNo, boxNo: cartonNo, totalBoxes: totalCartons, snapshot: { orderId, orderNo, recipientName, cartonNo, totalCartons, items } });
         });
       } else if (requestedLabels.length === 0) {
         detail.labels

@@ -171,8 +171,87 @@ describe('财务模块', () => {
       { payeeName: '未指定', receiptCount: 1, amountCents: 4000 },
     ]);
 
+    // 订单 ordered_at 为 2026-08-20：按月份过滤时命中 8 月、9 月为空。
+    const monthBreakdown = await authInject(app, { method: 'GET', url: '/api/finance/receipts/by-payee?month=2026-08' });
+    expect(monthBreakdown.statusCode).toBe(200);
+    expect(monthBreakdown.json().data.items).toEqual(breakdown.json().data.items);
+    const otherMonth = await authInject(app, { method: 'GET', url: '/api/finance/receipts/by-payee?month=2026-09' });
+    expect(otherMonth.statusCode).toBe(200);
+    expect(otherMonth.json().data.items).toEqual([]);
+
     const overview = await authInject(app, { method: 'GET', url: '/api/finance/orders' });
     expect(overview.json().data.stats).toMatchObject({ receivedCents: 14000 });
+    await app.close();
+    database.close();
+  });
+
+  it('发票创建后保存客户开票快照，客户档案后续修改不回写已开发票', async () => {
+    const { database } = await setup();
+    const customerId = Number(database.prepare(
+      `INSERT INTO customers
+        (name, contact_name, contact_phone, shipping_info, invoice_title, tax_no, created_at, updated_at)
+       VALUES ('开票公司', '财务', '13800000000', '', '开票公司', '91330200MA2XYZ0C1F', '2026-09-04', '2026-09-04')`,
+    ).run().lastInsertRowid);
+    const orderId = insertOrder(database, 10000);
+    database.prepare('UPDATE orders SET customer_id = ? WHERE id = ?').run(customerId, orderId);
+
+    const service = new FinanceService({ database, repository: new FinanceRepository(database) });
+    const invoice = service.createInvoice(orderId, { invoiceType: '电子普通发票', title: '开票公司', taxNo: '91330200MA2XYZ0C1F', amountCents: 10000 });
+    expect(invoice).toMatchObject({ title: '开票公司', taxNo: '91330200MA2XYZ0C1F' });
+
+    database.prepare("UPDATE customers SET invoice_title = '新抬头', tax_no = '99999999' WHERE id = ?").run(customerId);
+    const persisted = service.get(orderId)!.invoices.find((item) => item.id === invoice.id);
+    expect(persisted).toMatchObject({ title: '开票公司', taxNo: '91330200MA2XYZ0C1F' });
+
+    database.close();
+  });
+
+  it('财务列表返回结算方式，对私订单不计入待处理发票统计', async () => {
+    const { app, database } = await setup();
+    const createOrder = async (settlementType?: string) => {
+      const created = await authInject(app, {
+        method: 'POST',
+        url: '/api/orders',
+        payload: {
+          orderNo: '',
+          orderedAt: '2026-08-22T08:00:00.000Z',
+          recipientName: '张三',
+          recipientInfo: '深圳市宝安区',
+          amount: 100,
+          trackingNo: '',
+          paymentNote: '',
+          remark: '',
+          ...(settlementType ? { settlementType } : {}),
+          items: [{ name: '测试产品', sku: 'VT-0001', specification: '标准规格', packagingName: '彩盒包装', packCount: 10, quantity: 10, unitPriceCents: 1000 }],
+        },
+      });
+      expect(created.statusCode).toBe(201);
+      return Number(created.json().data.id);
+    };
+    const createInvoice = async (orderId: number) => {
+      const response = await authInject(app, {
+        method: 'POST',
+        url: `/api/finance/orders/${orderId}/invoices`,
+        payload: { invoiceType: '电子普通发票', title: '测试公司', taxNo: '9133', amountCents: 5000 },
+      });
+      expect(response.statusCode).toBe(201);
+    };
+
+    const corporateOrderId = await createOrder();
+    const personalOrderId = await createOrder('personal');
+    await createInvoice(corporateOrderId);
+    await createInvoice(personalOrderId);
+
+    const list = await authInject(app, { method: 'GET', url: '/api/finance/orders' });
+    expect(list.statusCode).toBe(200);
+    const rows = list.json().data.rows as Array<Record<string, unknown>>;
+    const corporateRow = rows.find((row) => row.orderId === corporateOrderId);
+    const personalRow = rows.find((row) => row.orderId === personalOrderId);
+    expect(corporateRow).toMatchObject({ settlementType: 'corporate', invoiceStatus: 'incomplete' });
+    expect(personalRow).toMatchObject({ settlementType: 'personal', invoiceStatus: 'incomplete' });
+    // 两笔发票都是 incomplete，但只有对公订单计入待处理发票。
+    expect(list.json().data.stats).toMatchObject({ pendingInvoiceCount: 1 });
+
     await app.close();
     database.close();
   });

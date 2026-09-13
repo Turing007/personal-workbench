@@ -2678,7 +2678,11 @@ select {
 .finance-receipt-main strong { color: var(--color-text-strong); font-size: var(--text-xs); }
 .finance-receipt-main span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-muted); font-size: var(--text-2xs); }
 .finance-payee-breakdown { display: grid; gap: 8px; }
-.finance-payee-total { display: flex; align-items: center; justify-content: space-between; padding: 10px 2px 0; border-top: 1px dashed var(--color-divider); color: var(--color-text-muted); font-size: var(--text-xs); }
+.finance-payee-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.finance-payee-summary > div { display: grid; gap: 4px; padding: 11px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); }
+.finance-payee-summary span { color: var(--color-text-muted); font-size: var(--text-2xs); }
+.finance-payee-summary strong { color: var(--color-text-strong); font-size: 15px; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.finance-payee-summary small { color: var(--color-text-muted); font-size: var(--text-2xs); font-weight: var(--weight-medium); }
 .finance-invoice-card { display: grid; gap: 9px; padding: 11px; border: 1px solid var(--color-divider); border-radius: var(--radius-control); }
 .finance-invoice-card-head, .finance-invoice-meta, .finance-invoice-files, .finance-invoice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .finance-invoice-card-head { justify-content: space-between; }
@@ -2821,7 +2825,7 @@ select {
 
 /* ===== 订单表单：响应式网格与产品明细行 ===== */
 .order-form-grid { display: grid; gap: var(--space-5); }
-.order-form-grid-main { grid-template-columns: minmax(260px, 1.5fr) minmax(150px, .9fr) minmax(130px, .7fr); }
+.order-form-grid-main { grid-template-columns: minmax(240px, 1.4fr) minmax(150px, .9fr) minmax(130px, .7fr) minmax(140px, .8fr); }
 .order-form-grid-recipient { grid-template-columns: minmax(150px, .8fr) minmax(280px, 2fr) minmax(150px, .8fr); }
 .order-form-grid-attachments { grid-template-columns: minmax(240px, 1fr) minmax(320px, 1.25fr); align-items: start; }
 
@@ -3136,4 +3140,148 @@ select {
   border-radius: var(--radius-card);
   background: #ffffff;
   padding: 6px;
+/* 访问密码登录门样式已由多账号 AuthGate 的样式取代（见上方登录 / 管理员初始化段）。 */
+
+/* ===== 移动端卡片视图：报价 / 销售单 / 产品 / 客户产品 / 发货 ===== */
+
+/* ===== 移动端卡片视图：报价 / 销售单 / 产品 / 客户产品 / 发货 ===== */
+/* 桌面端沿用原有表格；≤900px 由卡片列表接管（与订单、财务页同一套双视图模式）。 */
+.quotation-card-list, .sales-doc-card-list, .products-card-list, .customer-product-card-list { display: none; }
+
+/* 发货工作区：桌面双栏（原先为内联样式，迁移到 CSS 以便手机端单列化） */
+.shipping-workspace { display: grid; grid-template-columns: minmax(300px, .8fr) minmax(420px, 1.2fr); gap: 14px; min-height: 480px; }
+.shipping-batch-order { grid-template-columns: minmax(0, 1fr) 160px 24px; align-items: center; gap: 8px; padding: 8px; }
+
+/* 客户产品页：桌面端左客户档案 + 右产品表格（原先为内联样式） */
+.customer-products-layout { min-height: 0; display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 10px; }
+
+@media (max-width: 900px) {
+  /* —— 报价单卡片 —— */
+  .quotation-table-desktop { display: none; }
+  .quotation-card-list { display: grid; gap: var(--space-4); padding: var(--space-4); }
+  .quotation-card {
+    display: grid;
+    gap: var(--space-4);
+    padding: var(--space-6);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+  }
+  .quotation-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+  .quotation-card-title { display: grid; gap: 2px; min-width: 0; }
+  .quotation-card-title strong { color: #0f766e; font-size: var(--text-md); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+  .quotation-card-title span { color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .quotation-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4) var(--space-6); }
+  .quotation-card-field { display: grid; gap: 2px; min-width: 0; }
+  .quotation-card-field span { color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .quotation-card-field strong { color: var(--color-text-strong); font-size: var(--text-sm); font-weight: var(--weight-medium); overflow-wrap: anywhere; }
+  .quotation-card-field em { font-style: normal; color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .quotation-card .row-actions { flex-wrap: wrap; gap: var(--space-4) var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--color-divider); }
+
+  /* —— 销售单卡片 —— */
+  .sales-doc-table-desktop { display: none; }
+  .sales-doc-card-list { display: grid; gap: var(--space-4); padding: var(--space-4); }
+  .sales-doc-card {
+    display: grid;
+    gap: var(--space-4);
+    padding: var(--space-6);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+  }
+  .sales-doc-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+  .sales-doc-card-title { display: grid; gap: 2px; min-width: 0; }
+  .sales-doc-card-title strong { color: #0f766e; font-size: var(--text-md); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+  .sales-doc-card-title span { color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .sales-doc-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4) var(--space-6); }
+  .sales-doc-card-field { display: grid; gap: 2px; min-width: 0; }
+  .sales-doc-card-field span { color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .sales-doc-card-field strong { color: var(--color-text-strong); font-size: var(--text-sm); font-weight: var(--weight-medium); overflow-wrap: anywhere; }
+  .sales-doc-card-field em { font-style: normal; color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .sales-doc-card-status { display: grid; gap: 4px; }
+  .sales-doc-card .row-actions { flex-wrap: wrap; gap: var(--space-4) var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--color-divider); }
+
+  /* —— 产品库卡片 —— */
+  .products-table-desktop { display: none; }
+  .products-card-list { display: grid; gap: var(--space-4); padding: var(--space-4); }
+  .product-card {
+    display: grid;
+    gap: var(--space-4);
+    padding: var(--space-6);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+  }
+  .product-card-head { display: flex; align-items: center; gap: var(--space-4); }
+  .product-card-title { display: grid; gap: 3px; min-width: 0; flex: 1; }
+  .product-card-title strong { color: var(--color-text-strong); font-size: var(--text-md); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+  .product-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4) var(--space-6); }
+  .product-card-field { display: grid; gap: 2px; min-width: 0; }
+  .product-card-field span { color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .product-card-field strong { color: var(--color-text-strong); font-size: var(--text-sm); font-weight: var(--weight-medium); overflow-wrap: anywhere; }
+  .product-card-packaging { display: grid; gap: 3px; padding: 8px 10px; border: 1px dashed var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-subtle); font-size: var(--text-2xs); color: var(--color-text-muted); }
+  .product-card-packaging strong { color: var(--color-text-strong); }
+  .product-card-packaging-more { font-size: var(--text-2xs); }
+  .product-card .row-actions { flex-wrap: wrap; gap: var(--space-4) var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--color-divider); }
+
+  /* —— 客户产品：客户档案堆叠到产品列表上方 —— */
+  .customer-products-layout { grid-template-columns: 1fr; }
+  .customer-list-scroll { max-height: 38vh !important; }
+  .customer-products-table-desktop { display: none; }
+  .customer-product-card-list { display: grid; gap: var(--space-4); padding: var(--space-4); }
+  .customer-product-card {
+    display: grid;
+    gap: var(--space-4);
+    padding: var(--space-6);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+  }
+  .customer-product-card-head { display: flex; align-items: center; gap: var(--space-3); }
+  .customer-product-card-head input[type='checkbox'] { flex: none; }
+  .customer-product-card-image { width: 46px; height: 40px; object-fit: contain; border: 1px solid #e2e8f0; border-radius: 4px; flex: none; }
+  .customer-product-card-title { display: grid; gap: 2px; min-width: 0; flex: 1; }
+  .customer-product-card-title strong { color: var(--color-text-strong); font-size: var(--text-sm); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+  .customer-product-card-title span { color: var(--color-text-muted); font-size: var(--text-2xs); overflow-wrap: anywhere; }
+  .customer-product-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4) var(--space-6); }
+  .customer-product-card-field { display: grid; gap: 2px; min-width: 0; }
+  .customer-product-card-field span { color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .customer-product-card-field strong { color: var(--color-text-strong); font-size: var(--text-sm); font-weight: var(--weight-medium); overflow-wrap: anywhere; }
+  .customer-product-card-field em { font-style: normal; color: var(--color-text-muted); font-size: var(--text-2xs); }
+  .customer-product-card-remark { margin: 0; padding: 8px 10px; border-radius: var(--radius-control); background: var(--color-surface-subtle); color: var(--color-text-muted); font-size: var(--text-2xs); overflow-wrap: anywhere; }
+  .customer-product-card .row-actions { flex-wrap: wrap; gap: var(--space-4) var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--color-divider); }
+
+  /* —— 发货工作区：双栏改单列，物流单号整行铺开 —— */
+  .shipping-workspace { grid-template-columns: 1fr; min-height: 0; }
+  .shipping-batch-order { grid-template-columns: minmax(0, 1fr) 24px; }
+  .shipping-batch-order .shipping-tracking-input { grid-column: 1 / -1; }
+  .shipping-confirm-actions { flex-wrap: wrap; }
+}
+
+/* 备货模块 */
+.stock-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4); }
+.stock-stat-grid > div { display: grid; gap: 5px; min-width: 0; padding: 15px 16px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); box-shadow: var(--shadow-card); }
+.stock-stat-grid span { color: var(--color-text-muted); font-size: var(--text-xs); }
+.stock-stat-grid strong { color: var(--color-text-strong); font-size: 21px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.stock-stat-grid small { color: var(--color-text-muted); font-size: var(--text-xs); font-weight: var(--weight-medium); }
+.stock-warning-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid #fde68a; border-radius: var(--radius-card); background: #fffbeb; color: #92400e; font-size: var(--text-xs); }
+.stock-group-warning { border-color: #fde68a; }
+.stock-group-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--color-border); }
+.stock-group-title { color: var(--color-text-strong); font-size: var(--text-sm); }
+.stock-group-head .row-actions { margin-left: auto; align-items: center; }
+.stock-group-hint { color: #92400e; font-size: var(--text-2xs); }
+.stock-table td { vertical-align: top; }
+.stock-item-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.stock-item-display { color: var(--color-text-strong); font-weight: 500; }
+.stock-item-quantity { color: var(--color-accent); font-variant-numeric: tabular-nums; }
+.stock-item-remark { color: var(--color-text-muted); font-size: var(--text-xs); background: var(--color-surface-muted, #f8fafc); border: 1px solid var(--color-border); border-radius: 4px; padding: 1px 6px; }
+.stock-item-actions { width: 1%; white-space: nowrap; text-align: right; }
+.stock-source-row td { background: var(--color-surface-muted, #f8fafc); color: var(--color-text-muted); font-size: var(--text-xs); }
+
+@media (max-width: 640px) {
+  .stock-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

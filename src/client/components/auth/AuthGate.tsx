@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { LogIn, ShieldCheck } from 'lucide-react';
 import {
+  AUTH_REQUIRED_EVENT,
   fetchCurrentUser,
   getAuthStatus,
   login as loginRequest,
-  setUnauthorizedHandler,
   setupFirstAdmin,
   logout as logoutRequest,
   type AuthUser,
@@ -34,10 +34,13 @@ export default function AuthGate({ children }: AuthGateProps) {
 
   useEffect(() => {
     let cancelled = false;
-    setUnauthorizedHandler(() => {
+    // 任意接口返回 401/AUTH_REQUIRED 时广播该事件；仅在已就绪时响应，
+    // 避免启动阶段的首个 401（探测 /api/auth/me）抢先覆盖 setup 状态。
+    const onAuthRequired = () => {
       setUser(null);
-      setState('login');
-    });
+      setState((current) => (current === 'ready' ? 'login' : current));
+    };
+    window.addEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
     (async () => {
       try {
         const { user: current } = await fetchCurrentUser();
@@ -56,7 +59,7 @@ export default function AuthGate({ children }: AuthGateProps) {
     })();
     return () => {
       cancelled = true;
-      setUnauthorizedHandler(null);
+      window.removeEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
     };
   }, []);
 

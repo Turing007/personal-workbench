@@ -140,8 +140,7 @@ CREATE TABLE IF NOT EXISTS orders (
   label_printed_at TEXT,
   source_sales_document_id INTEGER REFERENCES sales_documents(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  created_by TEXT NOT NULL DEFAULT ''
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS order_number_sequences (
@@ -561,6 +560,7 @@ CREATE INDEX IF NOT EXISTS idx_finance_invoice_files_invoice ON finance_invoice_
 CREATE INDEX IF NOT EXISTS idx_order_contracts_order ON order_contracts(order_id, created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_order_detail_images_order ON order_detail_images(order_id, created_at, id);
 CREATE INDEX IF NOT EXISTS idx_print_history_labels_history ON print_history_labels(print_history_id);
+CREATE INDEX IF NOT EXISTS idx_print_history_labels_order ON print_history_labels(order_id);
 CREATE INDEX IF NOT EXISTS idx_shipments_order ON shipments(order_id, shipped_at DESC);
 CREATE INDEX IF NOT EXISTS idx_batch_orders_batch ON shipment_batch_orders(batch_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_quotations_status_updated ON quotations(status, updated_at DESC, id DESC);
@@ -579,6 +579,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
 `;
 
 type MigratedTable =
+  | 'customers'
   | 'products'
   | 'product_images'
   | 'customer_products'
@@ -634,9 +635,9 @@ function preflightMigration(database: DatabaseSync): MigrationPreflight {
     );
   }
   const parsedSchemaVersion = normalizedSchemaVersion === '' ? 0 : Number(normalizedSchemaVersion);
-  if (parsedSchemaVersion > 19) {
+  if (parsedSchemaVersion > 22) {
     throw new Error(
-      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version 19`,
+      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version 22`,
     );
   }
 
@@ -1014,9 +1015,30 @@ function migrateVersionEighteen(database: DatabaseSync, now: string): void {
 }
 
 function migrateVersionNineteen(database: DatabaseSync, now: string): void {
-  // created_by 必须追加在表尾：备份恢复按列位置 INSERT（见既有约定）。
-  addColumnIfMissing(database, 'orders', 'created_by', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(database, 'customers', 'invoice_title', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(database, 'customers', 'tax_no', "TEXT NOT NULL DEFAULT ''");
   upsertSetting(database, 'schema_version', '19', now);
+}
+
+function migrateVersionTwenty(database: DatabaseSync, now: string): void {
+  // 对公/对私结算方式：对公开票、对私免开票；历史订单默认对公（此前全部订单都跟踪发票）。
+  // 必须经 ALTER 追加到表尾，不能写进 schemaSql 中段，否则备份按位置复制会列错位。
+  addColumnIfMissing(database, 'orders', 'settlement_type', "TEXT NOT NULL DEFAULT 'corporate' CHECK (settlement_type IN ('corporate', 'personal'))");
+  upsertSetting(database, 'schema_version', '20', now);
+}
+
+function migrateVersionTwentyOne(database: DatabaseSync, now: string): void {
+  // 备货模块：客户产品报给供应商的产品名称（与客户产品名称可以不同，空串时备货表回退系统产品名）。
+  // 必须经 ALTER 追加到表尾，不能写进 schemaSql 中段，否则备份按位置复制会列错位。
+  addColumnIfMissing(database, 'customer_products', 'supplier_product_name', "TEXT NOT NULL DEFAULT ''");
+  upsertSetting(database, 'schema_version', '21', now);
+}
+
+function migrateVersionTwentyTwo(database: DatabaseSync, now: string): void {
+  // 登录鉴权：users/sessions 表已在 schemaSql 建好；这里只给 orders 追加创建人留痕列。
+  // created_by 必须经 ALTER 追加到表尾，不能写进 schemaSql 中段，否则备份按位置复制会列错位。
+  addColumnIfMissing(database, 'orders', 'created_by', "TEXT NOT NULL DEFAULT ''");
+  upsertSetting(database, 'schema_version', '22', now);
 }
 
 export function migrateDatabase(database: DatabaseSync): void {
@@ -1064,6 +1086,9 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionSeventeen(transactionDatabase, now);
     migrateVersionEighteen(transactionDatabase, now);
     migrateVersionNineteen(transactionDatabase, now);
+    migrateVersionTwenty(transactionDatabase, now);
+    migrateVersionTwentyOne(transactionDatabase, now);
+    migrateVersionTwentyTwo(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)
