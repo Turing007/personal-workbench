@@ -332,6 +332,18 @@ public class MainActivity extends Activity {
         public void openAddressEditor() {
             runOnUiThread(MainActivity.this::openSetupView);
         }
+
+        /**
+         * 网页弹窗打开/关闭时调用：弹窗内部是独立滚动容器，期间必须禁用下拉刷新，
+         * 否则弹窗里的下滑会被当成刷新页面、内容滑不动。
+         */
+        @JavascriptInterface
+        public void setOverlayOpen(boolean open) {
+            runOnUiThread(() -> {
+                swipeRefresh.setEnabled(!open);
+                if (open) swipeRefresh.setRefreshing(false);
+            });
+        }
     }
 
     /** 一条已保存的访问地址。 */

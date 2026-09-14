@@ -2,6 +2,7 @@ import { X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useEffect, useRef } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
+import { notifyOverlayOpen } from '../app-bridge';
 
 export interface ModalProps {
   open: boolean;
@@ -47,6 +48,8 @@ function registerModal(entry: ModalStackEntry) {
     previousBodyOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     document.addEventListener('keydown', handleModalKeyDown);
+    // 弹窗打开期间让 App 暂停下拉刷新，否则弹窗内的下滑会被当成刷新页面。
+    notifyOverlayOpen(true);
   }
   modalStack.set(entry.id, entry);
 }
@@ -57,6 +60,7 @@ function unregisterModal(id: symbol) {
   document.removeEventListener('keydown', handleModalKeyDown);
   document.body.style.overflow = previousBodyOverflow ?? '';
   previousBodyOverflow = null;
+  notifyOverlayOpen(false);
 }
 
 export default function Modal({ open, title, children, onClose, width = 760, footer, layer = 20 }: ModalProps) {

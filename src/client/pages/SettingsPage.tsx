@@ -5,6 +5,7 @@ import QRCode from 'qrcode';
 import type { CompanySnapshot } from '../../shared/documents';
 import { CONTRACT_PLACEHOLDERS, cloneDefaultContractTemplate, type ContractTemplate } from '../../shared/contract';
 import { formatDateTime } from '../../shared/formatters';
+import { getAppBridge, type WorkbenchAppNetwork } from '../app-bridge';
 import {
   changeOwnPassword,
   createManagedUser,
@@ -313,24 +314,6 @@ export default function SettingsPage({
       </div>
     </section>
   </div>;
-}
-
-/** App（安卓壳）注入的桥接对象：用于读取/切换已保存的访问网络。 */
-interface WorkbenchAppNetwork {
-  label: string;
-  url: string;
-  active: boolean;
-}
-
-interface WorkbenchAppBridge {
-  getNetworks(): string;
-  switchNetwork(url: string): void;
-  openAddressEditor(): void;
-}
-
-function getAppBridge(): WorkbenchAppBridge | undefined {
-  if (typeof window === 'undefined') return undefined;
-  return (window as unknown as { workbenchApp?: WorkbenchAppBridge }).workbenchApp;
 }
 
 /** 手机连接：展示局域网/隧道地址与二维码，App 扫码可一次写入多条网络并自动切换。 */
