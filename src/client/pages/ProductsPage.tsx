@@ -1,6 +1,7 @@
 import { Check, ChevronDown, ChevronUp, Copy, Download, Edit3, FileDown, Image as ImageIcon, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import ProductEditor, { type ProductRecord } from '../components/ProductEditor';
+import { compareProductBySku } from '../product-sort';
 import ProductDetailModal from '../components/ProductDetailModal';
 import ProductImagesModal from '../components/ProductImagesModal';
 import ProductParametersModal from '../components/ProductParametersModal';
@@ -41,11 +42,14 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
   const importInputRef = useRef<HTMLInputElement>(null);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return products.filter((product) => {
-      if (statusFilter !== 'all' && (product.status ?? 'active') !== statusFilter) return false;
-      if (!needle) return true;
-      return [product.name, product.sku, product.supplier, product.category].join(' ').toLowerCase().includes(needle);
-    });
+    return products
+      .filter((product) => {
+        if (statusFilter !== 'all' && (product.status ?? 'active') !== statusFilter) return false;
+        if (!needle) return true;
+        return [product.name, product.sku, product.supplier, product.category].join(' ').toLowerCase().includes(needle);
+      })
+      // 列表按 SKU 升序展示（未填 SKU 的排在最后）。
+      .sort(compareProductBySku);
   }, [products, query, statusFilter]);
 
   const openNew = () => { setEditing(undefined); setCopying(false); setEditorOpen(true); };
