@@ -8,12 +8,8 @@
     <string name="setup_scan">扫描二维码</string>
     <string name="scan_prompt">对准电脑「设置 → 手机连接」页面的二维码</string>
     <string name="scan_invalid">二维码不是有效的工作台地址（仅支持 http/https，且不能指向手机本机）</string>
-    <string name="network_button">网络</string>
     <string name="network_title">选择访问网络</string>
     <string name="network_switched">已切换到「%1$s」</string>
-    <string name="network_fallback">当前网络连不上，已自动切换到「%1$s」</string>
-    <string name="network_all_failed">所有已保存的网络都无法连接</string>
-    <string name="network_edit_address">编辑/新增地址…</string>
     <string name="network_page_title">无法连接工作台</string>
     <string name="network_page_hint">已保存的网络（点击即可连接并测试）：</string>
     <string name="network_page_rescan">重新检测可用性</string>

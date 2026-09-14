@@ -43,11 +43,9 @@ import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -79,9 +77,6 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> fileCallback;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    /** 本轮加载中已经失败过的地址，避免在两条网络之间来回自动切换。 */
-    private final Set<String> failedNetworks = new HashSet<>();
-    private boolean loadHadError;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -130,11 +125,7 @@ public class MainActivity extends Activity {
         // 不使用默认的 canScrollVertically 探测——页面用内部滚动容器时它会误判成“不能滚动”，
         // 导致往下滑列表也被当成下拉刷新并吃掉手势）。
         swipeRefresh.setOnChildScrollUpCallback((parent, child) -> webView.getScrollY() > 0);
-        swipeRefresh.setOnRefreshListener(() -> {
-            // 手动刷新时重置自动切换记录，让网络回退逻辑重新生效。
-            failedNetworks.clear();
-            webView.reload();
-        });
+        swipeRefresh.setOnRefreshListener(() -> webView.reload());
 
         // 网络选择收进网页「设置 → 手机连接」：页面通过该桥接读取/切换已保存的网络。
         webView.addJavascriptInterface(new AppBridge(), "workbenchApp");
@@ -158,7 +149,6 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 swipeRefresh.setRefreshing(false);
                 loadProgress.setProgress(0);
-                if (!loadHadError) failedNetworks.clear();
                 if (networkView.getVisibility() != View.VISIBLE) {
                     showView(browserView);
                 }
@@ -167,16 +157,7 @@ public class MainActivity extends Activity {
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (!request.isForMainFrame()) return;
-                loadHadError = true;
-                failedNetworks.add(request.getUrl() == null ? "" : request.getUrl().toString());
-                // 还有别的已保存网络（例如从局域网切到隧道）时自动切换，全部失败才显示错误页。
-                for (SavedNetwork network : loadNetworks()) {
-                    if (!failedNetworks.contains(network.url)) {
-                        switchNetwork(network, true);
-                        return;
-                    }
-                }
-                // 所有网络都失败：进入手动选择网络页。
+                // 连不上时不自动切换，直接进入手动选择网络页（逐条显示可用性）。
                 showNetworkPage();
             }
         });
@@ -275,11 +256,8 @@ public class MainActivity extends Activity {
 
     private void bindErrorButtons() {
         findViewById(R.id.network_rescan_button).setOnClickListener(v -> renderNetworkList());
-        findViewById(R.id.network_retry_button).setOnClickListener(v -> {
-            // 重试当前网络：清空本轮失败记录，回到网页并重新加载。
-            failedNetworks.clear();
-            loadServer(preferences().getString(KEY_SERVER_URL, ""));
-        });
+        findViewById(R.id.network_retry_button).setOnClickListener(v ->
+            loadServer(preferences().getString(KEY_SERVER_URL, "")));
         findViewById(R.id.network_edit_button).setOnClickListener(v -> openSetupView());
     }
 
@@ -289,7 +267,6 @@ public class MainActivity extends Activity {
     }
 
     private void loadServer(String url) {
-        loadHadError = false;
         showView(browserView);
         webView.loadUrl(url);
     }
@@ -326,7 +303,6 @@ public class MainActivity extends Activity {
             String normalized = normalizeUrl(url);
             if (normalized == null) return;
             runOnUiThread(() -> {
-                failedNetworks.clear();
                 preferences().edit().putString(KEY_SERVER_URL, normalized).apply();
                 loadServer(normalized);
             });
@@ -482,7 +458,7 @@ public class MainActivity extends Activity {
             row.addView(title);
             row.addView(address);
             row.addView(status);
-            row.setOnClickListener(v -> switchNetwork(network, false));
+            row.setOnClickListener(v -> switchNetwork(network));
             networkList.addView(row);
             statusViews.put(network.url, status);
         }
@@ -505,12 +481,9 @@ public class MainActivity extends Activity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
-    private void switchNetwork(SavedNetwork network, boolean automatic) {
+    private void switchNetwork(SavedNetwork network) {
         preferences().edit().putString(KEY_SERVER_URL, network.url).apply();
-        Toast.makeText(
-                this,
-                getString(automatic ? R.string.network_fallback : R.string.network_switched, network.label),
-                Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, getString(R.string.network_switched, network.label), Toast.LENGTH_SHORT).show();
         loadServer(network.url);
     }
 
