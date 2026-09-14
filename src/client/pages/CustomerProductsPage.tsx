@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   Copy,
   Edit3,
   Plus,
@@ -64,6 +65,8 @@ function customerProductKey(product: CustomerProduct): string {
 export default function CustomerProductsPage({ customers, systemProducts, initialCustomerId, loading, onCustomersChanged, onNotify }: CustomerProductsPageProps) {
   const [customerQuery, setCustomerQuery] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(initialCustomerId ?? customers.find((customer) => customer.isActive)?.id ?? customers[0]?.id ?? null);
+  // 手机端交互：点客户后隐藏客户列表、整屏看该客户的产品；桌面端此状态无效果（CSS 仅在窄屏生效）。
+  const [mobileShowProducts, setMobileShowProducts] = useState(initialCustomerId != null);
   const [products, setProducts] = useState<CustomerProduct[]>([]);
   const [productQuery, setProductQuery] = useState('');
   const [productStatus, setProductStatus] = useState<'all' | 'complete' | 'incomplete'>('all');
@@ -282,11 +285,11 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
       <button className="button button-primary" type="button" title="新增客户" onClick={() => { setEditingCustomer(null); setCustomerEditorOpen(true); }}><Plus size={15} />新增客户</button>
     </div>
 
-    <div className="customer-products-layout">
+    <div className={`customer-products-layout${mobileShowProducts ? ' is-products-only' : ''}`}>
       <section className="table-panel card customer-list-panel" style={{ minHeight: 420 }}>
         <div className="section-box-header customer-list-header"><span className="section-box-title">客户档案</span></div>
         <div className="customer-list-scroll" style={{ maxHeight: 'calc(100vh - 190px)' }}>
-          {filteredCustomers.map((customer) => <button key={customer.id} className={`customer-list-item${customer.id === selectedCustomerId ? ' is-selected' : ''}`} type="button" onClick={() => setSelectedCustomerId(customer.id)} style={{ width: '100%', display: 'grid', gap: 5, padding: '11px 12px', border: 0, borderBottom: '1px solid #edf0f2', borderLeft: `3px solid ${customer.id === selectedCustomerId ? '#0f766e' : 'transparent'}`, background: customer.id === selectedCustomerId ? '#f0fdfa' : '#fff', textAlign: 'left', cursor: 'pointer', opacity: customer.isActive ? 1 : .62 }}>
+          {filteredCustomers.map((customer) => <button key={customer.id} className={`customer-list-item${customer.id === selectedCustomerId ? ' is-selected' : ''}`} type="button" onClick={() => { setSelectedCustomerId(customer.id); setMobileShowProducts(true); }} style={{ width: '100%', display: 'grid', gap: 5, padding: '11px 12px', border: 0, borderBottom: '1px solid #edf0f2', borderLeft: `3px solid ${customer.id === selectedCustomerId ? '#0f766e' : 'transparent'}`, background: customer.id === selectedCustomerId ? '#f0fdfa' : '#fff', textAlign: 'left', cursor: 'pointer', opacity: customer.isActive ? 1 : .62 }}>
             <div className="customer-list-item-heading"><strong>{customer.name}</strong><span className={`badge ${customer.isActive ? 'badge-success' : 'badge-neutral'}`}>{customer.isActive ? '启用' : '停用'}</span></div>
             <small className="customer-list-meta">{[customer.contactName, customer.contactPhone].filter(Boolean).join(' · ') || '暂无联系人信息'}</small>
             <small className={`customer-list-count${customer.incompleteProductCount ? ' is-incomplete' : ''}`}>{customer.productCount} 个产品 · {customer.incompleteProductCount} 个待完善</small>
@@ -297,6 +300,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
 
       <section className="table-panel customer-products-panel" style={{ minWidth: 0, padding: 0, overflow: 'hidden' }}>
         <div className="customer-products-header">
+          <button className="customer-panel-back" type="button" onClick={() => setMobileShowProducts(false)}><ArrowLeft size={14} />切换客户</button>
           <div className="customer-products-heading"><strong>{selectedCustomer?.name ?? '请选择客户'}</strong>{selectedCustomer && <small>{[selectedCustomer.contactName, selectedCustomer.contactPhone].filter(Boolean).join(' · ') || '暂无联系人'} · {selectedCustomer.shippingInfo ? '已填写收件信息' : '未填写收件信息'}</small>}</div>
           {selectedCustomer && <div className="row-actions"><button className="icon-button" type="button" title="编辑客户资料" onClick={() => { setEditingCustomer(selectedCustomer); setCustomerEditorOpen(true); }}><Edit3 size={14} /></button><button className="icon-button" type="button" title={selectedCustomer.isActive ? '停用客户' : '启用客户'} onClick={() => { void toggleCustomer(selectedCustomer); }}>{selectedCustomer.isActive ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}</button><button className="icon-button danger" type="button" title="删除客户" onClick={() => { void removeCustomer(selectedCustomer); }}><Trash2 size={14} /></button></div>}
         </div>

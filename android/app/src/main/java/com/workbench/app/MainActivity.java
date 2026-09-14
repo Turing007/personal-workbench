@@ -106,7 +106,9 @@ public class MainActivity extends Activity {
         webView.setBackgroundColor(Color.TRANSPARENT);
 
         swipeRefresh.setColorSchemeColors(getColor(R.color.brand_teal));
-        swipeRefresh.setOnRefreshListener(webView::reload);
+        // 页面自身使用内部滚动容器，WebView 会认为自己“不能滚动”，导致每次下滑都被
+        // 下拉刷新拦截（既触发刷新又吃掉滚动手势）。这里禁用下拉刷新，刷新交给页面内操作。
+        swipeRefresh.setEnabled(false);
 
         webView.setWebViewClient(new WebViewClient() {
             @Override

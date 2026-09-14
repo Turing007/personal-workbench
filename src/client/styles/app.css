@@ -1430,6 +1430,22 @@ select {
   border-bottom: 1px solid var(--color-divider);
 }
 
+/* 手机端「切换客户」返回按钮：桌面端不显示 */
+.customer-panel-back {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-control);
+  padding: 6px 10px;
+  color: var(--tone-accent-text);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
 .customer-products-heading {
   display: grid;
   gap: 3px;
@@ -3191,8 +3207,10 @@ select {
   .product-card-packaging-more { font-size: var(--text-2xs); }
   .product-card .row-actions { flex-wrap: wrap; gap: var(--space-4) var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--color-divider); }
 
-  /* —— 客户产品：客户档案堆叠到产品列表上方 —— */
+  /* —— 客户产品：手机端选中客户后隐藏客户列表，整屏展示该客户的产品 —— */
   .customer-products-layout { grid-template-columns: 1fr; }
+  .customer-products-layout.is-products-only .customer-list-panel { display: none; }
+  .customer-panel-back { display: inline-flex; }
   .customer-list-scroll { max-height: 38vh !important; }
   .customer-products-table-desktop { display: none; }
   .customer-product-card-list { display: grid; gap: var(--space-4); padding: var(--space-4); }
