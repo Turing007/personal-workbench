@@ -121,9 +121,15 @@ public class MainActivity extends Activity {
         webView.setBackgroundColor(Color.TRANSPARENT);
 
         swipeRefresh.setColorSchemeColors(getColor(R.color.brand_teal));
-        // 页面自身使用内部滚动容器，WebView 会认为自己“不能滚动”，导致每次下滑都被
-        // 下拉刷新拦截（既触发刷新又吃掉滚动手势）。这里禁用下拉刷新，刷新交给页面内操作。
-        swipeRefresh.setEnabled(false);
+        // 下拉刷新：只在 WebView 已经滚到顶部时才允许触发（用 getScrollY 自己判断，
+        // 不使用默认的 canScrollVertically 探测——页面用内部滚动容器时它会误判成“不能滚动”，
+        // 导致往下滑列表也被当成下拉刷新并吃掉手势）。
+        swipeRefresh.setOnChildScrollUpCallback((parent, child) -> webView.getScrollY() > 0);
+        swipeRefresh.setOnRefreshListener(() -> {
+            // 手动刷新时重置自动切换记录，让网络回退逻辑重新生效。
+            failedNetworks.clear();
+            webView.reload();
+        });
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
