@@ -2,12 +2,12 @@ package com.workbench.app;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -26,6 +26,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -43,7 +44,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.json.JSONArray;
@@ -67,7 +70,8 @@ public class MainActivity extends Activity {
     private ProgressBar loadProgress;
     private View browserView;
     private View setupView;
-    private View errorView;
+    private View networkView;
+    private LinearLayout networkList;
     private EditText urlInput;
     private TextView testResult;
     private Button testButton;
@@ -90,7 +94,8 @@ public class MainActivity extends Activity {
         loadProgress = findViewById(R.id.load_progress);
         browserView = findViewById(R.id.browser_view);
         setupView = findViewById(R.id.setup_view);
-        errorView = findViewById(R.id.error_view);
+        networkView = findViewById(R.id.network_view);
+        networkList = findViewById(R.id.network_list);
         urlInput = findViewById(R.id.url_input);
         testResult = findViewById(R.id.test_result);
         testButton = findViewById(R.id.test_button);
@@ -154,7 +159,7 @@ public class MainActivity extends Activity {
                 swipeRefresh.setRefreshing(false);
                 loadProgress.setProgress(0);
                 if (!loadHadError) failedNetworks.clear();
-                if (errorView.getVisibility() != View.VISIBLE) {
+                if (networkView.getVisibility() != View.VISIBLE) {
                     showView(browserView);
                 }
             }
@@ -171,7 +176,8 @@ public class MainActivity extends Activity {
                         return;
                     }
                 }
-                showView(errorView);
+                // 所有网络都失败：进入手动选择网络页。
+                showNetworkPage();
             }
         });
 
@@ -268,14 +274,13 @@ public class MainActivity extends Activity {
     }
 
     private void bindErrorButtons() {
-        findViewById(R.id.retry_button).setOnClickListener(v -> {
+        findViewById(R.id.network_rescan_button).setOnClickListener(v -> renderNetworkList());
+        findViewById(R.id.network_retry_button).setOnClickListener(v -> {
+            // 重试当前网络：清空本轮失败记录，回到网页并重新加载。
             failedNetworks.clear();
-            showView(browserView);
-            swipeRefresh.setRefreshing(true);
-            webView.reload();
+            loadServer(preferences().getString(KEY_SERVER_URL, ""));
         });
-        findViewById(R.id.change_address_button).setOnClickListener(v -> openSetupView());
-        findViewById(R.id.error_network_button).setOnClickListener(v -> showNetworkDialog());
+        findViewById(R.id.network_edit_button).setOnClickListener(v -> openSetupView());
     }
 
     private void openSetupView() {
@@ -425,28 +430,79 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** 弹窗列出已保存的网络，点击即切换。 */
-    private void showNetworkDialog() {
+    /** 手动选择网络页：列出已保存的网络并逐个探测可用性，点击即连接。 */
+    private void showNetworkPage() {
+        showView(networkView);
+        renderNetworkList();
+    }
+
+    private void renderNetworkList() {
+        networkList.removeAllViews();
         List<SavedNetwork> networks = loadNetworks();
-        final String active = preferences().getString(KEY_SERVER_URL, "");
-        final String[] items = new String[networks.size() + 1];
-        for (int index = 0; index < networks.size(); index += 1) {
-            SavedNetwork network = networks.get(index);
-            items[index] = (network.url.equals(active) ? "✓ " : "") + network.label + "：" + network.url;
+        String active = preferences().getString(KEY_SERVER_URL, "");
+        if (networks.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText(R.string.network_page_empty);
+            empty.setTextColor(getColor(R.color.text_muted));
+            empty.setTextSize(14);
+            networkList.addView(empty);
+            return;
         }
-        items[networks.size()] = getString(R.string.network_edit_address);
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.network_title)
-                .setItems(items, (dialog, which) -> {
-                    if (which == networks.size()) {
-                        openSetupView();
-                        return;
-                    }
-                    SavedNetwork target = networks.get(which);
-                    if (target.url.equals(active)) return;
-                    switchNetwork(target, false);
-                })
-                .show();
+
+        final Map<String, TextView> statusViews = new LinkedHashMap<>();
+        for (SavedNetwork network : networks) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setPadding(dp(14), dp(12), dp(14), dp(12));
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            rowParams.bottomMargin = dp(8);
+            row.setLayoutParams(rowParams);
+            row.setBackgroundResource(R.drawable.input_bg);
+
+            TextView title = new TextView(this);
+            title.setText(network.url.equals(active)
+                    ? getString(R.string.network_row_current, network.label)
+                    : network.label);
+            title.setTextColor(getColor(R.color.text_main));
+            title.setTextSize(15);
+            title.setTypeface(title.getTypeface(), Typeface.BOLD);
+
+            TextView address = new TextView(this);
+            address.setText(network.url);
+            address.setTextColor(getColor(R.color.text_muted));
+            address.setTextSize(12);
+
+            TextView status = new TextView(this);
+            status.setText(R.string.network_page_checking);
+            status.setTextColor(getColor(R.color.text_secondary));
+            status.setTextSize(12);
+            status.setPadding(0, dp(6), 0, 0);
+
+            row.addView(title);
+            row.addView(address);
+            row.addView(status);
+            row.setOnClickListener(v -> switchNetwork(network, false));
+            networkList.addView(row);
+            statusViews.put(network.url, status);
+        }
+
+        // 后台逐个探测 /health，把「可连接 / 连不上」写回对应行。
+        executor.execute(() -> {
+            for (SavedNetwork network : networks) {
+                boolean reachable = isReachable(network.url);
+                mainHandler.post(() -> {
+                    TextView status = statusViews.get(network.url);
+                    if (status == null) return;
+                    status.setText(reachable ? R.string.network_page_ok : R.string.network_page_fail);
+                    status.setTextColor(getColor(reachable ? R.color.success : R.color.danger));
+                });
+            }
+        });
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private void switchNetwork(SavedNetwork network, boolean automatic) {
@@ -485,7 +541,7 @@ public class MainActivity extends Activity {
     private void showView(View target) {
         browserView.setVisibility(target == browserView ? View.VISIBLE : View.GONE);
         setupView.setVisibility(target == setupView ? View.VISIBLE : View.GONE);
-        errorView.setVisibility(target == errorView ? View.VISIBLE : View.GONE);
+        networkView.setVisibility(target == networkView ? View.VISIBLE : View.GONE);
     }
 
     private void showTestResult(int textRes, int colorRes) {

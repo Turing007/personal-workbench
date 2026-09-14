@@ -14,6 +14,16 @@
     <string name="network_fallback">当前网络连不上，已自动切换到「%1$s」</string>
     <string name="network_all_failed">所有已保存的网络都无法连接</string>
     <string name="network_edit_address">编辑/新增地址…</string>
+    <string name="network_page_title">无法连接工作台</string>
+    <string name="network_page_hint">已保存的网络（点击即可连接并测试）：</string>
+    <string name="network_page_rescan">重新检测可用性</string>
+    <string name="network_page_checking">检测中…</string>
+    <string name="network_page_ok">可连接</string>
+    <string name="network_page_fail">连不上</string>
+    <string name="network_page_current">当前使用</string>
+    <string name="network_row_current">%1$s（当前使用）</string>
+    <string name="network_page_switching">正在连接…</string>
+    <string name="network_page_empty">还没有保存任何地址，请先新增。</string>
     <string name="setup_enter">保存并进入</string>
     <string name="error_title">无法连接工作台服务器</string>
     <string name="error_tips">请确认：电脑/服务器上的工作台正在运行；手机与服务器网络互通（同一 Wi-Fi 或外网地址）；地址填写正确。</string>

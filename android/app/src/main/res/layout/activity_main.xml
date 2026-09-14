@@ -142,9 +142,9 @@
         </LinearLayout>
     </ScrollView>
 
-    <!-- 连接失败：提示 + 重试/改地址 -->
+    <!-- 连接失败：手动选择网络的页面（列出已保存网络并逐个探测可用性） -->
     <ScrollView
-        android:id="@+id/error_view"
+        android:id="@+id/network_view"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:fillViewport="true"
@@ -154,15 +154,15 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:gravity="center_horizontal"
-            android:paddingStart="28dp"
-            android:paddingEnd="28dp"
-            android:paddingTop="120dp">
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:paddingTop="56dp"
+            android:paddingBottom="32dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/error_title"
+                android:text="@string/network_page_title"
                 android:textColor="@color/text_main"
                 android:textSize="19sp"
                 android:textStyle="bold" />
@@ -170,17 +170,43 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
+                android:layout_marginTop="12dp"
                 android:lineSpacingExtra="4dp"
                 android:text="@string/error_tips"
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp" />
 
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/network_page_hint"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp" />
+
+            <!-- 网络行由代码填充（每条含名称、地址、可用性） -->
+            <LinearLayout
+                android:id="@+id/network_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:orientation="vertical" />
+
             <Button
-                android:id="@+id/retry_button"
+                android:id="@+id/network_rescan_button"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="20dp"
+                android:background="@drawable/button_secondary"
+                android:text="@string/network_page_rescan"
+                android:textColor="@color/brand_teal"
+                android:textSize="15sp" />
+
+            <Button
+                android:id="@+id/network_retry_button"
                 android:layout_width="match_parent"
                 android:layout_height="52dp"
-                android:layout_marginTop="28dp"
+                android:layout_marginTop="10dp"
                 android:background="@drawable/button_primary"
                 android:text="@string/error_retry"
                 android:textColor="#FFFFFF"
@@ -188,24 +214,14 @@
                 android:textStyle="bold" />
 
             <Button
-                android:id="@+id/change_address_button"
+                android:id="@+id/network_edit_button"
                 android:layout_width="match_parent"
-                android:layout_height="50dp"
+                android:layout_height="48dp"
                 android:layout_marginTop="10dp"
                 android:background="@drawable/button_secondary"
                 android:text="@string/error_change_address"
                 android:textColor="@color/brand_teal"
-                android:textSize="16sp" />
-
-            <Button
-                android:id="@+id/error_network_button"
-                android:layout_width="match_parent"
-                android:layout_height="50dp"
-                android:layout_marginTop="10dp"
-                android:background="@drawable/button_secondary"
-                android:text="@string/network_title"
-                android:textColor="@color/brand_teal"
-                android:textSize="16sp" />
+                android:textSize="15sp" />
         </LinearLayout>
     </ScrollView>
 </FrameLayout>
