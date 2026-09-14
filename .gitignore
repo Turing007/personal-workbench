@@ -5,6 +5,7 @@ data/workbench.sqlite
 data/workbench.sqlite-*
 data/files/
 data/backups/
+data/thumbnails/
 .env
 .env.*
 playwright-report/
