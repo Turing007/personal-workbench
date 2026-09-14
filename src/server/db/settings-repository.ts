@@ -9,6 +9,7 @@ import {
 const COMPANY_PROFILE_KEY = 'company_profile';
 const CONTRACT_TEMPLATE_KEY = 'contract_template';
 const AUTO_BACKUP_SETTINGS_KEY = 'auto_backup_settings';
+const TUNNEL_URL_KEY = 'tunnel_url';
 
 export interface AutoBackupSettingsRecord {
   /** 自定义备份目录；空字符串 = 默认目录（数据目录/backups）。 */
@@ -114,6 +115,23 @@ export class SettingsRepository {
       )
       .run(AUTO_BACKUP_SETTINGS_KEY, JSON.stringify(merged), new Date().toISOString());
     return merged;
+  }
+
+  /** 内网穿透/隧道地址（供手机在流量网络下访问）；空字符串表示未配置。 */
+  getTunnelUrl(): string {
+    const row = this.database.prepare('SELECT value FROM settings WHERE key = ?').get(TUNNEL_URL_KEY) as { value?: string } | undefined;
+    return typeof row?.value === 'string' ? row.value : '';
+  }
+
+  saveTunnelUrl(value: unknown): string {
+    const normalized = typeof value === 'string' ? value.trim().replace(/\/+$/, '') : '';
+    this.database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(TUNNEL_URL_KEY, normalized, new Date().toISOString());
+    return normalized;
   }
 }
 

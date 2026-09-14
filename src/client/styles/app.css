@@ -3281,3 +3281,14 @@ select {
 @media (max-width: 640px) {
   .stock-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* 设置页手机连接：隧道地址一行（输入框 + 保存） */
+.settings-tunnel-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-divider);
+}
+.settings-tunnel-row .label { flex: 1 1 260px; margin: 0; }

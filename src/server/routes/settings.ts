@@ -92,7 +92,23 @@ async function safeRoute<T>(
 
 export async function registerSettingsRoutes(app: FastifyInstance, options: SettingsRouteOptions): Promise<void> {
   app.get('/api/settings/network-addresses', async (_request, reply) =>
-    safeRoute(() => sendSuccess(reply, { addresses: collectLanAddresses() }), reply),
+    safeRoute(() => sendSuccess(reply, {
+      addresses: collectLanAddresses(),
+      tunnelUrl: options.service.getTunnelUrl(),
+    }), reply),
+  );
+
+  // 隧道地址由用户填写（如 Cloudflare Tunnel / ngrok 的公网地址），供手机在流量网络下访问。
+  app.put('/api/settings/network-addresses', async (request, reply) =>
+    safeRoute(() => {
+      const body = asRecord(request.body);
+      const raw = typeof body.tunnelUrl === 'string' ? body.tunnelUrl.trim().replace(/\/+$/, '') : '';
+      if (raw && !/^https?:\/\/[^\s/]+/i.test(raw)) {
+        throw new ApiError(400, 'VALIDATION_ERROR', '隧道地址需以 http:// 或 https:// 开头', 'tunnelUrl');
+      }
+      const tunnelUrl = options.service.saveTunnelUrl(raw);
+      return sendSuccess(reply, { addresses: collectLanAddresses(), tunnelUrl });
+    }, reply),
   );
 
   app.get('/api/settings/company-profile', async (_request, reply) =>

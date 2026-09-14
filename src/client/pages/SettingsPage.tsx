@@ -15,6 +15,7 @@ import {
   runAutoBackupNow,
   updateAutoBackupSettings,
   updateManagedUser,
+  updateTunnelUrl,
   type AuthUser,
   type AutoBackupStatus,
 } from '../api';
@@ -314,11 +315,15 @@ export default function SettingsPage({
   </div>;
 }
 
-/** 手机连接：展示局域网/服务器地址与二维码，手机 App 扫码或手动填入即可访问同一份数据。 */
+/** 手机连接：展示局域网/隧道地址与二维码，App 扫码可一次写入多条网络并自动切换。 */
 function MobileConnectCard() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState('');
   const [lanAddresses, setLanAddresses] = useState<string[]>([]);
+  const [tunnelUrl, setTunnelUrl] = useState('');
+  const [tunnelDraft, setTunnelDraft] = useState('');
+  const [tunnelSaving, setTunnelSaving] = useState(false);
+  const [tunnelMessage, setTunnelMessage] = useState('');
   const browserUrl = typeof window === 'undefined' ? '' : window.location.origin;
   // 优先展示局域网地址：手机扫本机 127.0.0.1 的二维码是连不上的。
   const serverUrl = lanAddresses[0] ?? browserUrl;
@@ -326,39 +331,69 @@ function MobileConnectCard() {
   useEffect(() => {
     let active = true;
     getNetworkAddresses().then((result) => {
-      if (active && result.addresses.length) setLanAddresses(result.addresses);
+      if (!active) return;
+      if (result.addresses.length) setLanAddresses(result.addresses);
+      setTunnelUrl(result.tunnelUrl);
+      setTunnelDraft(result.tunnelUrl);
     }).catch(() => { /* 获取失败时回退为当前浏览器地址 */ });
     return () => { active = false; };
   }, []);
 
+  // 配置了隧道时，二维码写入「局域网 + 隧道」两条网络，App 端可在两者间切换或自动回退；
+  // 未配置隧道时保持普通地址二维码，兼容旧版 App 与手机相机直接打开。
+  const qrContent = tunnelUrl
+    ? JSON.stringify({
+      app: 'workbench',
+      addresses: [
+        ...(serverUrl ? [{ label: '局域网', url: serverUrl }] : []),
+        { label: '隧道', url: tunnelUrl },
+      ],
+    })
+    : serverUrl;
+
   useEffect(() => {
-    if (!canvasRef.current || !serverUrl) return;
-    QRCode.toCanvas(canvasRef.current, serverUrl, {
+    if (!canvasRef.current || !qrContent) return;
+    QRCode.toCanvas(canvasRef.current, qrContent, {
       width: 180,
       margin: 1,
       color: { dark: '#171a20', light: '#ffffff' },
     }).catch(() => { /* 二维码生成失败时仅展示文字地址 */ });
-  }, [serverUrl]);
+  }, [qrContent]);
 
-  const copy = async () => {
+  const saveTunnel = async () => {
+    setTunnelSaving(true);
+    setTunnelMessage('');
     try {
-      await navigator.clipboard.writeText(serverUrl);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
+      const result = await updateTunnelUrl(tunnelDraft);
+      setTunnelUrl(result.tunnelUrl);
+      setTunnelDraft(result.tunnelUrl);
+      setTunnelMessage(result.tunnelUrl ? '隧道地址已保存，二维码已包含两条网络' : '隧道地址已清除');
+    } catch (error) {
+      setTunnelMessage(error instanceof Error ? error.message : '保存失败');
+    } finally {
+      setTunnelSaving(false);
+    }
+  };
+
+  const copy = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(value);
+      window.setTimeout(() => setCopied(''), 1600);
     } catch { /* 剪贴板不可用时忽略 */ }
   };
 
   return <div className="settings-section card">
     <div className="settings-heading"><Smartphone size={18} /><strong>手机连接</strong></div>
-    <p>手机安装「个人工作台」App 后，在首屏填入下方地址即可登录使用；也可以用手机浏览器或相机扫码直接打开。</p>
+    <p>手机安装「个人工作台」App 后扫码即可写入访问地址，App 内可随时切换「局域网 / 隧道」网络，连不上时也会自动尝试另一条。</p>
     <div className="settings-mobile-layout">
       <canvas ref={canvasRef} className="settings-mobile-qrcode" aria-label="服务地址二维码" />
       <div style={{ display: 'grid', gap: 10, alignContent: 'start' }}>
         <div className="setting-row" style={{ alignItems: 'center' }}>
-          <span>{lanAddresses.length > 1 ? '局域网地址（多选一）' : '局域网地址'}</span>
+          <span>{tunnelUrl ? '二维码包含：局域网 + 隧道' : '局域网地址'}</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <code style={{ fontSize: 12, wordBreak: 'break-all' }}>{serverUrl}</code>
-            <button className="icon-button" type="button" title="复制地址" onClick={() => void copy()}><Copy size={14} /></button>
+            <button className="icon-button" type="button" title="复制地址" onClick={() => void copy(serverUrl)}><Copy size={14} /></button>
           </div>
         </div>
         {lanAddresses.length > 1 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -372,7 +407,19 @@ function MobileConnectCard() {
             >{address}</button>
           ))}
         </div>}
-        {copied && <span style={{ color: 'var(--tone-accent-text)', fontSize: 12 }}>已复制到剪贴板</span>}
+        {copied && <span style={{ color: 'var(--tone-accent-text)', fontSize: 12 }}>已复制 {copied}</span>}
+        <div className="settings-tunnel-row">
+          <label className="label">隧道地址（手机流量网络下使用）<input
+            className="input"
+            value={tunnelDraft}
+            onChange={(event) => setTunnelDraft(event.target.value)}
+            placeholder="例如 https://workbench.example.com"
+            autoComplete="off"
+            spellCheck={false}
+          /></label>
+          <button className="button button-primary" type="button" disabled={tunnelSaving || tunnelDraft.trim() === tunnelUrl} onClick={() => void saveTunnel()}>{tunnelSaving ? '保存中…' : '保存隧道地址'}</button>
+          {tunnelMessage && <span role="status" style={{ color: 'var(--tone-accent-text)', fontSize: 12 }}>{tunnelMessage}</span>}
+        </div>
         <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: 'var(--color-text-secondary)', display: 'grid', gap: 6 }}>
           <li>手机与工作台服务器网络互通（同一局域网，或已部署到公网服务器）。</li>
           <li>安装 App 后在「连接工作台」页面点「扫描二维码」，对准上方二维码即可自动填入地址。</li>

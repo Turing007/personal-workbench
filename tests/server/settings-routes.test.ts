@@ -164,3 +164,41 @@ describe('document customer suggestion route', () => {
     });
   });
 });
+
+describe('手机连接网络地址', () => {
+  it('返回局域网地址，并保存/校验隧道地址', async () => {
+    const { app } = await createFixture();
+
+    const initial = await app.inject({ method: 'GET', url: '/api/settings/network-addresses' });
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json().data.tunnelUrl).toBe('');
+    expect(Array.isArray(initial.json().data.addresses)).toBe(true);
+
+    // 非法隧道地址被拒绝，且不会落库
+    const invalid = await app.inject({
+      method: 'PUT',
+      url: '/api/settings/network-addresses',
+      payload: { tunnelUrl: 'workbench.example.com' },
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().error.field).toBe('tunnelUrl');
+    expect((await app.inject({ method: 'GET', url: '/api/settings/network-addresses' })).json().data.tunnelUrl).toBe('');
+
+    // 保存时去掉首尾空白与结尾斜杠
+    const saved = await app.inject({
+      method: 'PUT',
+      url: '/api/settings/network-addresses',
+      payload: { tunnelUrl: '  https://wb.example.com/  ' },
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json().data.tunnelUrl).toBe('https://wb.example.com');
+
+    // 传空字符串即清除隧道地址
+    const cleared = await app.inject({
+      method: 'PUT',
+      url: '/api/settings/network-addresses',
+      payload: { tunnelUrl: '' },
+    });
+    expect(cleared.json().data.tunnelUrl).toBe('');
+  });
+});

@@ -2,6 +2,7 @@ package com.workbench.app;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
@@ -39,6 +40,14 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 /**
  * 个人工作台安卓壳：全屏 WebView 加载工作台服务。
@@ -48,6 +57,8 @@ public class MainActivity extends Activity {
 
     private static final String PREFS = "workbench";
     private static final String KEY_SERVER_URL = "server_url";
+    /** 已保存的多条访问地址（局域网 / 隧道），JSON 数组字符串。 */
+    private static final String KEY_NETWORKS = "saved_networks";
     private static final int FILE_CHOOSER_REQUEST = 1001;
 
     private WebView webView;
@@ -63,6 +74,9 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> fileCallback;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    /** 本轮加载中已经失败过的地址，避免在两条网络之间来回自动切换。 */
+    private final Set<String> failedNetworks = new HashSet<>();
+    private boolean loadHadError;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -83,6 +97,7 @@ public class MainActivity extends Activity {
         configureWebView();
         bindSetupButtons();
         bindErrorButtons();
+        findViewById(R.id.network_button).setOnClickListener(v -> showNetworkDialog());
 
         String savedUrl = preferences().getString(KEY_SERVER_URL, "");
         if (TextUtils.isEmpty(savedUrl)) {
@@ -130,6 +145,7 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 swipeRefresh.setRefreshing(false);
                 loadProgress.setProgress(0);
+                if (!loadHadError) failedNetworks.clear();
                 if (errorView.getVisibility() != View.VISIBLE) {
                     showView(browserView);
                 }
@@ -137,9 +153,17 @@ public class MainActivity extends Activity {
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) {
-                    showView(errorView);
+                if (!request.isForMainFrame()) return;
+                loadHadError = true;
+                failedNetworks.add(request.getUrl() == null ? "" : request.getUrl().toString());
+                // 还有别的已保存网络（例如从局域网切到隧道）时自动切换，全部失败才显示错误页。
+                for (SavedNetwork network : loadNetworks()) {
+                    if (!failedNetworks.contains(network.url)) {
+                        switchNetwork(network, true);
+                        return;
+                    }
                 }
+                showView(errorView);
             }
         });
 
@@ -217,7 +241,7 @@ public class MainActivity extends Activity {
                 showTestResultText(getString(R.string.scan_invalid), R.color.danger);
                 return;
             }
-            preferences().edit().putString(KEY_SERVER_URL, url).apply();
+            rememberNetwork(labelFor(url), url);
             loadServer(url);
         });
     }
@@ -237,20 +261,162 @@ public class MainActivity extends Activity {
 
     private void bindErrorButtons() {
         findViewById(R.id.retry_button).setOnClickListener(v -> {
+            failedNetworks.clear();
             showView(browserView);
             swipeRefresh.setRefreshing(true);
             webView.reload();
         });
-        findViewById(R.id.change_address_button).setOnClickListener(v -> {
-            String current = preferences().getString(KEY_SERVER_URL, "");
-            urlInput.setText(current);
-            showView(setupView);
-        });
+        findViewById(R.id.change_address_button).setOnClickListener(v -> openSetupView());
+        findViewById(R.id.error_network_button).setOnClickListener(v -> showNetworkDialog());
+    }
+
+    private void openSetupView() {
+        urlInput.setText(preferences().getString(KEY_SERVER_URL, ""));
+        showView(setupView);
     }
 
     private void loadServer(String url) {
+        loadHadError = false;
         showView(browserView);
         webView.loadUrl(url);
+    }
+
+    // ===== 多条访问网络（局域网 / 隧道）=====
+
+    /** 一条已保存的访问地址。 */
+    private static final class SavedNetwork {
+        final String label;
+        final String url;
+
+        SavedNetwork(String label, String url) {
+            this.label = label;
+            this.url = url;
+        }
+    }
+
+    private List<SavedNetwork> loadNetworks() {
+        List<SavedNetwork> networks = new ArrayList<>();
+        String raw = preferences().getString(KEY_NETWORKS, "");
+        if (!TextUtils.isEmpty(raw)) {
+            try {
+                JSONArray array = new JSONArray(raw);
+                for (int index = 0; index < array.length(); index += 1) {
+                    JSONObject item = array.optJSONObject(index);
+                    if (item == null) continue;
+                    String url = item.optString("url", "");
+                    if (!TextUtils.isEmpty(url)) {
+                        networks.add(new SavedNetwork(item.optString("label", labelFor(url)), url));
+                    }
+                }
+            } catch (JSONException ignored) {
+            }
+        }
+        // 兼容旧版本只保存单地址的情况
+        String active = preferences().getString(KEY_SERVER_URL, "");
+        if (!TextUtils.isEmpty(active)) {
+            boolean known = false;
+            for (SavedNetwork network : networks) {
+                if (network.url.equals(active)) {
+                    known = true;
+                    break;
+                }
+            }
+            if (!known) networks.add(new SavedNetwork(labelFor(active), active));
+        }
+        return networks;
+    }
+
+    private void persistNetworks(List<SavedNetwork> networks) {
+        JSONArray array = new JSONArray();
+        for (SavedNetwork network : networks) {
+            JSONObject item = new JSONObject();
+            try {
+                item.put("label", network.label);
+                item.put("url", network.url);
+            } catch (JSONException ignored) {
+            }
+            array.put(item);
+        }
+        preferences().edit().putString(KEY_NETWORKS, array.toString()).apply();
+    }
+
+    /** 记住一条地址并设为当前使用（同地址去重后置顶）。 */
+    private void rememberNetwork(String label, String url) {
+        List<SavedNetwork> networks = loadNetworks();
+        networks.removeIf((network) -> network.url.equals(url));
+        networks.add(0, new SavedNetwork(label, url));
+        persistNetworks(networks);
+        preferences().edit().putString(KEY_SERVER_URL, url).apply();
+    }
+
+    /** 按地址推断网络类型，用于列表展示。 */
+    private String labelFor(String url) {
+        try {
+            String host = Uri.parse(url).getHost();
+            if (host == null) return "地址";
+            if (host.startsWith("192.168.") || host.startsWith("10.") || host.startsWith("172.")) return "局域网";
+            if (host.startsWith("127.") || host.equalsIgnoreCase("localhost")) return "本机";
+            return "隧道";
+        } catch (Exception error) {
+            return "地址";
+        }
+    }
+
+    /** 弹窗列出已保存的网络，点击即切换。 */
+    private void showNetworkDialog() {
+        List<SavedNetwork> networks = loadNetworks();
+        final String active = preferences().getString(KEY_SERVER_URL, "");
+        final String[] items = new String[networks.size() + 1];
+        for (int index = 0; index < networks.size(); index += 1) {
+            SavedNetwork network = networks.get(index);
+            items[index] = (network.url.equals(active) ? "✓ " : "") + network.label + "：" + network.url;
+        }
+        items[networks.size()] = getString(R.string.network_edit_address);
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.network_title)
+                .setItems(items, (dialog, which) -> {
+                    if (which == networks.size()) {
+                        openSetupView();
+                        return;
+                    }
+                    SavedNetwork target = networks.get(which);
+                    if (target.url.equals(active)) return;
+                    switchNetwork(target, false);
+                })
+                .show();
+    }
+
+    private void switchNetwork(SavedNetwork network, boolean automatic) {
+        preferences().edit().putString(KEY_SERVER_URL, network.url).apply();
+        Toast.makeText(
+                this,
+                getString(automatic ? R.string.network_fallback : R.string.network_switched, network.label),
+                Toast.LENGTH_SHORT).show();
+        loadServer(network.url);
+    }
+
+    /** 解析扫码结果：既支持普通地址，也支持带 label 的多地址 JSON（电脑端二维码）。 */
+    private List<SavedNetwork> parseScanContent(String content) {
+        List<SavedNetwork> result = new ArrayList<>();
+        String trimmed = content == null ? "" : content.trim();
+        if (trimmed.startsWith("{")) {
+            try {
+                JSONArray array = new JSONObject(trimmed).optJSONArray("addresses");
+                if (array != null) {
+                    for (int index = 0; index < array.length(); index += 1) {
+                        JSONObject item = array.optJSONObject(index);
+                        if (item == null) continue;
+                        String url = normalizeUrl(item.optString("url", ""));
+                        if (url != null) result.add(new SavedNetwork(item.optString("label", labelFor(url)), url));
+                    }
+                }
+            } catch (JSONException ignored) {
+            }
+            return result;
+        }
+        String url = normalizeUrl(trimmed);
+        if (url != null) result.add(new SavedNetwork(labelFor(url), url));
+        return result;
     }
 
     private void showView(View target) {
@@ -326,18 +492,27 @@ public class MainActivity extends Activity {
             fileCallback = null;
             return;
         }
-        // 扫码结果：填入地址输入框并自动测试连接。
+        // 扫码结果：支持单地址与「局域网 + 隧道」多地址两种二维码。
         IntentResult scanResult = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
         if (scanResult != null) {
             String content = scanResult.getContents();
             if (content == null) return; // 用户取消扫码
-            String url = normalizeUrl(content);
-            if (url == null) {
+            List<SavedNetwork> scanned = parseScanContent(content);
+            if (scanned.isEmpty()) {
                 showTestResultText(getString(R.string.scan_invalid), R.color.danger);
                 return;
             }
-            urlInput.setText(url);
-            runConnectionTest(url);
+            // 倒序写入，让二维码里的第一条（通常是局域网）成为当前使用地址。
+            for (int index = scanned.size() - 1; index >= 0; index -= 1) {
+                SavedNetwork network = scanned.get(index);
+                rememberNetwork(network.label, network.url);
+            }
+            String primary = scanned.get(0).url;
+            urlInput.setText(primary);
+            if (scanned.size() > 1) {
+                Toast.makeText(this, "已保存 " + scanned.size() + " 条网络，可随时切换", Toast.LENGTH_SHORT).show();
+            }
+            runConnectionTest(primary);
             return;
         }
         super.onActivityResult(requestCode, resultCode, data);

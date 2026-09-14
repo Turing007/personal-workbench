@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="brand_teal">#0E7368</color>
+    <color name="brand_teal_soft">#B9E3DC</color>
     <color name="brand_teal_dark">#0A5F57</color>
     <color name="page_background">#F4F5F7</color>
     <color name="text_main">#171A20</color>

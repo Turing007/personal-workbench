@@ -919,11 +919,20 @@ export function deleteSalesReceiptFile(id: number | string) {
 
 export interface NetworkAddresses {
   addresses: string[];
+  /** 内网穿透/隧道地址，手机在流量网络下使用；空字符串表示未配置。 */
+  tunnelUrl: string;
 }
 
-/** 本机局域网访问地址列表（供「手机连接」二维码使用）。 */
+/** 本机局域网地址与隧道地址（供「手机连接」二维码与网络切换使用）。 */
 export function getNetworkAddresses() {
   return request<NetworkAddresses>('/api/settings/network-addresses');
+}
+
+export function updateTunnelUrl(tunnelUrl: string) {
+  return request<NetworkAddresses>('/api/settings/network-addresses', {
+    method: 'PUT',
+    body: JSON.stringify({ tunnelUrl }),
+  });
 }
 
 export function getCompanyProfile() {

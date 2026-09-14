@@ -33,6 +33,14 @@ export class SettingsService {
     return this.settings.saveContractTemplate(value);
   }
 
+  getTunnelUrl(): string {
+    return this.settings.getTunnelUrl();
+  }
+
+  saveTunnelUrl(value: unknown): string {
+    return this.settings.saveTunnelUrl(value);
+  }
+
   async replaceCompanyLogo(
     stream: Readable,
     originalName: string,
