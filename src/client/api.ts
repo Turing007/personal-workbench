@@ -217,10 +217,21 @@ function notifyAuthRequired(): void {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT));
 }
 
+/**
+ * 写入成功后丢弃 Service Worker 里的接口缓存：
+ * 否则紧接着的列表刷新会先读到改动前的旧缓存，出现“点了没反应”的错觉。
+ */
+function invalidateApiCache(): void {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.controller?.postMessage({ type: 'invalidate-api' });
+}
+
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  const method = (init.method ?? 'GET').toUpperCase();
   const response = await fetch(path, { ...init, headers });
+  if (method !== 'GET' && response.ok) invalidateApiCache();
   if (!response.ok) {
     const text = await response.text();
     let payload: unknown = null;

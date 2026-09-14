@@ -225,6 +225,31 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
   useEffect(() => {
     // Workbench 只在 AuthGate 就绪后挂载，这里可以放心加载数据。
     void Promise.all([loadProducts(), loadCustomers(), loadOrders(), loadCompanyProfile()]);
+    // 上面这一次请求由 Service Worker 秒回本地缓存，可能赶在“后台刷新完成”之前，
+    // 所以稍后再静默拉一次真实数据：打开即见内容，一两秒后自动变成最新。
+    const refreshTimer = window.setTimeout(() => {
+      void Promise.all([loadProducts(), loadCustomers(), loadOrders(), loadCompanyProfile()]);
+    }, 1200);
+    return () => window.clearTimeout(refreshTimer);
+  }, [loadProducts, loadCustomers, loadOrders, loadCompanyProfile]);
+
+  // Service Worker 后台拿到新数据时的通知（能做到就更快，不依赖它保证正确性）。
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return undefined;
+    let timer: number | undefined;
+    const onMessage = (event: MessageEvent) => {
+      if ((event.data as { type?: string } | null)?.type !== 'api-updated') return;
+      if (timer !== undefined) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        void Promise.all([loadProducts(), loadCustomers(), loadOrders(), loadCompanyProfile()]);
+      }, 500);
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      navigator.serviceWorker.removeEventListener('message', onMessage);
+    };
   }, [loadProducts, loadCustomers, loadOrders, loadCompanyProfile]);
 
   const saveProductRecord = async (draft: ProductRecord, mode: 'draft' | 'active') => {
