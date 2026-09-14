@@ -11,6 +11,7 @@ import {
 } from '../../api';
 import type { PaymentProofRecord } from '../../../shared/finance';
 import { badgeClass, errorText, money } from './finance-format';
+import { thumbUrl } from '../../image-urls';
 
 export interface PaymentProofEditorProps {
   detail: ApiFinanceDetail;
@@ -186,7 +187,7 @@ export default function PaymentProofEditor({ detail, onRefresh, onNotify }: Paym
     </div>
     {(pasteHint || (file && !amount)) && <div style={{ color: '#b45309', fontSize: 12, marginTop: 4 }}>{pasteHint || '已读取待上传水单图片，请填写付款金额后点击「上传水单」'}</div>}
     <div className="finance-proof-list">{detail.proofs.length ? detail.proofs.map((proof) => <div className="finance-proof-row" key={proof.id}>
-      <a href={proof.url} target="_blank" rel="noreferrer" className="finance-proof-thumb"><img src={proof.url} alt={proof.originalName} /></a>
+      <a href={proof.url} target="_blank" rel="noreferrer" className="finance-proof-thumb"><img src={thumbUrl(proof.url, 240)} alt={proof.originalName} loading="lazy" decoding="async" /></a>
       <div className="finance-proof-main"><strong>{proof.originalName}</strong><span>{proof.paymentDate || '未填日期'} · {proof.amountCents == null ? '待补金额' : money(proof.amountCents)} · {proof.paymentMethod || '未填方式'}</span>{proof.payerName && <small>付款人：{proof.payerName}</small>}{proof.transactionNo && <small>流水号：{proof.transactionNo}</small>}{proof.note && <small>备注：{proof.note}</small>}{proof.reviewNote && <small className="finance-error-text">审核备注：{proof.reviewNote}</small>}</div>
       <span className={badgeClass(proof.status)}>{proofStatusLabel[proof.status]}</span>
       <div className="row-actions">

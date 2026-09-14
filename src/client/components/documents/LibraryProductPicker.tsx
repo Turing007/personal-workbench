@@ -1,5 +1,6 @@
 import { Check, Image as ImageIcon, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { thumbUrl } from '../../image-urls';
 
 export interface LibraryProductImage {
   id: number | string;
@@ -33,7 +34,7 @@ const fieldStyle = { width: '100%', minWidth: 0, border: '1px solid #dbe3ea', bo
 
 function imageUrl(image: LibraryProductImage | null | undefined): string {
   if (!image) return '';
-  return image.url ?? (image.relativePath ? `/files/${image.relativePath}` : '');
+  return thumbUrl(image.url ?? (image.relativePath ? `/files/${image.relativePath}` : ''), 240);
 }
 
 async function defaultLoadProducts(filters: { name: string; sku: string; specification: string }): Promise<LibraryProductOption[]> {

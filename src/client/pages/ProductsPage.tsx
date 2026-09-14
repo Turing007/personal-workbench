@@ -6,6 +6,7 @@ import ProductDetailModal from '../components/ProductDetailModal';
 import ProductImagesModal from '../components/ProductImagesModal';
 import ProductParametersModal from '../components/ProductParametersModal';
 import { cloneProductForNew } from '../product-copy';
+import { thumbUrl } from '../image-urls';
 import { packagingDisplay } from '../packaging-display';
 
 type StatusFilter = 'all' | 'active' | 'draft';
@@ -110,7 +111,7 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
       <div className="table-scroll products-table-desktop"><table className="data-table products-data-table"><thead><tr>{['SKU', '图片', '品名', '颜色', '插脚', '参数', '包装信息', '备注', '供应商', '价格', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
         <tbody>{filtered.map((product) => <tr key={product.id}>
           <td className="strong-cell"><button className="product-sku-button" type="button" onClick={() => setDetailProduct(product)} title="查看产品详情">{product.sku || '查看详情'}</button></td>
-          <td>{product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProduct(product)} title="查看全部图片"><span className="product-image-thumb"><img src={product.images[0].url} alt={product.images[0].name} /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}</td>
+          <td>{product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProduct(product)} title="查看全部图片"><span className="product-image-thumb"><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}</td>
           <td>{product.status === 'draft' ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span className="product-name-text" style={{ minWidth: 0, maxWidth: 220, overflow: 'hidden', display: 'inline-block', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}>{product.name || '（未命名草稿）'}</span><span className="badge badge-warning">草稿</span></span> : (product.name || '—')}</td><td>{product.colors.join('、') || '—'}</td><td>{product.batteryPlugs.join('、') || '—'}</td>
           <td className="product-parameters-cell">{product.parameters?.trim() ? <button className="product-parameters-trigger" type="button" onClick={() => setParametersProduct(product)} title="查看完整参数"><span>查看详情</span><Copy size={13} /></button> : <span>—</span>}</td>
           <td className="product-packaging-cell"><div className="product-packaging-lines">{product.packaging.length ? <>
@@ -131,7 +132,7 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
       <div className="products-card-list">
         {filtered.map((product) => <article key={product.id} className="product-card">
           <div className="product-card-head">
-            {product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProduct(product)} title="查看全部图片"><span className="product-image-thumb"><img src={product.images[0].url} alt={product.images[0].name} /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}
+            {product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProduct(product)} title="查看全部图片"><span className="product-image-thumb"><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}
             <div className="product-card-title">
               <strong>{product.status === 'draft' ? <>{product.name || '（未命名草稿）'}<span className="badge badge-warning">草稿</span></> : (product.name || '—')}</strong>
               <button className="product-sku-button" type="button" onClick={() => setDetailProduct(product)} title="查看产品详情">{product.sku || '查看详情'}</button>

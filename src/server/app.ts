@@ -3,7 +3,7 @@ import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import cookie from '@fastify/cookie';
 import type { DatabaseSync } from 'node:sqlite';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { MAX_CONTRACT_SIZE } from './config.js';
 import { AuthService, SESSION_COOKIE } from './auth/auth-service.js';
 import { UserRepository } from './auth/user-repository.js';
@@ -17,6 +17,8 @@ import { SalesDocumentRepository } from './db/sales-document-repository.js';
 import { SettingsRepository } from './db/settings-repository.js';
 import { ApiError, sendFailure } from './routes/api-response.js';
 import { AUTH_PUBLIC_PATHS, registerAuthRoutes } from './routes/auth.js';
+import { registerThumbnailRoutes } from './routes/thumbnails.js';
+import { ThumbnailService } from './files/thumbnail-service.js';
 import { registerCustomerProductRoutes } from './routes/customer-products.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerProductRoutes } from './routes/products.js';
@@ -101,11 +103,29 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
         root: resolve(options.filesDirectory),
         prefix: '/files/',
         decorateReply: false,
+        // 附件文件名是 UUID、内容不会变：允许浏览器长期缓存，避免每次重传原图。
+        setHeaders: (response) => {
+          response.setHeader('Cache-Control', 'private, max-age=2592000, immutable');
+        },
       });
     }
     await app.register(fastifyStatic, {
       root: resolve(options.clientDirectory),
       prefix: '/',
+      setHeaders: (response, filePath) => {
+        // 带 hash 的构建产物可长期缓存；index.html / sw.js / manifest 必须每次校验。
+        if (/[.-][0-9a-zA-Z_-]{8,}\.(?:js|css|woff2?|png|svg|webp)$/.test(filePath)) {
+          response.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else {
+          response.setHeader('Cache-Control', 'no-cache');
+        }
+      },
+    });
+  }
+
+  if (options.fileStore && options.dataDirectory) {
+    await registerThumbnailRoutes(app, {
+      service: new ThumbnailService(options.fileStore, join(resolve(options.dataDirectory), 'thumbnails')),
     });
   }
 

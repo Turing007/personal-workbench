@@ -1,6 +1,7 @@
 import { Check, CheckCheck, ChevronLeft, ChevronRight, Clipboard, Copy, Download, Image as ImageIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import Modal from './Modal';
+import { thumbUrl } from '../image-urls';
 import type { ImageAttachment } from './ImagePasteUpload';
 
 export interface ProductImagesModalProps {
@@ -199,7 +200,7 @@ export default function ProductImagesModal({ open, productName = '产品', image
                     aria-pressed={selected}
                     onClick={() => toggleImage(image)}
                   >
-                    <img src={image.url} alt="" />
+                    <img src={thumbUrl(image.url, 240)} alt="" loading="lazy" decoding="async" />
                     {selected && <Check size={13} />}
                   </button>
                 );

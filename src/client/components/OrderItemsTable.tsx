@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { calculateOrderLineAmountCents } from '../../shared/order-prices';
 import { getOrderItemImages } from '../api';
+import { thumbUrl } from '../image-urls';
 import type { OrderDraft } from './OrderForm';
 
 export interface OrderItemsTableProps {
@@ -36,7 +37,7 @@ export default function OrderItemsTable({ order }: OrderItemsTableProps) {
             const packaging = item.packaging ?? [];
             const images = itemImages[Number(item.id)] ?? [];
             return <Fragment key={item.id}><tr style={{ borderTop: '1px solid #edf0f2', verticalAlign: 'top' }}>
-              <td style={{ padding: '8px 9px', minWidth: 120 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{images.length ? <a href={images[0]!.url} target="_blank" rel="noreferrer" title="查看原图"><img src={images[0]!.url} alt={images[0]!.name} style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 4, cursor: 'pointer', border: '1px solid var(--tone-border-soft)', flexShrink: 0 }} /></a> : null}<span>{item.name}</span></div></td>
+              <td style={{ padding: '8px 9px', minWidth: 120 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{images.length ? <a href={images[0]!.url} target="_blank" rel="noreferrer" title="查看原图"><img src={thumbUrl(images[0]!.url, 240)} alt={images[0]!.name} loading="lazy" decoding="async" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 4, cursor: 'pointer', border: '1px solid var(--tone-border-soft)', flexShrink: 0 }} /></a> : null}<span>{item.name}</span></div></td>
               <td style={{ padding: '8px 9px' }}>{item.sku}</td>
               <td style={{ padding: '8px 9px' }}>{item.specification}</td>
               <td style={{ padding: '8px 9px' }}>{item.quantity}</td>

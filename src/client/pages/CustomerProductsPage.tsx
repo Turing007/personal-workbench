@@ -34,6 +34,7 @@ import {
 import CustomerEditorModal from '../components/customers/CustomerEditorModal';
 import CustomerProductEditorModal, { type CustomerProductAttachmentDraft } from '../components/customer-products/CustomerProductEditorModal';
 import { cloneCustomerProductForNew } from '../customer-product-copy';
+import { thumbUrl } from '../image-urls';
 import type { ToastKind } from '../components/OrderForm';
 
 export interface CustomerProductsPageProps {
@@ -52,6 +53,11 @@ function formatTime(value: string | null): string {
 
 function imageUrl(relativePath: string | null): string {
   return relativePath ? `/files/${relativePath}` : '';
+}
+
+/** 列表用小图尺寸；点开大图仍用 imageUrl 原图。 */
+function thumbnailUrl(relativePath: string | null): string {
+  return thumbUrl(imageUrl(relativePath), 240);
 }
 
 function money(cents: number | null): string {
@@ -314,7 +320,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
           {products.map((product) => <tr key={product.id}>
             <td><input type="checkbox" checked={selectedProductIds.includes(product.id)} onChange={() => setSelectedProductIds((current) => current.includes(product.id) ? current.filter((id) => id !== product.id) : [...current, product.id])} aria-label={`选择${product.name}`} /></td>
             <td><span style={{ display: 'inline-block', padding: '3px 6px', borderRadius: 4, background: product.completionStatus === 'complete' ? '#ecfdf5' : '#fff7ed', color: product.completionStatus === 'complete' ? '#047857' : '#b45309', whiteSpace: 'nowrap' }}>{product.completionStatus === 'complete' ? '已完善' : '待完善'}</span></td>
-            <td>{product.imageRelativePath ? <img src={imageUrl(product.imageRelativePath)} alt={product.name} style={{ width: 42, height: 36, objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: 4 }} /> : <span style={{ color: '#cbd5e1' }}>-</span>}</td>
+            <td>{product.imageRelativePath ? <img src={thumbnailUrl(product.imageRelativePath)} alt={product.name} loading="lazy" decoding="async" style={{ width: 42, height: 36, objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: 4 }} /> : <span style={{ color: '#cbd5e1' }}>-</span>}</td>
             <td className="strong-cell">{product.name || '-'}</td><td>{product.specification || '-'}</td><td>{product.sku || <span style={{ color: '#b45309' }}>待完善</span>}</td><td>{product.packaging.length ? product.packaging[0].name || `${product.packaging.length} 种` : '-'}</td><td>{product.packCount == null ? <span style={{ color: '#b45309' }}>待完善</span> : `${product.packCount} 个/箱`}</td><td>{money(product.costPriceCents)}</td><td>{money(product.latestQuoteCents)}</td><td className="strong-cell">{money(product.finalPriceCents)}</td><td>{product.freightPerBoxCents == null ? <span style={{ color: '#b45309' }}>未设置</span> : `¥${(product.freightPerBoxCents / 100).toFixed(2)}/箱`}</td><td className="customer-product-remark-cell" title={product.remark}>{product.remark || '-'}</td><td>{product.attachments.length ? `${product.attachments.length} 个` : '-'}</td><td><span style={{ color: product.systemProductId == null ? '#64748b' : '#0f766e' }}>{product.systemProductId == null ? '临时添加' : '系统产品库'}</span></td><td style={{ color: '#64748b', whiteSpace: 'nowrap' }}>{formatTime(product.updatedAt)}</td>
             <td><div className="row-actions"><button className="icon-button" type="button" title="编辑客户产品" onClick={() => openEditProduct(product)}><Edit3 size={14} /></button><button className="icon-button" type="button" title={activeCustomer ? '复制为客户新品' : '客户已停用，不能复制新品'} disabled={!activeCustomer} onClick={() => openCopyProduct(product)}><Copy size={14} /></button><button className="icon-button danger" type="button" title="删除客户产品" onClick={() => { void removeProduct(product); }}><Trash2 size={14} /></button></div></td>
           </tr>)}
@@ -323,7 +329,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
           {products.map((product) => <article key={product.id} className="customer-product-card">
             <div className="customer-product-card-head">
               <input type="checkbox" checked={selectedProductIds.includes(product.id)} onChange={() => setSelectedProductIds((current) => current.includes(product.id) ? current.filter((id) => id !== product.id) : [...current, product.id])} aria-label={`选择${product.name}`} />
-              {product.imageRelativePath ? <img className="customer-product-card-image" src={imageUrl(product.imageRelativePath)} alt={product.name} /> : <span className="product-no-image">—</span>}
+              {product.imageRelativePath ? <img className="customer-product-card-image" src={thumbnailUrl(product.imageRelativePath)} alt={product.name} loading="lazy" decoding="async" /> : <span className="product-no-image">—</span>}
               <div className="customer-product-card-title">
                 <strong>{product.name || '-'}</strong>
                 <span>{product.specification || '-'}</span>

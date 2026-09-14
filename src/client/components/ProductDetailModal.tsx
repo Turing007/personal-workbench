@@ -5,6 +5,7 @@ import Modal from './Modal';
 import ProductImagesModal from './ProductImagesModal';
 import type { ProductRecord } from './ProductEditor';
 import { packagingDisplay } from '../packaging-display';
+import { thumbUrl } from '../image-urls';
 
 export interface ProductDetailModalProps {
   open: boolean;
@@ -89,7 +90,7 @@ export default function ProductDetailModal({ open, product, onClose, onOpenImage
           <DetailItem label="图片">
             {image ? (
               <button className="product-detail-images-button" type="button" onClick={() => onOpenImages(product)}>
-                <img src={image.url} alt={image.name} />
+                <img src={thumbUrl(image.url, 240)} alt={image.name} loading="lazy" decoding="async" />
                 <span><Image size={13} />查看全部 {product.images.length} 张图片</span>
               </button>
             ) : <span>暂无图片</span>}
