@@ -3292,3 +3292,48 @@ select {
   border-top: 1px solid var(--color-divider);
 }
 .settings-tunnel-row .label { flex: 1 1 260px; margin: 0; }
+
+/* ===== 订单页：工具条与手机端顶部压缩 ===== */
+.orders-table-toolbar {
+  padding: 11px;
+  min-height: 0;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
+  /* 手机端尽量把空间留给订单列表：隐藏副标题、状态卡改单行横滑 */
+  .orders-page { padding-top: var(--space-5); }
+  .orders-page .page-subtitle { display: none; }
+
+  .orders-page .status-cards {
+    display: flex;
+    gap: var(--space-3);
+    overflow-x: auto;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .orders-page .status-cards::-webkit-scrollbar { display: none; }
+
+  .orders-page .status-card {
+    flex: 0 0 auto;
+    /* 横滑条上先看状态名再看数量，比竖排卡片更省宽度 */
+    flex-direction: row-reverse;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: var(--radius-pill);
+  }
+  .orders-page .status-card::after { display: none; }
+  .orders-page .status-card-count { font-size: 14px; }
+  .orders-page .status-card-label { font-size: var(--text-xs); }
+
+  /* 工具条压成一行：新建按钮 + 搜索框 + 条数 */
+  .orders-table-toolbar { padding: 8px; gap: 6px; }
+  /* 全局规则 .page-toolbar > :first-child 会把首个元素拉满整行（为标题栏设计），
+     订单工具条的首个元素是「新建订单」按钮，这里恢复自动宽度以便与搜索框同行。 */
+  .orders-table-toolbar > :first-child { flex: 0 0 auto; }
+  .orders-table-toolbar .button-primary { padding: 0 10px; }
+  .orders-table-toolbar .search-control { flex: 1 1 90px; min-width: 0; }
+  .orders-table-toolbar .toolbar-count { flex: 0 0 auto; font-size: var(--text-2xs); }
+}

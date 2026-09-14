@@ -228,7 +228,7 @@ export default function OrdersPage({ orders, customers, statusCounts, labelsByOr
     <div className="page-toolbar"><div><strong className="page-title">订单工作台</strong><span className="page-subtitle">跟进备货、打包、发货与箱唛打印进度</span></div></div>
     <StatusCards activeKey={filter} counts={counts} onSelect={setFilter} />
     <section className="table-panel">
-      <div className="page-toolbar table-toolbar" style={{ padding: 11, minHeight: 0, flexWrap: 'wrap' }}>
+      <div className="page-toolbar table-toolbar orders-table-toolbar">
         <button type="button" className="button button-primary" onClick={() => setCreating(true)}><Plus size={15} />新建订单</button>
         <div className="search-control"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索订单号、客户、收件人、品名、SKU、规格" /></div>
         <span className="toolbar-count"><ListFilter size={14} style={{ verticalAlign: -2, marginRight: 3 }} />{visibleOrders.length} 条订单</span>
