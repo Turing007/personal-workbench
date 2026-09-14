@@ -3337,3 +3337,30 @@ select {
   .orders-table-toolbar .search-control { flex: 1 1 90px; min-width: 0; }
   .orders-table-toolbar .toolbar-count { flex: 0 0 auto; font-size: var(--text-2xs); }
 }
+
+/* 设置页「App 网络」：仅 App 内展示的网络切换区块 */
+.settings-app-network {
+  display: grid;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--color-divider);
+}
+
+.settings-app-network-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.settings-app-network-list .chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.settings-app-network-list .chip em {
+  font-style: normal;
+  color: var(--color-text-muted);
+  font-size: var(--text-2xs);
+}

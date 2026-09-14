@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Building2, CalendarClock, Copy, Database, Download, ImageOff, KeyRound, Plus, RotateCcw, Save, ScrollText, Smartphone, Trash2, Upload, UserPlus, Users } from 'lucide-react';
+import { ArrowDown, ArrowUp, Building2, CalendarClock, Copy, Database, Download, ImageOff, KeyRound, Plus, RotateCcw, Save, ScrollText, Smartphone, Trash2, Upload, UserPlus, Users, Wifi } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
@@ -315,6 +315,24 @@ export default function SettingsPage({
   </div>;
 }
 
+/** App（安卓壳）注入的桥接对象：用于读取/切换已保存的访问网络。 */
+interface WorkbenchAppNetwork {
+  label: string;
+  url: string;
+  active: boolean;
+}
+
+interface WorkbenchAppBridge {
+  getNetworks(): string;
+  switchNetwork(url: string): void;
+  openAddressEditor(): void;
+}
+
+function getAppBridge(): WorkbenchAppBridge | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return (window as unknown as { workbenchApp?: WorkbenchAppBridge }).workbenchApp;
+}
+
 /** 手机连接：展示局域网/隧道地址与二维码，App 扫码可一次写入多条网络并自动切换。 */
 function MobileConnectCard() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -325,6 +343,17 @@ function MobileConnectCard() {
   const [tunnelSaving, setTunnelSaving] = useState(false);
   const [tunnelMessage, setTunnelMessage] = useState('');
   const browserUrl = typeof window === 'undefined' ? '' : window.location.origin;
+  // 仅 App 内存在该桥接：网页版不显示「App 网络」区块。
+  const appBridge = getAppBridge();
+  const [appNetworks, setAppNetworks] = useState<WorkbenchAppNetwork[]>([]);
+
+  useEffect(() => {
+    if (!appBridge) return;
+    try {
+      const parsed = JSON.parse(appBridge.getNetworks()) as WorkbenchAppNetwork[];
+      if (Array.isArray(parsed)) setAppNetworks(parsed.filter((item) => item && typeof item.url === 'string'));
+    } catch { /* 桥接数据异常时忽略该区块 */ }
+  }, [appBridge]);
   // 优先展示局域网地址：手机扫本机 127.0.0.1 的二维码是连不上的。
   const serverUrl = lanAddresses[0] ?? browserUrl;
 
@@ -427,6 +456,24 @@ function MobileConnectCard() {
         </ol>
       </div>
     </div>
+    {appBridge && appNetworks.length > 0 && <div className="settings-app-network">
+      <div className="settings-heading"><Wifi size={16} /><strong>App 网络</strong></div>
+      <p>App 里点选下方网络即可切换访问线路，切换后页面自动重新加载；当前网络连不上时 App 也会自动换到另一条。</p>
+      <div className="settings-app-network-list">
+        {appNetworks.map((network) => (
+          <button
+            key={network.url}
+            type="button"
+            className={network.active ? 'chip is-selected' : 'chip'}
+            title={network.url}
+            onClick={() => { if (!network.active) appBridge.switchNetwork(network.url); }}
+          >{network.active ? '✓ ' : ''}{network.label}<em>{network.url.replace(/^https?:\/\//, '')}</em></button>
+        ))}
+      </div>
+      <div className="settings-actions">
+        <button className="button button-secondary" type="button" onClick={() => appBridge.openAddressEditor()}><Plus size={14} />新增/编辑地址</button>
+      </div>
+    </div>}
   </div>;
 }
 

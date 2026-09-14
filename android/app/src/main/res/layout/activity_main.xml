@@ -19,37 +19,16 @@
             android:max="100"
             android:progressTint="@color/brand_teal" />
 
-        <FrameLayout
+        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+            android:id="@+id/swipe_refresh"
             android:layout_width="match_parent"
             android:layout_height="match_parent">
 
-            <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-                android:id="@+id/swipe_refresh"
+            <WebView
+                android:id="@+id/web_view"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent">
-
-                <WebView
-                    android:id="@+id/web_view"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent" />
-            </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
-
-            <!-- 网络切换：局域网 / 隧道等多条地址之间快速切换 -->
-            <Button
-                android:id="@+id/network_button"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:layout_gravity="top|end"
-                android:layout_marginTop="10dp"
-                android:layout_marginEnd="10dp"
-                android:background="@drawable/button_network"
-                android:minWidth="0dp"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:text="@string/network_button"
-                android:textColor="@color/brand_teal"
-                android:textSize="12sp" />
-        </FrameLayout>
+                android:layout_height="match_parent" />
+        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
     </LinearLayout>
 
     <!-- 首次启动：填写服务器地址 -->

@@ -16,6 +16,7 @@ import android.os.Looper;
 import android.text.TextUtils;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -97,7 +98,6 @@ public class MainActivity extends Activity {
         configureWebView();
         bindSetupButtons();
         bindErrorButtons();
-        findViewById(R.id.network_button).setOnClickListener(v -> showNetworkDialog());
 
         String savedUrl = preferences().getString(KEY_SERVER_URL, "");
         if (TextUtils.isEmpty(savedUrl)) {
@@ -131,8 +131,10 @@ public class MainActivity extends Activity {
             webView.reload();
         });
 
-        webView.setWebViewClient(new WebViewClient() {
-            @Override
+        // 网络选择收进网页「设置 → 手机连接」：页面通过该桥接读取/切换已保存的网络。
+        webView.addJavascriptInterface(new AppBridge(), "workbenchApp");
+
+        webView.setWebViewClient(new WebViewClient() {            @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
                 String scheme = uri.getScheme() == null ? "" : uri.getScheme();
@@ -288,6 +290,49 @@ public class MainActivity extends Activity {
     }
 
     // ===== 多条访问网络（局域网 / 隧道）=====
+
+    /**
+     * 暴露给工作台网页的原生桥接对象（window.workbenchApp）。
+     * 页面只在 App 内渲染「App 网络」区块，用于查看与切换已保存的网络。
+     */
+    public class AppBridge {
+        /** 已保存网络列表：JSON 数组 [{label, url, active}]。 */
+        @JavascriptInterface
+        public String getNetworks() {
+            List<SavedNetwork> networks = loadNetworks();
+            String active = preferences().getString(KEY_SERVER_URL, "");
+            JSONArray array = new JSONArray();
+            for (SavedNetwork network : networks) {
+                JSONObject item = new JSONObject();
+                try {
+                    item.put("label", network.label);
+                    item.put("url", network.url);
+                    item.put("active", network.url.equals(active));
+                } catch (JSONException ignored) {
+                }
+                array.put(item);
+            }
+            return array.toString();
+        }
+
+        /** 切换到指定网络（地址需为已保存的合法地址）。 */
+        @JavascriptInterface
+        public void switchNetwork(String url) {
+            String normalized = normalizeUrl(url);
+            if (normalized == null) return;
+            runOnUiThread(() -> {
+                failedNetworks.clear();
+                preferences().edit().putString(KEY_SERVER_URL, normalized).apply();
+                loadServer(normalized);
+            });
+        }
+
+        /** 打开原生「连接工作台」页面，用于新增/编辑地址。 */
+        @JavascriptInterface
+        public void openAddressEditor() {
+            runOnUiThread(MainActivity.this::openSetupView);
+        }
+    }
 
     /** 一条已保存的访问地址。 */
     private static final class SavedNetwork {
