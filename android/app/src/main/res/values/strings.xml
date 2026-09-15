@@ -14,8 +14,11 @@
     <string name="network_page_hint">已保存的网络（点击即可连接并测试）：</string>
     <string name="network_page_rescan">重新检测可用性</string>
     <string name="network_page_checking">检测中…</string>
-    <string name="network_page_ok">可连接</string>
+    <string name="network_page_ok">可连接 · %1$d ms</string>
+    <string name="network_page_ok_slow">可连接 · %1$d ms（较慢）</string>
     <string name="network_page_fail">连不上</string>
+    <string name="network_shortcut_short">选择网络</string>
+    <string name="network_shortcut_long">选择要连接的网络（局域网 / 隧道）</string>
     <string name="network_page_current">当前使用</string>
     <string name="network_row_current">%1$s（当前使用）</string>
     <string name="network_page_switching">正在连接…</string>

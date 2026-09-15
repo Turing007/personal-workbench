@@ -21,6 +21,7 @@ import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -105,6 +106,22 @@ public class MainActivity extends Activity {
         } else {
             loadServer(savedUrl);
         }
+        // 从桌面快捷方式「选择网络」进入时，直接打开网络选择页。
+        handleShortcutIntent();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleShortcutIntent();
+    }
+
+    private void handleShortcutIntent() {
+        Intent intent = getIntent();
+        if (intent != null && "com.workbench.app.SELECT_NETWORK".equals(intent.getAction())) {
+            showNetworkPage();
+        }
     }
 
     private SharedPreferences preferences() {
@@ -159,6 +176,14 @@ public class MainActivity extends Activity {
                 if (!request.isForMainFrame()) return;
                 // 连不上时不自动切换，直接进入手动选择网络页（逐条显示可用性）。
                 showNetworkPage();
+            }
+
+            // 隧道/代理在「后端不可达」时会返回 502/504 这类错误页：WebView 认为加载成功，
+            // 不触发 onReceivedError。这里同样进入选择网络页，避免用户卡在错误页上。
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+                if (!request.isForMainFrame()) return;
+                if (response.getStatusCode() >= 400) showNetworkPage();
             }
         });
 
@@ -463,15 +488,24 @@ public class MainActivity extends Activity {
             statusViews.put(network.url, status);
         }
 
-        // 后台逐个探测 /health，把「可连接 / 连不上」写回对应行。
+        // 后台逐个探测 /health，把「可连接（含耗时）/ 连不上」写回对应行。
         executor.execute(() -> {
             for (SavedNetwork network : networks) {
-                boolean reachable = isReachable(network.url);
+                ProbeResult result = probe(network.url);
                 mainHandler.post(() -> {
                     TextView status = statusViews.get(network.url);
                     if (status == null) return;
-                    status.setText(reachable ? R.string.network_page_ok : R.string.network_page_fail);
-                    status.setTextColor(getColor(reachable ? R.color.success : R.color.danger));
+                    if (!result.reachable) {
+                        status.setText(R.string.network_page_fail);
+                        status.setTextColor(getColor(R.color.danger));
+                        return;
+                    }
+                    // 超过 1 秒的线路标成「较慢」，方便在局域网与隧道之间做选择。
+                    boolean slow = result.millis >= 1000;
+                    status.setText(getString(
+                            slow ? R.string.network_page_ok_slow : R.string.network_page_ok,
+                            result.millis));
+                    status.setTextColor(getColor(slow ? R.color.warning : R.color.success));
                 });
             }
         });
@@ -560,6 +594,22 @@ public class MainActivity extends Activity {
 
     /** 在后台线程访问 /health 判断服务器是否可达。 */
     private boolean isReachable(String baseUrl) {
+        return probe(baseUrl).reachable;
+    }
+
+    /** 探测结果：是否可用 + 往返耗时（用于展示线路快慢）。 */
+    private static final class ProbeResult {
+        final boolean reachable;
+        final long millis;
+
+        ProbeResult(boolean reachable, long millis) {
+            this.reachable = reachable;
+            this.millis = millis;
+        }
+    }
+
+    private ProbeResult probe(String baseUrl) {
+        long started = System.currentTimeMillis();
         try {
             HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl + "/health").openConnection();
             connection.setConnectTimeout(5000);
@@ -571,9 +621,10 @@ public class MainActivity extends Activity {
                 stream.close();
             }
             connection.disconnect();
-            return code >= 200 && code < 500; // 4xx 说明服务在，只是健康检查路径受保护
+            // 4xx 说明服务在（只是该路径受保护）；5xx（含隧道 502）视为不可用。
+            return new ProbeResult(code >= 200 && code < 500, System.currentTimeMillis() - started);
         } catch (Exception e) {
-            return false;
+            return new ProbeResult(false, System.currentTimeMillis() - started);
         }
     }
 

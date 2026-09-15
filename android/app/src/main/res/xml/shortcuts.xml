@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 长按桌面图标 → 「选择网络」：网页打不开时也能切换线路。 -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="select_network"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/network_shortcut_short"
+        android:shortcutLongLabel="@string/network_shortcut_long">
+        <intent
+            android:action="com.workbench.app.SELECT_NETWORK"
+            android:targetClass="com.workbench.app.MainActivity"
+            android:targetPackage="com.workbench.app" />
+    </shortcut>
+</shortcuts>

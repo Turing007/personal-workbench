@@ -8,5 +8,6 @@
     <color name="text_secondary">#556070</color>
     <color name="text_muted">#8A93A2</color>
     <color name="danger">#B42318</color>
+    <color name="warning">#B45309</color>
     <color name="success">#15803D</color>
 </resources>
