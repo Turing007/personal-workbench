@@ -15,6 +15,12 @@ import {
   sendSuccess,
 } from './api-response.js';
 import { contractFileOptions, imageFileOptions } from './multipart-limits.js';
+import {
+  DEFAULT_PRODUCT_IMAGE_CATEGORY,
+  MAX_PRODUCT_IMAGE_NOTE_LENGTH,
+  isProductImageCategory,
+  type ProductImageCategory,
+} from '../../shared/product-image-categories.js';
 
 const DEFAULT_COLORS = ['蓝', '红', '黄'];
 const DEFAULT_BATTERY_PLUGS = ['牧田', '德伟', '米沃奇'];
@@ -290,14 +296,38 @@ function parseProductImport(value: unknown): ProductImportInput[] {
 
 function mapImage(row: Record<string, unknown>) {
   const relativePath = String(row.relativePath ?? row.relative_path ?? '');
+  const category = row.category ?? row.imageCategory;
   return {
     id: Number(row.id),
     relativePath,
     originalName: String(row.originalName ?? row.original_name ?? ''),
     mimeType: String(row.mimeType ?? row.mime_type ?? ''),
     size: Number(row.size ?? row.size_bytes ?? 0),
+    category: isProductImageCategory(category) ? category : DEFAULT_PRODUCT_IMAGE_CATEGORY,
+    note: String(row.note ?? ''),
     createdAt: String(row.createdAt ?? row.created_at ?? ''),
   };
+}
+
+/** 分类留空按“产品图”处理，非法值直接拒绝，避免脏分类进入图库筛选。 */
+function parseImageCategory(value: unknown, field = 'category'): ProductImageCategory {
+  const text = String(value ?? '').trim();
+  if (!text) return DEFAULT_PRODUCT_IMAGE_CATEGORY;
+  if (!isProductImageCategory(text)) {
+    throw new ApiError(400, 'VALIDATION_ERROR', '图片分类无效', field);
+  }
+  return text;
+}
+
+function parseImageNote(value: unknown, field = 'note'): string {
+  if (typeof value !== 'string') {
+    throw new ApiError(400, 'VALIDATION_ERROR', '图片备注必须是文本', field);
+  }
+  const text = value.trim();
+  if (text.length > MAX_PRODUCT_IMAGE_NOTE_LENGTH) {
+    throw new ApiError(400, 'VALIDATION_ERROR', `图片备注不能超过 ${MAX_PRODUCT_IMAGE_NOTE_LENGTH} 个字`, field);
+  }
+  return text;
 }
 
 function mapAttachment(row: Record<string, unknown>) {
@@ -455,22 +485,45 @@ export async function registerProductRoutes(app: FastifyInstance, options: Produ
     }, reply),
   );
 
-  app.post('/api/products/:id/images', async (request: FastifyRequest<{ Params: { id: string } }>, reply) =>
+  app.post('/api/products/:id/images', async (request: FastifyRequest<{ Params: { id: string }; Querystring: { category?: string; note?: string } }>, reply) =>
     safeRoute(async () => {
       if (!fileStore) throw new ApiError(503, 'FILE_STORE_UNAVAILABLE', '附件存储尚未配置');
       const id = getProductId(request);
       if (!repositories.getProduct(id)) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
+      const category = parseImageCategory(request.query?.category);
+      const note = parseImageNote(request.query?.note ?? '');
       const file = await request.file(imageFileOptions);
       if (!file) throw new ApiError(400, 'FILE_REQUIRED', '请选择产品图片', 'file');
       const stored = await fileStore.saveImage(file.file, 'product', file.filename, file.mimetype);
       try {
-        const image = repositories.addProductImage(id, stored);
+        const image = repositories.addProductImage(id, stored, category, note);
         return sendSuccess(reply, image ? mapImage(image) : null, 201);
       } catch (error) {
         await fileStore.deleteFile(stored.relativePath);
         throw error;
       }
     }, reply),
+  );
+
+  app.patch(
+    '/api/products/:id/images/:imageId',
+    async (request: FastifyRequest<{ Params: ImageParams; Body: { category?: unknown; note?: unknown } }>, reply) =>
+      safeRoute(() => {
+        const productId = parseId(request.params.id);
+        const imageId = parseId(request.params.imageId, 'imageId');
+        const body = asRecord(request.body);
+        const patch: { category?: string; note?: string } = {};
+        if (body.category !== undefined) patch.category = parseImageCategory(body.category);
+        if (body.note !== undefined) patch.note = parseImageNote(body.note);
+        if (patch.category === undefined && patch.note === undefined) {
+          throw new ApiError(400, 'VALIDATION_ERROR', '请提供要修改的图片分类或备注', 'category');
+        }
+        if (!repositories.updateProductImage(productId, imageId, patch)) {
+          throw new ApiError(404, 'NOT_FOUND', '产品图片不存在');
+        }
+        const image = repositories.getProduct(productId)?.images.find((row: { id?: unknown }) => Number(row.id) === imageId);
+        return sendSuccess(reply, image ? mapImage(image as Record<string, unknown>) : null);
+      }, reply),
   );
 
   app.put(

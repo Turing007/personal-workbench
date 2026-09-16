@@ -48,6 +48,7 @@ import {
   uploadOrderContract,
   uploadOrderDetailImage,
   uploadProductImage,
+  updateProductImage,
   deleteProductImage,
   reorderProductImages,
   uploadProductPackagingImage,
@@ -241,12 +242,20 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
         }
       }
       const orderedImageIds: number[] = [];
+      const savedImages = new Map((previousProduct?.images ?? []).map((image) => [image.id, image]));
       for (const image of draft.images) {
         if (image.file) {
-          const uploaded = await uploadProductImage(savedProductId, image.file);
+          const uploaded = await uploadProductImage(savedProductId, image.file, image.category ?? '', image.note ?? '');
           orderedImageIds.push(Number(uploaded.id));
         } else if (/^\d+$/.test(image.id)) {
           orderedImageIds.push(Number(image.id));
+          // 已保存图片改分类或备注时直接回写，不必重建图片记录。
+          const previous = savedImages.get(image.id);
+          const category = image.category ?? '';
+          const note = image.note ?? '';
+          if (previous && (category !== (previous.category ?? '') || note !== (previous.note ?? ''))) {
+            await updateProductImage(savedProductId, image.id, { category, note });
+          }
         }
       }
       if (orderedImageIds.length) await reorderProductImages(savedProductId, orderedImageIds);

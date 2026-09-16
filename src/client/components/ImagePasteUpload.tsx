@@ -8,6 +8,13 @@ export interface ImageAttachment {
   url: string;
   file?: File;
   note?: string;
+  /** 图片分类，仅在传入 categories 时使用（产品图库按分类归档图片资料）。 */
+  category?: string;
+}
+
+export interface ImageCategoryOption {
+  value: string;
+  label: string;
 }
 
 export interface ImagePasteUploadProps {
@@ -20,6 +27,8 @@ export interface ImagePasteUploadProps {
   onDeleteSaved?: (attachment: ImageAttachment) => Promise<void> | void;
   showNotes?: boolean;
   sortable?: boolean;
+  /** 传入分类选项后，每张图片下方出现分类下拉；不传则保持原有纯图片上传行为。 */
+  categories?: ReadonlyArray<ImageCategoryOption>;
 }
 
 function fileToAttachment(file: File): ImageAttachment {
@@ -46,6 +55,7 @@ export default function ImagePasteUpload({
   onDeleteSaved,
   showNotes = true,
   sortable = false,
+  categories,
 }: ImagePasteUploadProps) {
   const [message, setMessage] = useState('');
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
@@ -73,7 +83,11 @@ export default function ImagePasteUpload({
     const remaining = Math.max(0, fileLimit - value.length);
     const accepted = images.slice(0, remaining);
     if (images.length > remaining) setMessage(`最多添加 ${fileLimit} 张图片`);
-    const attachments = accepted.map(fileToAttachment);
+    const defaultCategory = categories?.[0]?.value;
+    const attachments = accepted.map((file) => {
+      const attachment = fileToAttachment(file);
+      return defaultCategory ? { ...attachment, category: defaultCategory } : attachment;
+    });
     attachments.forEach((attachment) => objectUrls.current.add(attachment.url));
     const next = multiple || fileLimit > 1 ? [...value, ...attachments] : attachments;
     if (accepted.length) onChange(next);
@@ -235,7 +249,15 @@ export default function ImagePasteUpload({
               <button type="button" title="删除图片" disabled={deletingIds.includes(item.id)} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); void removeAttachment(item); }} className="image-card-button" style={{ position: 'absolute', top: 5, right: 5, width: 22, height: 22, opacity: deletingIds.includes(item.id) ? 0.55 : 1, cursor: deletingIds.includes(item.id) ? 'wait' : 'pointer' }}><Trash2 size={12} /></button>
             </div>
             {sortable && <button type="button" title={index === 0 ? '当前为封面图片' : '设为封面'} disabled={index === 0} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setCover(item.id); }} className="image-card-button" style={{ position: 'static', width: '100%', height: 25, gap: 4, color: index === 0 ? 'var(--color-accent)' : '#64748b', background: index === 0 ? 'var(--color-accent-soft)' : 'var(--color-surface)', boxShadow: 'inset 0 0 0 1px var(--color-divider)', cursor: index === 0 ? 'default' : 'pointer', fontSize: 11 }}>{index === 0 ? <><Check size={12} />封面图片</> : <><Star size={12} />设为封面</>}</button>}
-            {showNotes && <input aria-label={`${item.name}备注`} className="image-card-note" value={item.note ?? ''} onChange={(event) => onChange(value.map((entry) => entry.id === item.id ? { ...entry, note: event.target.value } : entry))} placeholder="凭证备注" />}
+            {!!categories?.length && <select
+              aria-label={`${item.name}图片分类`}
+              className="image-card-category"
+              value={item.category ?? categories[0].value}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) => onChange(value.map((entry) => entry.id === item.id ? { ...entry, category: event.target.value } : entry))}
+            >{categories.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}</select>}
+            {showNotes && <input aria-label={`${item.name}备注`} className="image-card-note" value={item.note ?? ''} onChange={(event) => onChange(value.map((entry) => entry.id === item.id ? { ...entry, note: event.target.value } : entry))} placeholder={categories?.length ? '备注（如：客户A要求补拍）' : '凭证备注'} />}
           </div>
         ))}
         {canAdd && <label className="image-upload-empty" style={{ minHeight: 82, cursor: 'pointer' }}>

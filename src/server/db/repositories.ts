@@ -5,6 +5,7 @@ import { mapPackagingRecord, normalizePackagingItem, type PackagingInputLike } f
 import { OrderNumberService } from '../services/order-number-service.js';
 import { autoPack, type PackedBox } from '../../shared/packing.js';
 import { calculateOutstandingCents, deriveFinancePaymentStatus } from '../../shared/finance.js';
+import { DEFAULT_PRODUCT_IMAGE_CATEGORY } from '../../shared/product-image-categories.js';
 
 type SqlValue = string | number | null;
 
@@ -225,9 +226,10 @@ export class DatabaseRepositories {
           )) FROM product_packaging pp WHERE pp.product_id = p.id ORDER BY pp.sort_order), '[]') AS packaging_json,
           COALESCE((SELECT json_group_array(json_object(
             'id', ordered_pi.id, 'relativePath', ordered_pi.relative_path, 'originalName', ordered_pi.original_name,
-            'mimeType', ordered_pi.mime_type, 'size', ordered_pi.size_bytes
+            'mimeType', ordered_pi.mime_type, 'size', ordered_pi.size_bytes,
+            'category', ordered_pi.category, 'note', ordered_pi.note
           )) FROM (
-            SELECT pi.id, pi.relative_path, pi.original_name, pi.mime_type, pi.size_bytes
+            SELECT pi.id, pi.relative_path, pi.original_name, pi.mime_type, pi.size_bytes, pi.category, pi.note
             FROM product_images pi
             WHERE pi.product_id = p.id
             ORDER BY pi.sort_order, pi.id
@@ -400,18 +402,38 @@ export class DatabaseRepositories {
   addProductImage(
     productId: number,
     image: { relativePath: string; originalName: string; mimeType: string; size: number },
+    category = DEFAULT_PRODUCT_IMAGE_CATEGORY,
+    note = '',
   ) {
     const createdAt = now();
     const imageId = lastInsertId(
       this.database
         .prepare(
           `INSERT INTO product_images
-            (product_id, relative_path, original_name, mime_type, size_bytes, sort_order, created_at)
-           VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM product_images WHERE product_id = ?), ?)`,
+            (product_id, relative_path, original_name, mime_type, size_bytes, sort_order, created_at, category, note)
+           VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM product_images WHERE product_id = ?), ?, ?, ?)`,
         )
-        .run(productId, image.relativePath, image.originalName, image.mimeType, image.size, productId, createdAt),
+        .run(productId, image.relativePath, image.originalName, image.mimeType, image.size, productId, createdAt, category, note),
     );
     return this.database.prepare('SELECT * FROM product_images WHERE id = ?').get(imageId);
+  }
+
+  updateProductImage(productId: number, imageId: number, patch: { category?: string; note?: string }): boolean {
+    const assignments: string[] = [];
+    const values: SqlValue[] = [];
+    if (patch.category !== undefined) {
+      assignments.push('category = ?');
+      values.push(patch.category);
+    }
+    if (patch.note !== undefined) {
+      assignments.push('note = ?');
+      values.push(patch.note);
+    }
+    if (!assignments.length) return false;
+    const result = this.database
+      .prepare(`UPDATE product_images SET ${assignments.join(', ')} WHERE id = ? AND product_id = ?`)
+      .run(...values, imageId, productId);
+    return Number(result.changes ?? 0) > 0;
   }
 
   getProductPackaging(productId: number, packagingId: number) {

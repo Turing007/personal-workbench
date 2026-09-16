@@ -6,6 +6,12 @@ import ProductImagesModal from './ProductImagesModal';
 import type { ProductRecord } from './ProductEditor';
 import { packagingDisplay } from '../packaging-display';
 import { thumbUrl } from '../image-urls';
+import {
+  PRODUCT_IMAGE_CATEGORY_LABELS,
+  PRODUCT_IMAGE_CATEGORY_SEQUENCE,
+  normalizeProductImageCategory,
+  type ProductImageCategory,
+} from '../../shared/product-image-categories';
 
 export interface ProductDetailModalProps {
   open: boolean;
@@ -45,6 +51,15 @@ export default function ProductDetailModal({ open, product, onClose, onOpenImage
 
   const parameters = product.parameters ?? '';
   const image = product.images[0];
+  // 按分类汇总图片数量，方便一眼看出这个产品有没有尺寸图/客拍图可复用。
+  const imageCategoryCounts = product.images.reduce((counts, item) => {
+    const category = normalizeProductImageCategory(item.category);
+    counts.set(category, (counts.get(category) ?? 0) + 1);
+    return counts;
+  }, new Map<ProductImageCategory, number>());
+  const imageCategorySummary = PRODUCT_IMAGE_CATEGORY_SEQUENCE
+    .filter((category) => imageCategoryCounts.has(category))
+    .map((category) => `${PRODUCT_IMAGE_CATEGORY_LABELS[category]} ${imageCategoryCounts.get(category) ?? 0}`);
   const copyParameters = async () => {
     if (!parameters.trim()) return;
     try {
@@ -89,10 +104,13 @@ export default function ProductDetailModal({ open, product, onClose, onOpenImage
           <DetailItem label="备注" fullWidth>{product.remark || '—'}</DetailItem>
           <DetailItem label="图片">
             {image ? (
-              <button className="product-detail-images-button" type="button" onClick={() => onOpenImages(product)}>
-                <img src={thumbUrl(image.url, 240)} alt={image.name} loading="lazy" decoding="async" />
-                <span><Image size={13} />查看全部 {product.images.length} 张图片</span>
-              </button>
+              <div className="product-detail-images">
+                <button className="product-detail-images-button" type="button" onClick={() => onOpenImages(product)}>
+                  <img src={thumbUrl(image.url, 240)} alt={image.name} loading="lazy" decoding="async" />
+                  <span><Image size={13} />查看全部 {product.images.length} 张图片</span>
+                </button>
+                {imageCategorySummary.length > 1 && <span className="product-detail-images-summary">{imageCategorySummary.join(' · ')}</span>}
+              </div>
             ) : <span>暂无图片</span>}
           </DetailItem>
           <DetailItem label="参数" fullWidth>

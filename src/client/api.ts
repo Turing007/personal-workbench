@@ -1,5 +1,6 @@
 import type { OrderStatus } from '../shared/domain';
 import { calculateOrderAmountCents } from '../shared/order-prices';
+import { normalizeProductImageCategory } from '../shared/product-image-categories';
 import type { StockPreparation } from '../shared/stock';
 import type {
   Customer,
@@ -196,6 +197,8 @@ export interface ProductImageApiRecord {
   originalName: string;
   mimeType: string;
   size: number;
+  category?: string;
+  note?: string;
   createdAt?: string;
 }
 
@@ -326,7 +329,7 @@ export function mapProductRecord(row: ProductApiRecord): ProductRecord {
   const rawImages = row.images ?? (row as ProductApiRecord & { images_json?: Array<Record<string, unknown>> }).images_json ?? [];
   const packaging = (row.packaging ?? []).map((item) => asPackaging(item));
   const rawAttachments = row.attachments ?? [];
-  return { ...mapProduct(row), category: row.category ?? '', purchasePrice: purchasePrice == null ? '' : String(purchasePrice), supplier: row.supplier ?? '', parameters: typeof row.parameters === 'string' ? row.parameters : '', status: row.status === 'draft' ? 'draft' : 'active', colors: row.colors ?? [], batteryPlugs: row.batteryPlugs ?? [], images: rawImages.map((image) => ({ id: String(image.id ?? image.relativePath ?? image.relative_path), name: String(image.originalName ?? image.original_name ?? '产品图片'), url: `/files/${String(image.relativePath ?? image.relative_path ?? '')}` })), attachments: rawAttachments.map((raw) => { const item = raw as Record<string, unknown>; const category = String(item.category ?? 'other'); const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id), category: (['manual', 'packaging-design', 'label-dieline', 'other'].includes(category) ? category : 'other') as ProductAttachmentCategory, name: String(item.originalName ?? item.original_name ?? '产品附件'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mimeType ?? item.mime_type ?? ''), size: Number(item.size ?? item.size_bytes ?? 0), createdAt: String(item.createdAt ?? item.created_at ?? '') }; }), accessories: row.accessories ?? '', remark: row.remark ?? '', packaging: packaging.length ? packaging : [asPackaging(undefined)] };
+  return { ...mapProduct(row), category: row.category ?? '', purchasePrice: purchasePrice == null ? '' : String(purchasePrice), supplier: row.supplier ?? '', parameters: typeof row.parameters === 'string' ? row.parameters : '', status: row.status === 'draft' ? 'draft' : 'active', colors: row.colors ?? [], batteryPlugs: row.batteryPlugs ?? [], images: rawImages.map((image) => ({ id: String(image.id ?? image.relativePath ?? image.relative_path), name: String(image.originalName ?? image.original_name ?? '产品图片'), url: `/files/${String(image.relativePath ?? image.relative_path ?? '')}`, category: normalizeProductImageCategory(image.category), note: String(image.note ?? '') })), attachments: rawAttachments.map((raw) => { const item = raw as Record<string, unknown>; const category = String(item.category ?? 'other'); const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id), category: (['manual', 'packaging-design', 'label-dieline', 'other'].includes(category) ? category : 'other') as ProductAttachmentCategory, name: String(item.originalName ?? item.original_name ?? '产品附件'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mimeType ?? item.mime_type ?? ''), size: Number(item.size ?? item.size_bytes ?? 0), createdAt: String(item.createdAt ?? item.created_at ?? '') }; }), accessories: row.accessories ?? '', remark: row.remark ?? '', packaging: packaging.length ? packaging : [asPackaging(undefined)] };
 }
 
 export function draftToInput(draft: OrderDraft) {
@@ -606,10 +609,17 @@ export function updateProductAttachmentCategory(productId: string, attachmentId:
 export function deleteProductAttachment(productId: string, attachmentId: string) {
   return request<null>(`/api/products/${productId}/attachments/${attachmentId}`, { method: 'DELETE' });
 }
-export async function uploadProductImage(id: string, file: File) {
+export async function uploadProductImage(id: string, file: File, category = '', note = '') {
   const form = new FormData();
   form.append('file', file);
-  return request<ProductImageApiRecord>(`/api/products/${id}/images`, { method: 'POST', body: form });
+  const search = new URLSearchParams();
+  if (category) search.set('category', category);
+  if (note) search.set('note', note);
+  const query = search.toString();
+  return request<ProductImageApiRecord>(`/api/products/${id}/images${query ? `?${query}` : ''}`, { method: 'POST', body: form });
+}
+export function updateProductImage(productId: string, imageId: string, patch: { category?: string; note?: string }) {
+  return request<ProductImageApiRecord>(`/api/products/${productId}/images/${imageId}`, { method: 'PATCH', body: JSON.stringify(patch) });
 }
 export function deleteProductImage(productId: string, imageId: string) { return request(`/api/products/${productId}/images/${imageId}`, { method: 'DELETE' }); }
 export function reorderProductImages(productId: string, imageIds: number[]) { return request<null>(`/api/products/${productId}/images/order`, { method: 'PUT', body: JSON.stringify({ imageIds }) }); }

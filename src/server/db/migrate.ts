@@ -2,6 +2,9 @@ import type { DatabaseSync } from 'node:sqlite';
 import { withTransaction } from './connection.js';
 import { migratePackagingColumns } from './packaging.js';
 
+/** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
+const CURRENT_SCHEMA_VERSION = 23;
+
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -635,9 +638,9 @@ function preflightMigration(database: DatabaseSync): MigrationPreflight {
     );
   }
   const parsedSchemaVersion = normalizedSchemaVersion === '' ? 0 : Number(normalizedSchemaVersion);
-  if (parsedSchemaVersion > 22) {
+  if (parsedSchemaVersion > CURRENT_SCHEMA_VERSION) {
     throw new Error(
-      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version 22`,
+      `Unsupported database schema version ${parsedSchemaVersion}; this application supports up to version ${CURRENT_SCHEMA_VERSION}`,
     );
   }
 
@@ -1041,6 +1044,14 @@ function migrateVersionTwentyTwo(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '22', now);
 }
 
+function migrateVersionTwentyThree(database: DatabaseSync, now: string): void {
+  // 产品图片分类（尺寸图/包装图/客拍图…）与备注，用于按产品归档图片资料、后续复用。
+  // 两列必须经 ALTER 追加到表尾，不能写进 schemaSql 中段，否则备份按位置复制会列错位。
+  addColumnIfMissing(database, 'product_images', 'category', "TEXT NOT NULL DEFAULT 'product'");
+  addColumnIfMissing(database, 'product_images', 'note', "TEXT NOT NULL DEFAULT ''");
+  upsertSetting(database, 'schema_version', String(CURRENT_SCHEMA_VERSION), now);
+}
+
 export function migrateDatabase(database: DatabaseSync): void {
   if (database.isTransaction) {
     throw new Error('Database migration cannot run inside an active transaction');
@@ -1089,6 +1100,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionTwenty(transactionDatabase, now);
     migrateVersionTwentyOne(transactionDatabase, now);
     migrateVersionTwentyTwo(transactionDatabase, now);
+    migrateVersionTwentyThree(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

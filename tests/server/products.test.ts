@@ -274,6 +274,102 @@ describe('产品参数路由校验', () => {
   });
 });
 
+function imageUpload(url: string, filename: string, content: string) {
+  const boundary = `----workbench-product-image-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return {
+    url,
+    headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+    payload: Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: image/png\r\n\r\n`),
+      Buffer.from(content),
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]),
+  };
+}
+
+describe('产品图片分类', () => {
+  it('上传图片时按分类归档并保存备注，未指定分类时归为产品图', async () => {
+    const { app, repositories, close } = await makeProductApp();
+    const product = repositories.saveProduct(productInput('图片分类产品'))!;
+
+    const dimension = await app.inject({
+      method: 'POST',
+      ...imageUpload(`/api/products/${product.id}/images?category=dimension&note=${encodeURIComponent('客户A要求补拍侧面')}`, '尺寸图.png', 'dimension-bytes'),
+    });
+    expect(dimension.statusCode).toBe(201);
+    expect(dimension.json().data).toMatchObject({ category: 'dimension', note: '客户A要求补拍侧面' });
+
+    const fallback = await app.inject({
+      method: 'POST',
+      ...imageUpload(`/api/products/${product.id}/images`, '主图.png', 'default-bytes'),
+    });
+    expect(fallback.statusCode).toBe(201);
+    expect(fallback.json().data).toMatchObject({ category: 'product', note: '' });
+
+    const images = repositories.getProduct(Number(product.id))?.images ?? [];
+    expect(images.map((image) => [image.category, image.note])).toEqual([
+      ['dimension', '客户A要求补拍侧面'],
+      ['product', ''],
+    ]);
+    close();
+  });
+
+  it('拒绝未知分类与超长备注，且不写入图片记录', async () => {
+    const { app, repositories, close } = await makeProductApp();
+    const product = repositories.saveProduct(productInput('图片校验产品'))!;
+
+    const invalidCategory = await app.inject({
+      method: 'POST',
+      ...imageUpload(`/api/products/${product.id}/images?category=unknown`, '图.png', 'bytes'),
+    });
+    expect(invalidCategory.statusCode).toBe(400);
+    expect(invalidCategory.json()).toMatchObject({ ok: false, error: { code: 'VALIDATION_ERROR', field: 'category' } });
+
+    const tooLongNote = await app.inject({
+      method: 'POST',
+      ...imageUpload(`/api/products/${product.id}/images?note=${encodeURIComponent('备'.repeat(201))}`, '图.png', 'bytes'),
+    });
+    expect(tooLongNote.statusCode).toBe(400);
+    expect(tooLongNote.json()).toMatchObject({ ok: false, error: { code: 'VALIDATION_ERROR', field: 'note' } });
+
+    expect(repositories.getProduct(Number(product.id))?.images).toEqual([]);
+    close();
+  });
+
+  it('支持修改已有图片的分类和备注', async () => {
+    const { app, repositories, close } = await makeProductApp();
+    const product = repositories.saveProduct(productInput('图片改分类产品'))!;
+    const image = repositories.addProductImage(Number(product.id), {
+      relativePath: 'product-images/customer-shot.png',
+      originalName: '客户实拍.png',
+      mimeType: 'image/png',
+      size: 12,
+    });
+    const imageId = Number((image as { id: number }).id);
+    const url = `/api/products/${product.id}/images/${imageId}`;
+
+    const patched = await app.inject({ method: 'PATCH', url, payload: { category: 'customer', note: '客户B 2026-03 实拍' } });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json().data).toMatchObject({ category: 'customer', note: '客户B 2026-03 实拍' });
+
+    // 只改备注时保留原分类。
+    const noteOnly = await app.inject({ method: 'PATCH', url, payload: { note: '客户B 追加白底图' } });
+    expect(noteOnly.statusCode).toBe(200);
+    expect(noteOnly.json().data).toMatchObject({ category: 'customer', note: '客户B 追加白底图' });
+
+    const invalidCategory = await app.inject({ method: 'PATCH', url, payload: { category: 'unknown' } });
+    expect(invalidCategory.statusCode).toBe(400);
+
+    const emptyPatch = await app.inject({ method: 'PATCH', url, payload: {} });
+    expect(emptyPatch.statusCode).toBe(400);
+
+    const missingImage = await app.inject({ method: 'PATCH', url: `/api/products/${product.id}/images/999999`, payload: { category: 'customer' } });
+    expect(missingImage.statusCode).toBe(404);
+
+    close();
+  });
+});
+
 describe('产品附件路由', () => {
   it('上传附件时保存分类和元数据，并支持分类更新与删除', async () => {
     const { app, repositories, close } = await makeProductApp();
