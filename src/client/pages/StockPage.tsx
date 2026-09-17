@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Copy, Download, Link2, PackageOpen, RefreshCw, TriangleAlert } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronRight, Copy, Download, Link2, PackageOpen, RefreshCw, TriangleAlert, X } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   advanceOrderStatus,
@@ -129,8 +129,7 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
   };
 
   return <div className="page-shell stock-page">
-    <div className="page-toolbar">
-      <div><strong className="page-title">备货</strong><span className="page-subtitle">按供应商汇总待备货订单，一键生成备货表</span></div>
+    <div className="page-toolbar stock-toolbar">
       <div className="month-control" role="group" aria-label="备货范围">
         <input
           type="date"
@@ -140,14 +139,17 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
           disabled={scope === 'all'}
           onChange={(event) => setDate(event.target.value || todayISO())}
         />
-        <button className="icon-button" type="button" title={scope === 'date' ? '切换为全部待备货' : '回到按日期'} onClick={() => setScope((value) => (value === 'date' ? 'all' : 'date'))}>
-          {scope === 'date' ? '全部' : <PackageOpen size={15} />}
+        <button className="button button-secondary month-scope-button" type="button" title={scope === 'date' ? '切换为全部待备货' : '回到按日期'} onClick={() => setScope((value) => (value === 'date' ? 'all' : 'date'))}>
+          {scope === 'date' ? <X size={14} /> : <CalendarDays size={14} />}
+          {scope === 'date' ? '全部' : '按日期'}
         </button>
       </div>
       <button className="icon-button" type="button" title="刷新备货表" disabled={loading} onClick={() => void load()}><RefreshCw size={15} /></button>
-      <button className="button button-secondary" type="button" disabled={loading || !groups.length} onClick={() => void exportExcel()}><Download size={14} />导出 Excel</button>
-      <button className="button button-secondary" type="button" disabled={!groups.length || !preparation} onClick={() => { if (preparation) void copyText(buildCopyText(preparation, groups)); }}><Copy size={14} />复制全部</button>
-      <button className="button button-primary" type="button" disabled={marking || !orderIds.length} onClick={() => setConfirmMarkOpen(true)}><PackageOpen size={14} />标记已备货</button>
+      <div className="stock-action-row">
+        <button className="button button-secondary" type="button" disabled={loading || !groups.length} onClick={() => void exportExcel()}><Download size={14} />导出 Excel</button>
+        <button className="button button-secondary" type="button" disabled={!groups.length || !preparation} onClick={() => { if (preparation) void copyText(buildCopyText(preparation, groups)); }}><Copy size={14} />复制全部</button>
+        <button className="button button-primary" type="button" disabled={marking || !orderIds.length} onClick={() => setConfirmMarkOpen(true)}><PackageOpen size={14} />标记已备货</button>
+      </div>
     </div>
     <div className="stock-stat-grid">
       <div><span>待备货订单</span><strong>{preparation?.orderCount ?? 0}<small> 单</small></strong></div>

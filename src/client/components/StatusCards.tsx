@@ -41,16 +41,18 @@ export default function StatusCards({ activeKey, counts, onSelect }: StatusCards
     <div className="status-cards">
       {definitions.map(({ key, label, tone, toneSoft, icon: Icon }) => {
         const active = key === activeKey;
+        const count = counts[key] ?? 0;
         return (
           <button
             key={key}
             type="button"
             onClick={() => onSelect(key)}
             aria-pressed={active}
-            className={`status-card${active ? ' is-active' : ''}`}
+            data-count={count}
+            className={`status-card${active ? ' is-active' : ''}${count === 0 ? ' is-empty' : ''}`}
             style={{ '--tone': tone, '--tone-soft': toneSoft } as CSSProperties}
           >
-            <span className="status-card-count">{counts[key] ?? 0}</span>
+            <span className="status-card-count">{count}</span>
             <span className="status-card-label"><Icon size={13} strokeWidth={2} color={tone} style={{ verticalAlign: -2, marginRight: 4 }} />{label}</span>
           </button>
         );

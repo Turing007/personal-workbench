@@ -1,0 +1,45 @@
+import {
+  Boxes,
+  ClipboardList,
+  FileSpreadsheet,
+  PackageCheck,
+  PackageOpen,
+  ReceiptText,
+  Settings,
+  ShoppingBag,
+  WalletCards,
+} from 'lucide-react';
+import type { ComponentType } from 'react';
+
+export type NavigationKey = 'orders' | 'stock' | 'finance' | 'quotations' | 'sales-documents' | 'products' | 'customer-products' | 'shipping' | 'settings';
+
+export interface NavigationItem {
+  key: NavigationKey;
+  label: string;
+  /** 底部栏空间紧张时使用的短名，侧边栏仍用 label。 */
+  shortLabel: string;
+  icon: ComponentType<{ size?: number; strokeWidth?: number }>;
+}
+
+/* 按业务流程排序：报价 → 开单 → 订单 → 备货 → 发货 → 收款，其后是资料库与设置 */
+export const navigationItems: NavigationItem[] = [
+  { key: 'quotations', label: '报价单', shortLabel: '报价', icon: ReceiptText },
+  { key: 'sales-documents', label: '销售开单', shortLabel: '开单', icon: FileSpreadsheet },
+  { key: 'orders', label: '订单管理', shortLabel: '订单', icon: ClipboardList },
+  { key: 'stock', label: '备货', shortLabel: '备货', icon: PackageOpen },
+  { key: 'shipping', label: '发货管理', shortLabel: '发货', icon: PackageCheck },
+  { key: 'finance', label: '财务管理', shortLabel: '财务', icon: WalletCards },
+  { key: 'products', label: '产品库', shortLabel: '产品', icon: Boxes },
+  { key: 'customer-products', label: '客户产品库', shortLabel: '客户产品', icon: ShoppingBag },
+  { key: 'settings', label: '设置', shortLabel: '设置', icon: Settings },
+];
+
+export const navigationKeys: NavigationKey[] = navigationItems.map((item) => item.key);
+
+const itemByKey = new Map(navigationItems.map((item) => [item.key, item]));
+
+export function navigationItem(key: NavigationKey): NavigationItem {
+  const item = itemByKey.get(key);
+  if (!item) throw new Error(`未知导航模块：${key}`);
+  return item;
+}

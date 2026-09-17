@@ -8,6 +8,8 @@ import ProductParametersModal from '../components/ProductParametersModal';
 import { cloneProductForNew } from '../product-copy';
 import { thumbUrl } from '../image-urls';
 import { packagingDisplay } from '../packaging-display';
+import { useIsNarrow } from '../use-is-narrow';
+import { useHideOnScroll } from '../use-hide-on-scroll';
 
 type StatusFilter = 'all' | 'active' | 'draft';
 
@@ -41,6 +43,10 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
   const [expandedPackagingId, setExpandedPackagingId] = useState<string>();
   const [parametersProduct, setParametersProduct] = useState<ProductRecord>();
   const importInputRef = useRef<HTMLInputElement>(null);
+  const narrow = useIsNarrow();
+  const [searchFocused, setSearchFocused] = useState(false);
+  // 手机端搜索框悬浮在顶部：连续下滑收起，回滑展开；输入时锁住展开避免打字途中消失。
+  const searchHidden = useHideOnScroll(narrow && !searchFocused);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return products
@@ -95,15 +101,15 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
 
   return <div className="page-shell products-page">
     <div className="page-toolbar">
-      <div className="search-control"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="按品名、SKU、供应商、分类筛选" /></div>
+      <div className={`search-control${searchHidden ? ' is-scroll-hidden' : ''}`}><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="按品名、SKU、供应商、分类筛选" /></div>
       <select aria-label="产品状态筛选" className="toolbar-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}>
         {statusFilterLabels.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
       <span className="toolbar-count">{filtered.length} 个产品</span>
       <button className="button button-secondary" type="button" onClick={() => void refresh()} disabled={refreshing} title="重新加载产品库"><RefreshCw size={15} />刷新</button>
-      <button className="button button-secondary" type="button" onClick={() => void onExport()} title="导出产品库"><Download size={15} />导出</button>
-      <button className="button button-secondary" type="button" onClick={() => void onDownloadTemplate()} title="下载 Excel 导入模板"><FileDown size={15} />下载模板</button>
-      <button className="button button-secondary" type="button" onClick={() => importInputRef.current?.click()} title="导入 Excel 产品库"><Upload size={15} />导入</button>
+      <button className="button button-secondary products-mobile-hidden" type="button" onClick={() => void onExport()} title="导出产品库"><Download size={15} />导出</button>
+      <button className="button button-secondary products-mobile-hidden" type="button" onClick={() => void onDownloadTemplate()} title="下载 Excel 导入模板"><FileDown size={15} />下载模板</button>
+      <button className="button button-secondary products-mobile-hidden" type="button" onClick={() => importInputRef.current?.click()} title="导入 Excel 产品库"><Upload size={15} />导入</button>
       <input ref={importInputRef} type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void onImport(file); }} />
       <button className="button button-primary" type="button" onClick={openNew}><Plus size={15} />添加产品</button>
     </div>

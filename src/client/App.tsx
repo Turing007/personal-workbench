@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CompanySnapshot } from '../shared/documents';
 import AuthGate from './components/auth/AuthGate';
-import Sidebar, { navigationKeys, type NavigationKey } from './components/Sidebar';
+import Sidebar from './components/Sidebar';
+import { navigationKeys, type NavigationKey } from './navigation';
+import { loadMobileTabs, saveMobileTabs } from './mobile-tabs';
 import MobileTabBar from './components/MobileTabBar';
 import Toast, { type ToastMessage } from './components/Toast';
 import type { CartonLabel } from './components/LabelEditorModal';
@@ -164,6 +166,12 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
   const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState<ToastMessage[]>([]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [mobileTabs, setMobileTabs] = useState<NavigationKey[]>(loadMobileTabs);
+
+  const updateMobileTabs = useCallback((next: NavigationKey[]) => {
+    setMobileTabs(next);
+    saveMobileTabs(next);
+  }, []);
 
   const navigate = useCallback((next: NavigationKey) => {
     // The customer id is a one-time hand-off from quotation sync. Clear it
@@ -568,8 +576,8 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} onExport={exportProductLibrary} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} />}
     {active === 'customer-products' && <CustomerProductsPage customers={customers} systemProducts={products} initialCustomerId={customerProductsInitialCustomerId ?? undefined} loading={loading} onCustomersChanged={loadCustomers} onNotify={notify} />}
     {active === 'shipping' && <ShippingPage orders={shippingOrders} initialOrder={shippingInitialOrder} initialOrders={shippingInitialOrders} onUpdateTracking={updateTracking} onConfirm={confirmShipping} />}
-    {active === 'settings' && <SettingsPage onBackup={backup} onRestore={restore} onProfileChanged={setCompanyProfile} currentUser={user} />}
-  </main><MobileTabBar activeKey={active} onNavigate={navigate} onOpenMore={() => setMobileNavOpen(true)} /><Toast messages={messages} onDismiss={(id) => setMessages((current) => current.filter((item) => item.id !== id))} /></div>;
+    {active === 'settings' && <SettingsPage onBackup={backup} onRestore={restore} onProfileChanged={setCompanyProfile} currentUser={user} mobileTabs={mobileTabs} onMobileTabsChange={updateMobileTabs} />}
+  </main><MobileTabBar activeKey={active} tabs={mobileTabs} onNavigate={navigate} onOpenMore={() => setMobileNavOpen(true)} /><Toast messages={messages} onDismiss={(id) => setMessages((current) => current.filter((item) => item.id !== id))} /></div>;
 }
 
 /** 会话门卫在最外层：未登录只渲染登录页，登录成功才挂载工作台并开始加载数据。 */

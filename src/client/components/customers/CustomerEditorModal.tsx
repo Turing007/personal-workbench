@@ -11,17 +11,6 @@ export interface CustomerEditorModalProps {
   onSave: (input: CustomerSaveInput) => Promise<void> | void;
 }
 
-const inputStyle = {
-  width: '100%',
-  minWidth: 0,
-  border: '1px solid #dbe3ea',
-  borderRadius: 5,
-  padding: '8px 9px',
-  font: 'inherit',
-  fontSize: 12,
-  background: '#fff',
-};
-
 const blank: CustomerSaveInput = {
   name: '',
   contactName: '',
@@ -74,25 +63,26 @@ export default function CustomerEditorModal({ open, customer, busy, onClose, onS
 
   return <Modal
     open={open}
+    variant="drawer"
     title={customer ? '编辑客户' : '新增客户'}
     onClose={busy ? () => undefined : onClose}
-    width={560}
+    width={440}
     footer={<>
       <button type="button" className="button button-secondary" disabled={busy} onClick={onClose}>取消</button>
       <button type="button" className="button button-primary" disabled={busy} onClick={() => { void save(); }}><Save size={14} />{busy ? '保存中…' : '保存客户'}</button>
     </>}
   >
-    <div style={{ display: 'grid', gap: 11 }}>
-      {error && <div role="alert" style={{ padding: '8px 10px', border: '1px solid #fecaca', borderRadius: 5, background: '#fef2f2', color: '#b91c1c', fontSize: 12 }}>{error}</div>}
-      <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>客户名称<input autoFocus value={draft.name} onChange={(event) => update('name', event.target.value)} style={inputStyle} placeholder="例如：张三" /></label>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>联系人<input value={draft.contactName} onChange={(event) => update('contactName', event.target.value)} style={inputStyle} /></label>
-        <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>联系电话<input value={draft.contactPhone} onChange={(event) => update('contactPhone', event.target.value)} style={inputStyle} /></label>
+    <div className="customer-editor-form">
+      {error && <div className="customer-editor-error" role="alert">{error}</div>}
+      <label className="customer-editor-field">客户名称<input className="customer-editor-input" autoFocus value={draft.name} onChange={(event) => update('name', event.target.value)} placeholder="例如：张三" /></label>
+      <div className="customer-editor-row">
+        <label className="customer-editor-field">联系人<input className="customer-editor-input" value={draft.contactName} onChange={(event) => update('contactName', event.target.value)} /></label>
+        <label className="customer-editor-field">联系电话<input className="customer-editor-input" value={draft.contactPhone} onChange={(event) => update('contactPhone', event.target.value)} /></label>
       </div>
-      <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>收件信息<textarea rows={4} value={draft.shippingInfo} onChange={(event) => update('shippingInfo', event.target.value)} style={{ ...inputStyle, resize: 'vertical' }} placeholder="收件人、地址、电话等统一记录" /></label>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>开票抬头<input value={draft.invoiceTitle} onChange={(event) => update('invoiceTitle', event.target.value)} style={inputStyle} placeholder="开票时使用的单位抬头" /></label>
-        <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>税号<input value={draft.taxNo} onChange={(event) => update('taxNo', event.target.value)} style={inputStyle} placeholder="纳税人识别号" /></label>
+      <label className="customer-editor-field">收件信息<textarea className="customer-editor-input customer-editor-textarea" rows={4} value={draft.shippingInfo} onChange={(event) => update('shippingInfo', event.target.value)} placeholder="收件人、地址、电话等统一记录" /></label>
+      <div className="customer-editor-row">
+        <label className="customer-editor-field">开票抬头<input className="customer-editor-input" value={draft.invoiceTitle} onChange={(event) => update('invoiceTitle', event.target.value)} placeholder="开票时使用的单位抬头" /></label>
+        <label className="customer-editor-field">税号<input className="customer-editor-input" value={draft.taxNo} onChange={(event) => update('taxNo', event.target.value)} placeholder="纳税人识别号" /></label>
       </div>
     </div>
   </Modal>;

@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   Copy,
   Edit3,
   Plus,
@@ -8,7 +7,7 @@ import {
   ToggleLeft,
   ToggleRight,
   Trash2,
-  UserRound,
+  Users,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Customer, CustomerProduct, CustomerProductBatchSaveInput, CustomerProductSaveInput } from '../../shared/customers';
@@ -31,11 +30,14 @@ import {
   deleteCustomerProductAttachment,
   updateCustomerProductAttachmentCategory,
 } from '../api';
+import Modal from '../components/Modal';
 import CustomerEditorModal from '../components/customers/CustomerEditorModal';
 import CustomerProductEditorModal, { type CustomerProductAttachmentDraft } from '../components/customer-products/CustomerProductEditorModal';
 import { cloneCustomerProductForNew } from '../customer-product-copy';
 import { thumbUrl } from '../image-urls';
 import type { ToastKind } from '../components/OrderForm';
+import { useIsNarrow } from '../use-is-narrow';
+import { useHideOnScroll } from '../use-hide-on-scroll';
 
 export interface CustomerProductsPageProps {
   customers: Customer[];
@@ -71,8 +73,8 @@ function customerProductKey(product: CustomerProduct): string {
 export default function CustomerProductsPage({ customers, systemProducts, initialCustomerId, loading, onCustomersChanged, onNotify }: CustomerProductsPageProps) {
   const [customerQuery, setCustomerQuery] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(initialCustomerId ?? customers.find((customer) => customer.isActive)?.id ?? customers[0]?.id ?? null);
-  // 手机端交互：点客户后隐藏客户列表、整屏看该客户的产品；桌面端此状态无效果（CSS 仅在窄屏生效）。
-  const [mobileShowProducts, setMobileShowProducts] = useState(initialCustomerId != null);
+  // 客户列表走左侧抽屉：点「N 个客户」滑出，选中客户后自动收起。
+  const [customerDrawerOpen, setCustomerDrawerOpen] = useState(false);
   const [products, setProducts] = useState<CustomerProduct[]>([]);
   const [productQuery, setProductQuery] = useState('');
   const [productStatus, setProductStatus] = useState<'all' | 'complete' | 'incomplete'>('all');
@@ -87,6 +89,10 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
   const [copyDraft, setCopyDraft] = useState<CustomerProduct | null>(null);
   const [copySource, setCopySource] = useState<CustomerProduct | null>(null);
   const appliedInitialCustomerId = useRef<number | undefined>(undefined);
+  const narrow = useIsNarrow();
+  const [searchFocused, setSearchFocused] = useState(false);
+  // 手机端搜索框悬浮在顶部：连续下滑收起，回滑展开；输入时锁住展开避免打字途中消失。
+  const searchHidden = useHideOnScroll(narrow && !searchFocused);
 
   const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId) ?? null;
 
@@ -284,29 +290,15 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
 
   return <div className="page-shell customer-products-page">
     <div className="page-toolbar customer-products-toolbar">
-      <div className="page-title customer-products-title"><UserRound size={17} />客户产品库</div>
-      <div className="search-control customer-search-control"><Search size={15} /><input value={customerQuery} onChange={(event) => setCustomerQuery(event.target.value)} placeholder="搜索客户名称、联系人、电话" /></div>
-      <span className="toolbar-count">{filteredCustomers.length} 个客户</span>
+      <div className={`search-control customer-search-control${searchHidden ? ' is-scroll-hidden' : ''}`}><Search size={15} /><input value={customerQuery} onChange={(event) => setCustomerQuery(event.target.value)} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索客户名称、联系人、电话" /></div>
+      <button className="customer-list-trigger" type="button" title="打开客户列表" aria-haspopup="dialog" aria-expanded={customerDrawerOpen} onClick={() => setCustomerDrawerOpen(true)}><Users size={15} />{filteredCustomers.length} 个客户</button>
       <button className="icon-button" type="button" title="刷新客户资料" disabled={loading} onClick={() => void onCustomersChanged()}><RefreshCw size={15} /></button>
       <button className="button button-primary" type="button" title="新增客户" onClick={() => { setEditingCustomer(null); setCustomerEditorOpen(true); }}><Plus size={15} />新增客户</button>
     </div>
 
-    <div className={`customer-products-layout${mobileShowProducts ? ' is-products-only' : ''}`}>
-      <section className="table-panel card customer-list-panel" style={{ minHeight: 420 }}>
-        <div className="section-box-header customer-list-header"><span className="section-box-title">客户档案</span></div>
-        <div className="customer-list-scroll" style={{ maxHeight: 'calc(100vh - 190px)' }}>
-          {filteredCustomers.map((customer) => <button key={customer.id} className={`customer-list-item${customer.id === selectedCustomerId ? ' is-selected' : ''}`} type="button" onClick={() => { setSelectedCustomerId(customer.id); setMobileShowProducts(true); }} style={{ width: '100%', display: 'grid', gap: 5, padding: '11px 12px', border: 0, borderBottom: '1px solid #edf0f2', borderLeft: `3px solid ${customer.id === selectedCustomerId ? '#0f766e' : 'transparent'}`, background: customer.id === selectedCustomerId ? '#f0fdfa' : '#fff', textAlign: 'left', cursor: 'pointer', opacity: customer.isActive ? 1 : .62 }}>
-            <div className="customer-list-item-heading"><strong>{customer.name}</strong><span className={`badge ${customer.isActive ? 'badge-success' : 'badge-neutral'}`}>{customer.isActive ? '启用' : '停用'}</span></div>
-            <small className="customer-list-meta">{[customer.contactName, customer.contactPhone].filter(Boolean).join(' · ') || '暂无联系人信息'}</small>
-            <small className={`customer-list-count${customer.incompleteProductCount ? ' is-incomplete' : ''}`}>{customer.productCount} 个产品 · {customer.incompleteProductCount} 个待完善</small>
-          </button>)}
-          {!filteredCustomers.length && <div className="empty-state">暂无匹配客户</div>}
-        </div>
-      </section>
-
+    <div className="customer-products-layout">
       <section className="table-panel customer-products-panel" style={{ minWidth: 0, padding: 0, overflow: 'hidden' }}>
         <div className="customer-products-header">
-          <button className="customer-panel-back" type="button" onClick={() => setMobileShowProducts(false)}><ArrowLeft size={14} />切换客户</button>
           <div className="customer-products-heading"><strong>{selectedCustomer?.name ?? '请选择客户'}</strong>{selectedCustomer && <small>{[selectedCustomer.contactName, selectedCustomer.contactPhone].filter(Boolean).join(' · ') || '暂无联系人'} · {selectedCustomer.shippingInfo ? '已填写收件信息' : '未填写收件信息'}</small>}</div>
           {selectedCustomer && <div className="row-actions"><button className="icon-button" type="button" title="编辑客户资料" onClick={() => { setEditingCustomer(selectedCustomer); setCustomerEditorOpen(true); }}><Edit3 size={14} /></button><button className="icon-button" type="button" title={selectedCustomer.isActive ? '停用客户' : '启用客户'} onClick={() => { void toggleCustomer(selectedCustomer); }}>{selectedCustomer.isActive ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}</button><button className="icon-button danger" type="button" title="删除客户" onClick={() => { void removeCustomer(selectedCustomer); }}><Trash2 size={14} /></button></div>}
         </div>
@@ -358,6 +350,20 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
         {!loading && !productLoading && !products.length && <div className="table-state">{productError || (selectedCustomer ? '当前客户暂无产品，可从系统产品库导入或直接添加新品。' : '请先在左侧选择客户。')}</div>}
       </section>
     </div>
+
+    <Modal className="customer-list-drawer-panel" open={customerDrawerOpen} variant="drawer" drawerSide="left" title="客户档案" width={400} onClose={() => setCustomerDrawerOpen(false)}>
+      <div className="customer-drawer">
+        <div className="search-control customer-drawer-search"><Search size={15} /><input value={customerQuery} onChange={(event) => setCustomerQuery(event.target.value)} placeholder="搜索客户名称、联系人、电话" /></div>
+        <div className="customer-list-scroll">
+          {filteredCustomers.map((customer) => <button key={customer.id} className={`customer-list-item${customer.id === selectedCustomerId ? ' is-selected' : ''}`} type="button" onClick={() => { setSelectedCustomerId(customer.id); setCustomerDrawerOpen(false); }} style={{ width: '100%', display: 'grid', gap: 5, padding: '11px 12px', border: 0, borderBottom: '1px solid #edf0f2', borderLeft: `3px solid ${customer.id === selectedCustomerId ? '#0f766e' : 'transparent'}`, background: customer.id === selectedCustomerId ? '#f0fdfa' : '#fff', textAlign: 'left', cursor: 'pointer', opacity: customer.isActive ? 1 : .62 }}>
+            <div className="customer-list-item-heading"><strong>{customer.name}</strong><span className={`badge ${customer.isActive ? 'badge-success' : 'badge-neutral'}`}>{customer.isActive ? '启用' : '停用'}</span></div>
+            <small className="customer-list-meta">{[customer.contactName, customer.contactPhone].filter(Boolean).join(' · ') || '暂无联系人信息'}</small>
+            <small className={`customer-list-count${customer.incompleteProductCount ? ' is-incomplete' : ''}`}>{customer.productCount} 个产品 · {customer.incompleteProductCount} 个待完善</small>
+          </button>)}
+          {!filteredCustomers.length && <div className="empty-state">暂无匹配客户</div>}
+        </div>
+      </div>
+    </Modal>
 
     <CustomerEditorModal open={customerEditorOpen} customer={editingCustomer} busy={customerBusy} onClose={() => { setCustomerEditorOpen(false); setEditingCustomer(null); }} onSave={saveCustomerProfile} />
     <CustomerProductEditorModal open={productEditorOpen} product={editingProduct ?? copyDraft} copyMode={Boolean(copyDraft)} copyFromImageURL={copySource?.imageRelativePath ? `/files/${copySource.imageRelativePath}` : null} systemProducts={systemProducts} enableAttachments onClose={closeProductEditor} onSave={saveProduct} onBatchSave={saveProductsBatch} />

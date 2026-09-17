@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Building2, CalendarClock, Copy, Database, Download, ImageOff, KeyRound, Plus, RotateCcw, Save, ScrollText, Smartphone, Trash2, Upload, UserPlus, Users, Wifi } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Building2, CalendarClock, Copy, Database, Download, Ellipsis, ImageOff, KeyRound, LayoutGrid, Minus, Plus, RotateCcw, Save, ScrollText, Smartphone, Trash2, Upload, UserPlus, Users, Wifi } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
@@ -20,6 +20,9 @@ import {
   type AuthUser,
   type AutoBackupStatus,
 } from '../api';
+import { navigationItem, navigationItems, type NavigationKey } from '../navigation';
+import { DEFAULT_MOBILE_TABS, MOBILE_TAB_LIMIT, isDefaultMobileTabs, loadMobileTabs, moveMobileTab, toggleMobileTab } from '../mobile-tabs';
+import { useIsNarrow } from '../use-is-narrow';
 
 const EMPTY_PROFILE: CompanySnapshot = { name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '' };
 
@@ -56,7 +59,7 @@ const defaultTemplateApi = {
   }),
 };
 
-type SettingsSectionKey = 'company' | 'contract' | 'storage' | 'backup' | 'account' | 'mobile';
+type SettingsSectionKey = 'company' | 'contract' | 'storage' | 'backup' | 'account' | 'mobile' | 'mobile-nav';
 
 // 两级菜单：分组标题 → 菜单项，内容区一次只显示激活的板块。
 const SETTINGS_MENU_GROUPS: Array<{ label: string; items: Array<{ key: SettingsSectionKey; label: string; icon: LucideIcon }> }> = [
@@ -70,7 +73,13 @@ const SETTINGS_MENU_GROUPS: Array<{ label: string; items: Array<{ key: SettingsS
     ],
   },
   { label: '账号与安全', items: [{ key: 'account', label: '账号与安全', icon: Users }] },
-  { label: '移动端', items: [{ key: 'mobile', label: '手机连接', icon: Smartphone }] },
+  {
+    label: '移动端',
+    items: [
+      { key: 'mobile', label: '手机连接', icon: Smartphone },
+      { key: 'mobile-nav', label: '底部导航', icon: LayoutGrid },
+    ],
+  },
 ];
 
 export interface SettingsPageProps {
@@ -82,6 +91,9 @@ export interface SettingsPageProps {
   deleteCompanyLogo?: () => Promise<CompanySnapshot>;
   onProfileChanged?: (profile: CompanySnapshot) => void;
   currentUser?: AuthUser | null;
+  /** 当前设备的底部导航配置（仅手机端可改）；未传入时组件内部自读本机存储。 */
+  mobileTabs?: NavigationKey[];
+  onMobileTabsChange?: (tabs: NavigationKey[]) => void;
 }
 
 export default function SettingsPage({
@@ -93,7 +105,24 @@ export default function SettingsPage({
   deleteCompanyLogo = defaultCompanyApi.deleteLogo,
   onProfileChanged,
   currentUser,
+  mobileTabs,
+  onMobileTabsChange,
 }: SettingsPageProps) {
+  const isNarrow = useIsNarrow();
+  const [fbMobileTabs, setFbMobileTabs] = useState<NavigationKey[]>(loadMobileTabs);
+  const mobileTabsValue = mobileTabs ?? fbMobileTabs;
+  const changeMobileTabs = (next: NavigationKey[]) => {
+    setFbMobileTabs(next);
+    onMobileTabsChange?.(next);
+  };
+  // 「底部导航」只对窄屏（手机 / App WebView）有意义，桌面端隐藏该入口。
+  const menuGroups = SETTINGS_MENU_GROUPS
+    .map((group) => ({ ...group, items: group.items.filter((item) => item.key !== 'mobile-nav' || isNarrow) }))
+    .filter((group) => group.items.length > 0);
+  // 从手机切到桌面宽度时自动离开该板块，避免菜单项被隐藏后内容区留白。
+  useEffect(() => {
+    if (!isNarrow) setActiveSection((current) => (current === 'mobile-nav' ? 'company' : current));
+  }, [isNarrow]);
   const [profile, setProfile] = useState<CompanySnapshot>(EMPTY_PROFILE);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -236,7 +265,7 @@ export default function SettingsPage({
   return <div className="page-shell">
     <section className="settings-layout">
       <nav className="settings-menu card" aria-label="设置分类导航">
-        {SETTINGS_MENU_GROUPS.map((group) => (
+        {menuGroups.map((group) => (
           <div key={group.label} className="settings-menu-group">
             <div className="settings-menu-group-title">{group.label}</div>
             {group.items.map((item) => {
@@ -262,17 +291,17 @@ export default function SettingsPage({
       {activeSection === 'company' && <div className="settings-section card">
       <div className="settings-heading"><Building2 size={18} /><strong>公司资料</strong></div>
       <p>这里的资料会作为新建报价单和销售开单的默认公司信息，保存后的历史单据仍使用各自快照。</p>
-      <div className="settings-profile-layout" style={{ display: 'grid', gridTemplateColumns: '132px minmax(0,1fr)', gap: 16, alignItems: 'start' }}>
-        <div className="settings-logo-column" style={{ display: 'grid', gap: 8 }}>
-          <div className="settings-logo-preview" style={{ height: 90, display: 'flex', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', border: '1px solid #dbe3ea', borderRadius: 6, background: 'var(--tone-surface-frost)' }}>{profile.logoRelativePath ? <img src={`/files/${profile.logoRelativePath}`} alt="公司 Logo" style={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain', objectPosition: '50% 50%' }} /> : <ImageOff size={24} color="var(--tone-text-faint)" />}</div>
-          <div className="settings-logo-actions" style={{ display: 'flex', gap: 6 }}><label className="button button-secondary" title="上传公司 Logo" style={{ flex: 1, justifyContent: 'center' }}><Upload size={14} /><span>上传</span><input disabled={busy} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadLogo(file); event.target.value = ''; }} hidden /></label>{profile.logoRelativePath && <button className="icon-button danger" type="button" title="删除公司 Logo" disabled={busy} onClick={() => { if (window.confirm('确定删除当前公司 Logo 吗？')) void removeLogo(); }}><Trash2 size={14} /></button>}</div>
+      <div className="settings-profile-layout">
+        <div className="settings-logo-column">
+          <div className="settings-logo-preview">{profile.logoRelativePath ? <img src={`/files/${profile.logoRelativePath}`} alt="公司 Logo" /> : <ImageOff size={24} color="var(--tone-text-faint)" />}</div>
+          <div className="settings-logo-actions"><label className="button button-secondary" title="上传公司 Logo"><Upload size={14} /><span>上传</span><input disabled={busy} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadLogo(file); event.target.value = ''; }} hidden /></label>{profile.logoRelativePath && <button className="icon-button danger" type="button" title="删除公司 Logo" disabled={busy} onClick={() => { if (window.confirm('确定删除当前公司 Logo 吗？')) void removeLogo(); }}><Trash2 size={14} /></button>}</div>
         </div>
-        <div className="form-grid form-grid-2 settings-profile-fields" style={{ gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
+        <div className="form-grid form-grid-2 settings-profile-fields">
           <label className="label">公司名称<input className="input" disabled={loading || busy} value={profile.name} onChange={(event) => setField('name', event.target.value)} /></label>
           <label className="label">联系电话<input className="input" disabled={loading || busy} value={profile.phone} onChange={(event) => setField('phone', event.target.value)} /></label>
           <label className="label">公司地址<input className="input" disabled={loading || busy} value={profile.address} onChange={(event) => setField('address', event.target.value)} /></label>
           <label className="label">默认开单人<input className="input" disabled={loading || busy} value={profile.defaultIssuer} onChange={(event) => setField('defaultIssuer', event.target.value)} /></label>
-          <div className="settings-profile-actions" style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10 }}><span role="status" className={message ? `notice notice-${messageType}` : undefined} style={{ marginRight: 'auto', color: messageType === 'error' ? 'var(--tone-danger-text)' : 'var(--tone-accent-text)', fontSize: 12 }}>{message}</span><button className="button button-primary" type="button" disabled={loading || busy} onClick={() => void saveProfile()}><Save size={15} />{busy ? '处理中...' : '保存公司资料'}</button></div>
+          <div className="settings-profile-actions"><span role="status" className={message ? `notice notice-${messageType}` : undefined} style={{ marginRight: 'auto', color: messageType === 'error' ? 'var(--tone-danger-text)' : 'var(--tone-accent-text)', fontSize: 12 }}>{message}</span><button className="button button-primary" type="button" disabled={loading || busy} onClick={() => void saveProfile()}><Save size={15} />{busy ? '处理中...' : '保存公司资料'}</button></div>
         </div>
       </div>
       </div>}
@@ -306,6 +335,7 @@ export default function SettingsPage({
       </div>}
       {activeSection === 'account' && <AccountSection currentUser={currentUser ?? null} />}
       {activeSection === 'mobile' && <MobileConnectCard />}
+      {activeSection === 'mobile-nav' && isNarrow && <MobileNavCard tabs={mobileTabsValue} onChange={changeMobileTabs} />}
       {activeSection === 'storage' && <div className="settings-section card"><div className="settings-heading"><Database size={18} /><strong>运行环境</strong></div><p>数据保存在服务端（SQLite + 附件目录），所有设备登录后访问同一份数据。</p><div className="setting-row"><span>服务地址</span><code>{window.location.origin}</code></div><div className="setting-row"><span>存储方式</span><span>SQLite + 服务端附件目录</span></div></div>}
       {activeSection === 'backup' && <div style={{ display: 'grid', gap: 14 }}>
         <AutoBackupCard />
@@ -758,5 +788,58 @@ function AutoBackupCard() {
         <span role="status" style={{ color: messageType === 'error' ? 'var(--tone-danger-text)' : 'var(--tone-accent-text)', fontSize: 12 }}>{message}</span>
       </div>
     </div>}
+  </div>;
+}
+
+/** 底部导航自定义：手机端可自选模块并排序，其余模块仍通过「更多」抽屉进入；配置只保存在当前设备。 */
+function MobileNavCard({ tabs, onChange }: { tabs: NavigationKey[]; onChange: (tabs: NavigationKey[]) => void }) {
+  const available = navigationItems.filter((item) => !tabs.includes(item.key));
+  const full = tabs.length >= MOBILE_TAB_LIMIT;
+  const reset = () => {
+    if (!window.confirm('确定恢复默认的底部导航吗？')) return;
+    onChange([...DEFAULT_MOBILE_TABS]);
+  };
+  return <div className="settings-section card">
+    <div className="settings-heading"><LayoutGrid size={18} /><strong>底部导航</strong></div>
+    <p>选择手机底部栏显示哪些模块，并用左右箭头调整先后顺序；最多 {MOBILE_TAB_LIMIT} 个，其余模块仍可在「更多」抽屉里打开。此设置只保存在当前设备，不影响其他手机或电脑。</p>
+    <div className="mobile-tab-preview" style={{ gridTemplateColumns: `repeat(${tabs.length + 1}, minmax(0, 1fr))` }} aria-hidden="true">
+      {tabs.map((key) => {
+        const { shortLabel, icon: Icon } = navigationItem(key);
+        return <span key={key} className="mobile-tab-item"><Icon size={20} strokeWidth={1.7} /><span>{shortLabel}</span></span>;
+      })}
+      <span className="mobile-tab-item"><Ellipsis size={20} strokeWidth={1.7} /><span>更多</span></span>
+    </div>
+    <div className="mobile-tab-config">
+      <div className="mobile-tab-config-group">
+        <div className="mobile-tab-config-title">已显示（顺序即底部栏顺序）</div>
+        {tabs.map((key, index) => {
+          const item = navigationItem(key);
+          const ItemIcon = item.icon;
+          return <div key={key} className="mobile-tab-config-row">
+            <span className="mobile-tab-config-name"><ItemIcon size={15} /><span>{item.shortLabel}</span><em>{item.label}</em></span>
+            <span className="mobile-tab-config-actions">
+              <button className="icon-button" type="button" title="左移" aria-label={`${item.label} 左移`} disabled={index === 0} onClick={() => onChange(moveMobileTab(tabs, key, -1))}><ArrowLeft size={14} /></button>
+              <button className="icon-button" type="button" title="右移" aria-label={`${item.label} 右移`} disabled={index === tabs.length - 1} onClick={() => onChange(moveMobileTab(tabs, key, 1))}><ArrowRight size={14} /></button>
+              <button className="icon-button danger" type="button" title="从底部栏移除" aria-label={`从底部栏移除 ${item.label}`} disabled={tabs.length <= 1} onClick={() => onChange(toggleMobileTab(tabs, key))}><Minus size={14} /></button>
+            </span>
+          </div>;
+        })}
+      </div>
+      <div className="mobile-tab-config-group">
+        <div className="mobile-tab-config-title">{full ? `其他模块（已达 ${MOBILE_TAB_LIMIT} 个上限，先移除一个再添加）` : `其他模块（还能添加 ${MOBILE_TAB_LIMIT - tabs.length} 个）`}</div>
+        {available.length === 0
+          ? <p>全部模块都已显示在底部栏。</p>
+          : available.map((item) => {
+            const ItemIcon = item.icon;
+            return <div key={item.key} className="mobile-tab-config-row">
+              <span className="mobile-tab-config-name"><ItemIcon size={15} /><span>{item.label}</span></span>
+              <button className="button button-secondary" type="button" disabled={full} onClick={() => onChange(toggleMobileTab(tabs, item.key))}><Plus size={14} />添加</button>
+            </div>;
+          })}
+      </div>
+      <div className="settings-actions">
+        <button className="button button-secondary" type="button" disabled={isDefaultMobileTabs(tabs)} onClick={reset}><RotateCcw size={15} />恢复默认</button>
+      </div>
+    </div>
   </div>;
 }

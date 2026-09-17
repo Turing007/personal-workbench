@@ -1,4 +1,4 @@
-import { ClipboardList, Edit3, ExternalLink, FileSpreadsheet, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { ClipboardList, Edit3, ExternalLink, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   CompanySnapshot,
@@ -24,6 +24,8 @@ import PdfDownloadButton from '../components/documents/PdfDownloadButton';
 import SalesDocumentForm, { createEmptySalesDocumentDraft } from '../components/sales/SalesDocumentForm';
 import type { SalesDocumentDraft } from '../documents/document-drafts';
 import { salesDocumentDetailToDraft, salesDocumentDraftToFormData } from '../documents/document-drafts';
+import { useIsNarrow } from '../use-is-narrow';
+import { useHideOnScroll } from '../use-hide-on-scroll';
 
 export interface SalesDocumentsPageProps {
   onNotify?: (message: string, tone?: 'success' | 'error' | 'info') => void;
@@ -59,6 +61,10 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<number>();
+  const narrow = useIsNarrow();
+  const [searchFocused, setSearchFocused] = useState(false);
+  // 手机端搜索框悬浮在顶部：连续下滑收起，回滑展开；输入时锁住展开避免打字途中消失。
+  const searchHidden = useHideOnScroll(narrow && !searchFocused);
 
   const notify = useCallback((message: string, tone: 'success' | 'error' | 'info' = 'info') => {
     onNotify?.(message, tone);
@@ -189,15 +195,16 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
   };
 
   return <div className="page-shell sales-documents-page">
-    <div className="page-toolbar" style={{ gap: 8, flexWrap: 'wrap' }}>
-      <div><strong className="page-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><FileSpreadsheet size={17} />销售开单</strong><span className="page-subtitle">维护销售单、收款状态与单据生命周期</span></div>
-      <div className="search-control" style={{ flex: '1 1 260px' }}><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索销售单号、客户、采购单号" /></div>
-      <select className="toolbar-select" aria-label="单据状态筛选" value={documentStatus} onChange={(event) => setDocumentStatusFilter(event.target.value as 'all' | SalesDocumentStatus)}>
-        <option value="all">全部单据状态</option><option value="draft">草稿</option><option value="issued">已开单</option><option value="void">已作废</option>
-      </select>
-      <select className="toolbar-select" aria-label="付款状态筛选" value={paymentStatus} onChange={(event) => setPaymentStatusFilter(event.target.value as 'all' | PaymentStatus)}>
-        <option value="all">全部付款状态</option><option value="unpaid">未付款</option><option value="partial">部分付款</option><option value="paid">已付清</option>
-      </select>
+    <div className="page-toolbar sales-docs-toolbar">
+      <div className={`search-control${searchHidden ? ' is-scroll-hidden' : ''}`}><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索销售单号、客户、采购单号" /></div>
+      <div className="sales-doc-status-row">
+        <select className="toolbar-select" aria-label="单据状态筛选" value={documentStatus} onChange={(event) => setDocumentStatusFilter(event.target.value as 'all' | SalesDocumentStatus)}>
+          <option value="all">全部单据状态</option><option value="draft">草稿</option><option value="issued">已开单</option><option value="void">已作废</option>
+        </select>
+        <select className="toolbar-select" aria-label="付款状态筛选" value={paymentStatus} onChange={(event) => setPaymentStatusFilter(event.target.value as 'all' | PaymentStatus)}>
+          <option value="all">全部付款状态</option><option value="unpaid">未付款</option><option value="partial">部分付款</option><option value="paid">已付清</option>
+        </select>
+      </div>
       <span className="toolbar-count">{visibleRows.length} 份</span>
       <button className="icon-button" type="button" title="刷新销售单列表" disabled={loading} onClick={() => void load()}><RefreshCw size={15} /></button>
       <button className="button button-primary" type="button" title="独立新建销售单" onClick={openNew}><Plus size={15} />新建销售单</button>

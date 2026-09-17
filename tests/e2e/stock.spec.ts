@@ -68,7 +68,9 @@ test.describe('备货模块', () => {
     try {
       await page.goto('/');
       await page.getByRole('button', { name: '备货', exact: true }).click();
-      await expect(page.getByText('按供应商汇总待备货订单')).toBeVisible();
+      await expect(page.getByLabel('按下单日期筛选')).toBeVisible();
+      await expect(page.getByRole('button', { name: '导出 Excel' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '标记已备货' }).first()).toBeVisible();
       // 其他用例可能泄漏待备货订单，所有断言只作用于本用例自己的数据
       const myRow = page.locator('.stock-group tr', { hasText: `E2E手填品${stamp}` });
       await expect(myRow).toBeVisible();

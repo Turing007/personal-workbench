@@ -32,10 +32,13 @@ test.describe('财务管理工作台', () => {
     await expect(page.getByRole('button', { name: '财务管理' })).toBeVisible();
     await page.getByRole('button', { name: '财务管理' }).click();
 
-    await expect(page.getByText('核验客户水单、登记收款并跟踪发票')).toBeVisible();
+    // 页头标题 / 副标题已移除（手机端太占地方），改为断言工具栏里的搜索框与三个状态筛选已就位。
     await expect(page.getByText('本期应收')).toBeVisible();
     await expect(page.getByText('待审核水单')).toBeVisible();
     await expect(page.getByRole('textbox', { name: '搜索订单号或客户' })).toBeVisible();
+    await expect(page.getByLabel('付款状态')).toBeVisible();
+    await expect(page.getByLabel('水单状态')).toBeVisible();
+    await expect(page.getByLabel('发票状态')).toBeVisible();
 
     const financeButtons = page.getByRole('button', { name: '查看财务' });
     if (await financeButtons.count() > 0) {

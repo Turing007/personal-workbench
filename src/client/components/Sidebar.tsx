@@ -1,28 +1,11 @@
-import {
-  Boxes,
-  ChevronRight,
-  ClipboardList,
-  FileSpreadsheet,
-  PackageOpen,
-  ReceiptText,
-  WalletCards,
-  PackageCheck,
-  Settings,
-  ShoppingBag,
-  Menu,
-  X,
-  LogOut,
-} from 'lucide-react';
-import type { ComponentType } from 'react';
-import { useState } from 'react';
+import { ChevronRight, Menu, X, LogOut } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { notifyOverlayOpen } from '../app-bridge';
+import { navigationItems, type NavigationItem, type NavigationKey } from '../navigation';
 
-export type NavigationKey = 'orders' | 'stock' | 'finance' | 'quotations' | 'sales-documents' | 'products' | 'customer-products' | 'shipping' | 'settings';
+export type { NavigationKey };
 
-export interface SidebarItem {
-  key: NavigationKey;
-  label: string;
-  icon: ComponentType<{ size?: number; strokeWidth?: number }>;
-}
+export type SidebarItem = NavigationItem;
 
 export interface SidebarUser {
   username: string;
@@ -43,19 +26,7 @@ export interface SidebarProps {
 }
 
 /* 按业务流程排序：报价 → 开单 → 订单 → 备货 → 发货 → 收款，其后是资料库与设置 */
-const items: SidebarItem[] = [
-  { key: 'quotations', label: '报价单', icon: ReceiptText },
-  { key: 'sales-documents', label: '销售开单', icon: FileSpreadsheet },
-  { key: 'orders', label: '订单管理', icon: ClipboardList },
-  { key: 'stock', label: '备货', icon: PackageOpen },
-  { key: 'shipping', label: '发货管理', icon: PackageCheck },
-  { key: 'finance', label: '财务管理', icon: WalletCards },
-  { key: 'products', label: '产品库', icon: Boxes },
-  { key: 'customer-products', label: '客户产品库', icon: ShoppingBag },
-  { key: 'settings', label: '设置', icon: Settings },
-];
-
-export const navigationKeys: NavigationKey[] = items.map((item) => item.key);
+const items: SidebarItem[] = navigationItems;
 
 export default function Sidebar({ activeKey, onNavigate, collapsed = false, companyName = '个人工作台', logoUrl, mobileOpen: mobileOpenProp, onMobileOpenChange, user, onLogout }: SidebarProps) {
   const [logoFailed, setLogoFailed] = useState(false);
@@ -66,6 +37,19 @@ export default function Sidebar({ activeKey, onNavigate, collapsed = false, comp
     onMobileOpenChange?.(open);
   };
   const showLogo = Boolean(logoUrl && !logoFailed);
+  // 抽屉打开时锁住背景滚动：抽屉本身是 position: fixed，若不同时锁 body，
+  // 手指在抽屉或遮罩上滑动会连带滚动底下的页面，关掉抽屉后位置已经跑偏。
+  // 同时通知 App 暂停下拉刷新，否则抽屉里的下滑会被当成「刷新页面」抢走。
+  useEffect(() => {
+    if (!mobileOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    notifyOverlayOpen(true);
+    return () => {
+      document.body.style.overflow = previousOverflow ?? '';
+      notifyOverlayOpen(false);
+    };
+  }, [mobileOpen]);
   const navigate = (key: NavigationKey) => {
     onNavigate(key);
     setMobileOpen(false);

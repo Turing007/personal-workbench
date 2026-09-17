@@ -4,6 +4,10 @@ body {
   background: var(--color-page);
   font-family: var(--font-system);
   line-height: 1.45;
+  /* 手机横屏时 iOS 会自动放大文字（text inflation），同一套版式横竖屏之间字号字重
+     跳变、原本一行放得下的标题被挤成两行。锁定 100% 由用户自己决定字号。 */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -373,6 +377,130 @@ select {
 
 @keyframes modal-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modal-scale-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+/* 抽屉形态：与弹窗共用一套 .modal-* 组件（遮罩 / 焦点陷阱 / Esc / 锁滚动 / 层级栈），
+   只是把面板从「居中」挪到「贴右并撑满高度」。只覆盖几何属性，行为一律不动。 */
+.modal-overlay.is-drawer {
+  place-items: stretch end;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* 选择器刻意写成「.modal-panel.drawer-panel」两个类：
+   文件末尾的手机端块里有 .modal-panel { max-height: calc(100dvh - 20px); width: 100% }，
+   与单个 .drawer-panel 同为 (0,1,0) 但位置更靠后，会把抽屉压成「不满高、全宽」的普通弹窗。
+   提到 (0,2,0) 后无论该块怎么调整都不会再回头推翻抽屉的几何。 */
+.modal-panel.drawer-panel {
+  width: min(100%, var(--modal-width, 420px));
+  height: 100%;
+  max-height: none;
+  border: 0;
+  border-left: 1px solid var(--color-border);
+  border-radius: 0;
+  animation: drawer-slide-in 240ms cubic-bezier(.2, .6, .25, 1) both;
+}
+
+/* 从右侧滑入。位移量刻意小于面板宽度（28px）：抽屉是「推入」而不是「飞入」，
+   距离短才和弹窗缩放的观感一致，快速开关时也不会看到面板从屏幕外扫过来。 */
+@keyframes drawer-slide-in {
+  from { opacity: .5; transform: translateX(28px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 左抽屉：客户列表这类「主列表」从左侧推入，与右侧的「档案 / 资料」表单分居两侧。
+   选择器再叠一层 .drawer-panel-left（(0,3,0)）是为了压过上面 .modal-panel.drawer-panel 的
+   border-left，否则左抽屉会同时带左右两条边。 */
+.modal-overlay.is-drawer.is-drawer-left { place-items: stretch start; }
+
+.modal-panel.drawer-panel.drawer-panel-left {
+  /* 侧边抽屉在横屏时会被刘海 / 圆角压住最左边一列，竖屏下 env() 取 0，不用额外分方向。 */
+  padding-left: env(safe-area-inset-left, 0px);
+  border-left: 0;
+  border-right: 1px solid var(--color-border);
+  animation: drawer-slide-in-left 240ms cubic-bezier(.2, .6, .25, 1) both;
+}
+
+@keyframes drawer-slide-in-left {
+  from { opacity: .5; transform: translateX(-28px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* —— 客户列表抽屉 —— */
+/* 列表抽屉要「贴边铺满」：搜索框通栏、客户行整宽带分隔线。所以把 .modal-body 默认的
+   22px 内边距收掉、滚动也交给内部两行栅格，避免出现内外两层滚动条。 */
+.customer-list-drawer-panel .modal-body {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+
+.customer-drawer {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.customer-drawer-search {
+  flex: none;
+  margin: 12px 14px;
+}
+
+.customer-drawer .customer-list-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* 工具条上的「N 个客户」：既是计数也是打开客户列表抽屉的入口。 */
+.customer-list-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-control);
+  padding: 6px 10px;
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--ease-standard), color var(--ease-standard);
+}
+
+.customer-list-trigger:hover { color: var(--color-text); border-color: var(--color-text-secondary); }
+
+/* —— 客户档案（资料）抽屉表单 —— */
+/* 原先整块表单用行内 style 写死，包括两个 gridTemplateColumns: 1fr 1fr。
+   行内栅格优先级高于媒体查询，窄屏下两列会把「联系电话」「税号」压到只剩几十像素；
+   这里统一搬到类里，布局才能被下面的窄屏规则接管。 */
+.customer-editor-form { display: grid; gap: 11px; }
+.customer-editor-field { display: grid; gap: 5px; min-width: 0; color: var(--color-text-secondary); font-size: var(--text-xs); }
+.customer-editor-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.customer-editor-input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-control);
+  padding: 8px 9px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: var(--text-xs);
+}
+.customer-editor-input:focus { outline: none; border-color: var(--color-accent); box-shadow: var(--control-focus-ring); }
+.customer-editor-textarea { resize: vertical; }
+.customer-editor-error {
+  padding: 8px 10px;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-control);
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: var(--text-xs);
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
@@ -1208,8 +1336,87 @@ select {
   transform: translateY(-50%);
 }
 
+/* 公司资料：左侧 Logo 固定列 + 右侧资料表单。
+   注意这些栅格定义必须留在 CSS 里（不要写成行内 style）：
+   行内 grid-template-columns 的优先级高于媒体查询，会把窄屏的收窄规则全部盖掉。 */
+.settings-profile-layout {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  min-width: 0;
+}
+
+.settings-logo-column {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-logo-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 90px;
+  overflow: hidden;
+  border: 1px solid #dbe3ea;
+  border-radius: 6px;
+  background: var(--tone-surface-frost);
+}
+
+.settings-logo-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: 50% 50%;
+}
+
+.settings-logo-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.settings-logo-actions > .button {
+  flex: 1;
+  justify-content: center;
+}
+
+/* 四个资料输入框的两列由 .form-grid-2 提供，≤640px 会自己收成一列，这里只收紧间距。 */
+.form-grid.settings-profile-fields {
+  gap: 10px;
+}
+
+.settings-profile-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 @media (max-width: 900px) {
   .settings-layout { grid-template-columns: 1fr; }
+  /* 公司资料：≤900px 时 132px 的 Logo 列会把两个输入框挤到 90px 上下（文字全被截断），
+     所以改成上下排列——Logo 预览与上传/删除按钮并成一行，资料表单占满整行宽度。 */
+  .settings-profile-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .settings-logo-column {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+  }
+  .settings-logo-preview {
+    width: 88px;
+    height: 64px;
+  }
+  /* 上传按钮不再跟着整行拉伸，保持一个正常按钮的宽度。 */
+  .settings-logo-actions > .button {
+    flex: 0 1 auto;
+    min-width: 96px;
+  }
   .settings-menu {
     position: static;
     display: flex;
@@ -1225,7 +1432,8 @@ select {
     gap: 4px;
   }
   .settings-menu-group-title { padding: 0 3px; }
-  .settings-menu-item { width: auto; min-height: 32px; padding: 6px 9px; }
+  /* 手机端设置子栏是一个个独立的小胶囊，32px 高度手指容易点偏，补到 40px */
+  .settings-menu-item { width: auto; min-height: 40px; padding: 8px 10px; }
   .settings-menu-item.is-active::before { display: none; }
 }
 
@@ -1417,6 +1625,48 @@ select {
 .badge-info { color: var(--color-info); background: var(--color-info-soft); border-color: var(--color-info-border); }
 .badge-neutral { color: var(--tone-text-medium); background: var(--color-neutral-pill); border-color: var(--tone-border-soft); }
 
+/* ===== 订单卡片：一键推进胶囊 =====
+   手机端把只读的状态徽章换成可点的按钮：左半是当前状态，右半是「点一下会发生什么」。
+   下一步动作的文案统一取自 order-workflow 的状态机，两处不会跑偏。 */
+.status-action-pill {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 1px solid var(--tone, var(--color-border-strong));
+  border-radius: var(--radius-pill);
+  background: var(--tone-soft, var(--color-neutral-pill));
+  color: var(--tone, var(--color-text-strong));
+  font: inherit;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--ease-standard), box-shadow var(--ease-standard);
+}
+
+.status-action-pill-current { opacity: .75; }
+
+.status-action-pill-next { display: inline-flex; align-items: center; gap: 3px; }
+/* 小箭头提示「可点、会推进」，纯装饰，交给屏幕阅读器读 aria-label 即可 */
+.status-action-pill-next::before { font-size: 11px; opacity: .65; content: '→'; }
+
+.status-action-pill:hover { box-shadow: var(--shadow-card); }
+.status-action-pill:active { transform: scale(.96); }
+.status-action-pill:focus-visible { outline: 2px solid var(--tone, var(--color-accent)); outline-offset: 2px; }
+
+.status-action-pill.tone-draft,
+.status-action-pill.tone-label-pending { --tone: var(--status-draft); --tone-soft: var(--status-draft-soft); }
+.status-action-pill.tone-pending-stock { --tone: var(--status-pending-stock); --tone-soft: var(--status-pending-stock-soft); }
+.status-action-pill.tone-stock-reported { --tone: var(--status-stock-reported); --tone-soft: var(--status-stock-reported-soft); }
+.status-action-pill.tone-pending-packing { --tone: var(--status-pending-packing); --tone-soft: var(--status-pending-packing-soft); }
+.status-action-pill.tone-ship-pending { --tone: var(--color-danger-strong); --tone-soft: var(--color-danger-soft); }
+.status-action-pill.tone-shipped { --tone: var(--color-success); --tone-soft: var(--color-success-soft); }
+
 /* 多选标签（颜色 / 插脚） */
 .chip {
   border: 1px solid var(--tone-border-cool);
@@ -1503,22 +1753,6 @@ select {
   border-bottom: 1px solid var(--color-divider);
 }
 
-/* 手机端「切换客户」返回按钮：桌面端不显示 */
-.customer-panel-back {
-  display: none;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-  border: 1px solid var(--color-border-control);
-  border-radius: var(--radius-control);
-  padding: 6px 10px;
-  color: var(--tone-accent-text);
-  background: var(--color-surface);
-  font: inherit;
-  font-size: var(--text-xs);
-  cursor: pointer;
-}
-
 .customer-products-heading {
   display: grid;
   gap: 3px;
@@ -1535,11 +1769,6 @@ select {
   gap: 8px;
   flex-wrap: wrap;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--color-divider);
-}
-
-.customer-list-header {
-  padding: 11px 12px;
   border-bottom: 1px solid var(--color-divider);
 }
 
@@ -1890,7 +2119,7 @@ select {
   cursor: pointer;
   text-align: left;
   font: inherit;
-  transition: transform var(--ease-standard), border-color var(--ease-standard), box-shadow var(--ease-standard), background var(--ease-standard);
+  transition: transform var(--ease-standard), border-color var(--ease-standard), box-shadow var(--ease-standard), background var(--ease-standard), opacity var(--ease-standard);
 }
 
 /* 顶部色调细线：悬停/激活时淡入 */
@@ -2581,8 +2810,9 @@ select {
 
   .sidebar-mobile-close {
     display: inline-grid;
-    width: 30px;
-    height: 30px;
+    /* 30px 在手机上偏小，容易点不中；补到 40px 与其它触控目标一致 */
+    width: 40px;
+    height: 40px;
     margin-left: auto;
     place-items: center;
     border: 0;
@@ -2724,9 +2954,22 @@ select {
 .finance-page { gap: var(--space-7); }
 .finance-toolbar { align-items: center; flex-wrap: wrap; }
 .finance-toolbar .search-control { flex: 1 1 240px; min-width: 180px; }
+.finance-status-row { display: flex; align-items: center; gap: var(--space-3); }
 .month-control { display: inline-flex; align-items: center; gap: 4px; }
 .month-control .month-input { width: auto; min-width: 118px; }
-.finance-stat-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-4); }
+/* 「全部 / 本月」「全部 / 按日期」这类时间范围切换按钮。
+   原来是 28×28 的方块图标按钮：没有边框、两个字挤在一起，看不出是个可点的按钮。
+   这里改成带边框的紧凑按钮（图标 + 明确文案），高度对齐旁边的日期输入框，
+   并且 flex: none 不参与伸缩，避免被吃满剩余宽度的日期输入框挤扁。 */
+.month-scope-button {
+  flex: none;
+  min-height: var(--control-height-md);
+  padding: 0 10px;
+  gap: 5px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-xs);
+}
+.finance-stat-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-4); }
 .finance-stat-grid > div { display: grid; gap: 5px; min-width: 0; padding: 15px 16px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); box-shadow: var(--shadow-card); }
 .finance-stat-grid span { color: var(--color-text-muted); font-size: var(--text-xs); }
 .finance-stat-grid strong { color: var(--color-text-strong); font-size: 21px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
@@ -2734,6 +2977,12 @@ select {
 .finance-stat-grid > button { display: grid; gap: 5px; min-width: 0; padding: 15px 16px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); box-shadow: var(--shadow-card); text-align: left; font: inherit; cursor: pointer; transition: transform .18s ease, border-color .18s ease; }
 .finance-stat-grid > button:hover { transform: translateY(-1px); border-color: var(--color-accent); }
 .finance-stat-grid > button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+/* 五张统计卡固定两行：第一行三张金额卡（本期应收 / 已收金额 / 未收金额），
+   第二行两张计数卡（待审核水单 / 待处理发票）。原来是五张挤一行，金额卡被压窄后
+   连「¥123,456.78」都要换行。这里用 6 列栅格 + 跨列来分组：金额卡各跨 2 列（即 3 等分），
+   计数卡各跨 3 列（即 2 等分），两行都刚好铺满，不会出现空格子。 */
+.finance-stat-grid > :nth-child(-n + 3) { grid-column: span 2; }
+.finance-stat-grid > :nth-child(n + 4) { grid-column: span 3; }
 .finance-positive { color: var(--color-success) !important; }
 .finance-warning { color: var(--color-warning) !important; }
 .finance-order-number { color: var(--color-accent) !important; }
@@ -2793,14 +3042,13 @@ select {
 .danger-text { color: var(--color-danger-text) !important; }
 
 @media (max-width: 1000px) {
-  .finance-stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* 统计卡不再按断点改列数：固定 6 列 + 跨列分组，始终是「金额卡一行 + 计数卡一行」 */
   .finance-proof-upload, .finance-invoice-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .finance-proof-upload .button, .finance-invoice-form .button { width: 100%; }
   .finance-proof-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 640px) {
-  .finance-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .finance-detail-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .finance-proof-row { grid-template-columns: 42px minmax(0, 1fr); }
   .finance-proof-row > .badge, .finance-proof-row > .row-actions { grid-column: 2; justify-self: start; }
@@ -2907,10 +3155,28 @@ select {
 
   .order-card .row-actions {
     flex-wrap: wrap;
-    gap: var(--space-4) var(--space-6);
-    padding-top: var(--space-4);
+    gap: var(--space-2) var(--space-4);
+    padding-top: var(--space-2);
     border-top: 1px solid var(--color-divider);
   }
+
+  /* 手指点按：行内文字按钮原本只有一行字高（约 18px），手机上很难点准。
+     补足到 40px 触控高度，同时收紧行间距，让操作区整体高度基本不变。 */
+  .order-card .row-actions .link-button,
+  .order-card .row-actions .icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 0 var(--space-3);
+    font-size: var(--text-sm);
+  }
+  .order-card .row-actions .icon-button { min-width: 40px; }
+
+  /* 胶囊在卡片里是主操作，比桌面徽章再高一点更好点中 */
+  .order-card .status-action-pill { min-height: 36px; padding: 6px 14px; }
+  .order-card .status-action-pill-current { font-size: var(--text-xs); }
+  .order-card .status-action-pill-next { font-size: var(--text-xs); }
 }
 
 /* ===== 订单表单：响应式网格与产品明细行 ===== */
@@ -3006,8 +3272,6 @@ select {
     box-shadow: var(--shadow-card);
   }
   .finance-card .row-actions { padding-top: var(--space-4); border-top: 1px solid var(--color-divider); }
-  .finance-toolbar { display: grid; grid-template-columns: 1fr 1fr; }
-  .finance-toolbar .search-control { grid-column: 1 / -1; }
 }
 
 /* ===== 登录 / 管理员初始化 ===== */
@@ -3205,6 +3469,73 @@ select {
   padding: 6px;
 }
 
+/* ===== 设置页：底部导航自定义 ===== */
+.mobile-tab-preview {
+  display: grid;
+  gap: 0;
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.mobile-tab-preview .mobile-tab-item {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  padding: 6px 0 4px;
+  color: var(--color-text-muted);
+  font-size: var(--text-2xs);
+}
+
+.mobile-tab-config {
+  display: grid;
+  gap: 12px;
+}
+
+.mobile-tab-config-group {
+  display: grid;
+  gap: 6px;
+}
+
+.mobile-tab-config-title {
+  color: var(--color-text-strong);
+  font-size: 12px;
+  font-weight: var(--weight-semibold);
+}
+
+.mobile-tab-config-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-divider);
+  border-radius: 6px;
+  background: var(--tone-surface-frost);
+}
+
+.mobile-tab-config-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--color-text-strong);
+  font-size: 12px;
+}
+
+.mobile-tab-config-name em {
+  color: var(--tone-text-faint);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.mobile-tab-config-actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
 /* 访问密码登录门样式已由多账号 AuthGate 的样式取代（见上方登录 / 管理员初始化段）。 */
 
 /* ===== 移动端卡片视图：报价 / 销售单 / 产品 / 客户产品 / 发货 ===== */
@@ -3215,8 +3546,8 @@ select {
 .shipping-workspace { display: grid; grid-template-columns: minmax(300px, .8fr) minmax(420px, 1.2fr); gap: 14px; min-height: 480px; }
 .shipping-batch-order { grid-template-columns: minmax(0, 1fr) 160px 24px; align-items: center; gap: 8px; padding: 8px; }
 
-/* 客户产品页：桌面端左客户档案 + 右产品表格（原先为内联样式） */
-.customer-products-layout { min-height: 0; display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 10px; }
+/* 客户产品页：客户列表改走左侧抽屉后，主区只剩产品面板一栏（原先为内联样式） */
+.customer-products-layout { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
 
 @media (max-width: 900px) {
   /* —— 报价单卡片 —— */
@@ -3304,11 +3635,7 @@ select {
   .product-card-packaging-more { font-size: var(--text-2xs); }
   .product-card .row-actions { flex-wrap: wrap; gap: var(--space-4) var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--color-divider); }
 
-  /* —— 客户产品：手机端选中客户后隐藏客户列表，整屏展示该客户的产品 —— */
-  .customer-products-layout { grid-template-columns: 1fr; }
-  .customer-products-layout.is-products-only .customer-list-panel { display: none; }
-  .customer-panel-back { display: inline-flex; }
-  .customer-list-scroll { max-height: 38vh !important; }
+  /* —— 客户产品：手机端单列，客户列表已改为工具条上的左抽屉 —— */
   .customer-products-table-desktop { display: none; }
   .customer-product-card-list { display: grid; gap: var(--space-4); padding: var(--space-4); }
   .customer-product-card {
@@ -3339,6 +3666,32 @@ select {
   .shipping-batch-order { grid-template-columns: minmax(0, 1fr) 24px; }
   .shipping-batch-order .shipping-tracking-input { grid-column: 1 / -1; }
   .shipping-confirm-actions { flex-wrap: wrap; }
+
+  /* —— 卡片操作区：手指点按 —— */
+  /* 这几张卡片的操作原本只有图标大小（28px）或一行文字高（约 18px），手机上很难点准。
+     统一补到 40px 触控高度；图标按钮同时补足宽度，保持方形不至于变成细长条。
+     （订单卡片在自己的移动端块里已有同样的规则。） */
+  .quotation-card .row-actions .link-button,
+  .quotation-card .row-actions .icon-button,
+  .sales-doc-card .row-actions .link-button,
+  .sales-doc-card .row-actions .icon-button,
+  .product-card .row-actions .link-button,
+  .product-card .row-actions .icon-button,
+  .customer-product-card .row-actions .link-button,
+  .customer-product-card .row-actions .icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 0 var(--space-3);
+    font-size: var(--text-sm);
+  }
+  .quotation-card .row-actions .icon-button,
+  .sales-doc-card .row-actions .icon-button,
+  .product-card .row-actions .icon-button,
+  .customer-product-card .row-actions .icon-button {
+    min-width: 40px;
+  }
 }
 
 /* 备货模块 */
@@ -3384,41 +3737,390 @@ select {
 }
 
 @media (max-width: 900px) {
-  /* 手机端尽量把空间留给订单列表：隐藏副标题、状态卡改单行横滑 */
-  .orders-page { padding-top: var(--space-5); }
-  .orders-page .page-subtitle { display: none; }
+  /* 手机端尽量把空间留给订单列表：整块页头（标题 + 副标题）收起，状态卡改单行横滑 */
+  .orders-page .orders-page-heading { display: none; }
 
-  .orders-page .status-cards {
-    display: flex;
-    gap: var(--space-3);
-    overflow-x: auto;
-    padding-bottom: 2px;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
+  /* 悬浮搜索框固定在视口顶部（页头已收起），页面顶部预留等高空间避免压住状态卡。
+     同时必须去掉 .page-shell 的入场动画：page-enter 动画带 transform，会让 .page-shell 成为
+     fixed 的包含块，搜索框就退化成「相对页面」定位 —— 页面一滚动它就被推到视口外，
+     回滑时虽然已经展开却看不见。这里关掉本页动画，保证 fixed 真正相对视口。 */
+  .orders-page { padding-top: calc(56px + env(safe-area-inset-top, 0px)); }
+  .page-shell.orders-page { animation: none; }
+
+  .orders-page .orders-table-toolbar .search-control {
+    position: fixed;
+    top: calc(var(--space-4) + env(safe-area-inset-top, 0px));
+    right: var(--space-4);
+    left: var(--space-4);
+    z-index: var(--z-sidebar);
+    flex: none;
+    min-width: 0;
+    max-width: none;
+    transition: transform var(--ease-standard), opacity var(--ease-standard);
   }
-  .orders-page .status-cards::-webkit-scrollbar { display: none; }
+  .orders-page .orders-table-toolbar .search-control input {
+    height: 40px;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-popover);
+  }
+  .orders-page .orders-table-toolbar .search-control.is-scroll-hidden {
+    transform: translateY(calc(-100% - var(--space-6)));
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* 手机上不再横滑：7 个状态筛选平铺成两行，一眼看全、一点即选。
+     原来是一条横向滚动条，选「待发货 / 已发货」必须滑到最右，手指滑动既不跟手又容易误触。 */
+  .orders-page .status-cards {
+    display: grid;
+    /* 固定 4 列：7 个状态永远是「4 + 3」两行。
+       用 auto-fit 的话，机型一窄（360px 一档）就掉到三列、变成三行。 */
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
 
   .orders-page .status-card {
-    flex: 0 0 auto;
-    /* 横滑条上先看状态名再看数量，比竖排卡片更省宽度 */
+    /* 单行胶囊：状态名 + 数量。留白和内边距都压到最小，两行加起来才不占地方 */
     flex-direction: row-reverse;
     align-items: center;
-    gap: 6px;
-    padding: 8px 12px;
+    justify-content: center;
+    gap: 3px;
+    min-width: 0;
+    min-height: 30px;
+    padding: 4px 6px;
     border-radius: var(--radius-pill);
   }
   .orders-page .status-card::after { display: none; }
-  .orders-page .status-card-count { font-size: 14px; }
-  .orders-page .status-card-label { font-size: var(--text-xs); }
+  /* 字号沿用桌面端的 11px：胶囊只有 80px 出头，调大后遇到三位数订单量会把状态名挤成省略号 */
+  .orders-page .status-card-label { min-width: 0; }
+  /* 窄胶囊里图标会把状态名挤成省略号，手机上一律以文字为准 */
+  .orders-page .status-card-label svg { display: none; }
+  .orders-page .status-card-count { font-size: var(--text-2xs); }
+  /* 数量为 0 的状态压到 60% 透明度：4 列的窄胶囊里，没有单的状态本来就点不出内容，
+     让它退到视觉后景，把对比度留给真正有单的状态，横向也显得没那么挤。 */
+  .orders-page .status-card.is-empty { opacity: .6; }
+  /* 选中的那颗始终满不透明：否则「已选中」和「被禁用」在观感上分不清 */
+  .orders-page .status-card.is-empty.is-active { opacity: 1; }
 
-  /* 工具条压成一行：新建按钮 + 搜索框 + 条数 */
+  /* 搜索框已脱离工具条悬浮到顶部，剩下的「新建订单 + 条数（+ 批量操作）」压成一行 */
   .orders-table-toolbar { padding: 8px; gap: 6px; }
   /* 全局规则 .page-toolbar > :first-child 会把首个元素拉满整行（为标题栏设计），
-     订单工具条的首个元素是「新建订单」按钮，这里恢复自动宽度以便与搜索框同行。 */
+     这里给「新建订单」按钮恢复自动宽度，避免它在窄屏独占一整行。 */
   .orders-table-toolbar > :first-child { flex: 0 0 auto; }
   .orders-table-toolbar .button-primary { padding: 0 10px; }
-  .orders-table-toolbar .search-control { flex: 1 1 90px; min-width: 0; }
   .orders-table-toolbar .toolbar-count { flex: 0 0 auto; font-size: var(--text-2xs); }
+}
+
+/* ===== 产品库页：手机端工具条压成一行 + 悬浮搜索框 ===== */
+@media (max-width: 900px) {
+  /* 手机端用不到导出 / 下载模板 / 导入，直接收起把高度留给产品列表；桌面端不受影响。 */
+  .products-page .products-mobile-hidden { display: none; }
+
+  /* 工具条一行装下：状态筛选 + 条数 + 刷新 + 添加产品。 */
+  .products-page .page-toolbar {
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: var(--space-3);
+    min-height: 0;
+  }
+  .products-page .page-toolbar .toolbar-select { flex: 0 1 auto; min-width: 0; }
+  .products-page .page-toolbar .toolbar-count {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-right: auto;
+    overflow: hidden;
+    font-size: var(--text-2xs);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .products-page .page-toolbar .button { flex: 0 0 auto; padding: 0 var(--space-4); }
+
+  /* 悬浮搜索框脱离工具条固定在视口顶部（手机端页面顶部没有其它控件），连续下滑收起、回滑展开。
+     必须同时去掉 .page-shell 的入场动画：page-enter 动画带 transform，会让 .page-shell 成为
+     fixed 的包含块，搜索框就退化成「相对页面」定位 —— 页面一滚动它就被推到视口外，
+     回滑时虽然已经展开却看不见。这里关掉本页动画，保证 fixed 真正相对视口。 */
+  .page-shell.products-page { animation: none; }
+
+  .products-page .page-toolbar .search-control {
+    position: fixed;
+    top: calc(var(--space-4) + env(safe-area-inset-top, 0px));
+    right: var(--space-4);
+    left: var(--space-4);
+    z-index: var(--z-sidebar);
+    flex: none;
+    min-width: 0;
+    max-width: none;
+    transition: transform var(--ease-standard), opacity var(--ease-standard);
+  }
+  .products-page .page-toolbar .search-control input {
+    height: 40px;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-popover);
+  }
+  .products-page .page-toolbar .search-control.is-scroll-hidden {
+    transform: translateY(calc(-100% - var(--space-6)));
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* 悬浮搜索框盖在页首，给页面预留等高空间，避免压住工具条。 */
+  .products-page { padding-top: calc(56px + env(safe-area-inset-top, 0px)); }
+}
+
+/* ===== 财务管理页：手机端悬浮搜索框 + 状态筛选压成一行 ===== */
+@media (max-width: 900px) {
+  /* 页头标题 / 副标题已从结构里移除，搜索框脱离工具条悬浮在视口顶部，页面预留等高空间。
+     必须同时去掉 .page-shell 的入场动画：page-enter 动画带 transform，会让 .page-shell 成为
+     fixed 的包含块，搜索框就退化成「相对页面」定位 —— 页面一滚动它就被推到视口外，
+     回滑时虽然已经展开却看不见。这里关掉本页动画，保证 fixed 真正相对视口。 */
+  .page-shell.finance-page { animation: none; }
+  .finance-page { padding-top: calc(56px + env(safe-area-inset-top, 0px)); }
+
+  /* 两行排布：第一行「月份筛选 + 刷新」，第二行三个状态筛选三等分铺满。
+     搜索框已 fixed 脱离文档流，不占用网格单元。
+     这里必须显式指定行列：靠自动排布的话，占满整行的状态筛选会把刷新按钮挤到第三行。 */
+  .finance-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .finance-toolbar .month-control { grid-row: 1; grid-column: 1; min-width: 0; }
+  .finance-toolbar > .icon-button { grid-row: 1; grid-column: 2; }
+
+  /* 悬浮搜索框脱离工具条固定在视口顶部：连续下滑收起、回滑展开，输入时锁住展开。 */
+  .finance-toolbar .search-control {
+    position: fixed;
+    top: calc(var(--space-4) + env(safe-area-inset-top, 0px));
+    right: var(--space-4);
+    left: var(--space-4);
+    z-index: var(--z-sidebar);
+    flex: none;
+    min-width: 0;
+    max-width: none;
+    transition: transform var(--ease-standard), opacity var(--ease-standard);
+  }
+  .finance-toolbar .search-control input {
+    height: 40px;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-popover);
+  }
+  .finance-toolbar .search-control.is-scroll-hidden {
+    transform: translateY(calc(-100% - var(--space-6)));
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* 月份输入框吃掉第一行的剩余宽度（要显示「2026-09」才够看） */
+  .finance-toolbar .month-control .month-input { flex: 1 1 auto; width: auto; min-width: 0; }
+
+  /* 付款 / 水单 / 发票三个状态筛选平铺成一行。
+     原来是 2 列栅格，三个 select 会被折成「2 + 1」两行，多占一行高度；这里三等分铺满，
+     三个筛选的层级关系一眼可见。 */
+  .finance-status-row {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+  .finance-status-row .toolbar-select {
+    width: 100%;
+    min-width: 0;
+    /* 三等分后每列只有 110px 左右，要给右侧原生下拉箭头留出位置，
+       否则「全部付款」「全部水单」会被裁成「全部付…」 */
+    padding-left: 8px;
+    padding-right: 2px;
+  }
+}
+
+/* ===== 报价单页：手机端悬浮搜索框 + 状态分段压成一行 ===== */
+@media (max-width: 900px) {
+  /* 与财务页同理：page-enter 动画带 transform 会让 .page-shell 成为 fixed 的包含块，
+     搜索框会退化成「相对页面」定位，滚动后回滑时看不见。关掉本页动画。 */
+  .page-shell.quotation-page { animation: none; }
+  .quotation-page { padding-top: calc(56px + env(safe-area-inset-top, 0px)); }
+
+  /* 第一行「五个状态分段铺满」，第二行「数量 + 刷新 + 新建报价」。
+     搜索框已 fixed 脱离文档流，不占用网格单元。 */
+  .quotation-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .quotation-toolbar .segmented {
+    grid-row: 1;
+    grid-column: 1 / -1;
+    display: flex;
+    width: 100%;
+  }
+  /* 原来是内容宽度撑开，手机上要横向滑动才能看全；等分铺满后一屏可见。 */
+  .quotation-toolbar .segmented-item {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 5px 4px;
+    font-size: var(--text-2xs);
+  }
+  .quotation-toolbar .toolbar-count { grid-row: 2; grid-column: 1; }
+  .quotation-toolbar > .icon-button { grid-row: 2; grid-column: 2; }
+  .quotation-toolbar > .button { grid-row: 2; grid-column: 3; }
+
+  /* 悬浮搜索框脱离工具条固定在视口顶部：连续下滑收起、回滑展开，输入时锁住展开。 */
+  .quotation-toolbar .search-control {
+    position: fixed;
+    top: calc(var(--space-4) + env(safe-area-inset-top, 0px));
+    right: var(--space-4);
+    left: var(--space-4);
+    z-index: var(--z-sidebar);
+    flex: none;
+    min-width: 0;
+    max-width: none;
+    transition: transform var(--ease-standard), opacity var(--ease-standard);
+  }
+  .quotation-toolbar .search-control input {
+    height: 40px;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-popover);
+  }
+  .quotation-toolbar .search-control.is-scroll-hidden {
+    transform: translateY(calc(-100% - var(--space-6)));
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+/* ===== 销售开单页：手机端悬浮搜索框 + 两个状态筛选并排成一行 ===== */
+@media (max-width: 900px) {
+  .page-shell.sales-documents-page { animation: none; }
+  .sales-documents-page { padding-top: calc(56px + env(safe-area-inset-top, 0px)); }
+
+  /* 第一行「单据状态 + 付款状态」两个筛选对半分，第二行「数量 + 刷新 + 新建销售单」。 */
+  .sales-docs-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .sales-doc-status-row {
+    grid-row: 1;
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+  .sales-doc-status-row .toolbar-select {
+    width: 100%;
+    min-width: 0;
+    /* 对半分后每列约 170px，要给右侧原生下拉箭头留位，否则长文案被裁。 */
+    padding-left: 8px;
+    padding-right: 2px;
+  }
+  .sales-docs-toolbar .toolbar-count { grid-row: 2; grid-column: 1; }
+  .sales-docs-toolbar > .icon-button { grid-row: 2; grid-column: 2; }
+  .sales-docs-toolbar > .button { grid-row: 2; grid-column: 3; }
+
+  .sales-docs-toolbar .search-control {
+    position: fixed;
+    top: calc(var(--space-4) + env(safe-area-inset-top, 0px));
+    right: var(--space-4);
+    left: var(--space-4);
+    z-index: var(--z-sidebar);
+    flex: none;
+    min-width: 0;
+    max-width: none;
+    transition: transform var(--ease-standard), opacity var(--ease-standard);
+  }
+  .sales-docs-toolbar .search-control input {
+    height: 40px;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-popover);
+  }
+  .sales-docs-toolbar .search-control.is-scroll-hidden {
+    transform: translateY(calc(-100% - var(--space-6)));
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+/* ===== 备货页：手机端压成两行（本页没有搜索框，只有日期范围） ===== */
+@media (max-width: 900px) {
+  /* 第一行「日期范围 + 刷新」，第二行三个操作按钮三等分铺满。 */
+  .stock-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  /* 覆盖基础样式里给首个子元素加的 margin-right: auto，否则日期框不会撑满第一行。 */
+  .stock-toolbar .month-control { grid-row: 1; grid-column: 1; min-width: 0; margin-right: 0; }
+  .stock-toolbar .month-control .toolbar-select { flex: 1 1 auto; width: auto; min-width: 0; }
+  .stock-toolbar > .icon-button { grid-row: 1; grid-column: 2; }
+  .stock-action-row {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+  /* 三等分后每列只有 110px 左右，「导出 Excel」这类长文案要缩字号、收内边距才放得下。 */
+  .stock-action-row .button {
+    min-width: 0;
+    gap: 4px;
+    padding: 0 6px;
+    font-size: var(--text-2xs);
+  }
+}
+
+/* ===== 客户产品库页：手机端悬浮搜索框 + 页头标题移除 ===== */
+@media (max-width: 900px) {
+  /* 与财务 / 报价单 / 销售单同理：page-enter 动画带 transform 会让 .page-shell 成为
+     fixed 的包含块，搜索框会退化成「相对页面」定位，滚动后回滑时看不见。关掉本页动画。 */
+  .page-shell.customer-products-page { animation: none; }
+  .customer-products-page { padding-top: calc(56px + env(safe-area-inset-top, 0px)); }
+
+  /* 页头标题已从结构里移除，这一行只剩「客户列表入口 + 刷新 + 新增客户」。
+     搜索框已 fixed 脱离文档流，不占用网格单元，所以这里只需给剩下三项定位。 */
+  .page-toolbar.customer-products-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--space-3);
+    /* 外层工具条与内层「产品工具条」共用了同一个类名，会顺带吃进它的
+       10px/14px 内边距和下边框；手机上这与财务模块「贴边、无边框」的观感对不上，
+       只在本页窄屏下还原。桌面端保持原有样式不动。 */
+    padding: 0;
+    border-bottom: 0;
+  }
+  .page-toolbar.customer-products-toolbar > .customer-list-trigger { grid-row: 1; grid-column: 1; justify-self: start; min-width: 0; }
+  .page-toolbar.customer-products-toolbar > .icon-button { grid-row: 1; grid-column: 2; }
+  .page-toolbar.customer-products-toolbar > .button { grid-row: 1; grid-column: 3; }
+
+  /* 悬浮搜索框脱离工具条固定在视口顶部：连续下滑收起、回滑展开，输入时锁住展开。 */
+  .page-toolbar.customer-products-toolbar .search-control {
+    position: fixed;
+    top: calc(var(--space-4) + env(safe-area-inset-top, 0px));
+    right: var(--space-4);
+    left: var(--space-4);
+    z-index: var(--z-sidebar);
+    flex: none;
+    min-width: 0;
+    max-width: none;
+    transition: transform var(--ease-standard), opacity var(--ease-standard);
+  }
+  .page-toolbar.customer-products-toolbar .search-control input {
+    height: 40px;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-popover);
+  }
+  .page-toolbar.customer-products-toolbar .search-control.is-scroll-hidden {
+    transform: translateY(calc(-100% - var(--space-6)));
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* 抽屉表单：窄屏下单列铺开，「联系电话」「税号」才不会被压成几十像素。 */
+  .customer-editor-row { grid-template-columns: 1fr; }
 }
 
 /* 设置页「App 网络」：仅 App 内展示的网络切换区块 */
@@ -3498,4 +4200,110 @@ select {
 
   /* 手机上没有 Ctrl+V，隐藏粘贴提示 */
   .image-upload-hint { display: none; }
+}
+
+/* ============================================================
+   手机端（≤900px）：触控与输入体验的横向统一
+   这些规则与具体页面无关，集中放在文件末尾，改一处即可全局生效。
+   ============================================================ */
+@media (max-width: 900px) {
+  /* iOS Safari 聚焦 font-size 小于 16px 的输入框时，会把整个页面强制放大，
+     表现为「手指一点输入框，页面突然变大、布局错位」。把控件字号提到 16px 后不再触发。
+     这里必须用 !important：编辑器里大量输入框是行内 style={{ fontSize: 12 }}，
+     行内样式优先级高于任何类选择器，只写普通规则会恰好漏掉最常输入的那几个框。
+     复选框/单选框/文件选择的大小由控件自身决定、不受字号影响，排除掉避免误伤。 */
+  input:not([type='checkbox']):not([type='radio']):not([type='file']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* 统一关闭点按高亮：iOS / Android 默认会在被点元素上盖一块矩形灰蓝色块，
+     在圆角按钮上会露出直角，而且和 :active 反馈叠加成两层动效，观感很脏。 */
+  a,
+  button,
+  [role='button'],
+  label,
+  summary,
+  input,
+  select,
+  textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* —— 滚动链：内层容器滑到边界就停 —— */
+  /* 内层滚动容器到底后，浏览器会把滚动「接力」给外层，手机上表现为：拖动宽表格
+     到尽头时整页跟着左右晃、页面被拉出白色回弹区、手指从屏幕左缘滑动直接触发
+     浏览器的「返回」手势。加 contain 后滚到边界即停，不再外溢。
+     （只写在手机端这个块里，桌面端鼠标滚轮的顺承接续行为保持不变。）
+
+     两点必须注意，否则会把手感改坏：
+     1) 只 contain 容器真正会滚的那个轴。宽表格容器只是横向能滚，若把纵向也 contain，
+        手指落在表格上就没法上下翻页了；同理列表容器只 contain 纵向。
+     2) 绝对不能加在 .app-content 上。它虽然只是 .app-layout 里一层没设高度的
+        overflow: auto 包裹层（真正滚动的是文档本身），但浏览器仍把它当成滚动容器，
+        一旦 contain，手指滑动就会被这个「滚不动的容器」吞掉、不再接力给文档，
+        整页都滑不动了（useHideOnScroll 也就再也收不到滚动事件）。 */
+  .modal-overlay,
+  .print-workspace-shell,
+  .table-scroll,
+  .packaging-table-shell,
+  .editor-table-shell,
+  .product-images-thumbnails {
+    overscroll-behavior-x: contain;
+  }
+  .sidebar,
+  .modal-body,
+  .customer-list-scroll,
+  .product-parameters-modal-value {
+    overscroll-behavior-y: contain;
+  }
+
+  /* —— 横屏：刘海 / 圆角落在左右两侧时的安全区 —— */
+  /* 之前只处理了 top / bottom；手机横屏后刘海在左边，底部 Tab 栏的第一个图标、
+     抽屉里第一列文字、悬浮搜索框的左端都会被压在圆角之外，点不准也看不清。
+     env() 在竖屏下取值为 0，所以这里不需要额外区分方向。 */
+  .mobile-tabbar {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+  .sidebar {
+    padding-left: calc(var(--space-4) + env(safe-area-inset-left, 0px));
+  }
+  .orders-page .orders-table-toolbar .search-control,
+  .products-page .page-toolbar .search-control,
+  .finance-page .finance-toolbar .search-control,
+  .quotation-page .quotation-toolbar .search-control,
+  .sales-documents-page .sales-docs-toolbar .search-control,
+  .customer-products-page .page-toolbar.customer-products-toolbar .search-control {
+    right: calc(var(--space-4) + env(safe-area-inset-right, 0px));
+    left: calc(var(--space-4) + env(safe-area-inset-left, 0px));
+  }
+  .toast-stack {
+    right: calc(20px + env(safe-area-inset-right, 0px));
+  }
+
+  /* —— 统计卡片：手机档 —— */
+  /* 备货统计卡降到 2 列：≤900px 是本项目的「卡片档」（订单/备货表格此时都已换成
+     卡片列表），4 列统计卡和同页 1 列的卡片列表密度打架。 */
+  .stock-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* 财务统计卡保持「金额卡一行 + 计数卡一行」的两行分组（跨列规则见 .finance-stat-grid）。
+     手机宽度下每张金额卡只有 110px 左右，所以把卡片内边距、栅格间距和金额字号一起收小，
+     保证「¥1,234,567.89」这种最长金额也能单行显示。 */
+  .finance-stat-grid {
+    gap: var(--space-2);
+  }
+  .finance-stat-grid > div,
+  .finance-stat-grid > button {
+    gap: 3px;
+    padding: 10px;
+  }
+  .finance-stat-grid > :nth-child(-n + 3) strong {
+    font-size: var(--text-sm);
+  }
+  .finance-stat-grid > :nth-child(n + 4) strong {
+    font-size: var(--text-lg);
+  }
 }

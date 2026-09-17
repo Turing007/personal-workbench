@@ -12,6 +12,12 @@ export interface ModalProps {
   width?: number | string;
   footer?: ReactNode;
   layer?: number;
+  /** 抽屉形态：面板贴边并撑满高度，用于「档案 / 资料 / 列表」这类侧栏内容。行为（Esc、焦点陷阱、锁滚动）与弹窗完全一致。 */
+  variant?: 'dialog' | 'drawer';
+  /** 抽屉贴哪一边，默认右侧。「档案 / 资料」表单走右侧，客户列表这类「主列表」走左侧。 */
+  drawerSide?: 'right' | 'left';
+  /** 追加在 .modal-panel 上的额外类名，用于按弹窗微调内部留白。 */
+  className?: string;
 }
 
 type ModalStackEntry = {
@@ -63,7 +69,7 @@ function unregisterModal(id: symbol) {
   notifyOverlayOpen(false);
 }
 
-export default function Modal({ open, title, children, onClose, width = 760, footer, layer = 20 }: ModalProps) {
+export default function Modal({ open, title, children, onClose, width = 760, footer, layer = 20, variant = 'dialog', drawerSide = 'right', className }: ModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
@@ -104,16 +110,19 @@ export default function Modal({ open, title, children, onClose, width = 760, foo
 
   if (!open) return null;
 
+  const isDrawer = variant === 'drawer';
+  const isLeftDrawer = isDrawer && drawerSide === 'left';
+
   const modal = (
     <div
-      className="modal-overlay"
+      className={`modal-overlay${isDrawer ? ' is-drawer' : ''}${isLeftDrawer ? ' is-drawer-left' : ''}`}
       role="presentation"
       style={{ zIndex: layer }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <section ref={panelRef} className="modal-panel" role="dialog" aria-modal="true" aria-labelledby={titleId.current} style={{ '--modal-width': typeof width === 'number' ? `${width}px` : width } as CSSProperties}>
+      <section ref={panelRef} className={`modal-panel${isDrawer ? ' drawer-panel' : ''}${isLeftDrawer ? ' drawer-panel-left' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId.current} style={{ '--modal-width': typeof width === 'number' ? `${width}px` : width } as CSSProperties}>
         <header className="modal-header">
           <strong id={titleId.current} className="modal-title">{title}</strong>
           <button ref={closeButtonRef} className="modal-close" type="button" title="关闭" aria-label="关闭" onClick={onClose}>

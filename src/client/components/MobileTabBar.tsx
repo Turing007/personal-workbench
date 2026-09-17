@@ -1,32 +1,25 @@
-import { ClipboardList, Ellipsis, PackageCheck, ReceiptText, WalletCards } from 'lucide-react';
-import type { ComponentType } from 'react';
-import type { NavigationKey } from './Sidebar';
+import { Ellipsis } from 'lucide-react';
+import { navigationItem, type NavigationKey } from '../navigation';
+import { DEFAULT_MOBILE_TABS } from '../mobile-tabs';
 
 export interface MobileTabBarProps {
   activeKey: NavigationKey;
+  /** 当前设备自定义的底部栏模块（顺序即显示顺序），缺省回退默认组合。 */
+  tabs?: NavigationKey[];
   onNavigate: (key: NavigationKey) => void;
   onOpenMore: () => void;
 }
 
-interface TabDefinition {
-  key: NavigationKey;
-  label: string;
-  icon: ComponentType<{ size?: number; strokeWidth?: number }>;
-}
-
-/* 手机端只放高频模块，其余入口集中在“更多”抽屉里。 */
-const tabs: TabDefinition[] = [
-  { key: 'orders', label: '订单', icon: ClipboardList },
-  { key: 'quotations', label: '报价', icon: ReceiptText },
-  { key: 'shipping', label: '发货', icon: PackageCheck },
-  { key: 'finance', label: '财务', icon: WalletCards },
-];
-
-export default function MobileTabBar({ activeKey, onNavigate, onOpenMore }: MobileTabBarProps) {
-  const moreActive = !tabs.some((tab) => tab.key === activeKey);
+export default function MobileTabBar({ activeKey, tabs = DEFAULT_MOBILE_TABS, onNavigate, onOpenMore }: MobileTabBarProps) {
+  const moreActive = !tabs.includes(activeKey);
   return (
-    <nav className="mobile-tabbar" aria-label="移动端主导航">
-      {tabs.map(({ key, label, icon: Icon }) => {
+    <nav
+      className="mobile-tabbar"
+      aria-label="移动端主导航"
+      style={{ gridTemplateColumns: `repeat(${tabs.length + 1}, minmax(0, 1fr))` }}
+    >
+      {tabs.map((key) => {
+        const { shortLabel, icon: Icon } = navigationItem(key);
         const active = key === activeKey;
         return (
           <button
@@ -37,7 +30,7 @@ export default function MobileTabBar({ activeKey, onNavigate, onOpenMore }: Mobi
             className={`mobile-tab-item${active ? ' is-active' : ''}`}
           >
             <Icon size={20} strokeWidth={active ? 2 : 1.7} />
-            <span>{label}</span>
+            <span>{shortLabel}</span>
           </button>
         );
       })}

@@ -3,7 +3,6 @@ import {
   CopyPlus,
   Download,
   Edit3,
-  FileText,
   PackageSearch,
   Plus,
   RefreshCw,
@@ -21,6 +20,8 @@ import Modal from '../components/Modal';
 import QuotationForm, { createEmptyQuotationDraft } from '../components/quotations/QuotationForm';
 import QuotationProductDetailModal from '../components/quotations/QuotationProductDetailModal';
 import QuotationSyncModal from '../components/quotations/QuotationSyncModal';
+import { useIsNarrow } from '../use-is-narrow';
+import { useHideOnScroll } from '../use-hide-on-scroll';
 
 export interface QuotationPageProps {
   onNotify?: (message: string, tone?: 'success' | 'error' | 'info') => void;
@@ -65,6 +66,10 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
   const [draft, setDraft] = useState<QuotationDraft>(() => createEmptyQuotationDraft());
   const [syncQuotationId, setSyncQuotationId] = useState<number | null>(null);
   const [productDetailId, setProductDetailId] = useState<number | null>(null);
+  const narrow = useIsNarrow();
+  const [searchFocused, setSearchFocused] = useState(false);
+  // 手机端搜索框悬浮在顶部：连续下滑收起，回滑展开；输入时锁住展开避免打字途中消失。
+  const searchHidden = useHideOnScroll(narrow && !searchFocused);
 
   const notify = useCallback((message: string, tone: 'success' | 'error' | 'info' = 'info') => {
     onNotify?.(message, tone);
@@ -201,9 +206,8 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
   };
 
   return <div className="page-shell quotation-page">
-    <div className="page-toolbar" style={{ gap: 8, flexWrap: 'wrap' }}>
-      <div><strong className="page-title" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><FileText size={17} />报价单</strong><span className="page-subtitle">管理报价状态，并支持导出与同步销售开单</span></div>
-      <div className="search-control" style={{ flex: '1 1 260px' }}><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索单号、客户、联系人、电话" /></div>
+    <div className="page-toolbar quotation-toolbar">
+      <div className={`search-control${searchHidden ? ' is-scroll-hidden' : ''}`}><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索单号、客户、联系人、电话" /></div>
       <div className="segmented">{statusOptions.map((option) => <button key={option.value} className={`segmented-item${filter === option.value ? ' is-active' : ''}`} type="button" title={`筛选${option.label}报价单`} onClick={() => setFilter(option.value)}>{option.label}</button>)}</div>
       <span className="toolbar-count">{visibleRows.length} 份</span>
       <button className="icon-button" type="button" title="刷新报价列表" disabled={loading} onClick={() => void load()}><RefreshCw size={15} /></button>
