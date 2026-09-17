@@ -1,18 +1,24 @@
 package com.workbench.app;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.DownloadManager;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.media.MediaScannerConnection;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.MediaStore;
 import android.text.TextUtils;
 import android.view.View;
 import android.webkit.CookieManager;
@@ -37,7 +43,12 @@ import com.google.zxing.integration.android.IntentIntegrator;
 import com.google.zxing.integration.android.IntentResult;
 import com.journeyapps.barcodescanner.ScanOptions;
 
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.concurrent.ExecutorService;
@@ -46,6 +57,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -62,6 +74,14 @@ public class MainActivity extends Activity {
     /** 已保存的多条访问地址（局域网 / 隧道），JSON 数组字符串。 */
     private static final String KEY_NETWORKS = "saved_networks";
     private static final int FILE_CHOOSER_REQUEST = 1001;
+    private static final int STORAGE_PERMISSION_REQUEST = 1002;
+    /** 相册里的子目录，便于用户在工作台 App 存图后一眼找到。 */
+    private static final String GALLERY_FOLDER = "个人工作台";
+    /** 只接管「图片地址」的长按，避免把普通链接当成图片存进相册。 */
+    private static final Pattern IMAGE_URL_PATTERN =
+            Pattern.compile("\\.(png|jpe?g|webp|gif|bmp)(\\?.*)?$", Pattern.CASE_INSENSITIVE);
+    /** 列表里的缩略图地址，长按它不保存：存进相册的是 240px 小图，用户拿去用会糊。 */
+    private static final String THUMB_PATH = "/api/thumbs/";
 
     private WebView webView;
     private SwipeRefreshLayout swipeRefresh;
@@ -75,6 +95,9 @@ public class MainActivity extends Activity {
     private Button testButton;
 
     private ValueCallback<Uri[]> fileCallback;
+    /** API 29 以下保存图片前要先申请存储权限，授权通过后接着保存这一张。 */
+    private String pendingImageUrl;
+    private String pendingImageName;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -209,6 +232,23 @@ public class MainActivity extends Activity {
                 }
             }
         });
+
+        // 长按图片保存：桌面 Chrome 会弹「保存图片」，WebView 根本不会——不接管的话，
+        // 页面里「长按大图保存到相册」的提示在 App 内点了没有任何反应，用户只会觉得存不上。
+        webView.setOnLongClickListener(view -> {
+            WebView.HitTestResult hit = webView.getHitTestResult();
+            if (hit == null) return false;
+            int type = hit.getType();
+            if (type != WebView.HitTestResult.IMAGE_TYPE
+                    && type != WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
+                return false; // 文字选择、超链接长按等交回 WebView 默认行为
+            }
+            String source = hit.getExtra();
+            if (TextUtils.isEmpty(source) || !IMAGE_URL_PATTERN.matcher(source).find()) return false;
+            if (source.contains(THUMB_PATH)) return false; // 缩略图不存，大图和「保存到相册」按钮才是原图
+            saveImageToGallery(source, null);
+            return true;
+        });
     }
 
     private void bindSetupButtons() {
@@ -312,6 +352,15 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void openAddressEditor() {
             runOnUiThread(MainActivity.this::openSetupView);
+        }
+
+        /**
+         * 网页「保存到相册」按钮：由原生把图片下载下来写进系统相册。
+         * 网页自己那条路（blob + a[download]）在 WebView 里会被静默忽略，只能走原生。
+         */
+        @JavascriptInterface
+        public void saveImage(String url, String fileName) {
+            runOnUiThread(() -> saveImageToGallery(url, fileName));
         }
 
         /**
@@ -575,6 +624,169 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    // ===== 保存图片到系统相册 =====
+
+    /**
+     * 把图片下载下来写进系统相册。
+     * 系统下载器那条路只把文件丢进「下载」目录，用户在相册里翻不到；而且网页里
+     * blob + a[download] 在 WebView 中会被静默忽略，所以图片必须由原生落盘到相册。
+     */
+    private void saveImageToGallery(String rawUrl, String rawName) {
+        String url = absoluteImageUrl(rawUrl);
+        if (url == null) {
+            notifyImageSaved(false);
+            return;
+        }
+        // Android 10 起往公共媒体库写文件不再需要权限；更早的版本必须先拿到存储权限。
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            pendingImageUrl = url;
+            pendingImageName = rawName;
+            requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, STORAGE_PERMISSION_REQUEST);
+            return;
+        }
+
+        String fileName = imageFileName(url, rawName);
+        Toast.makeText(this, R.string.save_image_started, Toast.LENGTH_SHORT).show();
+        executor.execute(() -> {
+            boolean saved = false;
+            try {
+                byte[] data = downloadBytes(url);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    writeImageToMediaStore(fileName, data);
+                } else {
+                    writeImageToLegacyPictures(fileName, data);
+                }
+                saved = true;
+            } catch (Exception ignored) {
+                // 具体原因对用户没有意义，统一提示重试即可。
+            }
+            boolean result = saved;
+            mainHandler.post(() -> notifyImageSaved(result));
+        });
+    }
+
+    /** 保存结束：提示用户，并通知网页把按钮从「保存中」恢复过来。 */
+    private void notifyImageSaved(boolean ok) {
+        Toast.makeText(this, ok ? R.string.save_image_done : R.string.save_image_failed, Toast.LENGTH_SHORT).show();
+        if (webView == null) return;
+        webView.evaluateJavascript(
+                "window.__workbenchImageSaved&&window.__workbenchImageSaved(" + ok + ");", null);
+    }
+
+    /** 补全绝对地址：网页里传过来的往往是 /files/... 这类相对路径。 */
+    private String absoluteImageUrl(String raw) {
+        String value = raw == null ? "" : raw.trim();
+        if (value.isEmpty()) return null;
+        if (value.startsWith("//")) value = "http:" + value;
+        if (value.contains("://")) return value;
+        String base = webView == null ? null : webView.getUrl();
+        if (base == null) return null;
+        try {
+            return new URL(new URL(base), value).toString();
+        } catch (Exception error) {
+            return null;
+        }
+    }
+
+    /** 文件名优先用网页给的产品图片名，没有就从地址里猜一个，并保证带图片后缀。 */
+    private String imageFileName(String url, String rawName) {
+        String name = rawName == null ? "" : rawName.trim().replaceAll("[\\\\/:*?\"<>|]+", "_");
+        if (TextUtils.isEmpty(name)) name = android.webkit.URLUtil.guessFileName(url, null, null);
+        if (TextUtils.isEmpty(name) || name.startsWith("downloadfile")) {
+            name = "workbench-" + System.currentTimeMillis() + ".jpg";
+        }
+        return IMAGE_URL_PATTERN.matcher(name).find() ? name : name + ".jpg";
+    }
+
+    private String mimeTypeOf(String fileName) {
+        String lower = fileName.toLowerCase();
+        if (lower.endsWith(".png")) return "image/png";
+        if (lower.endsWith(".webp")) return "image/webp";
+        if (lower.endsWith(".gif")) return "image/gif";
+        if (lower.endsWith(".bmp")) return "image/bmp";
+        return "image/jpeg";
+    }
+
+    /** 带上 WebView 的登录 Cookie 取回图片字节：图片接口需要登录态。 */
+    private byte[] downloadBytes(String url) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        try {
+            connection.setConnectTimeout(10_000);
+            connection.setReadTimeout(20_000);
+            String cookie = CookieManager.getInstance().getCookie(url);
+            if (cookie != null) connection.setRequestProperty("Cookie", cookie);
+            int code = connection.getResponseCode();
+            if (code < 200 || code >= 300) throw new IOException("HTTP " + code);
+            try (InputStream input = connection.getInputStream()) {
+                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                byte[] chunk = new byte[8192];
+                int read;
+                while ((read = input.read(chunk)) != -1) {
+                    buffer.write(chunk, 0, read);
+                }
+                return buffer.toByteArray();
+            }
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    /** Android 10 及以上：通过 MediaStore 写进相册（Pictures/个人工作台），无需存储权限。 */
+    private void writeImageToMediaStore(String fileName, byte[] data) throws IOException {
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.Images.Media.DISPLAY_NAME, fileName);
+        values.put(MediaStore.Images.Media.MIME_TYPE, mimeTypeOf(fileName));
+        values.put(MediaStore.Images.Media.RELATIVE_PATH,
+                Environment.DIRECTORY_PICTURES + "/" + GALLERY_FOLDER);
+        values.put(MediaStore.Images.Media.IS_PENDING, 1);
+        Uri target = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+        if (target == null) throw new IOException("media store insert failed");
+        try {
+            try (OutputStream output = getContentResolver().openOutputStream(target)) {
+                if (output == null) throw new IOException("media store open failed");
+                output.write(data);
+            }
+            ContentValues ready = new ContentValues();
+            ready.put(MediaStore.Images.Media.IS_PENDING, 0);
+            getContentResolver().update(target, ready, null, null);
+        } catch (IOException error) {
+            getContentResolver().delete(target, null, null); // 写失败别在相册里留半张坏图
+            throw error;
+        }
+    }
+
+    /** Android 9 及以下：直接写 Pictures 目录，再通知相册扫描出来。 */
+    private void writeImageToLegacyPictures(String fileName, byte[] data) throws IOException {
+        File folder = new File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), GALLERY_FOLDER);
+        if (!folder.exists() && !folder.mkdirs()) throw new IOException("mkdir failed");
+        File file = new File(folder, fileName);
+        try (OutputStream output = new FileOutputStream(file)) {
+            output.write(data);
+        }
+        MediaScannerConnection.scanFile(
+                this, new String[]{file.getAbsolutePath()}, new String[]{mimeTypeOf(fileName)}, null);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == STORAGE_PERMISSION_REQUEST) {
+            String url = pendingImageUrl;
+            String name = pendingImageName;
+            pendingImageUrl = null;
+            pendingImageName = null;
+            if (url != null && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                saveImageToGallery(url, name);
+            } else {
+                // 用户拒绝也要回执，否则网页那边会一直停在「保存中」。
+                notifyImageSaved(false);
+            }
+            return;
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
     }
 
     @Override

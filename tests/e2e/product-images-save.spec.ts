@@ -1,0 +1,193 @@
+import { expect, test } from '@playwright/test';
+import type { BrowserContext, Page } from '@playwright/test';
+import { ensureAuthenticated, injectSession } from './helpers/auth';
+
+let sessionCookie: string;
+
+test.beforeAll(async ({ request }) => {
+  sessionCookie = await ensureAuthenticated(request);
+});
+
+test.beforeEach(async ({ context }) => {
+  await injectSession(context, sessionCookie);
+});
+
+/** 1×1 PNG，够服务端存图与缩略图路由使用。 */
+const PNG_1X1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+  'base64',
+);
+
+/**
+ * 把页面强行变成「非安全上下文」，复现手机通过 http://局域网IP:端口 访问的情形。
+ *
+ * 这一层伪装是本用例存在的理由：navigator.clipboard.write 只在安全上下文（https / localhost）下可用，
+ * 而 Playwright 自己跑在 http://127.0.0.1，天生是安全上下文。不伪装就永远测不到手机那条分支，
+ * 而「手机上点了复制没反应」恰恰就是从这里漏出去的。
+ */
+async function forceInsecureContext(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    Object.defineProperty(window, 'isSecureContext', { get: () => false, configurable: true });
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+  });
+}
+
+async function seedProductWithImage(page: Page, stamp: number) {
+  const created = await page.request.post('/api/products', {
+    // 正式产品必须带至少一行包装方式，否则服务端按 VALIDATION_ERROR 拒绝。
+    data: {
+      name: `E2E图片保存${stamp}`,
+      supplier: 'E2E供应商',
+      status: 'active',
+      packaging: [{ name: '彩盒包装', innerSize: '10×5×3', innerWeight: 0.5, outerSize: '40×30×25', outerWeight: 8, packCount: 24 }],
+    },
+  });
+  if (!created.ok()) throw new Error(`创建产品失败：HTTP ${created.status()} ${await created.text()}`);
+  // 新建产品的 SKU 由服务端按 VT-#### 规则生成，必须用响应里回填的真实 SKU 定位，不能自己臆造。
+  const product = (await created.json()).data as { id: string; sku: string };
+
+  const uploaded = await page.request.post(`/api/products/${product.id}/images?category=product`, {
+    multipart: { file: { name: 'e2e-product.png', mimeType: 'image/png', buffer: PNG_1X1 } },
+  });
+  if (!uploaded.ok()) throw new Error(`上传产品图片失败：HTTP ${uploaded.status()} ${await uploaded.text()}`);
+  return product;
+}
+
+/**
+ * 打开产品图片弹窗。桌面表格与手机卡片列表在 DOM 里同时存在、由 CSS 决定谁可见，
+ * 所以必须用 :visible 过滤，否则会点到被 display:none 藏起来的那一份，click 直接超时。
+ */
+async function openImagesModal(page: Page, sku: string, mobile: boolean) {
+  await page.goto('/');
+  if (mobile) {
+    await page.locator('.mobile-tab-item[aria-label="更多模块"]').click();
+  }
+  await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+  await page.locator('.products-page .page-toolbar .search-control input').fill(sku);
+  await page.locator('.product-image-button:visible').first().click();
+  await expect(page.locator('.product-images-content')).toBeVisible();
+}
+
+test.describe('手机端：触摸 + 局域网 http（非安全上下文）', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 });
+
+  test('只提供「保存到相册」，不再出现注定失败的复制按钮', async ({ page, context }) => {
+    await forceInsecureContext(context);
+    // 触摸标记要在弹窗挂载前生效，useTouchDevice 才能在首次渲染就读到。
+    const client = await context.newCDPSession(page);
+    await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+
+    const stamp = Date.now();
+    const product = await seedProductWithImage(page, stamp);
+
+    try {
+      await openImagesModal(page, product.sku, true);
+
+      await expect(page.locator('.product-images-save-button')).toHaveText(/保存到相册（1）/);
+      // 这条是本用例的核心：局域网 http 下复制图片必然失败，所以按钮根本不该出现。
+      await expect(page.locator('.product-images-copy-button')).toHaveCount(0);
+      // 手机端不再走 <a download> + blob（iOS/安卓会静默忽略），那条路径的按钮也不该出现。
+      await expect(page.locator('.product-images-download-button')).toHaveCount(0);
+      await expect(page.locator('.product-images-help')).toContainText('长按大图可保存到相册');
+    } finally {
+      await page.request.delete(`/api/products/${product.id}`);
+    }
+  });
+
+  test('点「保存到相册」打开全屏大图，长按走系统存储到照片', async ({ page, context }) => {
+    await forceInsecureContext(context);
+    const client = await context.newCDPSession(page);
+    await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+
+    const stamp = Date.now();
+    const product = await seedProductWithImage(page, stamp);
+
+    try {
+      await openImagesModal(page, product.sku, true);
+
+      await page.locator('.product-images-save-button').click();
+
+      const viewer = page.locator('.image-save-viewer');
+      await expect(viewer).toBeVisible();
+      await expect(viewer.locator('.image-save-viewer-image')).toBeVisible();
+      await expect(viewer.locator('.image-save-viewer-hint')).toContainText('存储到照片');
+      await expect(viewer.locator('.image-save-viewer-counter')).toHaveText('1 / 1');
+      // 单张选中时没有上一张/下一张，避免出现点了没反应的死按钮。
+      await expect(viewer.locator('.image-save-viewer-step')).toHaveCount(0);
+
+      await viewer.locator('.image-save-viewer-close').click();
+      await expect(viewer).toHaveCount(0);
+      // 关掉大图不应把整个图库弹窗一起带走。
+      await expect(page.locator('.product-images-content')).toBeVisible();
+    } finally {
+      await page.request.delete(`/api/products/${product.id}`);
+    }
+  });
+  test('App 内点「保存到相册」直接交给原生写相册，不再依赖长按', async ({ page, context }) => {
+    await forceInsecureContext(context);
+    const client = await context.newCDPSession(page);
+    await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    // 伪造成安卓壳：记下网页交给原生保存的地址，并按壳的真实行为回执保存结果。
+    await context.addInitScript(() => {
+      const target = window as unknown as { __nativeSaves: { url: string; name?: string }[]; workbenchApp: unknown };
+      target.__nativeSaves = [];
+      target.workbenchApp = {
+        getNetworks: () => '[]',
+        switchNetwork: () => {},
+        openAddressEditor: () => {},
+        setOverlayOpen: () => {},
+        saveImage: (url: string, name?: string) => {
+          target.__nativeSaves.push({ url, name });
+          window.setTimeout(() => {
+            (window as unknown as { __workbenchImageSaved?: (ok: boolean) => void }).__workbenchImageSaved?.(true);
+          }, 0);
+        },
+      };
+    });
+
+    const stamp = Date.now();
+    const product = await seedProductWithImage(page, stamp);
+
+    try {
+      await openImagesModal(page, product.sku, true);
+
+      await expect(page.locator('.product-images-help')).toContainText('点「保存到相册」即可存进手机相册');
+      await page.locator('.product-images-save-button').click();
+
+      await expect(page.locator('.product-images-copy-message')).toHaveText('已保存 1 张到手机相册');
+      // 交给原生的必须是原图，不能把列表里的 240px 缩略图存进相册。
+      const saves = await page.evaluate(() => (window as unknown as { __nativeSaves: { url: string }[] }).__nativeSaves);
+      expect(saves).toHaveLength(1);
+      expect(saves[0].url).toContain('/files/product-images/');
+      expect(saves[0].url).not.toContain('/api/thumbs/');
+      // 有原生保存能力时不该再打开那个靠长按的全屏大图（WebView 里长按本来就是空操作）。
+      await expect(page.locator('.image-save-viewer')).toHaveCount(0);
+    } finally {
+      await page.request.delete(`/api/products/${product.id}`);
+    }
+  });
+});
+
+test.describe('桌面端：安全上下文', () => {
+  test('保留复制按钮，并始终提供下载兜底', async ({ page }) => {
+    const stamp = Date.now();
+    const product = await seedProductWithImage(page, stamp);
+
+    try {
+      await openImagesModal(page, product.sku, false);
+
+      const canCopyImages = await page.evaluate(() => (
+        window.isSecureContext && typeof navigator.clipboard?.write === 'function' && typeof ClipboardItem !== 'undefined'
+      ));
+      expect(canCopyImages).toBe(true);
+
+      await expect(page.locator('.product-images-copy-button')).toHaveText(/复制所选图片（1）/);
+      // 下载兜底不再藏在「复制失败提示」后面，安全上下文下也一直可见。
+      await expect(page.locator('.product-images-download-button')).toHaveText(/下载所选图片（1）/);
+      await expect(page.locator('.product-images-save-button')).toHaveCount(0);
+      await expect(page.locator('.product-images-help')).toContainText('右键保存图片');
+    } finally {
+      await page.request.delete(`/api/products/${product.id}`);
+    }
+  });
+});

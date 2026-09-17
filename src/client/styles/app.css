@@ -1107,7 +1107,8 @@ select {
   width: 100%;
 }
 
-.product-images-download-button {
+.product-images-download-button,
+.product-images-save-button {
   display: inline-flex;
   width: 100%;
   align-items: center;
@@ -1125,6 +1126,122 @@ select {
   color: var(--tone-text-faint);
   font-size: 11px;
   line-height: 1.5;
+}
+
+/* ===== 手机端「保存到相册」全屏长按保存 =====
+   iOS Safari 与部分安卓内置浏览器会静默忽略指向 blob 的 <a download>（不报错、不触发事件、没有可 catch 的
+   失败），所以手机端不再假装下载，改为打开全屏大图，让用户长按走系统「存储到照片」。
+   z-index 55：盖住弹窗（--z-overlay: 20），但低于 toast（--z-toast: 60），保存过程中的提示仍能浮在上面。 */
+.image-save-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: calc(var(--space-4) + env(safe-area-inset-top, 0px)) var(--space-5) calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
+  background: rgba(9, 12, 18, .97);
+  color: #f5f7fb;
+}
+
+.image-save-viewer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.image-save-viewer-counter {
+  color: rgba(245, 247, 251, .72);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+}
+
+.image-save-viewer-close {
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid rgba(245, 247, 251, .22);
+  border-radius: 50%;
+  color: inherit;
+  background: rgba(245, 247, 251, .08);
+  cursor: pointer;
+}
+
+.image-save-viewer-stage {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  place-items: center;
+}
+
+/* 刻意不加 user-select / -webkit-touch-callout 限制：iOS 的长按「存储到照片」依赖系统默认行为。 */
+.image-save-viewer-image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--radius-control);
+  object-fit: contain;
+}
+
+.image-save-viewer-name {
+  overflow: hidden;
+  color: rgba(245, 247, 251, .6);
+  font-size: var(--text-2xs);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-save-viewer-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 1px solid rgba(45, 212, 191, .32);
+  border-radius: var(--radius-pill);
+  padding: var(--space-3) var(--space-5);
+  background: rgba(45, 212, 191, .12);
+  color: #7ff0e0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.image-save-viewer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+.image-save-viewer-step,
+.image-save-viewer-open {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid rgba(245, 247, 251, .22);
+  border-radius: var(--radius-control);
+  padding: 0 var(--space-6);
+  color: inherit;
+  background: rgba(245, 247, 251, .08);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+
+.image-save-viewer-step:disabled {
+  cursor: not-allowed;
+  opacity: .4;
+}
+
+.image-save-viewer-open {
+  border-color: rgba(45, 212, 191, .4);
+  color: #7ff0e0;
+  background: rgba(45, 212, 191, .14);
 }
 
 .product-images-empty {
