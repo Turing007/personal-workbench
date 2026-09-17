@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronUp, Copy, Download, Edit3, FileDown, Image as ImageIcon, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Copy, Download, Edit3, Eye, EyeOff, FileDown, Image as ImageIcon, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import ProductEditor, { type ProductRecord } from '../components/ProductEditor';
 import { compareProductBySku } from '../product-sort';
@@ -46,6 +46,8 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
   const importInputRef = useRef<HTMLInputElement>(null);
   const narrow = useIsNarrow();
   const [searchFocused, setSearchFocused] = useState(false);
+  // 供应商与采购价属于对外不能随便看的信息，默认隐藏；每次进页面都从隐藏开始，不记住上次的选择。
+  const [showSensitive, setShowSensitive] = useState(false);
   // 手机端搜索框悬浮在顶部：连续下滑收起，回滑展开；输入时锁住展开避免打字途中消失。
   const searchHidden = useHideOnScroll(narrow && !searchFocused);
   const filtered = useMemo(() => {
@@ -103,15 +105,16 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
         {statusFilterLabels.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
       <span className="toolbar-count">{filtered.length} 个产品</span>
-      <button className="button button-secondary" type="button" onClick={() => void refresh()} disabled={refreshing} title="重新加载产品库"><RefreshCw size={15} />刷新</button>
+      <button className="icon-button products-sensitive-toggle" type="button" aria-pressed={showSensitive} aria-label={showSensitive ? '隐藏供应商与价格' : '显示供应商与价格'} title={showSensitive ? '隐藏供应商与价格' : '显示供应商与价格'} onClick={() => setShowSensitive((current) => !current)}>{showSensitive ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+      <button className="button button-secondary products-refresh-button" type="button" onClick={() => void refresh()} disabled={refreshing} aria-label="刷新" title="重新加载产品库"><RefreshCw size={15} /><span className="products-mobile-hidden">刷新</span></button>
       <button className="button button-secondary products-mobile-hidden" type="button" onClick={() => void onExport()} title="导出产品库"><Download size={15} />导出</button>
       <button className="button button-secondary products-mobile-hidden" type="button" onClick={() => void onDownloadTemplate()} title="下载 Excel 导入模板"><FileDown size={15} />下载模板</button>
       <button className="button button-secondary products-mobile-hidden" type="button" onClick={() => importInputRef.current?.click()} title="导入 Excel 产品库"><Upload size={15} />导入</button>
       <input ref={importInputRef} type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void onImport(file); }} />
-      <button className="button button-primary" type="button" onClick={openNew}><Plus size={15} />添加产品</button>
+      <button className="button button-primary" type="button" onClick={openNew}><Plus size={15} /><span>添加<span className="products-mobile-hidden">产品</span></span></button>
     </div>
     <section className="table-panel">
-      <div className="table-scroll products-table-desktop"><table className="data-table products-data-table"><thead><tr>{['SKU', '图片', '品名', '颜色', '插脚', '参数', '包装信息', '备注', '供应商', '价格', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
+      <div className="table-scroll products-table-desktop"><table className="data-table products-data-table"><thead><tr>{['SKU', '图片', '品名', '颜色', '插脚', '参数', '包装信息', '备注', ...(showSensitive ? ['供应商', '价格'] : []), '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
         <tbody>{filtered.map((product) => <tr key={product.id}>
           <td className="strong-cell"><button className="product-sku-button" type="button" onClick={() => setDetailProduct(product)} title="查看产品详情">{product.sku || '查看详情'}</button></td>
           <td>{product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProduct(product)} title="查看全部图片"><span className="product-image-thumb"><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}</td>
@@ -128,8 +131,7 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
             })}
             {product.packaging.length > 1 && <button className="product-packaging-expand" type="button" onClick={() => setExpandedPackagingId((current) => current === product.id ? undefined : product.id)}>{expandedPackagingId === product.id ? <><ChevronUp size={13} />收起</> : <><ChevronDown size={13} />... 还有 {product.packaging.length - 1} 个包装</>}</button>}
           </> : <span>—</span>}</div></td>
-          <td className="product-remark-cell">{product.remark || '—'}</td><td>{product.supplier || '—'}</td>
-          <td>{product.purchasePrice ? `¥${product.purchasePrice}` : '—'}</td>
+          <td className="product-remark-cell">{product.remark || '—'}</td>{showSensitive && <><td>{product.supplier || '—'}</td><td>{product.purchasePrice ? `¥${product.purchasePrice}` : '—'}</td></>}
           <td><div className="row-actions"><button className="icon-button" title={product.status === 'draft' ? '继续编辑草稿' : '编辑产品'} type="button" onClick={() => openEdit(product)}><Edit3 size={14} /></button><button className="icon-button" title="复制产品为新建产品" type="button" onClick={() => openCopy(product)}><Copy size={14} /></button><button className="icon-button danger" title="删除产品" type="button" onClick={() => { if (window.confirm(`确定删除产品“${product.name || '未命名草稿'}”吗？`)) void onDelete(product); }}><Trash2 size={14} /></button></div></td>
         </tr>)}</tbody></table></div>
       <div className="products-card-list">
@@ -143,7 +145,7 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
           </div>
           <div className="product-card-grid">
             <div className="product-card-field"><span>颜色 / 插脚</span><strong>{[product.colors.join('、'), product.batteryPlugs.join('、')].filter(Boolean).join(' · ') || '—'}</strong></div>
-            <div className="product-card-field"><span>供应商 / 采购价</span><strong>{[product.supplier || '—', product.purchasePrice ? `¥${product.purchasePrice}` : ''].filter(Boolean).join(' · ')}</strong></div>
+            {showSensitive && <div className="product-card-field"><span>供应商 / 采购价</span><strong>{[product.supplier || '—', product.purchasePrice ? `¥${product.purchasePrice}` : ''].filter(Boolean).join(' · ')}</strong></div>}
           </div>
           {product.parameters?.trim() && <button className="product-parameters-trigger" type="button" onClick={() => setParametersProduct(product)} title="查看完整参数"><span>参数详情</span><Copy size={13} /></button>}
           {product.packaging.length > 0 && <div className="product-card-packaging">{product.packaging.slice(0, 1).map((item) => {
@@ -162,7 +164,7 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
     </section>
     <ProductEditor key={editing?.id ?? 'new'} open={editorOpen} product={editing} copyMode={copying} onClose={() => { setEditorOpen(false); setEditing(undefined); setCopying(false); }} onSave={save} />
     <ProductParametersModal open={Boolean(parametersProduct)} productName={parametersProduct?.name} parameters={parametersProduct?.parameters} onClose={() => setParametersProduct(undefined)} />
-    <ProductDetailModal open={Boolean(detailProduct)} product={detailProduct} onClose={closeDetail} onOpenImages={(product) => { closeDetail(); setImagesProduct(product); }} />
+    <ProductDetailModal open={Boolean(detailProduct)} product={detailProduct} showSensitive={showSensitive} onClose={closeDetail} onOpenImages={(product) => { closeDetail(); setImagesProduct(product); }} />
     <ProductImagesModal open={Boolean(imagesProduct)} productName={imagesProduct?.name} images={imagesProduct?.images ?? []} onClose={closeImages} />
   </div>;
 }

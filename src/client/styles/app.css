@@ -52,6 +52,11 @@ select {
 
 .page-shell {
   display: grid;
+  /* 栅格列必须显式写成 minmax(0, 1fr)：默认的单列是 auto 尺寸，会被工具条里
+     flex-wrap:nowrap 的内容撑成「最大内容宽度」，于是整页（工具条 + 表格 + 卡片）
+     都比手机屏幕宽，用户得左右滑动才能看完。锁成 1fr 之后列宽永远等于容器宽度，
+     内部元素才会按各自的 flex 规则收缩。 */
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 16px;
   min-height: 100vh;
@@ -532,6 +537,15 @@ select {
 .products-data-table {
   min-width: 1460px;
   table-layout: auto;
+}
+
+/* 产品库工具条上的小眼睛（控制供应商 / 采购价显隐）。
+   默认的 .icon-button 是透明边框，夹在「刷新」等实心按钮中间很容易被忽略，
+   这里补一层浅边框与底色，让它看起来就是个能点的控件。 */
+.products-sensitive-toggle {
+  flex: 0 0 auto;
+  border-color: var(--color-border);
+  background: var(--color-surface);
 }
 
 .product-sku-button {
@@ -1825,6 +1839,9 @@ select {
 .chip-add {
   display: inline-grid;
   place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
   border: 1px solid var(--tone-border-cool);
   border-radius: 7px;
   color: var(--color-text-secondary);
@@ -2298,6 +2315,8 @@ select {
 .image-card {
   position: relative;
   display: grid;
+  /* 栅格子项默认 min-width:auto，会被备注/分类输入框的固有宽度撑破，导致卡片内容压到相邻卡片上 */
+  min-width: 0;
   gap: 5px;
   padding: 6px;
   border: 1px solid var(--color-divider);
@@ -2307,6 +2326,8 @@ select {
 
 .image-card.is-dragging { border-color: var(--color-accent); box-shadow: 0 0 0 2px var(--color-accent-soft); }
 .image-card.is-cover { border-color: var(--color-accent-border); }
+
+.image-card-thumb { position: relative; min-width: 0; }
 
 .image-card-img {
   display: block;
@@ -2353,6 +2374,14 @@ select {
 .image-card-button:hover { background: rgba(15, 23, 42, .78); }
 .image-card-button.is-on { background: var(--color-accent); }
 
+.image-card-delete-button {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 22px;
+  height: 22px;
+}
+
 .image-card-cover-badge {
   position: absolute;
   top: 9px;
@@ -2380,12 +2409,14 @@ select {
   box-shadow: var(--shadow-popover);
 }
 
-.image-card-note { border: 0; border-radius: 6px; padding: 4px 6px; font-size: 11px; background: var(--color-surface-subtle); }
+.image-card-note { border: 0; border-radius: 6px; padding: 4px 6px; min-width: 0; width: 100%; font-size: 11px; background: var(--color-surface-subtle); }
 
 .image-card-category {
   border: 0;
   border-radius: 6px;
   padding: 4px 6px;
+  min-width: 0;
+  width: 100%;
   color: var(--color-text-secondary);
   background: var(--color-surface-subtle);
   font: inherit;
@@ -2405,6 +2436,61 @@ select {
 }
 
 .image-upload-hint { color: var(--color-text-muted); font-size: var(--text-2xs); }
+
+/* 紧凑图墙（产品图库）：参考图片查看弹窗的方形缩略图，控件移到图片下方的按钮行，不再压住图片 */
+.image-upload.is-compact .image-upload-grid {
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 7px;
+}
+
+.image-upload.is-compact .image-card {
+  gap: 4px;
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.image-upload.is-compact .image-card-img {
+  aspect-ratio: 1;
+  padding: 2px;
+  border: 1px solid var(--tone-row-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  object-fit: contain;
+}
+
+.image-upload.is-compact .image-card-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.image-upload.is-compact .image-card-controls > .image-card-button,
+.image-upload.is-compact .image-card-delete-button {
+  position: static;
+  flex: 1 1 0;
+  width: auto;
+  height: 22px;
+  color: var(--tone-text-soft);
+  background: var(--color-surface-subtle);
+  box-shadow: inset 0 0 0 1px var(--color-divider);
+}
+
+.image-upload.is-compact .image-card-controls > .image-card-button:hover {
+  color: var(--color-text-secondary);
+}
+
+.image-upload.is-compact .image-card-controls > .image-card-button.is-on {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--color-accent-border);
+}
+
+.image-upload.is-compact .image-upload-empty {
+  align-self: start;
+  aspect-ratio: 1;
+  padding: 10px 6px;
+  font-size: 11px;
+}
 
 @media (max-width: 1180px) {
   .settings-grid {
@@ -2708,6 +2794,7 @@ select {
 .notice-danger { color: var(--color-danger); background: var(--color-danger-soft); border-color: var(--color-danger-border); }
 .notice-success { color: var(--color-success); background: var(--color-success-soft); border-color: var(--color-success-border); }
 .notice-info { color: var(--color-info); background: var(--color-info-soft); border-color: var(--color-info-border); }
+.notice-accent { color: var(--color-accent); background: var(--color-accent-soft); border-color: var(--color-accent-border); }
 
 .empty-state {
   padding: var(--space-9) var(--space-6);
@@ -3002,10 +3089,14 @@ select {
 
 .packaging-table {
   width: 100%;
+  /* 9 列在 900px 弹窗里刚好铺满：原来写死的 980px 会让弹窗内出现多余的横向滚动条 */
+  min-width: 840px;
   border-collapse: collapse;
   color: var(--color-text-secondary);
   font-size: var(--text-xs);
 }
+
+.packaging-table.is-compact { min-width: 760px; }
 
 .packaging-table th {
   padding: var(--space-3) var(--space-2);
@@ -3026,6 +3117,25 @@ select {
   width: 100%;
   min-width: 0;
 }
+
+/* 包装方式分区（产品编辑弹窗 / 客户产品编辑） */
+.packaging-table-section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.packaging-table-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 列宽提示：只在单元格上声明，表头由浏览器按同列对齐 */
+.packaging-table-col-size { width: 118px; }
+.packaging-table-col-number { width: 92px; }
+.packaging-table-col-price { width: 100px; }
+.packaging-table-col-images { width: 84px; }
+.packaging-table-col-actions { width: 40px; text-align: center; }
 
 .customer-product-status-select {
   width: 110px;
@@ -3933,14 +4043,23 @@ select {
   /* 手机端用不到导出 / 下载模板 / 导入，直接收起把高度留给产品列表；桌面端不受影响。 */
   .products-page .products-mobile-hidden { display: none; }
 
-  /* 工具条一行装下：状态筛选 + 条数 + 刷新 + 添加产品。 */
+  /* 工具条一行装下：状态筛选 + 条数 + 小眼睛 + 刷新 + 添加。
+     手机宽度只有 320~430px，按桌面尺寸排下来约 384px 固定宽（按钮都是 flex:0 0 auto
+     不收缩），加上小眼睛后必然超出一屏，所以这里统一收窄：间距 8→6、按钮内边距 10→8、
+     筛选框降一档字号与内边距，刷新按钮在手机端只留图标（文案由 .products-mobile-hidden 收起）。 */
   .products-page .page-toolbar {
     align-items: center;
     flex-wrap: nowrap;
-    gap: var(--space-3);
+    gap: var(--space-2);
     min-height: 0;
   }
-  .products-page .page-toolbar .toolbar-select { flex: 0 1 auto; min-width: 0; }
+  .products-page .page-toolbar .toolbar-select {
+    flex: 0 1 auto;
+    min-width: 0;
+    height: 34px;
+    padding: 0 var(--space-2);
+    font-size: var(--text-2xs);
+  }
   .products-page .page-toolbar .toolbar-count {
     flex: 0 1 auto;
     min-width: 0;
@@ -3950,7 +4069,20 @@ select {
     white-space: nowrap;
     text-overflow: ellipsis;
   }
-  .products-page .page-toolbar .button { flex: 0 0 auto; padding: 0 var(--space-4); }
+  .products-page .page-toolbar .button { flex: 0 0 auto; padding: 0 var(--space-3); }
+  /* 刷新收成 40×40 纯图标按钮，比「图标 + 刷新」窄约 30px。 */
+  .products-page .page-toolbar .products-refresh-button {
+    width: 40px;
+    height: 40px;
+    justify-content: center;
+    padding: 0;
+  }
+  /* 小眼睛是工具条里唯一的图标按钮，28px 手指点不准，补到 40px 触控区。 */
+  .products-page .page-toolbar .products-sensitive-toggle {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-control);
+  }
 
   /* 悬浮搜索框脱离工具条固定在视口顶部（手机端页面顶部没有其它控件），连续下滑收起、回滑展开。
      必须同时去掉 .page-shell 的入场动画：page-enter 动画带 transform，会让 .page-shell 成为
@@ -4291,6 +4423,14 @@ select {
   cursor: pointer;
 }
 .form-section-title { flex: none; }
+
+/* 桌面端分区标题：手机端标题在折叠按钮内部，桌面端没有按钮，需要单独渲染 */
+.form-section-heading {
+  margin: 0;
+  color: var(--color-text-strong);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
 .form-section-summary {
   flex: 1;
   min-width: 0;
@@ -4305,6 +4445,53 @@ select {
 .form-section-chevron { flex: none; color: var(--color-text-muted); transition: transform var(--ease-standard); }
 .form-section.is-open .form-section-chevron { transform: rotate(180deg); }
 .form-section-body { padding-top: var(--space-3); }
+
+/* ===== 产品编辑弹窗（ProductEditor） ===== */
+.product-editor {
+  display: grid;
+  gap: var(--space-6);
+}
+
+/* 附件 / 包装方式这类「方块标题」与可折叠分区标题属于同一层级，统一字号与字重 */
+.product-editor .section-box-title {
+  color: var(--color-text-strong);
+  font-size: var(--text-sm);
+}
+
+/* SKU 只读且由系统生成，收窄并给出不可编辑的指针反馈 */
+.product-editor-sku { max-width: 180px; }
+.product-editor-sku .input[readonly] { cursor: not-allowed; }
+
+.product-editor-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.product-editor-attachments {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.product-editor-attachment-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.product-editor-file-button { padding: 0 10px; }
+
+.product-editor-attachment-category {
+  flex: 0 0 auto;
+  min-height: var(--control-height-sm);
+  border: 1px solid var(--color-border-control);
+  border-radius: 7px;
+  padding: 0 6px;
+  color: var(--color-text-secondary);
+  background: var(--control-bg);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
 
 @media (max-width: 900px) {
   .modal-overlay { padding: 10px; align-items: flex-start; }

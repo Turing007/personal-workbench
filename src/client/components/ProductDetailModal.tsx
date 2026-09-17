@@ -17,6 +17,8 @@ import {
 export interface ProductDetailModalProps {
   open: boolean;
   product?: ProductRecord;
+  /** 供应商与采购价默认隐藏，跟随产品库工具条上的小眼睛按钮。 */
+  showSensitive?: boolean;
   onClose: () => void;
   onOpenImages: (product: ProductRecord) => void;
 }
@@ -44,7 +46,7 @@ function DetailItem({ label, children, fullWidth = false }: { label: string; chi
   );
 }
 
-export default function ProductDetailModal({ open, product, onClose, onOpenImages }: ProductDetailModalProps) {
+export default function ProductDetailModal({ open, product, showSensitive = false, onClose, onOpenImages }: ProductDetailModalProps) {
   const [copied, setCopied] = useState(false);
   const [copiedPackagingId, setCopiedPackagingId] = useState<string>();
   const [packagingImages, setPackagingImages] = useState<{ name: string; images: ProductRecord['packaging'][number]['images'] }>();
@@ -89,10 +91,10 @@ export default function ProductDetailModal({ open, product, onClose, onOpenImage
         <div className="product-detail-grid kv-grid">
           <DetailItem label="SKU"><span className="product-detail-emphasis kv-value is-accent">{product.sku || '—'}</span></DetailItem>
           <DetailItem label="品名">{product.name || '—'}</DetailItem>
-          <DetailItem label="供应商">{product.supplier || '—'}</DetailItem>
+          {showSensitive && <DetailItem label="供应商">{product.supplier || '—'}</DetailItem>}
           <DetailItem label="颜色">{product.colors.join('、') || '—'}</DetailItem>
           <DetailItem label="插脚">{product.batteryPlugs.join('、') || '—'}</DetailItem>
-          <DetailItem label="价格">{product.purchasePrice ? `¥${product.purchasePrice}` : '—'}</DetailItem>
+          {showSensitive && <DetailItem label="价格">{product.purchasePrice ? `¥${product.purchasePrice}` : '—'}</DetailItem>}
           <DetailItem label="配件" fullWidth>{product.accessories || '—'}</DetailItem>
           <DetailItem label="备注" fullWidth>{product.remark || '—'}</DetailItem>
           <DetailItem label="图片">

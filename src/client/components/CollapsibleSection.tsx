@@ -19,7 +19,10 @@ export default function CollapsibleSection({ title, summary, defaultOpen = false
   const [open, setOpen] = useState(defaultOpen);
 
   if (!isNarrow) {
-    return <section className="form-section">{children}</section>;
+    return <section className="form-section">
+      <h3 className="form-section-heading">{title}</h3>
+      {children}
+    </section>;
   }
 
   return <section className={`form-section${open ? ' is-open' : ''}`}>

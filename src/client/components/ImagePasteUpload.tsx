@@ -27,6 +27,8 @@ export interface ImagePasteUploadProps {
   onDeleteSaved?: (attachment: ImageAttachment) => Promise<void> | void;
   showNotes?: boolean;
   sortable?: boolean;
+  /** 紧凑图墙：方形缩略图 + 底部小控件行，控件不再压在图片上（产品图库使用）。 */
+  compact?: boolean;
   /** 传入分类选项后，每张图片下方出现分类下拉；不传则保持原有纯图片上传行为。 */
   categories?: ReadonlyArray<ImageCategoryOption>;
 }
@@ -38,7 +40,7 @@ function fileToAttachment(file: File): ImageAttachment {
 type PointerDragSession = {
   id: string;
   pointerId: number;
-  element: HTMLDivElement;
+  element: HTMLElement;
   startX: number;
   startY: number;
   timer?: number;
@@ -55,6 +57,7 @@ export default function ImagePasteUpload({
   onDeleteSaved,
   showNotes = true,
   sortable = false,
+  compact = false,
   categories,
 }: ImagePasteUploadProps) {
   const [message, setMessage] = useState('');
@@ -171,7 +174,7 @@ export default function ImagePasteUpload({
     setDropTarget(nextTarget);
   };
 
-  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>, id: string) => {
+  const onPointerDown = (event: React.PointerEvent<HTMLElement>, id: string) => {
     if (!sortable || event.button !== 0 || pointerDragRef.current) return;
     const element = event.currentTarget;
     const session: PointerDragSession = {
@@ -223,50 +226,74 @@ export default function ImagePasteUpload({
   };
 
   return (
-    <div onPaste={onPaste} tabIndex={0} className="image-upload">
+    <div onPaste={onPaste} tabIndex={0} className={`image-upload${compact ? ' is-compact' : ''}`}>
       <div className="image-upload-header">
         <label className="image-upload-label">{label}</label>
         <span className="image-upload-hint">点击区域后可 Ctrl+V</span>
       </div>
       <div className="image-upload-grid">
-        {value.map((item, index) => (
-          <div
-            key={item.id}
-            data-image-id={item.id}
-            onPointerMove={sortable ? onPointerMove : undefined}
-            onPointerUp={sortable ? onPointerUp : undefined}
-            onPointerCancel={sortable ? onPointerCancel : undefined}
-            onLostPointerCapture={sortable ? onPointerCancel : undefined}
-            className={`image-card${sortable && index === 0 ? ' is-cover' : ''}${draggingId === item.id ? ' is-dragging' : ''}${dropTarget?.id === item.id ? (dropTarget.before ? ' is-drop-before' : ' is-drop-after') : ''}`}
-          >
-            <div style={{ position: 'relative' }} onPointerDown={sortable ? (event) => onPointerDown(event, item.id) : undefined}>
-              <img draggable={false} className="image-card-img" src={item.url} alt={item.name} />
-              {sortable && <div
-                title="长按拖动调整图片顺序"
-                onPointerDown={(event) => { event.stopPropagation(); onPointerDown(event, item.id); }}
-                className="image-card-drag-handle image-card-drag-handle-label"
-              >{index === 0 ? <Star size={10} fill="currentColor" /> : <GripVertical size={10} />} {index === 0 ? '封面' : '拖动'}</div>}
-              <button type="button" title="删除图片" disabled={deletingIds.includes(item.id)} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); void removeAttachment(item); }} className="image-card-button" style={{ position: 'absolute', top: 5, right: 5, width: 22, height: 22, opacity: deletingIds.includes(item.id) ? 0.55 : 1, cursor: deletingIds.includes(item.id) ? 'wait' : 'pointer' }}><Trash2 size={12} /></button>
-            </div>
-            {sortable && <button type="button" title={index === 0 ? '当前为封面图片' : '设为封面'} disabled={index === 0} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setCover(item.id); }} className="image-card-button" style={{ position: 'static', width: '100%', height: 25, gap: 4, color: index === 0 ? 'var(--color-accent)' : '#64748b', background: index === 0 ? 'var(--color-accent-soft)' : 'var(--color-surface)', boxShadow: 'inset 0 0 0 1px var(--color-divider)', cursor: index === 0 ? 'default' : 'pointer', fontSize: 11 }}>{index === 0 ? <><Check size={12} />封面图片</> : <><Star size={12} />设为封面</>}</button>}
-            {!!categories?.length && <select
-              aria-label={`${item.name}图片分类`}
-              className="image-card-category"
-              value={item.category ?? categories[0].value}
+        {value.map((item, index) => {
+          const isCover = index === 0;
+          const isDeleting = deletingIds.includes(item.id);
+          const deleteButton = (
+            <button
+              type="button"
+              title="删除图片"
+              aria-label="删除图片"
+              disabled={isDeleting}
               onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => event.stopPropagation()}
-              onChange={(event) => onChange(value.map((entry) => entry.id === item.id ? { ...entry, category: event.target.value } : entry))}
-            >{categories.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}</select>}
-            {showNotes && <input aria-label={`${item.name}备注`} className="image-card-note" value={item.note ?? ''} onChange={(event) => onChange(value.map((entry) => entry.id === item.id ? { ...entry, note: event.target.value } : entry))} placeholder={categories?.length ? '备注（如：客户A要求补拍）' : '凭证备注'} />}
-          </div>
-        ))}
+              onClick={(event) => { event.stopPropagation(); void removeAttachment(item); }}
+              className="image-card-button image-card-delete-button"
+              style={{ opacity: isDeleting ? 0.55 : 1, cursor: isDeleting ? 'wait' : 'pointer' }}
+            ><Trash2 size={12} /></button>
+          );
+          return (
+            <div
+              key={item.id}
+              data-image-id={item.id}
+              onPointerMove={sortable ? onPointerMove : undefined}
+              onPointerUp={sortable ? onPointerUp : undefined}
+              onPointerCancel={sortable ? onPointerCancel : undefined}
+              onLostPointerCapture={sortable ? onPointerCancel : undefined}
+              className={`image-card${sortable && isCover ? ' is-cover' : ''}${draggingId === item.id ? ' is-dragging' : ''}${dropTarget?.id === item.id ? (dropTarget.before ? ' is-drop-before' : ' is-drop-after') : ''}`}
+            >
+              <div className="image-card-thumb" onPointerDown={sortable ? (event) => onPointerDown(event, item.id) : undefined}>
+                <img draggable={false} className="image-card-img" src={item.url} alt={item.name} />
+                {sortable && !compact && <div
+                  title="长按拖动调整图片顺序"
+                  onPointerDown={(event) => { event.stopPropagation(); onPointerDown(event, item.id); }}
+                  className="image-card-drag-handle image-card-drag-handle-label"
+                >{isCover ? <Star size={10} fill="currentColor" /> : <GripVertical size={10} />}<span>{isCover ? '封面' : '拖动'}</span></div>}
+                {!compact && deleteButton}
+              </div>
+              {sortable && (compact ? (
+                <div className="image-card-controls">
+                  <button type="button" title={isCover ? '当前为封面图片' : '设为封面'} aria-label={isCover ? '当前为封面图片' : '设为封面'} disabled={isCover} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setCover(item.id); }} className={`image-card-button${isCover ? ' is-on' : ''}`}>{isCover ? <Check size={12} /> : <Star size={12} />}</button>
+                  <button type="button" title="长按拖动调整图片顺序" aria-label="长按拖动调整图片顺序" className="image-card-button" onPointerDown={(event) => { event.stopPropagation(); onPointerDown(event, item.id); }}><GripVertical size={12} /></button>
+                  {deleteButton}
+                </div>
+              ) : (
+                <button type="button" title={isCover ? '当前为封面图片' : '设为封面'} disabled={isCover} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setCover(item.id); }} className="image-card-button" style={{ position: 'static', width: '100%', height: 25, gap: 4, color: isCover ? 'var(--color-accent)' : 'var(--tone-text-soft)', background: isCover ? 'var(--color-accent-soft)' : 'var(--color-surface)', boxShadow: 'inset 0 0 0 1px var(--color-divider)', cursor: isCover ? 'default' : 'pointer', fontSize: 11 }}>{isCover ? <><Check size={12} />封面图片</> : <><Star size={12} />设为封面</>}</button>
+              ))}
+              {!!categories?.length && <select
+                aria-label={`${item.name}图片分类`}
+                className="image-card-category"
+                value={item.category ?? categories[0].value}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+                onChange={(event) => onChange(value.map((entry) => entry.id === item.id ? { ...entry, category: event.target.value } : entry))}
+              >{categories.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}</select>}
+              {showNotes && <input aria-label={`${item.name}备注`} className="image-card-note" value={item.note ?? ''} onChange={(event) => onChange(value.map((entry) => entry.id === item.id ? { ...entry, note: event.target.value } : entry))} placeholder={compact ? '备注' : categories?.length ? '备注（如：客户A要求补拍）' : '凭证备注'} />}
+            </div>
+          );
+        })}
         {canAdd && <label className="image-upload-empty" style={{ minHeight: 82, cursor: 'pointer' }}>
           <ImagePlus size={18} />
           <span>添加图片</span>
           <input type="file" accept={accept} multiple={multiple && fileLimit > 1} onChange={onFileChange} style={{ display: 'none' }} />
         </label>}
       </div>
-      <div className="image-upload-hint" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Upload size={13} /><span>支持上传图片</span><ClipboardPaste size={13} /><span>支持粘贴</span>{message && <span style={{ color: '#b45309' }}>{message}</span>}</div>
+      <div className="image-upload-hint" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Upload size={13} /><span>支持上传图片</span><ClipboardPaste size={13} /><span>支持粘贴</span>{message && <span style={{ color: 'var(--color-warning-text)' }}>{message}</span>}</div>
     </div>
   );
 }
