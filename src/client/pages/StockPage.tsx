@@ -7,6 +7,7 @@ import {
   linkCustomerProductToSystem,
 } from '../api';
 import { errorText } from '../components/finance/finance-format';
+import { copyText } from '../copy-text';
 import Modal from '../components/Modal';
 import type { ProductRecord } from '../components/ProductEditor';
 import {
@@ -79,13 +80,12 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
     return [...ids];
   }, [groups]);
 
-  const copyText = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      onNotify?.('已复制到剪贴板', 'success');
-    } catch {
+  const copyStockText = async (text: string) => {
+    if (!await copyText(text)) {
       onNotify?.('复制失败，请手动选择文本复制', 'error');
+      return;
     }
+    onNotify?.('已复制到剪贴板', 'success');
   };
 
   const exportExcel = async () => {
@@ -147,7 +147,7 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
       <button className="icon-button" type="button" title="刷新备货表" disabled={loading} onClick={() => void load()}><RefreshCw size={15} /></button>
       <div className="stock-action-row">
         <button className="button button-secondary" type="button" disabled={loading || !groups.length} onClick={() => void exportExcel()}><Download size={14} />导出 Excel</button>
-        <button className="button button-secondary" type="button" disabled={!groups.length || !preparation} onClick={() => { if (preparation) void copyText(buildCopyText(preparation, groups)); }}><Copy size={14} />复制全部</button>
+        <button className="button button-secondary" type="button" disabled={!groups.length || !preparation} onClick={() => { if (preparation) void copyStockText(buildCopyText(preparation, groups)); }}><Copy size={14} />复制全部</button>
         <button className="button button-primary" type="button" disabled={marking || !orderIds.length} onClick={() => setConfirmMarkOpen(true)}><PackageOpen size={14} />标记已备货</button>
       </div>
     </div>
@@ -168,7 +168,7 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
       group={group}
       expandedKeys={expandedKeys}
       onToggleExpanded={toggleExpanded}
-      onCopyGroup={(text) => void copyText(text)}
+      onCopyGroup={(text) => void copyStockText(text)}
       onLink={(item) => setLinkTarget(item)}
       systemProductCount={systemProducts.length}
     />)}

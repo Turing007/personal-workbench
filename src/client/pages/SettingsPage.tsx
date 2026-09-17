@@ -6,6 +6,7 @@ import type { CompanySnapshot } from '../../shared/documents';
 import { CONTRACT_PLACEHOLDERS, cloneDefaultContractTemplate, type ContractTemplate } from '../../shared/contract';
 import { formatDateTime } from '../../shared/formatters';
 import { getAppBridge, type WorkbenchAppNetwork } from '../app-bridge';
+import { copyText } from '../copy-text';
 import {
   changeOwnPassword,
   createManagedUser,
@@ -418,11 +419,9 @@ function MobileConnectCard() {
   };
 
   const copy = async (value: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(value);
-      window.setTimeout(() => setCopied(''), 1600);
-    } catch { /* 剪贴板不可用时忽略 */ }
+    if (!await copyText(value)) return;
+    setCopied(value);
+    window.setTimeout(() => setCopied(''), 1600);
   };
 
   return <div className="settings-section card">

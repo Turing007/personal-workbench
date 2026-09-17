@@ -8,6 +8,7 @@ import ProductParametersModal from '../components/ProductParametersModal';
 import { cloneProductForNew } from '../product-copy';
 import { thumbUrl } from '../image-urls';
 import { packagingDisplay } from '../packaging-display';
+import { copyText } from '../copy-text';
 import { useIsNarrow } from '../use-is-narrow';
 import { useHideOnScroll } from '../use-hide-on-scroll';
 
@@ -87,13 +88,9 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
       `外箱重量：${display.outerWeight}`,
       `装箱数量：${display.count}`,
     ].join('\n');
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedPackagingId(item.id);
-      window.setTimeout(() => setCopiedPackagingId((current) => current === item.id ? undefined : current), 1600);
-    } catch {
-      setCopiedPackagingId(undefined);
-    }
+    const copied = await copyText(text);
+    setCopiedPackagingId(copied ? item.id : undefined);
+    if (copied) window.setTimeout(() => setCopiedPackagingId((current) => current === item.id ? undefined : current), 1600);
   };
 
   const closeDetail = () => setDetailProduct(undefined);

@@ -5,6 +5,7 @@ import Modal from './Modal';
 import ProductImagesModal from './ProductImagesModal';
 import type { ProductRecord } from './ProductEditor';
 import { packagingDisplay } from '../packaging-display';
+import { copyText } from '../copy-text';
 import { thumbUrl } from '../image-urls';
 import {
   PRODUCT_IMAGE_CATEGORY_LABELS,
@@ -62,13 +63,9 @@ export default function ProductDetailModal({ open, product, onClose, onOpenImage
     .map((category) => `${PRODUCT_IMAGE_CATEGORY_LABELS[category]} ${imageCategoryCounts.get(category) ?? 0}`);
   const copyParameters = async () => {
     if (!parameters.trim()) return;
-    try {
-      await navigator.clipboard.writeText(parameters);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      setCopied(false);
-    }
+    if (!await copyText(parameters)) return;
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
   };
 
   const copyPackaging = async (item: ProductRecord['packaging'][number]) => {
@@ -81,13 +78,9 @@ export default function ProductDetailModal({ open, product, onClose, onOpenImage
       `外箱重量：${details.outerWeight}`,
       `装箱数量：${details.count}`,
     ].join('\n');
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedPackagingId(item.id);
-      window.setTimeout(() => setCopiedPackagingId((current) => current === item.id ? undefined : current), 1600);
-    } catch {
-      setCopiedPackagingId(undefined);
-    }
+    const copied = await copyText(text);
+    setCopiedPackagingId(copied ? item.id : undefined);
+    if (copied) window.setTimeout(() => setCopiedPackagingId((current) => current === item.id ? undefined : current), 1600);
   };
 
   return (

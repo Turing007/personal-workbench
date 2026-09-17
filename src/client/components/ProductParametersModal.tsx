@@ -1,6 +1,7 @@
 import { Check, Copy, FileText } from 'lucide-react';
 import { useState } from 'react';
 import Modal from './Modal';
+import { copyText } from '../copy-text';
 
 interface ProductParametersModalProps {
   open: boolean;
@@ -14,13 +15,12 @@ export default function ProductParametersModal({ open, productName, parameters, 
   const value = parameters?.trim() ?? '';
   const copy = async () => {
     if (!value) return;
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
+    if (!await copyText(value)) {
       setCopied(false);
+      return;
     }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
   };
   return <Modal open={open} title={`参数详情 · ${productName || '未命名产品'}`} onClose={onClose} width={640}>
     <div className="product-parameters-modal-content">
