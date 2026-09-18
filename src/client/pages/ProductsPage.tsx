@@ -1,7 +1,7 @@
 import { Check, ChevronDown, ChevronUp, Copy, Download, Edit3, Eye, EyeOff, FileDown, Image as ImageIcon, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import ProductEditor, { type ProductRecord } from '../components/ProductEditor';
-import { compareProductBySku } from '../product-sort';
+import { compareProductByNewest } from '../product-sort';
 import ProductDetailModal from '../components/ProductDetailModal';
 import ProductImagesModal from '../components/ProductImagesModal';
 import ProductParametersModal from '../components/ProductParametersModal';
@@ -58,8 +58,8 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
         if (!needle) return true;
         return [product.name, product.sku, product.supplier, product.category].join(' ').toLowerCase().includes(needle);
       })
-      // 列表按 SKU 升序展示（未填 SKU 的排在最后）。
-      .sort(compareProductBySku);
+      // 列表按「最新」展示：最近更新的排最上面（同时间的按 id 倒序，批量导入不会乱序）。
+      .sort(compareProductByNewest);
   }, [products, query, statusFilter]);
 
   const openNew = () => { setEditing(undefined); setCopying(false); setEditorOpen(true); };

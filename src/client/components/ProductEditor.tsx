@@ -23,6 +23,9 @@ export interface ProductRecord extends CustomerProduct {
   remark: string;
   packaging: PackagingOption[];
   attachments: ProductAttachment[];
+  /** 落库时间，由服务端 products 表带回；产品库列表按 updatedAt 倒序展示。 */
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type ProductAttachmentCategory = 'manual' | 'packaging-design' | 'label-dieline' | 'other';
