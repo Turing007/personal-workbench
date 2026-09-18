@@ -2,6 +2,7 @@ import { Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { Customer, CustomerSaveInput } from '../../../shared/customers';
 import Modal from '../Modal';
+import { useIsNarrow } from '../../use-is-narrow';
 
 export interface CustomerEditorModalProps {
   open: boolean;
@@ -21,6 +22,7 @@ const blank: CustomerSaveInput = {
 };
 
 export default function CustomerEditorModal({ open, customer, busy, onClose, onSave }: CustomerEditorModalProps) {
+  const narrow = useIsNarrow();
   const [draft, setDraft] = useState<CustomerSaveInput>(blank);
   const [error, setError] = useState('');
 
@@ -63,10 +65,11 @@ export default function CustomerEditorModal({ open, customer, busy, onClose, onS
 
   return <Modal
     open={open}
-    variant="drawer"
+    /* 桌面端保持原有居中弹窗；只有手机端才改成右侧抽屉。 */
+    variant={narrow ? 'drawer' : 'dialog'}
     title={customer ? '编辑客户' : '新增客户'}
     onClose={busy ? () => undefined : onClose}
-    width={440}
+    width={narrow ? 440 : 560}
     footer={<>
       <button type="button" className="button button-secondary" disabled={busy} onClick={onClose}>取消</button>
       <button type="button" className="button button-primary" disabled={busy} onClick={() => { void save(); }}><Save size={14} />{busy ? '保存中…' : '保存客户'}</button>

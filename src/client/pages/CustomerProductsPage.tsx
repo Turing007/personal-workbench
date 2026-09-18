@@ -7,6 +7,7 @@ import {
   ToggleLeft,
   ToggleRight,
   Trash2,
+  UserRound,
   Users,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -290,13 +291,27 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
 
   return <div className="page-shell customer-products-page">
     <div className="page-toolbar customer-products-toolbar">
+      <div className="page-title customer-products-title"><UserRound size={17} />客户产品库</div>
       <div className={`search-control customer-search-control${searchHidden ? ' is-scroll-hidden' : ''}`}><Search size={15} /><input value={customerQuery} onChange={(event) => setCustomerQuery(event.target.value)} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索客户名称、联系人、电话" /></div>
+      <span className="toolbar-count">{filteredCustomers.length} 个客户</span>
       <button className="customer-list-trigger" type="button" title="打开客户列表" aria-haspopup="dialog" aria-expanded={customerDrawerOpen} onClick={() => setCustomerDrawerOpen(true)}><Users size={15} />{filteredCustomers.length} 个客户</button>
       <button className="icon-button" type="button" title="刷新客户资料" disabled={loading} onClick={() => void onCustomersChanged()}><RefreshCw size={15} /></button>
       <button className="button button-primary" type="button" title="新增客户" onClick={() => { setEditingCustomer(null); setCustomerEditorOpen(true); }}><Plus size={15} />新增客户</button>
     </div>
 
     <div className="customer-products-layout">
+      <section className="table-panel card customer-list-panel" style={{ minHeight: 420 }}>
+        <div className="section-box-header customer-list-header"><span className="section-box-title">客户档案</span></div>
+        <div className="customer-list-scroll" style={{ maxHeight: 'calc(100vh - 190px)' }}>
+          {filteredCustomers.map((customer) => <button key={customer.id} className={`customer-list-item${customer.id === selectedCustomerId ? ' is-selected' : ''}`} type="button" onClick={() => setSelectedCustomerId(customer.id)} style={{ width: '100%', display: 'grid', gap: 5, padding: '11px 12px', border: 0, borderBottom: '1px solid #edf0f2', borderLeft: `3px solid ${customer.id === selectedCustomerId ? '#0f766e' : 'transparent'}`, background: customer.id === selectedCustomerId ? '#f0fdfa' : '#fff', textAlign: 'left', cursor: 'pointer', opacity: customer.isActive ? 1 : .62 }}>
+            <div className="customer-list-item-heading"><strong>{customer.name}</strong><span className={`badge ${customer.isActive ? 'badge-success' : 'badge-neutral'}`}>{customer.isActive ? '启用' : '停用'}</span></div>
+            <small className="customer-list-meta">{[customer.contactName, customer.contactPhone].filter(Boolean).join(' · ') || '暂无联系人信息'}</small>
+            <small className={`customer-list-count${customer.incompleteProductCount ? ' is-incomplete' : ''}`}>{customer.productCount} 个产品 · {customer.incompleteProductCount} 个待完善</small>
+          </button>)}
+          {!filteredCustomers.length && <div className="empty-state">暂无匹配客户</div>}
+        </div>
+      </section>
+
       <section className="table-panel customer-products-panel" style={{ minWidth: 0, padding: 0, overflow: 'hidden' }}>
         <div className="customer-products-header">
           <div className="customer-products-heading"><strong>{selectedCustomer?.name ?? '请选择客户'}</strong>{selectedCustomer && <small>{[selectedCustomer.contactName, selectedCustomer.contactPhone].filter(Boolean).join(' · ') || '暂无联系人'} · {selectedCustomer.shippingInfo ? '已填写收件信息' : '未填写收件信息'}</small>}</div>

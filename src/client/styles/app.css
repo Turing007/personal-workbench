@@ -458,9 +458,10 @@ select {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* 工具条上的「N 个客户」：既是计数也是打开客户列表抽屉的入口。 */
+/* 「N 个客户」入口按钮：只在窄屏出现，用来滑出客户列表抽屉。
+   桌面端沿用页头标题 + 内联客户档案栏，所以这里默认隐藏。 */
 .customer-list-trigger {
-  display: inline-flex;
+  display: none;
   align-items: center;
   gap: 6px;
   flex: none;
@@ -1903,6 +1904,12 @@ select {
   gap: 8px;
   flex-wrap: wrap;
   padding: 10px 14px;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+/* 桌面端内联的「客户档案」列表头与滚动区（窄屏走抽屉，见下方 customer-list-drawer-panel） */
+.customer-list-header {
+  padding: 11px 12px;
   border-bottom: 1px solid var(--color-divider);
 }
 
@@ -3773,8 +3780,8 @@ select {
 .shipping-workspace { display: grid; grid-template-columns: minmax(300px, .8fr) minmax(420px, 1.2fr); gap: 14px; min-height: 480px; }
 .shipping-batch-order { grid-template-columns: minmax(0, 1fr) 160px 24px; align-items: center; gap: 8px; padding: 8px; }
 
-/* 客户产品页：客户列表改走左侧抽屉后，主区只剩产品面板一栏（原先为内联样式） */
-.customer-products-layout { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+/* 客户产品页：桌面端沿用原有「客户档案 + 产品面板」双栏；≤900px 客户列表改走左侧抽屉（见下方窄屏块）。 */
+.customer-products-layout { min-height: 0; display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 10px; }
 
 @media (max-width: 900px) {
   /* —— 报价单卡片 —— */
@@ -4328,7 +4335,15 @@ select {
   .page-shell.customer-products-page { animation: none; }
   .customer-products-page { padding-top: calc(56px + env(safe-area-inset-top, 0px)); }
 
-  /* 页头标题已从结构里移除，这一行只剩「客户列表入口 + 刷新 + 新增客户」。
+  /* 页头标题与「N 个客户」统计是桌面端的结构，手机上隐藏：
+     搜索框 fixed 悬浮在顶部，客户列表入口改用下面的 trigger 按钮 + 左侧抽屉。 */
+  .customer-products-title,
+  .page-toolbar.customer-products-toolbar > .toolbar-count,
+  .customer-products-layout > .customer-list-panel { display: none; }
+
+  .customer-products-layout { grid-template-columns: minmax(0, 1fr); }
+
+  /* 页头标题在窄屏已隐藏，这一行只剩「客户列表入口 + 刷新 + 新增客户」。
      搜索框已 fixed 脱离文档流，不占用网格单元，所以这里只需给剩下三项定位。 */
   .page-toolbar.customer-products-toolbar {
     display: grid;
@@ -4341,7 +4356,7 @@ select {
     padding: 0;
     border-bottom: 0;
   }
-  .page-toolbar.customer-products-toolbar > .customer-list-trigger { grid-row: 1; grid-column: 1; justify-self: start; min-width: 0; }
+  .page-toolbar.customer-products-toolbar > .customer-list-trigger { display: inline-flex; grid-row: 1; grid-column: 1; justify-self: start; min-width: 0; }
   .page-toolbar.customer-products-toolbar > .icon-button { grid-row: 1; grid-column: 2; }
   .page-toolbar.customer-products-toolbar > .button { grid-row: 1; grid-column: 3; }
 
