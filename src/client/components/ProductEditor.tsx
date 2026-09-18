@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { Download, ExternalLink, FilePlus2, Plus, Save, Trash2 } from 'lucide-react';
 import ImagePasteUpload, { type ImageAttachment } from './ImagePasteUpload';
+import { canPickFilesNatively, pickFilesNatively } from '../app-bridge';
 import { PRODUCT_IMAGE_CATEGORY_OPTIONS } from '../../shared/product-image-categories';
 import CollapsibleSection from './CollapsibleSection';
 import Modal from './Modal';
@@ -72,15 +73,55 @@ function formatFileSize(size: number) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
+const ATTACHMENT_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.txt,.zip,.rar,.7z,.ai,.psd,.cdr,.dwg,.dxf';
+
 function ProductAttachments({ value, onChange }: { value: ProductAttachment[]; onChange: (next: ProductAttachment[]) => void }) {
-  const addFiles = (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = '';
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const appendFiles = (files: File[]) => {
     if (!files.length) return;
     onChange([...value, ...files.map((file) => ({ id: `attachment-${Date.now()}-${Math.random().toString(16).slice(2)}`, category: 'manual' as ProductAttachmentCategory, name: file.name, url: URL.createObjectURL(file), mimeType: file.type, size: file.size, file }))]);
   };
+  const addFiles = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    appendFiles(files);
+  };
   return <section className="product-editor-attachments">
-    <div className="section-box-header"><span className="section-box-title">产品附件</span><label className="button button-secondary button-sm product-editor-file-button"><FilePlus2 size={14} />添加附件<input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.txt,.zip,.rar,.7z,.ai,.psd,.cdr,.dwg,.dxf" hidden onChange={addFiles} /></label></div>
+    <div className="section-box-header"><span className="section-box-title">产品附件</span>
+      {/* 原来是 <label> 包一个 hidden 的 file input：hidden 等于 display:none，
+          在 Android WebView 里点这个按钮不会有任何反应（选图/选文件界面都不弹出）。
+          透明 input 铺满 + 兜底 click() 只是保底；App 内优先走原生选择器桥，
+          彻底绕开 WebView file input 这条在部分 ROM 上静默失效的激活链。 */}
+      <div
+        className="button button-secondary button-sm product-editor-file-button"
+        style={{ position: 'relative', overflow: 'hidden' }}
+        onClick={(event) => {
+          // 落点是 input 本身：无桥环境的真实点击，或下方兜底的程序化 click() 冒泡回来，
+          // 都必须直接放行让默认行为发生（否则会把合成点击也 preventDefault 掉）。
+          if (event.target === fileInputRef.current) return;
+          // App 内优先原生选择器，绕开 WebView file input 这条在部分 ROM 上静默失效的激活链。
+          if (canPickFilesNatively()) {
+            event.preventDefault();
+            const picked = pickFilesNatively(ATTACHMENT_ACCEPT.split(','), true, 20);
+            if (picked) {
+              void picked.then(appendFiles).catch(() => {});
+              return;
+            }
+          }
+          fileInputRef.current?.click();
+        }}
+      ><FilePlus2 size={14} />添加附件
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept={ATTACHMENT_ACCEPT}
+          onChange={addFiles}
+          aria-label="添加附件"
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 1, pointerEvents: canPickFilesNatively() ? 'none' : 'auto' }}
+        />
+      </div>
+    </div>
     {value.length ? <div className="product-editor-attachment-list">{value.map((attachment) => <div key={attachment.id} className="attachment-row"><div className="attachment-main"><div className="attachment-name" title={attachment.name}>{attachment.name}</div><span className="attachment-meta">{formatFileSize(attachment.size)}{attachment.createdAt ? ` · ${attachment.createdAt.replace('T', ' ').slice(0, 16)}` : ''}</span></div><select className="product-editor-attachment-category" aria-label={`${attachment.name}附件类型`} value={attachment.category} onChange={(event) => onChange(value.map((item) => item.id === attachment.id ? { ...item, category: event.target.value as ProductAttachmentCategory } : item))}>{attachmentCategories.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}</select>{attachment.url && !attachment.file && <span className="attachment-actions"><a href={attachment.url} target="_blank" rel="noreferrer" title="打开附件"><ExternalLink size={14} /></a><a href={attachment.url} download={attachment.name} title="下载附件"><Download size={14} /></a></span>}{attachment.file && <span className="attachment-pending" title="待保存">待上传</span>}<button type="button" className="icon-button danger" title="移除附件" onClick={() => onChange(value.filter((item) => item.id !== attachment.id))}><Trash2 size={14} /></button></div>)}</div> : <div className="empty-state">暂无附件，可添加说明书、包装设计图或标贴刀模。</div>}
     <span className="label-hint">支持 PDF、Office、图片、压缩包及常见设计源文件，单个附件不超过 20MB。</span>
   </section>;

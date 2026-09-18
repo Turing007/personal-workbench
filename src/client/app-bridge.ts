@@ -14,6 +14,19 @@ export interface WorkbenchAppBridge {
   setOverlayOpen?(open: boolean): void;
   /** 由原生把图片写进系统相册（1.8 之前的 App 没有该方法）。 */
   saveImage?(url: string, fileName?: string): void;
+  /**
+   * 由原生拉起系统选图/选文件（1.12 之前的 App 没有该方法）。
+   * 返回 true 表示已拉起，结果经 window.__workbenchPickedFiles(requestId, files) 异步回传。
+   */
+  pickFiles?(acceptJson: string, multiple: boolean, maxCount: number, requestId: string): boolean;
+}
+
+/** 原生选文件回传的单条数据；data 为 base64 编码的文件字节。 */
+export interface PickedNativeFile {
+  name: string;
+  type: string;
+  size: number;
+  data: string;
 }
 
 /** App 保存结束后的回执：原生通过 window.__workbenchImageSaved(ok) 通知网页。 */
@@ -69,5 +82,61 @@ export function notifyOverlayOpen(open: boolean): void {
     getAppBridge()?.setOverlayOpen?.(open);
   } catch {
     /* 旧版本 App 没有该方法时忽略 */
+  }
+}
+
+/** 当前是否跑在自带原生选文件能力的安卓壳里（1.12 起）。 */
+export function canPickFilesNatively(): boolean {
+  try {
+    return typeof getAppBridge()?.pickFiles === 'function';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * App 内选文件的原生通道。
+ * 部分 ROM 的 WebView 里 <input type=file> 的点击激活链整条失效（点了连系统选择器都不弹），
+ * 只能由原生拉起系统选择器，再把文件字节以 base64 回传。
+ * 返回 undefined 表示当前环境没有该能力或拉起失败，调用方应退回 <input type=file> 路径；
+ * 用户取消选择时 Promise resolve 为空数组。
+ */
+export function pickFilesNatively(accept: string[], multiple: boolean, maxCount: number): Promise<File[]> | undefined {
+  try {
+    const bridge = getAppBridge();
+    if (typeof bridge?.pickFiles !== 'function') return undefined;
+    const requestId = `pick-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    let launched = false;
+    try {
+      launched = bridge.pickFiles(JSON.stringify(accept), multiple, Math.max(1, maxCount), requestId) === true;
+    } catch {
+      return undefined;
+    }
+    if (!launched) return undefined;
+    return new Promise<File[]>((resolve) => {
+      const target = window as unknown as { __workbenchPickedFiles?: (id: string, files: PickedNativeFile[]) => void };
+      target.__workbenchPickedFiles = (id, files) => {
+        if (id !== requestId) return; // 不是本次调用的回执，忽略
+        delete target.__workbenchPickedFiles;
+        const list = Array.isArray(files) ? files : [];
+        resolve(list.map(nativeFileToFile).filter((file): file is File => Boolean(file)));
+      };
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+/** 原生回传的 base64 → File。只用 atob/Uint8Array 这些老 WebView 内核也支持的 API。 */
+export function nativeFileToFile(picked: PickedNativeFile): File | undefined {
+  try {
+    const binary = atob(picked.data || '');
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return new File([bytes], picked.name || `文件-${Date.now()}`, { type: picked.type || 'application/octet-stream' });
+  } catch {
+    return undefined;
   }
 }

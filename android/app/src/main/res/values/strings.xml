@@ -26,6 +26,8 @@
     <string name="error_retry">重新加载</string>
     <string name="error_change_address">更改地址</string>
     <string name="download_started">已开始下载</string>
+    <string name="file_chooser_unavailable">无法打开系统选图/拍照界面，请检查手机是否已启用「文件」或「相册」相关应用</string>
+    <string name="pick_files_partial_failed">部分文件读取失败已跳过（单个文件不超过 25MB）</string>
     <string name="save_image_started">正在保存到相册…</string>
     <string name="save_image_done">已保存到手机相册</string>
     <string name="save_image_failed">保存失败，请长按图片重试</string>

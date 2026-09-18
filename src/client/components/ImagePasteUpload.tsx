@@ -1,6 +1,8 @@
 import { Check, ClipboardPaste, GripVertical, ImagePlus, Star, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
+import { canPickFilesNatively, pickFilesNatively } from '../app-bridge';
+import { normalizeUploadImage, SUPPORTED_IMAGE_HINT } from '../image-mime';
 
 export interface ImageAttachment {
   id: string;
@@ -68,6 +70,7 @@ export default function ImagePasteUpload({
   const objectUrls = useRef(new Set<string>());
   const valueRef = useRef(value);
   const pointerDragRef = useRef<PointerDragSession | undefined>(undefined);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   valueRef.current = value;
   const fileLimit = Math.max(1, Math.trunc(maxFiles ?? (multiple ? Number.MAX_SAFE_INTEGER : 1)));
   const canAdd = value.length < fileLimit;
@@ -80,19 +83,32 @@ export default function ImagePasteUpload({
     objectUrls.current.clear();
   }, []);
 
-  const addFiles = (files: File[]) => {
-    const images = files.filter((file) => file.type.startsWith('image/'));
-    if (images.length !== files.length) setMessage('仅支持图片格式');
-    const remaining = Math.max(0, fileLimit - value.length);
-    const accepted = images.slice(0, remaining);
-    if (images.length > remaining) setMessage(`最多添加 ${fileLimit} 张图片`);
+  const addFiles = async (files: File[], successMessage = '') => {
+    if (!files.length) return;
+    // 手机端选图/拍照常拿不到可靠 MIME，这里统一识别（MIME → 扩展名 → 文件头）并回写类型，
+    // 否则图片会被静默丢弃，或者以 application/octet-stream 上传被后端拒绝。
+    // 识别过程本身也可能在老 WebView 上抛异常，必须捕获成可见提示，不能让上传「点了没反应」。
+    let resolved: Array<File | undefined>;
+    try {
+      resolved = await Promise.all(files.map((file) => normalizeUploadImage(file)));
+    } catch (error) {
+      setMessage(error instanceof Error && error.message ? error.message : '图片读取失败，请重试');
+      return;
+    }
+    const uploadable = resolved.filter((file): file is File => Boolean(file));
+    const current = valueRef.current;
+    const remaining = Math.max(0, fileLimit - current.length);
+    const accepted = uploadable.slice(0, remaining);
+    if (uploadable.length < files.length) setMessage(SUPPORTED_IMAGE_HINT);
+    else if (uploadable.length > remaining) setMessage(`最多添加 ${fileLimit} 张图片`);
+    else setMessage(successMessage);
     const defaultCategory = categories?.[0]?.value;
     const attachments = accepted.map((file) => {
       const attachment = fileToAttachment(file);
       return defaultCategory ? { ...attachment, category: defaultCategory } : attachment;
     });
     attachments.forEach((attachment) => objectUrls.current.add(attachment.url));
-    const next = multiple || fileLimit > 1 ? [...value, ...attachments] : attachments;
+    const next = multiple || fileLimit > 1 ? [...current, ...attachments] : attachments;
     if (accepted.length) onChange(next);
   };
 
@@ -117,17 +133,32 @@ export default function ImagePasteUpload({
   };
 
   const onFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    addFiles(Array.from(event.target.files ?? []));
+    // 用 void 调用的 Promise 一旦 reject 就是未处理的静默失败（老 WebView 上尤其危险），
+    // 这里补上 catch，保证任何异常都会变成界面上的可见提示。
+    void addFiles(Array.from(event.target.files ?? [])).catch(() => setMessage('图片读取失败，请重试'));
     event.target.value = '';
   };
 
   const onPaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
-    const files = Array.from(event.clipboardData.files).filter((item) => item.type.startsWith('image/'));
-    if (files.length) {
-      event.preventDefault();
-      addFiles(files);
-      setMessage('已从剪贴板添加图片');
-    }
+    const files = Array.from(event.clipboardData.files);
+    if (!files.some((item) => item.type.startsWith('image/'))) return;
+    event.preventDefault();
+    void addFiles(files, '已从剪贴板添加图片').catch(() => setMessage('图片读取失败，请重试'));
+  };
+
+  /**
+   * 拉起原生选图（仅 App 内）。返回 false 表示原生侧没能拉起，调用方退回 input 路径。
+   * 选完的文件同样过 addFiles 的 MIME 识别管线，行为与系统选图器路径一致。
+   */
+  const pickNatively = (): boolean => {
+    const remaining = Math.max(1, fileLimit - valueRef.current.length);
+    const accepted = accept.split(',').map((item) => item.trim()).filter(Boolean);
+    const picked = pickFilesNatively(accepted, multiple && fileLimit > 1, remaining);
+    if (!picked) return false;
+    void picked
+      .then((files) => addFiles(files))
+      .catch(() => setMessage('图片读取失败，请重试'));
+    return true;
   };
 
   const reorder = (sourceId: string, targetId: string, before: boolean) => {
@@ -287,13 +318,44 @@ export default function ImagePasteUpload({
             </div>
           );
         })}
-        {canAdd && <label className="image-upload-empty" style={{ minHeight: 82, cursor: 'pointer' }}>
+        {canAdd && <div
+          className="image-upload-empty"
+          style={{ minHeight: 82, cursor: 'pointer', position: 'relative', overflow: 'hidden' }}
+          onClick={(event) => {
+            // 落点是 input 本身：要么是无桥环境下的真实点击，要么是下方兜底的程序化 click()
+            // 冒泡回来——两种都必须直接放行，让默认行为（打开系统选图器）发生，
+            // 否则会重复弹窗，甚至 preventDefault 掉自己触发的合成点击。
+            if (event.target === fileInputRef.current) return;
+            // App 内优先走原生选图桥：部分 ROM 的 WebView 里 file input 的点击激活链
+            // 整条静默失效（点了连系统选图界面都不弹），只能由原生侧拉起选择器。
+            if (canPickFilesNatively()) {
+              event.preventDefault();
+              if (!pickNatively()) fileInputRef.current?.click();
+              return;
+            }
+            fileInputRef.current?.click();
+          }}
+        >
           <ImagePlus size={18} />
           <span>添加图片</span>
-          <input type="file" accept={accept} multiple={multiple && fileLimit > 1} onChange={onFileChange} style={{ display: 'none' }} />
-        </label>}
+          {/* 不用 inset 简写（老 WebView 不认），显式写四个方向；input 必须保持「已渲染」，
+              display:none / hidden 会让真机点击彻底没有反应。
+              有原生桥时 input 不再吃真实点击（pointer-events:none），否则真指落在 input 上
+              会走回那条失效的 WebView 选图链；原生桥拉不起来时才靠兜底 click() 激活它。 */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={accept}
+            multiple={multiple && fileLimit > 1}
+            onChange={onFileChange}
+            aria-label="添加图片"
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 1, pointerEvents: canPickFilesNatively() ? 'none' : 'auto' }}
+          />
+        </div>}
       </div>
-      <div className="image-upload-hint" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Upload size={13} /><span>支持上传图片</span><ClipboardPaste size={13} /><span>支持粘贴</span>{message && <span style={{ color: 'var(--color-warning-text)' }}>{message}</span>}</div>
+      {/* 手机端会隐藏 .image-upload-hint（没有 Ctrl+V），所以提示必须放在它外面，否则用户看不到任何反馈 */}
+      {message && <div className="image-upload-message" role="status" aria-live="polite">{message}</div>}
+      <div className="image-upload-hint" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Upload size={13} /><span>支持上传图片</span><ClipboardPaste size={13} /><span>支持粘贴</span></div>
     </div>
   );
 }

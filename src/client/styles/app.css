@@ -2444,6 +2444,9 @@ select {
 
 .image-upload-hint { color: var(--color-text-muted); font-size: var(--text-2xs); }
 
+/* 上传失败/超限的反馈：手机端 .image-upload-hint 会被隐藏，所以单独用一个始终可见的元素 */
+.image-upload-message { color: var(--color-warning-text); font-size: var(--text-2xs); }
+
 /* 紧凑图墙（产品图库）：参考图片查看弹窗的方形缩略图，控件移到图片下方的按钮行，不再压住图片 */
 .image-upload.is-compact .image-upload-grid {
   grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));

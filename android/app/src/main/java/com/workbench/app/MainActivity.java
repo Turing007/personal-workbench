@@ -4,11 +4,13 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.DownloadManager;
+import android.content.ClipData;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.media.MediaScannerConnection;
@@ -19,7 +21,9 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.MediaStore;
+import android.provider.OpenableColumns;
 import android.text.TextUtils;
+import android.util.Base64;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
@@ -51,8 +55,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -75,6 +81,10 @@ public class MainActivity extends Activity {
     private static final String KEY_NETWORKS = "saved_networks";
     private static final int FILE_CHOOSER_REQUEST = 1001;
     private static final int STORAGE_PERMISSION_REQUEST = 1002;
+    /** 原生选图/选文件（AppBridge.pickFiles）的返回码。 */
+    private static final int PICK_FILES_REQUEST = 1003;
+    /** 单个文件上限：base64 经 evaluateJavascript 回传会放大约 1/3，更大的文件请走电脑端上传。 */
+    private static final int MAX_PICKED_BYTES = 25 * 1024 * 1024;
     /** 相册里的子目录，便于用户在工作台 App 存图后一眼找到。 */
     private static final String GALLERY_FOLDER = "个人工作台";
     /** 只接管「图片地址」的长按，避免把普通链接当成图片存进相册。 */
@@ -95,6 +105,9 @@ public class MainActivity extends Activity {
     private Button testButton;
 
     private ValueCallback<Uri[]> fileCallback;
+    /** 进行中的原生选文件请求：网页端传入的 requestId，结果回传时原样带回。 */
+    private String pendingPickRequestId;
+    private int pendingPickMax = 1;
     /** API 29 以下保存图片前要先申请存储权限，授权通过后接着保存这一张。 */
     private String pendingImageUrl;
     private String pendingImageName;
@@ -141,6 +154,10 @@ public class MainActivity extends Activity {
         settings.setUseWideViewPort(true);
         settings.setLoadWithOverviewMode(true);
         settings.setMediaPlaybackRequiresUserGesture(true);
+        // 网页里的「上传图片/附件」依赖 WebView 打开系统文件选择器，这里显式打开文件与内容访问，
+        // 避免个别 ROM 默认关闭后出现「点了上传没有任何反应」。
+        settings.setAllowFileAccess(true);
+        settings.setAllowContentAccess(true);
         webView.setBackgroundColor(Color.TRANSPARENT);
 
         swipeRefresh.setColorSchemeColors(getColor(R.color.brand_teal));
@@ -196,15 +213,14 @@ public class MainActivity extends Activity {
             @Override
             public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback,
                                              FileChooserParams params) {
-                if (fileCallback != null) {
-                    fileCallback.onReceiveValue(null);
-                }
+                // 上一次回调没释放会让后续所有点击都失效，先兜底释放掉。
+                releaseFileCallback();
                 fileCallback = callback;
-                try {
-                    startActivityForResult(params.createIntent(), FILE_CHOOSER_REQUEST);
-                } catch (Exception e) {
-                    fileCallback = null;
-                    return false;
+                if (!startFileChooser(params)) {
+                    // 绝不静默失败：既要在界面上给出提示，也要释放回调让文件框复位，
+                    // 否则使用者看到的就是「点了上传没有任何反应」。
+                    releaseFileCallback();
+                    Toast.makeText(MainActivity.this, R.string.file_chooser_unavailable, Toast.LENGTH_LONG).show();
                 }
                 return true;
             }
@@ -249,6 +265,210 @@ public class MainActivity extends Activity {
             saveImageToGallery(source, null);
             return true;
         });
+    }
+
+    /** 释放文件选择回调：不释放会让网页里的 file input 一直停在待选状态，后续点击全部无效。 */
+    private void releaseFileCallback() {
+        if (fileCallback != null) {
+            fileCallback.onReceiveValue(null);
+            fileCallback = null;
+        }
+    }
+
+    /**
+     * 调起系统选图/拍照。先试 WebView 自带意图（带拍照入口），
+     * 再退回自建的 ACTION_OPEN_DOCUMENT，避免个别 ROM 上直接抛异常导致上传没有反应。
+     */
+    private boolean startFileChooser(WebChromeClient.FileChooserParams params) {
+        Intent primary = null;
+        try {
+            primary = params.createIntent();
+            if (primary != null) {
+                primary.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            }
+        } catch (Exception ignored) {
+        }
+        if (tryStartActivity(primary)) return true;
+        return tryStartActivity(buildFallbackChooserIntent(params));
+    }
+
+    private boolean tryStartActivity(Intent intent) {
+        if (intent == null) return false;
+        try {
+            startActivityForResult(intent, FILE_CHOOSER_REQUEST);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** 兜底选择器：ACTION_OPEN_DOCUMENT + CATEGORY_OPENABLE，按网页 accept 限制类型。 */
+    private Intent buildFallbackChooserIntent(WebChromeClient.FileChooserParams params) {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        String[] acceptTypes = null;
+        try {
+            acceptTypes = params.getAcceptTypes();
+        } catch (Exception ignored) {
+        }
+        if (acceptTypes != null && acceptTypes.length == 1 && !TextUtils.isEmpty(acceptTypes[0])) {
+            intent.setType(acceptTypes[0]);
+        } else {
+            intent.setType("*/*");
+            if (acceptTypes != null && acceptTypes.length > 1) {
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, acceptTypes);
+            }
+        }
+        try {
+            if (params.getMode() == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+            }
+        } catch (Exception ignored) {
+        }
+        return intent;
+    }
+
+    // ===== 原生选图/选文件（AppBridge.pickFiles）=====
+
+    /** 拉起系统选择器。图片走系统照片选择器（Android 13+）或 OPEN_DOCUMENT image/*，其他文件走 OPEN_DOCUMENT。 */
+    private boolean launchFilePicker(String acceptJson, boolean multiple, int maxCount, String requestId) {
+        List<String> accept = parseAcceptTypes(acceptJson);
+        boolean imagesOnly = accept.size() == 1 && "image/*".equals(accept.get(0));
+        Intent intent;
+        if (imagesOnly && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // 系统照片选择器：体验最好，不需要任何存储权限。
+            intent = new Intent(MediaStore.ACTION_PICK_IMAGES);
+            if (multiple) {
+                intent.putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX,
+                        Math.min(Math.max(maxCount, 1), MediaStore.getPickImagesMaxLimit()));
+            }
+        } else {
+            intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            // 附件是混合类型时直接用 */*：部分 ROM 对生僻 MIME 过滤过严，会一个文件都选不了。
+            intent.setType(imagesOnly ? "image/*" : "*/*");
+            if (multiple) intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        }
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        pendingPickRequestId = requestId;
+        pendingPickMax = Math.max(1, maxCount);
+        try {
+            startActivityForResult(intent, PICK_FILES_REQUEST);
+            return true;
+        } catch (Exception error) {
+            pendingPickRequestId = null;
+            Toast.makeText(this, R.string.file_chooser_unavailable, Toast.LENGTH_LONG).show();
+            return false;
+        }
+    }
+
+    private List<String> parseAcceptTypes(String acceptJson) {
+        List<String> accept = new ArrayList<>();
+        if (!TextUtils.isEmpty(acceptJson)) {
+            try {
+                JSONArray array = new JSONArray(acceptJson);
+                for (int index = 0; index < array.length(); index += 1) {
+                    String type = array.optString(index, "").trim();
+                    if (!type.isEmpty()) accept.add(type);
+                }
+            } catch (JSONException ignored) {
+            }
+        }
+        if (accept.isEmpty()) accept.add("image/*");
+        return accept;
+    }
+
+    /** 读取选中的文件并回传给网页：读字节走后台线程，回传（evaluateJavascript）回 UI 线程。 */
+    private void handlePickedFiles(int resultCode, Intent data) {
+        final String requestId = pendingPickRequestId;
+        final int max = pendingPickMax;
+        pendingPickRequestId = null;
+        if (requestId == null) return;
+        List<Uri> uris = new ArrayList<>();
+        if (resultCode == RESULT_OK && data != null) {
+            ClipData clip = data.getClipData();
+            if (clip != null) {
+                for (int index = 0; index < clip.getItemCount() && uris.size() < max; index += 1) {
+                    uris.add(clip.getItemAt(index).getUri());
+                }
+            } else if (data.getData() != null) {
+                uris.add(data.getData());
+            }
+        }
+        if (uris.isEmpty()) {
+            // 取消也要回执，否则网页端的 Promise 会一直挂着。
+            deliverPickedFiles(requestId, new JSONArray());
+            return;
+        }
+        executor.execute(() -> {
+            JSONArray files = new JSONArray();
+            int failed = 0;
+            for (Uri uri : uris) {
+                try {
+                    files.put(readPickedFile(uri));
+                } catch (Exception error) {
+                    failed += 1;
+                }
+            }
+            final JSONArray result = files;
+            final int failedCount = failed;
+            mainHandler.post(() -> {
+                if (failedCount > 0) {
+                    Toast.makeText(MainActivity.this, R.string.pick_files_partial_failed, Toast.LENGTH_LONG).show();
+                }
+                deliverPickedFiles(requestId, result);
+            });
+        });
+    }
+
+    private JSONObject readPickedFile(Uri uri) throws IOException, JSONException {
+        byte[] bytes;
+        try (InputStream input = getContentResolver().openInputStream(uri)) {
+            if (input == null) throw new IOException("open failed");
+            bytes = readAllBytes(input);
+        }
+        if (bytes.length == 0) throw new IOException("empty file");
+        if (bytes.length > MAX_PICKED_BYTES) throw new IOException("file too large");
+        String type = getContentResolver().getType(uri);
+        if (TextUtils.isEmpty(type)) type = "application/octet-stream";
+        JSONObject item = new JSONObject();
+        item.put("name", queryDisplayName(uri));
+        item.put("type", type);
+        item.put("size", bytes.length);
+        item.put("data", Base64.encodeToString(bytes, Base64.NO_WRAP));
+        return item;
+    }
+
+    /** 从 content:// 取用户看到的原始文件名，取不到就用时间戳兜底。 */
+    private String queryDisplayName(Uri uri) {
+        try (Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (index >= 0) {
+                    String name = cursor.getString(index);
+                    if (!TextUtils.isEmpty(name)) return name;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return "file-" + System.currentTimeMillis();
+    }
+
+    private void deliverPickedFiles(String requestId, JSONArray files) {
+        if (webView == null) return;
+        webView.evaluateJavascript("window.__workbenchPickedFiles&&window.__workbenchPickedFiles("
+                + JSONObject.quote(requestId) + "," + files + ");", null);
+    }
+
+    private byte[] readAllBytes(InputStream input) throws IOException {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] chunk = new byte[8192];
+        int read;
+        while ((read = input.read(chunk)) != -1) {
+            buffer.write(chunk, 0, read);
+        }
+        return buffer.toByteArray();
     }
 
     private void bindSetupButtons() {
@@ -373,6 +593,33 @@ public class MainActivity extends Activity {
                 swipeRefresh.setEnabled(!open);
                 if (open) swipeRefresh.setRefreshing(false);
             });
+        }
+
+        /**
+         * 原生选图/选文件：部分 ROM 的 WebView 里 file input 的点击激活链整条失效
+         * （点「添加图片」连系统选图界面都不弹，onShowFileChooser 根本不会被调用），
+         * 所以 App 内由原生直接拉起系统选择器，彻底绕开这条不可靠的链路。
+         * 结果经 window.__workbenchPickedFiles(requestId, files) 回传，
+         * files 为 [{name, type, size, data(base64)}]，用户取消时回传空数组。
+         * 返回 false 表示没能拉起，网页端会退回 <input type=file> 路径。
+         */
+        @JavascriptInterface
+        public boolean pickFiles(final String acceptJson, final boolean multiple,
+                                 final int maxCount, final String requestId) {
+            // JS 桥方法跑在 JavaBridge 线程，startActivityForResult 必须回 UI 线程；
+            // 用 CountDownLatch 同步拿到「是否成功拉起」，网页端才能立刻决定要不要走兜底。
+            final CountDownLatch latch = new CountDownLatch(1);
+            final boolean[] launched = {false};
+            mainHandler.post(() -> {
+                launched[0] = launchFilePicker(acceptJson, multiple, maxCount, requestId);
+                latch.countDown();
+            });
+            try {
+                latch.await(2, TimeUnit.SECONDS);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+            }
+            return launched[0];
         }
     }
 
@@ -721,13 +968,7 @@ public class MainActivity extends Activity {
             int code = connection.getResponseCode();
             if (code < 200 || code >= 300) throw new IOException("HTTP " + code);
             try (InputStream input = connection.getInputStream()) {
-                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-                byte[] chunk = new byte[8192];
-                int read;
-                while ((read = input.read(chunk)) != -1) {
-                    buffer.write(chunk, 0, read);
-                }
-                return buffer.toByteArray();
+                return readAllBytes(input);
             }
         } finally {
             connection.disconnect();
@@ -791,9 +1032,23 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode == FILE_CHOOSER_REQUEST && fileCallback != null) {
-            fileCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
-            fileCallback = null;
+        if (requestCode == FILE_CHOOSER_REQUEST) {
+            // 无论成功、取消还是解析异常都必须给 WebView 回执，否则文件框会卡死，后续点击全无反应。
+            Uri[] result = null;
+            if (resultCode == RESULT_OK) {
+                try {
+                    result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+                } catch (Exception ignored) {
+                }
+            }
+            if (fileCallback != null) {
+                fileCallback.onReceiveValue(result);
+                fileCallback = null;
+            }
+            return;
+        }
+        if (requestCode == PICK_FILES_REQUEST) {
+            handlePickedFiles(resultCode, data);
             return;
         }
         // 扫码结果：支持单地址与「局域网 + 隧道」多地址两种二维码。
