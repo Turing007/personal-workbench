@@ -291,7 +291,10 @@ export async function registerOrderRoutes(app: FastifyInstance, options: OrderRo
         if (fileSeen) throw new ApiError(400, 'FILE_COUNT_INVALID', '一次只能上传一个合同文件');
         fileSeen = true;
         if (part.fieldname !== 'file') throw new ApiError(400, 'FILE_FIELD_INVALID', '合同文件字段必须是 file', 'file');
-        uploaded = await service.uploadContract(orderId, part.file, part.filename, part.mimetype);
+        const fileBuffer = await part.toBuffer();
+        // throwFileSizeLimit 关掉了：超限文件会被截断，直接流式存库就是一条“看起来正常”的损坏附件。
+        assertMultipartFileNotTruncated(part, 'contract');
+        uploaded = await service.uploadContract(orderId, Readable.from(fileBuffer), part.filename, part.mimetype);
       }
       if (!fileSeen || !uploaded) throw new ApiError(400, 'FILE_REQUIRED', '请选择合同文件', 'file');
       return sendSuccess(reply, { ...uploaded, url: `/files/${uploaded.relativePath}` }, 201);

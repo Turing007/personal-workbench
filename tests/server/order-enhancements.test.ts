@@ -48,16 +48,20 @@ async function makeContext() {
   return { database, repositories, customerRepository, customerProductRepository, fileStore, app };
 }
 
-function multipartImage(filename: string, bytes: Buffer) {
+function multipartFile(filename: string, bytes: Buffer, mimeType = 'image/png') {
   const boundary = `----workbench-order-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return {
     headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
     payload: Buffer.concat([
-      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: image/png\r\n\r\n`),
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${mimeType}\r\n\r\n`),
       bytes,
       Buffer.from(`\r\n--${boundary}--\r\n`),
     ]),
   };
+}
+
+function multipartImage(filename: string, bytes: Buffer) {
+  return multipartFile(filename, bytes);
 }
 
 function insertCustomer(database: ReturnType<typeof openDatabase>, name: string, isActive = true): number {
@@ -615,6 +619,26 @@ describe('订单号基础设施', () => {
     const missing = await app.inject({ method: 'GET', url: '/api/orders/999999/detail' });
     expect(missing.statusCode).toBe(404);
     expect(missing.json().error.code).toBe('NOT_FOUND');
+    database.close();
+  });
+
+  it('合同超过 20MB 时报错，而不是截断成一份损坏的附件', async () => {
+    const { app, database } = await makeContext();
+    const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput({ recipientName: '截断测试' }) });
+    const orderId = Number(created.json().data.id);
+
+    // request.parts 关掉了 throwFileSizeLimit：不显式检查 truncated，半截文件会存成一条看起来正常的记录。
+    const oversized = Buffer.alloc(20 * 1024 * 1024 + 16, 0x41);
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/orders/${orderId}/contracts`,
+      ...multipartFile('huge.pdf', oversized, 'application/pdf'),
+    });
+    expect(response.statusCode).toBe(413);
+    expect(response.json().error.code).toBe('CONTRACT_TOO_LARGE');
+
+    const detail = await app.inject({ method: 'GET', url: `/api/orders/${orderId}/detail` });
+    expect((detail.json().data.contracts as unknown[]).length).toBe(0);
     database.close();
   });
 

@@ -333,17 +333,39 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     } catch (error) { notify((error as { message?: string }).message ?? '产品库导入失败', 'error'); }
   };
   const saveOrderDraft = async (draft: OrderDraft) => {
+    let orderId: number;
     try {
       const saved = await saveOrder(draft);
-      const orderId = Number(saved.id ?? draft.id);
+      orderId = Number(saved.id ?? draft.id);
       if (!Number.isSafeInteger(orderId) || orderId <= 0) throw new Error('订单保存成功但未返回有效订单 ID');
-      for (const proof of draft.paymentProofs.filter((item) => item.file)) await uploadPaymentProof(orderId, proof.file!, proof.note ?? '');
-      for (const contract of (draft.contracts ?? []).filter((item) => item.file)) await uploadOrderContract(orderId, contract.file!);
-      for (const image of (draft.orderDetailImages ?? []).filter((item) => item.file)) await uploadOrderDetailImage(orderId, image.file!);
-      for (const contractId of draft.deletedContractIds ?? []) await deleteOrderContract(contractId);
-      await loadOrders();
-      notify(draft.status === 'draft' ? '草稿已保存，可稍后继续编辑' : '订单已保存', 'success');
-    } catch (error) { notify((error as { message?: string }).message ?? '订单保存失败', 'error'); }
+    } catch (error) {
+      notify((error as { message?: string }).message ?? '订单保存失败', 'error');
+      return;
+    }
+    // 附件是订单落库之后的追加步骤：单个失败不能报成「整单没保存」，也不能因此跳过列表刷新。
+    const failed: string[] = [];
+    const pendingUploads = [
+      ...draft.paymentProofs.filter((item) => item.file).map((proof) => [proof.name || '付款凭证', () => uploadPaymentProof(orderId, proof.file!, proof.note ?? '')] as const),
+      ...(draft.contracts ?? []).filter((item) => item.file).map((contract) => [contract.name || '订单附件', () => uploadOrderContract(orderId, contract.file!)] as const),
+      ...(draft.orderDetailImages ?? []).filter((item) => item.file).map((image) => [image.name || '订单详情图片', () => uploadOrderDetailImage(orderId, image.file!)] as const),
+    ];
+    if (pendingUploads.length) notify(`正在上传 ${pendingUploads.length} 个附件，请稍候`, 'info');
+    const upload = async (name: string, run: () => Promise<unknown>) => {
+      try {
+        await run();
+      } catch (error) {
+        const reason = (error as { message?: string }).message ?? '未知错误';
+        failed.push(`${name}（${reason}）`);
+      }
+    };
+    for (const [name, run] of pendingUploads) await upload(name, run);
+    for (const contractId of draft.deletedContractIds ?? []) await upload('删除附件', () => deleteOrderContract(contractId));
+    await loadOrders();
+    if (failed.length) {
+      notify(`订单已保存，但 ${failed.length} 个附件处理失败：${failed.join('、')}。可先打开订单确认是否已上传，未上传的重新编辑该订单补传`, 'error');
+      return;
+    }
+    notify(draft.status === 'draft' ? '草稿已保存，可稍后继续编辑' : '订单已保存', 'success');
   };
   // 草稿保存与正式保存共用持久化链路（附件上传等），仅提示语不同。
   const saveOrderAsDraft = async (draft: OrderDraft) => { await saveOrderDraft({ ...draft, status: 'draft' }); };

@@ -1,6 +1,9 @@
 import { Download, ExternalLink, FileText, Plus, Trash2, UserRound } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { getNextOrderNumber, deleteOrderDetailImage } from '../api';
+import { canPickFilesNatively, pickFilesNatively } from '../app-bridge';
+import { CONTRACT_PICKER_ACCEPT, normalizeUploadContract, SUPPORTED_CONTRACT_HINT } from '../contract-mime';
 import { calculateOrderBoxes } from '../../shared/order-calculations';
 import { calculateFreightCents, calculateOrderLineAmountCents, calculateOrderTotalCents } from '../../shared/order-prices';
 import { dateInputValue, dateOnlyValue } from '../../shared/date-input';
@@ -131,17 +134,7 @@ export interface OrderFormProps {
 const controlStyle = { width: '100%', minWidth: 0, border: '1px solid var(--control-border)', borderRadius: 'var(--radius-control)', padding: '7px 9px', color: 'var(--color-text)', background: 'var(--control-bg)', font: 'inherit', fontSize: 'var(--text-xs)' };
 const labelStyle = { display: 'grid', gap: 'var(--space-2)', color: 'var(--color-text-secondary)', fontSize: 'var(--text-xs)' };
 const contractAccept = '.pdf,.doc,.docx,.xls,.xlsx,image/png,image/jpeg,image/webp';
-const allowedContractExtensions = new Set(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg', 'webp']);
-const allowedContractMimeTypes = new Set([
-  'application/pdf',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-excel',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'image/png',
-  'image/jpeg',
-  'image/webp',
-]);
+const CONTRACT_MAX_PICK = 9;
 
 function makeItem(product?: CustomerProductRecord): OrderItemDraft {
   const packSize = Math.max(1, Math.trunc(product?.packCount ?? 1));
@@ -153,15 +146,6 @@ function defaultDraft(value: Partial<OrderDraft> | undefined): OrderDraft {
   return {
     orderNo: value?.orderNo ?? '', orderNoAuto: value?.orderNoAuto ?? (!value?.id && !value?.orderNo), orderedAt: dateOnlyValue(value?.orderedAt ?? dateInputValue()), customerId: value?.customerId ?? null, customerName: value?.customerName ?? '', customerContactName: value?.customerContactName ?? '', customerContactPhone: value?.customerContactPhone ?? '', customerShippingInfo: value?.customerShippingInfo ?? '', settlementType: isSettlementType(value?.settlementType) ? value.settlementType : 'corporate', orderDetail: value?.orderDetail ?? '', orderDetailImages: value?.orderDetailImages ?? [], recipientName: value?.recipientName ?? '', recipientInfo: value?.recipientInfo ?? '', amount: value?.amount ?? '', shippingCents: value?.shippingCents ?? 0, trackingNo: value?.trackingNo ?? '', paymentNote: value?.paymentNote ?? '', paymentProofs: value?.paymentProofs ?? [], remark: value?.remark ?? '', items: value?.items ?? [], contracts: value?.contracts ?? [], deletedContractIds: value?.deletedContractIds ?? [], status: value?.status ?? 'pending_stock', id: value?.id,
   };
-}
-
-function fileExtension(fileName: string) {
-  return fileName.trim().toLowerCase().split('.').pop() ?? '';
-}
-
-function isAllowedContract(file: File) {
-  const extensionAllowed = allowedContractExtensions.has(fileExtension(file.name));
-  return extensionAllowed && (!file.type || allowedContractMimeTypes.has(file.type.toLowerCase()));
 }
 
 function isImageContract(contract: OrderContractDraft) {
@@ -195,6 +179,13 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
   const calculatedAmount = ((calculatedTotalCents + shippingCents) / 100).toFixed(2);
   const objectUrls = useRef(new Set<string>());
   const autoPreviewRef = useRef('');
+  const errorRef = useRef<HTMLDivElement>(null);
+  const contractInputRef = useRef<HTMLInputElement>(null);
+  // 表单错误条固定在顶部，而「选择附件」「保存订单」都在弹窗下方：移动端弹窗正文是独立滚动容器，
+  // 不出错则已，一出错就停在视口外，使用者看到的只是「点了没反应」。
+  useEffect(() => {
+    if (error) errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [error]);
   useEffect(() => () => {
     objectUrls.current.forEach((url) => URL.revokeObjectURL(url));
     objectUrls.current.clear();
@@ -297,8 +288,10 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
     setNewProductOpen(false);
   };
   const addContractFiles = (files: File[]) => {
-    const accepted = files.filter(isAllowedContract);
-    if (accepted.length !== files.length) setError('合同仅支持 PDF、Word、Excel 或 PNG/JPEG/WebP 图片');
+    // 以扩展名为准回写 MIME：手机选回的文件常报 application/octet-stream，
+    // 而服务端要求 MIME 命中白名单且与扩展名配对，不回写会被 400 拒掉。
+    const accepted = files.map(normalizeUploadContract).filter((file): file is File => Boolean(file));
+    if (accepted.length !== files.length) setError(SUPPORTED_CONTRACT_HINT);
     if (!accepted.length) return;
     const contracts = accepted.map((file): OrderContractDraft => {
       const image = file.type.startsWith('image/');
@@ -307,6 +300,25 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
       return { id: `contract-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: file.name, url, file, mimeType: file.type, size: file.size };
     });
     setDraft((current) => ({ ...current, contracts: [...(current.contracts ?? []), ...contracts] }));
+  };
+  /**
+   * App 内优先走原生选文件桥，不经 WebView 的 file input。
+   * 日志实证：手机经 file input 选完文件后，POST /api/orders/:id/contracts 只有请求头到达服务端，
+   * 请求体一个字节都没写出（.staging 无残留、服务端从未返回响应），上传永远挂着；
+   * 而走原生桥把字节读进内存再 fetch 的产品图片上传全部成功。
+   */
+  const openContractPicker = (event: ReactMouseEvent<HTMLLabelElement>) => {
+    if (event.target === contractInputRef.current) return; // label 转发给 input 的点击，不重复处理
+    if (!canPickFilesNatively()) return; // 浏览器/旧版 App：保持 label 激活隐藏 input 的原生行为
+    event.preventDefault();
+    const picked = pickFilesNatively(CONTRACT_PICKER_ACCEPT, true, CONTRACT_MAX_PICK);
+    if (!picked) {
+      contractInputRef.current?.click();
+      return;
+    }
+    void picked
+      .then((files) => addContractFiles(files))
+      .catch(() => setError('附件读取失败，请重新选择'));
   };
   const removeContract = (contract: OrderContractDraft) => {
     if (contract.file && contract.url) {
@@ -339,7 +351,7 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
 
   return (
     <div style={{ display: 'grid', gap: 12 }}>
-      {error && <div role="alert" style={{ padding: '9px 11px', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12 }}>{error}</div>}
+      {error && <div ref={errorRef} role="alert" style={{ padding: '9px 11px', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12 }}>{error}</div>}
       <section style={{ display: 'grid', gap: 9 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#17212b' }}><UserRound size={16} /><strong style={{ fontSize: 13 }}>客户与订单信息</strong></div>
         <div className="order-form-grid order-form-grid-main">
@@ -373,7 +385,7 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
       <div className="order-form-grid order-form-grid-attachments">
         <ImagePasteUpload value={draft.paymentProofs} onChange={(proofs) => update('paymentProofs', proofs as PaymentProofDraft[])} />
         <section style={{ display: 'grid', gap: 6, padding: 8, border: '1px solid #e2e8f0', borderRadius: 6, background: '#fbfdff' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}><label style={{ color: '#64748b', fontSize: 12, fontWeight: 600 }}>订单附件</label><label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #cbd5e1', borderRadius: 5, padding: '6px 9px', color: '#0f766e', background: '#fff', cursor: 'pointer', fontSize: 12 }}><Plus size={14} />选择附件<input type="file" multiple accept={contractAccept} onChange={(event) => { addContractFiles(Array.from(event.target.files ?? [])); event.target.value = ''; }} style={{ display: 'none' }} /></label></div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}><label style={{ color: '#64748b', fontSize: 12, fontWeight: 600 }}>订单附件</label><label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #cbd5e1', borderRadius: 5, padding: '6px 9px', color: '#0f766e', background: '#fff', cursor: 'pointer', fontSize: 12 }} onClick={openContractPicker}><Plus size={14} />选择附件<input ref={contractInputRef} type="file" multiple accept={contractAccept} aria-label="选择订单附件" onChange={(event) => { addContractFiles(Array.from(event.target.files ?? [])); event.target.value = ''; }} style={{ display: 'none' }} /></label></div>
           <div style={{ display: 'grid', gap: 5 }}>{(draft.contracts ?? []).map((contract) => <div key={contract.id} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, padding: '6px 8px', border: '1px solid #edf0f2', borderRadius: 5, background: '#fff' }}>{isImageContract(contract) && contract.url ? <img src={contract.url} alt={contract.name} style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 4 }} /> : <FileText size={22} color="#64748b" />}<div style={{ minWidth: 0, flex: 1 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#334155', fontSize: 12 }}>{contract.name}</div><span style={{ color: '#94a3b8', fontSize: 11 }}>{formatFileSize(contract.size)}{contract.file ? ' · 待上传' : contract.createdAt ? ` · ${contract.createdAt.replace('T', ' ').slice(0, 16)}` : ''}</span></div><button type="button" title="移除附件" onClick={() => removeContract(contract)} style={{ display: 'inline-flex', border: 0, background: 'transparent', color: '#b91c1c', cursor: 'pointer' }}><Trash2 size={14} /></button></div>)}{customerProductAttachments.map((attachment) => <div key={`product-${attachment.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, padding: '6px 8px', border: '1px solid #b7e4df', borderRadius: 5, background: '#f7fffd' }}><FileText size={18} color="#0f766e" /><div style={{ minWidth: 0, flex: 1 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#334155', fontSize: 12 }}>{attachment.originalName}</div><span style={{ color: '#0f766e', fontSize: 11 }}>{customerAttachmentLabel(attachment.category)} · 保存订单后归档</span></div>{attachment.url && <a href={attachment.url} target="_blank" rel="noreferrer" title="打开客户产品附件" style={{ color: '#0f766e' }}><ExternalLink size={14} /></a>}<a href={attachment.url} download={attachment.originalName} title="下载客户产品附件" style={{ color: '#475569' }}><Download size={14} /></a></div>)}{!(draft.contracts ?? []).length && !customerProductAttachments.length && <span style={{ color: '#94a3b8', fontSize: 11 }}>暂无订单附件；客户产品附件会在保存订单时归档到订单附件。</span>}</div>
         </section>
       </div>

@@ -224,43 +224,74 @@ function notifyAuthRequired(): void {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT));
 }
 
-export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+/**
+ * 所有请求都带超时：手机端走的隧道链路会静默断流，请求发出后可能永远不返回（服务器日志里
+ * 只有请求头、请求体一个字节都没有的上传，以及同样挂死的图片 GET 都是这个）。
+ * fetch 不 abort 就一直占着 WebView 每域 6 个连接名额，后续请求全部排队，表现就是「点了没反应」。
+ */
+const REQUEST_TIMEOUT_MS = 30_000;
+const UPLOAD_TIMEOUT_MS = 100_000;
+export const NETWORK_TIMEOUT_MESSAGE = '网络超时：请求没有回音，请检查手机网络后重试';
+
+async function timedFetch<T>(
+  path: string,
+  init: RequestInit,
+  timeoutMs: number,
+  consume: (response: Response) => Promise<T>,
+): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  const response = await fetch(path, { ...init, headers });
-  if (!response.ok) {
+  const controller = new AbortController();
+  // 计时要覆盖到响应体读完为止：链路也可能在响应头之后断掉。
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(path, { ...init, headers, signal: controller.signal });
+    return await consume(response);
+  } catch (error) {
+    if (controller.signal.aborted) throw { code: 'NETWORK_TIMEOUT', message: NETWORK_TIMEOUT_MESSAGE } satisfies ApiErrorShape;
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const timeoutMs = init.body instanceof FormData ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+  return timedFetch(path, init, timeoutMs, async (response) => {
+    if (!response.ok) {
+      const text = await response.text();
+      let payload: unknown = null;
+      try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
+      throw toError(payload, response.statusText || '请求失败', response.status);
+    }
     const text = await response.text();
     let payload: unknown = null;
     try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
-    throw toError(payload, response.statusText || '请求失败', response.status);
-  }
-  const text = await response.text();
-  let payload: unknown = null;
-  try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
-  if (payload && typeof payload === 'object' && 'ok' in payload) {
-    const envelope = payload as { ok?: boolean; data?: T; error?: unknown };
-    if (envelope.ok === false) {
-      const error = toError(payload, '请求失败', response.status);
-      if (error.code === 'AUTH_REQUIRED') notifyAuthRequired();
-      throw error;
+    if (payload && typeof payload === 'object' && 'ok' in payload) {
+      const envelope = payload as { ok?: boolean; data?: T; error?: unknown };
+      if (envelope.ok === false) {
+        const error = toError(payload, '请求失败', response.status);
+        if (error.code === 'AUTH_REQUIRED') notifyAuthRequired();
+        throw error;
+      }
+      return envelope.data as T;
     }
-    return envelope.data as T;
-  }
-  return payload as T;
+    return payload as T;
+  });
 }
 
 export async function requestBlob(path: string, init: RequestInit = {}): Promise<Blob> {
-  const headers = new Headers(init.headers);
-  const response = await fetch(path, { ...init, headers });
-  if (!response.ok) {
-    const text = await response.text();
-    let payload: unknown = text;
-    try { payload = text ? JSON.parse(text) : null; } catch { /* Keep the response text for a useful fallback error. */ }
-    const error = toError(payload, response.statusText || '下载失败', response.status);
-    if (error.code === 'AUTH_REQUIRED') notifyAuthRequired();
-    throw error;
-  }
-  return response.blob();
+  return timedFetch(path, init, REQUEST_TIMEOUT_MS, async (response) => {
+    if (!response.ok) {
+      const text = await response.text();
+      let payload: unknown = text;
+      try { payload = text ? JSON.parse(text) : null; } catch { /* Keep the response text for a useful fallback error. */ }
+      const error = toError(payload, response.statusText || '下载失败', response.status);
+      if (error.code === 'AUTH_REQUIRED') notifyAuthRequired();
+      throw error;
+    }
+    return response.blob();
+  });
 }
 
 function asPackaging(row: Record<string, unknown> | undefined): PackagingOption {

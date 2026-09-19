@@ -18,7 +18,7 @@ const MIME_BY_EXTENSION: Record<string, SupportedImageMime> = {
  * 不使用 String.prototype.replaceAll / Array.prototype.at 这类较新的 API：
  * 老内核（Chrome < 85）没有 replaceAll，会直接抛异常，把整条上传链路静默打断。
  */
-function extensionOf(fileName: string): string {
+export function extensionOf(fileName: string): string {
   const normalized = fileName.split('\\').join('/');
   const segments = normalized.split('/');
   const base = segments.length > 0 ? segments[segments.length - 1] : '';
