@@ -2133,6 +2133,9 @@ select {
   height: 34px;
   flex: 0 0 34px;
   border-radius: 11px;
+  /* 无公司 Logo 时这里回退成字母 V，需要显式字号，否则会跟着正文 13px 显得过小。 */
+  font-size: 19px;
+  line-height: 1;
   background: linear-gradient(135deg, #38e3cd, #14b8a6);
   color: #0b2b28;
   font-weight: 800;
@@ -3530,7 +3533,7 @@ select {
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: 14px;
   background: linear-gradient(135deg, var(--color-accent), var(--color-accent-hover));
-  color: #fff; font-size: 21px; font-weight: var(--weight-bold);
+  color: #fff; font-size: 25px; font-weight: var(--weight-bold); line-height: 1;
   box-shadow: 0 8px 20px -8px rgba(14, 115, 104, .55);
 }
 .auth-brand-name { font-size: 17px; font-weight: var(--weight-semibold); color: var(--color-text); }

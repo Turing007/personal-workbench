@@ -53,9 +53,9 @@
                 android:layout_height="64dp"
                 android:background="@drawable/brand_mark"
                 android:gravity="center"
-                android:text="工"
+                android:text="V"
                 android:textColor="#FFFFFF"
-                android:textSize="28sp"
+                android:textSize="34sp"
                 android:textStyle="bold" />
 
             <TextView

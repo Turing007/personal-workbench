@@ -2,30 +2,35 @@
 <html>
 <head>
 <meta charset="utf-8" />
+<title>个人工作台 · 图标源文件</title>
 <style>
-  html, body { margin: 0; height: 100%; }
-  body {
-    display: grid;
-    place-items: center;
-    background:
-      radial-gradient(120vmin 80vmin at 30% -10%, rgba(45, 212, 191, .16), transparent 60%),
-      linear-gradient(180deg, #10161f, #0a0f18 92%);
-    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-  }
-  .glyph {
-    display: grid;
-    place-items: center;
-    width: 62%;
-    height: 62%;
-    border-radius: 18%;
-    background: linear-gradient(135deg, rgba(45, 212, 191, .14), rgba(45, 212, 191, .03));
-    box-shadow: inset 0 0 0 2px rgba(45, 212, 191, .35);
-    color: #2dd4bf;
-    font-size: 34vmin;
-    font-weight: 700;
-    line-height: 1;
-  }
+  html, body { margin: 0; height: 100%; background: transparent; }
+  svg { display: block; width: 100%; height: 100%; }
 </style>
 </head>
-<body><div class="glyph">工</div></body>
+<body>
+<!--
+  图标唯一源文件：字母 V（Vigortech），品牌青绿渐变底。
+  几何取自定稿候选 A：V 占画布 61.6%，正好落在 Android 自适应图标 66% 的安全区内，
+  因此同一份图形可直接用于 legacy 图标、自适应图层和 PWA maskable 图标。
+  导出脚本：node scripts/generate-icons.mjs
+-->
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07A69B" />
+      <stop offset="1" stop-color="#02716A" />
+    </linearGradient>
+  </defs>
+  <rect id="bg" width="1024" height="1024" fill="url(#brand)" />
+  <path id="glyph" d="M198,252 L350,252 L512,583 L674,252 L826,252 L512,883 Z" fill="#FCFBFC" />
+</svg>
+<script>
+  // ?layer=background|foreground 只留单层，供自适应图标的背景层与前景层导出。
+  const layer = new URLSearchParams(location.search).get('layer');
+  if (layer === 'background' || layer === 'foreground') {
+    document.getElementById(layer === 'background' ? 'glyph' : 'bg').remove();
+  }
+</script>
+</body>
 </html>

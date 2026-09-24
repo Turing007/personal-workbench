@@ -95,7 +95,7 @@ http://127.0.0.1:52341/
 # 前提：~/.workbench-android/ 已有 JDK17、Android cmdline-tools、Gradle（一次性安装）
 export JAVA_HOME=~/.workbench-android/jdk17
 export ANDROID_HOME=~/.workbench-android/android-sdk
-cd android && ../.workbench-android/downloads/gradle-8.9/bin/gradle assembleRelease
+cd android && ~/.workbench-android/downloads/gradle-8.9/bin/gradle assembleRelease
 # 产物：android/app/build/outputs/apk/release/app-release.apk
 ```
 

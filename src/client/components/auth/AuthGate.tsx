@@ -92,7 +92,7 @@ export default function AuthGate({ children }: AuthGateProps) {
     return (
       <div className="auth-screen" aria-busy="true">
         <div className="auth-brand auth-brand-loading">
-          <span className="auth-brand-mark">工</span>
+          <span className="auth-brand-mark">V</span>
           <span className="auth-brand-name">个人工作台</span>
         </div>
       </div>
@@ -144,7 +144,7 @@ function AuthForm({ mode, error, submitting, onSubmit }: AuthFormProps) {
     <div className="auth-screen">
       <form className="auth-card" onSubmit={submit} aria-label={isSetup ? '初始化管理员账号' : '登录'}>
         <div className="auth-brand">
-          <span className="auth-brand-mark">工</span>
+          <span className="auth-brand-mark">V</span>
           <div>
             <h1 className="auth-title">{isSetup ? '初始化管理员' : '登录工作台'}</h1>
             <p className="auth-subtitle">{isSetup ? '创建第一个账号，它将自动成为管理员' : '订单、报价、发货与财务，一应俱全'}</p>
