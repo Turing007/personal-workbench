@@ -4452,6 +4452,13 @@ select {
   .page-toolbar.customer-products-toolbar > .icon-button { grid-row: 1; grid-column: 2; }
   .page-toolbar.customer-products-toolbar > .button { grid-row: 1; grid-column: 3; }
 
+  /* 内层产品工具条上的成本价小眼睛：默认 28px 手指点不准，与产品库一样补到 40px 触控区。 */
+  .customer-products-toolbar > .products-sensitive-toggle {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-control);
+  }
+
   /* 悬浮搜索框脱离工具条固定在视口顶部：连续下滑收起、回滑展开，输入时锁住展开。 */
   .page-toolbar.customer-products-toolbar .search-control {
     position: fixed;

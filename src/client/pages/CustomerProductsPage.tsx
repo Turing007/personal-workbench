@@ -1,6 +1,8 @@
 import {
   Copy,
   Edit3,
+  Eye,
+  EyeOff,
   Plus,
   RefreshCw,
   Search,
@@ -79,6 +81,8 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
   const [products, setProducts] = useState<CustomerProduct[]>([]);
   const [productQuery, setProductQuery] = useState('');
   const [productStatus, setProductStatus] = useState<'all' | 'complete' | 'incomplete'>('all');
+  /** 成本价默认收起：给客户看屏幕/投屏时不暴露进货成本，和产品库的小眼睛同一套交互。 */
+  const [showCostPrice, setShowCostPrice] = useState(false);
   const [productLoading, setProductLoading] = useState(false);
   const [productError, setProductError] = useState('');
   const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
@@ -320,15 +324,16 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
         <div className="customer-products-toolbar">
           <div className="search-control customer-product-search"><Search size={15} /><input disabled={!selectedCustomer} value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="按品名、客户 SKU、规格筛选" /></div>
           <select aria-label="客户产品状态筛选" className="toolbar-select customer-product-status-select" disabled={!selectedCustomer} value={productStatus} onChange={(event) => setProductStatus(event.target.value as typeof productStatus)}><option value="all">全部状态</option><option value="complete">已完善</option><option value="incomplete">待完善</option></select>
+          <button className="icon-button products-sensitive-toggle" type="button" disabled={!selectedCustomer} aria-pressed={showCostPrice} aria-label={showCostPrice ? '隐藏成本价' : '显示成本价'} title={showCostPrice ? '隐藏成本价' : '显示成本价'} onClick={() => setShowCostPrice((current) => !current)}>{showCostPrice ? <EyeOff size={16} /> : <Eye size={16} />}</button>
           {selectedProductIds.length > 0 && <button className="button button-secondary" type="button" onClick={() => { void batchRemoveProducts(); }}><Trash2 size={14} />删除选中</button>}
           <button className="button button-primary" type="button" disabled={!activeCustomer} title="添加客户新品" onClick={openNewProduct}><Plus size={14} />添加客户产品</button>
         </div>
-        <div className="table-scroll customer-products-table-desktop"><table className="data-table customer-products-table" style={{ minWidth: 1240 }}><thead><tr><th style={{ width: 34 }}><input type="checkbox" disabled={!products.length} checked={allVisibleSelected} onChange={() => setSelectedProductIds(allVisibleSelected ? [] : products.map((product) => product.id))} aria-label="全选客户产品" /></th>{['状态', '图片', '品名', '规格', '客户 SKU', '包装', '装箱数', '成本价', '最近报价', '最终价格', '运费/箱', '备注', '附件', '来源', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead><tbody>
+        <div className="table-scroll customer-products-table-desktop"><table className="data-table customer-products-table" style={{ minWidth: 1240 }}><thead><tr><th style={{ width: 34 }}><input type="checkbox" disabled={!products.length} checked={allVisibleSelected} onChange={() => setSelectedProductIds(allVisibleSelected ? [] : products.map((product) => product.id))} aria-label="全选客户产品" /></th>{['状态', '图片', '品名', '规格', '客户 SKU', '包装', '装箱数', ...(showCostPrice ? ['成本价'] : []), '最近报价', '最终价格', '运费/箱', '备注', '附件', '来源', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead><tbody>
           {products.map((product) => <tr key={product.id}>
             <td><input type="checkbox" checked={selectedProductIds.includes(product.id)} onChange={() => setSelectedProductIds((current) => current.includes(product.id) ? current.filter((id) => id !== product.id) : [...current, product.id])} aria-label={`选择${product.name}`} /></td>
             <td><span style={{ display: 'inline-block', padding: '3px 6px', borderRadius: 4, background: product.completionStatus === 'complete' ? '#ecfdf5' : '#fff7ed', color: product.completionStatus === 'complete' ? '#047857' : '#b45309', whiteSpace: 'nowrap' }}>{product.completionStatus === 'complete' ? '已完善' : '待完善'}</span></td>
             <td>{product.imageRelativePath ? <img src={thumbnailUrl(product.imageRelativePath)} alt={product.name} loading="lazy" decoding="async" style={{ width: 42, height: 36, objectFit: 'contain', border: '1px solid #e2e8f0', borderRadius: 4 }} /> : <span style={{ color: '#cbd5e1' }}>-</span>}</td>
-            <td className="strong-cell">{product.name || '-'}</td><td>{product.specification || '-'}</td><td>{product.sku || <span style={{ color: '#b45309' }}>待完善</span>}</td><td>{product.packaging.length ? product.packaging[0].name || `${product.packaging.length} 种` : '-'}</td><td>{product.packCount == null ? <span style={{ color: '#b45309' }}>待完善</span> : `${product.packCount} 个/箱`}</td><td>{money(product.costPriceCents)}</td><td>{money(product.latestQuoteCents)}</td><td className="strong-cell">{money(product.finalPriceCents)}</td><td>{product.freightPerBoxCents == null ? <span style={{ color: '#b45309' }}>未设置</span> : `¥${(product.freightPerBoxCents / 100).toFixed(2)}/箱`}</td><td className="customer-product-remark-cell" title={product.remark}>{product.remark || '-'}</td><td>{product.attachments.length ? `${product.attachments.length} 个` : '-'}</td><td><span style={{ color: product.systemProductId == null ? '#64748b' : '#0f766e' }}>{product.systemProductId == null ? '临时添加' : '系统产品库'}</span></td><td style={{ color: '#64748b', whiteSpace: 'nowrap' }}>{formatTime(product.updatedAt)}</td>
+            <td className="strong-cell">{product.name || '-'}</td><td>{product.specification || '-'}</td><td>{product.sku || <span style={{ color: '#b45309' }}>待完善</span>}</td><td>{product.packaging.length ? product.packaging[0].name || `${product.packaging.length} 种` : '-'}</td><td>{product.packCount == null ? <span style={{ color: '#b45309' }}>待完善</span> : `${product.packCount} 个/箱`}</td>{showCostPrice && <td>{money(product.costPriceCents)}</td>}<td>{money(product.latestQuoteCents)}</td><td className="strong-cell">{money(product.finalPriceCents)}</td><td>{product.freightPerBoxCents == null ? <span style={{ color: '#b45309' }}>未设置</span> : `¥${(product.freightPerBoxCents / 100).toFixed(2)}/箱`}</td><td className="customer-product-remark-cell" title={product.remark}>{product.remark || '-'}</td><td>{product.attachments.length ? `${product.attachments.length} 个` : '-'}</td><td><span style={{ color: product.systemProductId == null ? '#64748b' : '#0f766e' }}>{product.systemProductId == null ? '临时添加' : '系统产品库'}</span></td><td style={{ color: '#64748b', whiteSpace: 'nowrap' }}>{formatTime(product.updatedAt)}</td>
             <td><div className="row-actions"><button className="icon-button" type="button" title="编辑客户产品" onClick={() => openEditProduct(product)}><Edit3 size={14} /></button><button className="icon-button" type="button" title={activeCustomer ? '复制为客户新品' : '客户已停用，不能复制新品'} disabled={!activeCustomer} onClick={() => openCopyProduct(product)}><Copy size={14} /></button><button className="icon-button danger" type="button" title="删除客户产品" onClick={() => { void removeProduct(product); }}><Trash2 size={14} /></button></div></td>
           </tr>)}
         </tbody></table></div>
@@ -346,7 +351,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
             <div className="customer-product-card-grid">
               <div className="customer-product-card-field"><span>客户 SKU</span><strong style={!product.sku ? { color: '#b45309' } : undefined}>{product.sku || '待完善'}</strong></div>
               <div className="customer-product-card-field"><span>包装 / 装箱数</span><strong>{product.packaging.length ? product.packaging[0].name || `${product.packaging.length} 种` : '-'}{product.packCount == null ? <em style={{ color: '#b45309' }}>待完善</em> : ` · ${product.packCount} 个/箱`}</strong></div>
-              <div className="customer-product-card-field"><span>成本价</span><strong>{money(product.costPriceCents)}</strong></div>
+              {showCostPrice && <div className="customer-product-card-field"><span>成本价</span><strong>{money(product.costPriceCents)}</strong></div>}
               <div className="customer-product-card-field"><span>最近报价</span><strong>{money(product.latestQuoteCents)}</strong></div>
               <div className="customer-product-card-field"><span>最终价格</span><strong>{money(product.finalPriceCents)}</strong></div>
               <div className="customer-product-card-field"><span>运费/箱</span><strong style={product.freightPerBoxCents == null ? { color: '#b45309' } : undefined}>{product.freightPerBoxCents == null ? '未设置' : `¥${(product.freightPerBoxCents / 100).toFixed(2)}`}</strong></div>
