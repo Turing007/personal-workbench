@@ -412,9 +412,12 @@ describe('按客户维护的产品 API', () => {
     const customer = await createCustomer(app, '张三');
     const created = await createCustomerProduct(app, customer.id, productInput('专用产品', '标准', {
       remark: '客户指定蓝色包装，出货前拍照确认',
+      labelRequirement: '外箱贴条码箱唛',
     }));
     expect(created).toMatchObject({
       remark: '客户指定蓝色包装，出货前拍照确认',
+      // 备注与箱唛要求各存各的：备注只给内部看，要求才会带到箱面上。
+      labelRequirement: '外箱贴条码箱唛',
       attachments: [],
     });
 

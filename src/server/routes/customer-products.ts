@@ -103,6 +103,7 @@ function parseProductInput(value: unknown): CustomerProductSaveInput {
     costPriceCents: body.costPriceCents as number | null,
     freightPerBoxCents: body.freightPerBoxCents as number | null,
     remark: body.remark as string | undefined,
+    labelRequirement: body.labelRequirement as string | undefined,
     packaging: body.packaging as CustomerProductSaveInput['packaging'],
     imageRelativePath: body.imageRelativePath as string | null | undefined,
   };
@@ -203,6 +204,7 @@ export async function registerCustomerProductRoutes(
         costPriceCents: (body.costPriceCents ?? null) as number | null,
         freightPerBoxCents: (body.freightPerBoxCents ?? null) as number | null,
         remark: typeof body.remark === 'string' ? body.remark : undefined,
+        labelRequirement: typeof body.labelRequirement === 'string' ? body.labelRequirement : undefined,
         packaging: body.packaging as CustomerProductSaveInput['packaging'],
       },
     );

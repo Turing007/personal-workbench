@@ -39,7 +39,10 @@ export interface CustomerProduct {
   finalPriceCents: number | null;
   costPriceCents: number | null;
   freightPerBoxCents: number | null;
+  /** 备注：只给自己看的内部信息（含税运、单价话术等），永远不会印到箱唛上。 */
   remark: string;
+  /** 箱唛要求：要印在箱面上的作业指令（贴条码箱唛、机器套气泡袋等），开单时带到订单行并出现在箱唛上。 */
+  labelRequirement: string;
   packaging: CustomerProductPackaging[];
   attachments: CustomerProductAttachment[];
   completionStatus: CustomerProductCompletionStatus;
@@ -62,6 +65,7 @@ export interface CustomerProductSaveInput {
   costPriceCents?: number | null;
   freightPerBoxCents?: number | null;
   remark?: string;
+  labelRequirement?: string;
   packaging?: CustomerProductPackaging[];
   imageRelativePath?: string | null;
 }
@@ -80,6 +84,7 @@ export interface CustomerProductBatchSaveInput {
   costPriceCents?: number | null;
   freightPerBoxCents?: number | null;
   remark?: string;
+  labelRequirement?: string;
   packaging?: CustomerProductPackaging[];
 }
 
@@ -171,4 +176,13 @@ export function getCustomerProductCompletionStatus(
     && Number(input.finalPriceCents) >= 0
     ? 'complete'
     : 'incomplete';
+}
+
+/**
+ * 箱唛上要印的文字：只取「箱唛要求」。
+ * 历史数据把要求写在备注里，所以要求为空时回退备注，避免老订单的箱唛突然少一行；
+ * 一旦数据分拣完成（要求填好、内部信息留在备注），回退分支自然不再命中。
+ */
+export function cartonLabelRequirement(value: { labelRequirement?: string | null; remark?: string | null }): string {
+  return value.labelRequirement?.trim() || value.remark?.trim() || '';
 }

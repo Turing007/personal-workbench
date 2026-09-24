@@ -13,6 +13,7 @@ import { FINANCE_PAYMENT_STATUS_LABELS, INVOICE_STATUS_LABELS, type FinancePayme
 import { ORDER_SETTLEMENT_LABELS, invoiceDisplayLabel, isPersonalSettlement } from '../../shared/settlement';
 import { formatDateTime } from '../../shared/formatters';
 import type { Customer, CustomerSaveInput } from '../../shared/customers';
+import { cartonLabelRequirement } from '../../shared/customers';
 import { useIsNarrow } from '../use-is-narrow';
 import { useHideOnScroll } from '../use-hide-on-scroll';
 
@@ -110,7 +111,7 @@ export function fallbackLabels(order: OrderDraft): CartonLabel[] {
     spec: item.specification,
     quantity: Math.max(1, Math.trunc(item.quantity)),
     packSizes: (item.packaging?.map((pack) => Math.max(1, Math.trunc(pack.packSize))) ?? [Math.max(1, Math.trunc(item.packSize))]),
-    remark: item.remark,
+    remark: cartonLabelRequirement(item),
     orderRemark: order.orderDetail,
   })));
   return packed.map((box) => {

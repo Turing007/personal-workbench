@@ -156,6 +156,7 @@ function parseOrderInput(value: unknown, options: { allowEmptyOrderNo?: boolean 
         freightPerBoxCents: optionalCents(item.freightPerBoxCents, `${prefix}.freightPerBoxCents`, '运费/箱'),
         packaging: parsePackaging(item.packaging, `${prefix}.packaging`),
         remark: optionalText(item.remark, `${prefix}.remark`, '产品备注'),
+        labelRequirement: optionalText(item.labelRequirement, `${prefix}.labelRequirement`, '箱唛要求'),
       };
     }),
   };

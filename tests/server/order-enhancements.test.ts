@@ -809,4 +809,29 @@ describe('订单草稿', () => {
     await app.close();
     database.close();
   });
+
+  it('箱唛只印「箱唛要求」，价格类内部备注不会印到箱面上', async () => {
+    const { app, database } = await makeContext();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      payload: orderInput({
+        items: [
+          { name: '吸尘器', sku: 'VT-REQ', specification: '120W', packagingName: '彩盒包装', packCount: 10, quantity: 20, remark: '整箱拿 单价100包邮', labelRequirement: '外箱贴条码箱唛' },
+          { name: '水枪', sku: 'VT-LEGACY', specification: '有刷', packagingName: '纸箱', packCount: 10, quantity: 10, remark: '机器套气泡袋' },
+        ],
+      }),
+    });
+    expect(created.statusCode).toBe(201);
+    const orderId = Number(created.json().data.id);
+    const labels = await app.inject({ method: 'GET', url: `/api/orders/${orderId}/labels` });
+    expect(labels.statusCode).toBe(200);
+    const lines = (labels.json().data.labels as Array<{ lines?: Array<Record<string, unknown>> }>).flatMap((label) => label.lines ?? []);
+    // 填了要求：只印要求，价格话术留在内部
+    expect(lines.find((line) => line.sku === 'VT-REQ')?.remark).toBe('外箱贴条码箱唛');
+    // 历史数据只有备注：回退打印，老订单箱唛不至于突然少一行
+    expect(lines.find((line) => line.sku === 'VT-LEGACY')?.remark).toBe('机器套气泡袋');
+    await app.close();
+    database.close();
+  });
 });

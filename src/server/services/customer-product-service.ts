@@ -123,6 +123,7 @@ export class CustomerProductService {
       costPriceCents: input.costPriceCents,
       freightPerBoxCents: input.freightPerBoxCents,
       remark: input.remark,
+      labelRequirement: input.labelRequirement,
       packaging: input.packaging,
     });
     const conflicts = items.filter((item) => this.repository.findTemporary(customerId, item.name, item.specification));
@@ -285,6 +286,9 @@ function normalizeInput(input: CustomerProductSaveInput): CustomerProductSaveInp
     remark: input.remark === undefined
       ? undefined
       : normalizeText(input.remark, 'remark', '备注'),
+    labelRequirement: input.labelRequirement === undefined
+      ? undefined
+      : normalizeText(input.labelRequirement, 'labelRequirement', '箱唛要求'),
     imageRelativePath: normalizeOptionalImagePath(input.imageRelativePath),
   };
 }

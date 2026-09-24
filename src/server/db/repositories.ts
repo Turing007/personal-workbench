@@ -6,6 +6,7 @@ import { OrderNumberService } from '../services/order-number-service.js';
 import { autoPack, type PackedBox } from '../../shared/packing.js';
 import { calculateOutstandingCents, deriveFinancePaymentStatus } from '../../shared/finance.js';
 import { DEFAULT_PRODUCT_IMAGE_CATEGORY } from '../../shared/product-image-categories.js';
+import { cartonLabelRequirement } from '../../shared/customers.js';
 
 type SqlValue = string | number | null;
 
@@ -67,7 +68,10 @@ export interface OrderItemInput {
   amountCents?: number;
   freightPerBoxCents?: number;
   packaging?: PackagingInput[];
+  /** 备注：内部信息，不会印到箱唛上。 */
   remark?: string;
+  /** 箱唛要求：要印在箱面上的作业指令。 */
+  labelRequirement?: string;
 }
 
 export interface OrderAttachmentInput {
@@ -637,9 +641,9 @@ export class DatabaseRepositories {
       const insertItem = database.prepare(
         `INSERT INTO order_items
           (order_id, customer_product_id, name, sku, specification, packaging_name, pack_count, quantity,
-           unit_price_cents, amount_cents, freight_per_box_cents, remark,
+           unit_price_cents, amount_cents, freight_per_box_cents, remark, label_requirement,
            sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const insertBoxSize = database.prepare(
         `INSERT INTO order_item_box_sizes
@@ -674,6 +678,7 @@ export class DatabaseRepositories {
             item.amountCents ?? Math.round(item.quantity * (item.unitPriceCents ?? 0)),
             item.freightPerBoxCents ?? 0,
             item.remark ?? '',
+            item.labelRequirement ?? '',
             itemIndex,
             timestamp,
             timestamp,
@@ -754,9 +759,9 @@ export class DatabaseRepositories {
       const insertItem = database.prepare(
         `INSERT INTO order_items
           (order_id, customer_product_id, name, sku, specification, packaging_name, pack_count, quantity,
-           unit_price_cents, amount_cents, freight_per_box_cents, remark,
+           unit_price_cents, amount_cents, freight_per_box_cents, remark, label_requirement,
            sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const insertBoxSize = database.prepare(
         `INSERT INTO order_item_box_sizes
@@ -791,6 +796,7 @@ export class DatabaseRepositories {
             item.amountCents ?? Math.round(item.quantity * (item.unitPriceCents ?? 0)),
             item.freightPerBoxCents ?? 0,
             item.remark ?? '',
+            item.labelRequirement ?? '',
             itemIndex,
             timestamp,
             timestamp,
@@ -881,7 +887,7 @@ export class DatabaseRepositories {
         spec: item.specification ?? '',
         quantity: Math.trunc(item.quantity),
         packSizes: sizes.length ? sizes : [Math.max(1, Math.trunc(item.packCount ?? 1))],
-        remark: item.remark ?? '',
+        remark: cartonLabelRequirement(item),
         orderRemark: orderDetail,
       };
     }));

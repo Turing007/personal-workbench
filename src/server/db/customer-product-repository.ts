@@ -24,6 +24,7 @@ interface CustomerProductRow extends Record<string, unknown> {
   freight_per_box_cents: number | null;
   packaging_json: string | null;
   remark: string;
+  label_requirement: string;
   attachments_json: string | null;
   source_quotation_id: number | null;
   image_relative_path: string | null;
@@ -60,6 +61,7 @@ const customerProductSelect = `
     cp.freight_per_box_cents,
     cp.packaging_json,
     cp.remark,
+    cp.label_requirement,
     cp.source_quotation_id,
     cp.image_relative_path,
     COALESCE(
@@ -104,6 +106,7 @@ function mapCustomerProduct(row: CustomerProductRow | undefined): CustomerProduc
     costPriceCents: row.cost_price_cents == null ? null : Number(row.cost_price_cents),
     freightPerBoxCents: row.freight_per_box_cents == null ? null : Number(row.freight_per_box_cents),
     remark: String(row.remark ?? ''),
+    labelRequirement: String(row.label_requirement ?? ''),
     packaging: parsePackaging(row.packaging_json),
     attachments: parseAttachments(row.attachments_json, Number(row.id)),
     completionStatus: 'incomplete',
@@ -179,8 +182,8 @@ export class CustomerProductRepository {
     const result = this.database.prepare(`
       INSERT INTO customer_products
         (customer_id, system_product_id, name, supplier_product_name, specification, sku, pack_count,
-         final_price_cents, cost_price_cents, freight_per_box_cents, packaging_json, image_relative_path, remark, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         final_price_cents, cost_price_cents, freight_per_box_cents, packaging_json, image_relative_path, remark, label_requirement, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       customerId,
       input.systemProductId ?? null,
@@ -195,6 +198,7 @@ export class CustomerProductRepository {
       JSON.stringify(input.packaging ?? []),
       input.imageRelativePath ?? null,
       input.remark ?? '',
+      input.labelRequirement ?? '',
       timestamp,
       timestamp,
     );
@@ -207,8 +211,8 @@ export class CustomerProductRepository {
       const insert = database.prepare(`
         INSERT INTO customer_products
           (customer_id, system_product_id, name, supplier_product_name, specification, sku, pack_count,
-           final_price_cents, cost_price_cents, freight_per_box_cents, packaging_json, image_relative_path, remark, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           final_price_cents, cost_price_cents, freight_per_box_cents, packaging_json, image_relative_path, remark, label_requirement, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       const created: CustomerProduct[] = [];
       for (const input of inputs) {
@@ -227,6 +231,7 @@ export class CustomerProductRepository {
           JSON.stringify(input.packaging ?? []),
           input.imageRelativePath ?? null,
           input.remark ?? '',
+          input.labelRequirement ?? '',
           timestamp,
           timestamp,
         );
@@ -241,7 +246,7 @@ export class CustomerProductRepository {
     const result = this.database.prepare(`
       UPDATE customer_products
       SET name = ?, supplier_product_name = ?, specification = ?, sku = ?, pack_count = ?, final_price_cents = ?,
-          cost_price_cents = ?, freight_per_box_cents = ?, packaging_json = ?, image_relative_path = ?, remark = ?, updated_at = ?
+          cost_price_cents = ?, freight_per_box_cents = ?, packaging_json = ?, image_relative_path = ?, remark = ?, label_requirement = ?, updated_at = ?
       WHERE id = ?
     `).run(
       input.name,
@@ -255,6 +260,7 @@ export class CustomerProductRepository {
       JSON.stringify(input.packaging ?? existing?.packaging ?? []),
       input.imageRelativePath === undefined ? existing?.imageRelativePath ?? null : input.imageRelativePath,
       input.remark ?? existing?.remark ?? '',
+      input.labelRequirement ?? existing?.labelRequirement ?? '',
       new Date().toISOString(),
       id,
     );
@@ -282,8 +288,8 @@ export class CustomerProductRepository {
     const result = this.database.prepare(`
       INSERT INTO customer_products
         (customer_id, system_product_id, name, supplier_product_name, specification, sku, pack_count,
-         final_price_cents, cost_price_cents, freight_per_box_cents, packaging_json, image_relative_path, remark, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         final_price_cents, cost_price_cents, freight_per_box_cents, packaging_json, image_relative_path, remark, label_requirement, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       customerId,
       product.id,
@@ -298,6 +304,7 @@ export class CustomerProductRepository {
       JSON.stringify(overrides?.packaging ?? parsePackaging(product.packaging_json)),
       overrides?.imageRelativePath ?? product.image_relative_path,
       overrides?.remark ?? '',
+      overrides?.labelRequirement ?? '',
       timestamp,
       timestamp,
     );

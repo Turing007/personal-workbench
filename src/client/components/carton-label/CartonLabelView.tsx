@@ -76,7 +76,7 @@ export default function CartonLabelView({ label, mode = 'preview' }: CartonLabel
             {rows.map((line) => <tr key={line.id}>
               {[line.sku, line.name, line.specification, label.isTail ? line.quantity : line.packSize, line.boxCount ?? 1, line.totalQuantity ?? line.quantity].map((value, index) => <td key={index} style={{ ...cellStyle, fontWeight: index >= 3 ? 800 : 700 }}>{text(value)}</td>)}
             </tr>)}
-            {rows.map((line) => line.remark ? <tr key={`${line.id}-remark`}><td colSpan={6} style={{ ...cellStyle, textAlign: 'left', fontSize: print ? '0.18cm' : 8, fontWeight: 400 }}>SKU备注：{line.remark}</td></tr> : null)}
+            {rows.map((line) => line.remark ? <tr key={`${line.id}-remark`}><td colSpan={6} style={{ ...cellStyle, textAlign: 'left', fontSize: print ? '0.18cm' : 8, fontWeight: 400 }}>箱唛要求：{line.remark}</td></tr> : null)}
           </tbody>
         </table>
       </div>

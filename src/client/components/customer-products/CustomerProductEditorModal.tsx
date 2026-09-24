@@ -111,6 +111,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
   const [costPrice, setCostPrice] = useState('');
   const [freightPerBox, setFreightPerBox] = useState('');
   const [remark, setRemark] = useState('');
+  const [labelRequirement, setLabelRequirement] = useState('');
   const [packaging, setPackaging] = useState<ReturnType<typeof systemPackaging>>([]);
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [attachments, setAttachments] = useState<CustomerProductAttachmentDraft[]>([]);
@@ -145,6 +146,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
     setCostPrice(product?.costPriceCents == null ? '' : (product.costPriceCents / 100).toFixed(2));
     setFreightPerBox(product?.freightPerBoxCents == null ? '' : (product.freightPerBoxCents / 100).toFixed(2));
     setRemark(product?.remark ?? '');
+    setLabelRequirement(product?.labelRequirement ?? '');
     setPackaging(packagingToEditor(product?.packaging));
     setImages(product?.imageRelativePath ? [{ id: product.imageRelativePath, name: '客户产品图片', url: `/files/${product.imageRelativePath}` }] : []);
     setAttachments(enableAttachments ? (product?.attachments ?? []).map((attachment) => ({
@@ -194,7 +196,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
     setPackCount(next.packCount == null ? '' : String(next.packCount));
     setCostPrice(next.purchasePrice ? String(next.purchasePrice) : '');
     setFreightPerBox('');
-    setRemark(next.remark ?? '');
+    setRemark(next.remark ?? ''); setLabelRequirement('');
     setPackaging(systemPackaging(next.packaging));
     const image = next.images[0];
     setImages(image ? [{ id: image.id, name: image.name, url: image.url }] : []);
@@ -276,7 +278,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
           finalPriceCents: price,
           costPriceCents: cost,
           freightPerBoxCents: freight,
-          remark: remark.trim(),
+          remark: remark.trim(), labelRequirement: labelRequirement.trim(),
           packaging: packagingPayloadInput(),
         }, batch.imageFiles);
       } else {
@@ -380,7 +382,8 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
         <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>最终价格（元）<input type="number" min={0} step="0.01" value={finalPrice} onChange={(event) => setFinalPrice(event.target.value)} style={inputStyle} placeholder="待完善" /></label>
         <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>运费（元/箱）<input type="number" min={0} step="0.01" value={freightPerBox} onChange={(event) => setFreightPerBox(event.target.value)} style={inputStyle} placeholder="可选" /></label>
       </div>
-      <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>产品备注<textarea rows={3} value={remark} onChange={(event) => setRemark(event.target.value)} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} placeholder="记录客户专用要求、交期、材质或报价说明" /></label>
+      <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>箱唛要求（会印在箱面上）<textarea rows={2} value={labelRequirement} onChange={(event) => setLabelRequirement(event.target.value)} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} placeholder="只写要让仓库/工厂照做并印上箱子的话，如：外箱贴条码箱唛、机器套气泡袋" /></label>
+      <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>备注（仅内部可见，不打印）<textarea rows={3} value={remark} onChange={(event) => setRemark(event.target.value)} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} placeholder="价格、税运、结算等内部信息写这里；要印到箱子上的请填上面的「箱唛要求」" /></label>
       {selectedSystemProduct && <div style={{ color: '#64748b', fontSize: 11 }}>已从系统产品库带入基础信息，可继续修改后保存。</div>}
       <PackagingTable value={packaging} onChange={setPackaging} compact showPurchasePrice={false} showImages={false} />
       {!batchMode && <>
