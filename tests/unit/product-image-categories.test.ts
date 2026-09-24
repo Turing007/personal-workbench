@@ -24,7 +24,7 @@ describe('产品图片分类', () => {
     expect(PRODUCT_IMAGE_CATEGORY_OPTIONS[1]).toEqual({ value: 'dimension', label: '尺寸图' });
   });
 
-  it('只认已知分类，历史数据与脏值一律回落到产品图', () => {
+  it('只认已知分类，历史数据与脏值一律回落到精修图（product）', () => {
     expect(isProductImageCategory('customer')).toBe(true);
     expect(isProductImageCategory('')).toBe(false);
     expect(isProductImageCategory(undefined)).toBe(false);
@@ -34,7 +34,7 @@ describe('产品图片分类', () => {
     expect(normalizeProductImageCategory(undefined)).toBe('product');
     expect(normalizeProductImageCategory('未知分类')).toBe('product');
     expect(productImageCategoryLabel('other')).toBe('其他');
-    expect(productImageCategoryLabel(null)).toBe('产品图');
+    expect(productImageCategoryLabel(null)).toBe('精修图');
   });
 
   it('备注长度上限为 200 字', () => {

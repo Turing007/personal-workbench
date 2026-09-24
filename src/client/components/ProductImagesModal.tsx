@@ -1,4 +1,4 @@
-import { Check, CheckCheck, ChevronLeft, ChevronRight, Clipboard, Copy, Download, ExternalLink, Hand, Image as ImageIcon, X } from 'lucide-react';
+import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Copy, Download, ExternalLink, Folder, Hand, Image as ImageIcon, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Modal from './Modal';
@@ -19,7 +19,6 @@ export interface ProductImagesModalProps {
   onClose: () => void;
 }
 
-const ALL_CATEGORIES = 'all';
 const COARSE_POINTER_QUERY = '(pointer: coarse)';
 
 /** 是否触摸输入：带触摸屏的 Windows 桌面同样为 true，需再叠加窄屏才是手机/平板。 */
@@ -103,7 +102,7 @@ async function toClipboardBlob(blob: Blob) {
 export default function ProductImagesModal({ open, productName = '产品', images, onClose }: ProductImagesModalProps) {
   const [previewId, setPreviewId] = useState(images[0]?.id ?? '');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(images[0] ? [images[0].id] : []));
-  const [categoryFilter, setCategoryFilter] = useState<string>(ALL_CATEGORIES);
+  const [collapsedFolders, setCollapsedFolders] = useState<string[]>([]);
   const [copying, setCopying] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [copyMessage, setCopyMessage] = useState('');
@@ -167,7 +166,7 @@ export default function ProductImagesModal({ open, productName = '产品', image
     const firstId = images[0]?.id ?? '';
     setPreviewId(firstId);
     setSelectedIds(firstId ? new Set([firstId]) : new Set());
-    setCategoryFilter(ALL_CATEGORIES);
+    setCollapsedFolders([]);
     setCopyMessage('');
     setViewerOpen(false);
     // 上一次未存完的批次跟着作废，否则换了产品还会继续往相册里塞旧图。
@@ -177,7 +176,7 @@ export default function ProductImagesModal({ open, productName = '产品', image
     setSavingProgress('');
   }, [open, images]);
 
-  // 只展示实际有图的分类，避免出现点了空白的分段项。
+  // 只展示实际有图的分类文件夹，避免出现点开全空的块。
   const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const image of images) {
@@ -187,12 +186,7 @@ export default function ProductImagesModal({ open, productName = '产品', image
     return counts;
   }, [images]);
 
-  const visibleImages = useMemo(
-    () => (categoryFilter === ALL_CATEGORIES
-      ? images
-      : images.filter((image) => normalizeProductImageCategory(image.category) === categoryFilter)),
-    [images, categoryFilter],
-  );
+  const visibleImages = images;
 
   const selectedImage = visibleImages.find((image) => image.id === previewId) ?? visibleImages[0];
   const previewIndex = selectedImage ? visibleImages.findIndex((image) => image.id === selectedImage.id) : -1;
@@ -207,17 +201,6 @@ export default function ProductImagesModal({ open, productName = '产品', image
     setViewerIndex(start >= 0 ? start : 0);
     setCopyMessage('');
     setViewerOpen(true);
-  };
-
-  const changeCategoryFilter = (value: string) => {
-    setCategoryFilter(value);
-    const next = value === ALL_CATEGORIES
-      ? images
-      : images.filter((image) => normalizeProductImageCategory(image.category) === value);
-    // 切换分类后清空选择，避免"已选"里混着当前看不到的图片。
-    setPreviewId(next[0]?.id ?? '');
-    setSelectedIds(new Set());
-    setCopyMessage('');
   };
 
   const goPreview = (offset: number) => {
@@ -321,20 +304,12 @@ export default function ProductImagesModal({ open, productName = '产品', image
     }
   };
 
-  const showCategoryFilter = categoryCounts.size > 1;
-
   return (
     <Modal open={open} title={`${productName} · 全部图片`} onClose={onClose} width={820}>
       {!images.length ? (
         <div className="product-images-empty"><ImageIcon size={28} /><span>暂无产品图片</span></div>
       ) : (
         <div className="product-images-content">
-          {showCategoryFilter && <div className="segmented product-images-filter">{[
-            { value: ALL_CATEGORIES, label: `全部 ${images.length}` },
-            ...PRODUCT_IMAGE_CATEGORY_SEQUENCE
-              .filter((category) => categoryCounts.has(category))
-              .map((category) => ({ value: category as string, label: `${PRODUCT_IMAGE_CATEGORY_LABELS[category]} ${categoryCounts.get(category) ?? 0}` })),
-          ].map((option) => <button key={option.value} className={`segmented-item${categoryFilter === option.value ? ' is-active' : ''}`} type="button" onClick={() => changeCategoryFilter(option.value)}>{option.label}</button>)}</div>}
           <div className="product-images-preview-wrap">
             <div className="product-images-preview">
               {selectedImage && <img src={selectedImage.url} alt={selectedImage.name} draggable={false} />}
@@ -355,26 +330,51 @@ export default function ProductImagesModal({ open, productName = '产品', image
                 {allSelected ? '取消全选' : '全选'}
               </button>
             </div>
-            <div className="product-images-thumbnails" aria-label="产品图片列表">
-              {visibleImages.map((image) => {
-                const selected = selectedIds.has(image.id);
-                const previewing = image.id === selectedImage?.id;
-                return (
-                  <button
-                    key={image.id}
-                    className={`product-image-thumbnail${selected ? ' is-selected' : ''}${previewing ? ' is-previewing' : ''}`}
-                    type="button"
-                    title={`${PRODUCT_IMAGE_CATEGORY_LABELS[normalizeProductImageCategory(image.category)]}：${image.name}${image.note?.trim() ? ` · ${image.note}` : ''}`}
-                    aria-label={`选择图片：${image.name}`}
-                    aria-pressed={selected}
-                    onClick={() => toggleImage(image)}
-                  >
-                    <img src={thumbUrl(image.url, 240)} alt="" loading="lazy" decoding="async" />
-                    <span className="product-image-thumbnail-category">{PRODUCT_IMAGE_CATEGORY_LABELS[normalizeProductImageCategory(image.category)]}</span>
-                    {selected && <Check size={13} />}
-                  </button>
-                );
-              })}
+            <div className="image-folder-list" aria-label="产品图片列表">
+              {PRODUCT_IMAGE_CATEGORY_SEQUENCE
+                .filter((category) => categoryCounts.has(category))
+                .map((category) => {
+                  const folderImages = images.filter((image) => normalizeProductImageCategory(image.category) === category);
+                  const collapsed = collapsedFolders.includes(category);
+                  return (
+                    <section key={category} className="image-folder">
+                      <button
+                        type="button"
+                        className={collapsed ? 'image-folder-header is-collapsed' : 'image-folder-header'}
+                        aria-expanded={!collapsed}
+                        onClick={() => setCollapsedFolders((current) => current.includes(category) ? current.filter((item) => item !== category) : [...current, category])}
+                      >
+                        <Folder size={13} />
+                        <span>{PRODUCT_IMAGE_CATEGORY_LABELS[category]}</span>
+                        <span className="image-folder-count">{folderImages.length} 张</span>
+                        <ChevronDown size={13} className="image-folder-chevron" />
+                      </button>
+                      {!collapsed && (
+                        <div className="product-images-thumbnails">
+                          {folderImages.map((image) => {
+                            const selected = selectedIds.has(image.id);
+                            const previewing = image.id === selectedImage?.id;
+                            return (
+                              <button
+                                key={image.id}
+                                className={`product-image-thumbnail${selected ? ' is-selected' : ''}${previewing ? ' is-previewing' : ''}`}
+                                type="button"
+                                title={`${PRODUCT_IMAGE_CATEGORY_LABELS[normalizeProductImageCategory(image.category)]}：${image.name}${image.note?.trim() ? ` · ${image.note}` : ''}`}
+                                aria-label={`选择图片：${image.name}`}
+                                aria-pressed={selected}
+                                onClick={() => toggleImage(image)}
+                              >
+                                <img src={thumbUrl(image.url, 240)} alt="" loading="lazy" decoding="async" />
+                                <span className="product-image-thumbnail-category">{PRODUCT_IMAGE_CATEGORY_LABELS[normalizeProductImageCategory(image.category)]}</span>
+                                {selected && <Check size={13} />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
             </div>
             {touchDevice ? (
               <button

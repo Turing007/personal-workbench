@@ -131,7 +131,8 @@ test.describe('手机端：系统选图/拍照回来的文件拿不到可靠 MIM
     await openProducts(page, true);
     await openProductEditor(page);
 
-    const tile = page.locator('.product-editor .image-upload-empty');
+    // 图片墙已按分类分文件夹，每个文件夹有自己的磁贴；这里统一锚定第一个文件夹（精修图）的磁贴。
+    const tile = page.locator('.product-editor .image-upload-empty').first();
     await expect(tile).toBeVisible();
     // 磁贴在弹窗底部，elementFromPoint 只认视口内的坐标，先滚到可见区域再量命中点。
     await tile.scrollIntoViewIfNeeded();
@@ -223,7 +224,7 @@ test.describe('App 内：原生选文件桥（WebView file input 激活链失效
     let webViewChooserOpened = false;
     page.on('filechooser', () => { webViewChooserOpened = true; });
 
-    const tile = page.locator('.product-editor .image-upload-empty');
+    const tile = page.locator('.product-editor .image-upload-empty').first();
     await tile.scrollIntoViewIfNeeded();
     await tile.click();
     await expect(page.locator('.product-editor .image-card')).toHaveCount(1);
@@ -259,7 +260,7 @@ test.describe('App 内：原生选文件桥（WebView file input 激活链失效
     await openProducts(page, true);
     await openProductEditor(page);
 
-    const tile = page.locator('.product-editor .image-upload-empty');
+    const tile = page.locator('.product-editor .image-upload-empty').first();
     await tile.scrollIntoViewIfNeeded();
     const [chooser] = await Promise.all([
       page.waitForEvent('filechooser'),

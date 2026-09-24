@@ -1,5 +1,5 @@
 /**
- * 产品图片分类：按产品归档尺寸图、包装成品图、客拍图，后续同款产品可直接复用。
+ * 产品图片分类：按产品归档精修图、尺寸图、包装成品图、实拍图，后续同款产品可直接复用。
  * 服务端校验与前端下拉共用这份定义，避免两边各写一份标签。
  */
 export const PRODUCT_IMAGE_CATEGORY_SEQUENCE = ['product', 'dimension', 'packaging', 'customer', 'other'] as const;
@@ -7,10 +7,10 @@ export const PRODUCT_IMAGE_CATEGORY_SEQUENCE = ['product', 'dimension', 'packagi
 export type ProductImageCategory = (typeof PRODUCT_IMAGE_CATEGORY_SEQUENCE)[number];
 
 export const PRODUCT_IMAGE_CATEGORY_LABELS: Record<ProductImageCategory, string> = {
-  product: '产品图',
+  product: '精修图',
   dimension: '尺寸图',
   packaging: '包装图',
-  customer: '客拍图',
+  customer: '实拍图',
   other: '其他',
 };
 
