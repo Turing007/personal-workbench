@@ -32,6 +32,14 @@ export const ORDER_STATUS_LABELS_WITH_DRAFT: Record<AnyOrderStatus, string> = {
   [ORDER_DRAFT_STATUS]: '草稿',
 };
 
+/**
+ * 发货工作区可见范围：只要还没发货就能进来提前录物流单号。
+ * 草稿不算（信息可能不全），已发货排除；真正「确认发货」仍只对 ship_pending 生效。
+ */
+export function isUnshippedStatus(status: unknown): boolean {
+  return status !== ORDER_DRAFT_STATUS && status !== 'shipped';
+}
+
 export function isDraftStatus(status: unknown): status is typeof ORDER_DRAFT_STATUS {
   return status === ORDER_DRAFT_STATUS;
 }

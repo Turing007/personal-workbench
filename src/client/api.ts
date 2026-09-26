@@ -695,6 +695,8 @@ export function recordPrintHistory(orderIds: number[], labels: unknown[], action
 export interface ShippingBatch { id: number; batchNo: string; status: string; orderIds: number[]; text: string; }
 export function getEligibleOrders() { return request<{ rows: ApiOrderRow[] }>('/api/shipping/eligible-orders'); }
 export function createShippingBatch(orderIds: number[]) { return request<ShippingBatch>('/api/shipping/batches', { method: 'POST', body: JSON.stringify({ orderIds }) }); }
+export function updateOrderTracking(id: number | string, trackingNo: string) { return request<{ id: number; trackingNo: string }>(`/api/orders/${id}/tracking`, { method: 'PATCH', body: JSON.stringify({ trackingNo }) }); }
+
 export function updateShippingTracking(batchId: number, orderId: number, trackingNo: string) { return request(`/api/shipping/batches/${batchId}/orders/${orderId}`, { method: 'PUT', body: JSON.stringify({ trackingNo }) }); }
 export function getShippingBatchText(batchId: number) { return request<{ text: string }>(`/api/shipping/batches/${batchId}/text`); }
 export function confirmShippingBatch(batchId: number) { return request(`/api/shipping/batches/${batchId}/confirm`, { method: 'POST' }); }

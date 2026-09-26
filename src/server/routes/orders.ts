@@ -405,6 +405,17 @@ export async function registerOrderRoutes(app: FastifyInstance, options: OrderRo
     }, reply),
   );
 
+  // 只回填物流单号，不推进状态：发货工作区允许给还没到「待发货」的订单先把单号存下来。
+  app.patch('/api/orders/:id/tracking', async (request: FastifyRequest<{ Params: IdParams }>, reply) =>
+    safeRoute(() => {
+      const orderId = parseId(request.params.id);
+      if (!service.get(orderId)) throw new ApiError(404, 'NOT_FOUND', '订单不存在');
+      const trackingNo = optionalText(asRecord(request.body).trackingNo, 'trackingNo', '物流单号');
+      options.repositories.updateOrderTracking(orderId, trackingNo);
+      return sendSuccess(reply, { id: orderId, trackingNo });
+    }, reply),
+  );
+
   app.get('/api/orders/:id/payment-proofs', async (request: FastifyRequest<{ Params: IdParams }>, reply) =>
     safeRoute(() => {
       const orderId = parseId(request.params.id);

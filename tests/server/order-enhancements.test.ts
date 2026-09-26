@@ -834,4 +834,18 @@ describe('订单草稿', () => {
     await app.close();
     database.close();
   });
+
+  it('只回填物流单号不会推进订单状态，订单不存在时给 404', async () => {
+    const { app, database } = await makeContext();
+    const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput() });
+    const orderId = Number(created.json().data.id);
+    const patched = await app.inject({ method: 'PATCH', url: `/api/orders/${orderId}/tracking`, payload: { trackingNo: '  SF123456  ' } });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json().data).toMatchObject({ trackingNo: 'SF123456' });
+    expect(database.prepare('SELECT status, tracking_no FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'pending_stock', tracking_no: 'SF123456' });
+    const missing = await app.inject({ method: 'PATCH', url: '/api/orders/999999/tracking', payload: { trackingNo: 'SF1' } });
+    expect(missing.statusCode).toBe(404);
+    await app.close();
+    database.close();
+  });
 });

@@ -61,9 +61,11 @@ import {
   importProducts,
   createShippingBatch,
   updateShippingTracking,
+  updateOrderTracking,
   confirmShippingBatch,
 } from './api';
 import type { ApiOrderDetail, ApiOrderRow, AuthUser } from './api';
+import { isUnshippedStatus } from '../shared/domain';
 
 function createId(prefix: string) { return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 
@@ -555,14 +557,31 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     } catch (error) { notify((error as { message?: string }).message ?? '打印记录失败', 'error'); throw error; }
   };
 
-  const shippingOrders = useMemo(() => orders.filter((order) => order.status === 'ship_pending'), [orders]);
+  // 发货工作区收所有未发货订单：还没推进到「待发货」的也能进来提前录物流单号。
+  const shippingOrders = useMemo(() => orders.filter((order) => isUnshippedStatus(order.status)), [orders]);
   const updateTracking = (id: string, value: string) => setOrders((current) => current.map((order) => orderKey(order) === id ? { ...order, trackingNo: value } : order));
-  const confirmShipping = async (batch: OrderDraft[]) => {
+  const saveShippingTracking = async (id: string, value: string) => {
     try {
-      const created = await createShippingBatch(batch.map((order) => Number(order.id)));
-      for (const order of batch) { if (created.id) await updateShippingTracking(created.id, Number(order.id), order.trackingNo); }
+      await updateOrderTracking(id, value);
+      return true;
+    } catch (error) {
+      notify((error as { message?: string }).message ?? '物流单号保存失败', 'error');
+      return false;
+    }
+  };
+  const confirmShipping = async (batch: OrderDraft[]) => {
+    // 只有已到「待发货」的订单能确认发货；其余单子的物流单号已单独保存，不会被这次操作带走。
+    const ready = batch.filter((order) => order.status === 'ship_pending');
+    if (!ready.length) {
+      notify('批次里还没有可确认发货的订单：需先把状态推进到「待发货」，物流单号可以先保存', 'error');
+      return;
+    }
+    try {
+      const created = await createShippingBatch(ready.map((order) => Number(order.id)));
+      for (const order of ready) { if (created.id) await updateShippingTracking(created.id, Number(order.id), order.trackingNo); }
       await confirmShippingBatch(created.id);
-      await loadOrders(); notify('发货批次已确认', 'success');
+      await loadOrders();
+      notify(ready.length === batch.length ? '发货批次已确认' : `已确认 ${ready.length} 单发货，另有 ${batch.length - ready.length} 单未到「待发货」，只保留了物流单号`, 'success');
     } catch (error) { notify((error as { message?: string }).message ?? '发货确认失败', 'error'); }
   };
 
@@ -597,7 +616,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={async (orderId) => { await loadOrders(); setOrdersInitialOrderId(orderId); navigate('orders'); }} />}
     {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} onExport={exportProductLibrary} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} />}
     {active === 'customer-products' && <CustomerProductsPage customers={customers} systemProducts={products} initialCustomerId={customerProductsInitialCustomerId ?? undefined} loading={loading} onCustomersChanged={loadCustomers} onNotify={notify} />}
-    {active === 'shipping' && <ShippingPage orders={shippingOrders} initialOrder={shippingInitialOrder} initialOrders={shippingInitialOrders} onUpdateTracking={updateTracking} onConfirm={confirmShipping} />}
+    {active === 'shipping' && <ShippingPage orders={shippingOrders} initialOrder={shippingInitialOrder} initialOrders={shippingInitialOrders} onUpdateTracking={updateTracking} onSaveTracking={saveShippingTracking} onConfirm={confirmShipping} />}
     {active === 'settings' && <SettingsPage onBackup={backup} onRestore={restore} onProfileChanged={setCompanyProfile} currentUser={user} mobileTabs={mobileTabs} onMobileTabsChange={updateMobileTabs} />}
   </main><MobileTabBar activeKey={active} tabs={mobileTabs} onNavigate={navigate} onOpenMore={() => setMobileNavOpen(true)} /><Toast messages={messages} onDismiss={(id) => setMessages((current) => current.filter((item) => item.id !== id))} /></div>;
 }

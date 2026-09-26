@@ -3870,7 +3870,25 @@ select {
 
 /* 发货工作区：桌面双栏（原先为内联样式，迁移到 CSS 以便手机端单列化） */
 .shipping-workspace { display: grid; grid-template-columns: minmax(300px, .8fr) minmax(420px, 1.2fr); gap: 14px; min-height: 480px; }
-.shipping-batch-order { grid-template-columns: minmax(0, 1fr) 160px 24px; align-items: center; gap: 8px; padding: 8px; }
+.shipping-batch-order { grid-template-columns: minmax(0, 1fr) minmax(150px, 190px) auto; align-items: center; gap: 8px; padding: 8px; }
+/* 发货工作区：收件地址整段换行显示，不用左右拖动才看得全；窄屏整列堆叠，杜绝横向滑条 */
+.shipping-available-order { display: grid; gap: 5px; padding: 9px; }
+.shipping-available-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.shipping-available-head .shipping-order-number { flex: 1 1 auto; min-width: 0; }
+.shipping-order-number { font-size: 12px; }
+.shipping-order-identity { min-width: 0; display: grid; gap: 2px; }
+.shipping-order-recipient,
+.shipping-order-address {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.shipping-order-recipient { color: var(--color-text-secondary); }
+.shipping-order-box-count { font-size: 11px; }
+.shipping-batch-actions { display: flex; align-items: center; gap: 6px; justify-self: end; }
 
 /* 客户产品页：桌面端沿用原有「客户档案 + 产品面板」双栏；≤900px 客户列表改走左侧抽屉（见下方窄屏块）。 */
 .customer-products-layout { min-height: 0; display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 10px; }
@@ -3989,8 +4007,7 @@ select {
 
   /* —— 发货工作区：双栏改单列，物流单号整行铺开 —— */
   .shipping-workspace { grid-template-columns: 1fr; min-height: 0; }
-  .shipping-batch-order { grid-template-columns: minmax(0, 1fr) 24px; }
-  .shipping-batch-order .shipping-tracking-input { grid-column: 1 / -1; }
+  .shipping-batch-order { grid-template-columns: minmax(0, 1fr); }
   .shipping-confirm-actions { flex-wrap: wrap; }
 
   /* —— 卡片操作区：手指点按 —— */

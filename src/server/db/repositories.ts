@@ -866,6 +866,14 @@ export class DatabaseRepositories {
     return Number(result.changes ?? 0) > 0;
   }
 
+  /** 只回填物流单号、不动状态：发货工作区里给未推进到「待发货」的订单提前录单号用。 */
+  updateOrderTracking(orderId: number, trackingNo: string): boolean {
+    const result = this.database
+      .prepare('UPDATE orders SET tracking_no = ?, updated_at = ? WHERE id = ?')
+      .run(trackingNo.trim(), now(), orderId);
+    return Number(result.changes ?? 0) > 0;
+  }
+
   private createAutomaticLabels(
     database: DatabaseSync,
     orderId: number,

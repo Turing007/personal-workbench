@@ -3,6 +3,7 @@ import {
   ORDER_STATUS_SEQUENCE,
   canTransition,
   getTransitionError,
+  isUnshippedStatus,
   type OrderStatus,
 } from '../../src/shared/domain';
 
@@ -42,5 +43,14 @@ describe('订单状态流转', () => {
     expect(canTransition('label_pending', 'stock_reported', { reason: 'manual' })).toBe(false);
     expect(canTransition('pending_packing', 'stock_reported', { reason: 'manual' })).toBe(false);
     expect(canTransition('shipped', 'ship_pending', { reason: 'manual' })).toBe(false);
+  });
+
+  it('发货工作区收所有未发货状态，草稿与已发货排除在外', () => {
+    for (const status of ['label_pending', 'pending_stock', 'stock_reported', 'pending_packing', 'ship_pending'] as OrderStatus[]) {
+      expect(isUnshippedStatus(status)).toBe(true);
+    }
+    expect(isUnshippedStatus('shipped')).toBe(false);
+    expect(isUnshippedStatus('draft')).toBe(false);
+    expect(isUnshippedStatus(undefined)).toBe(true); // 异常值不屏蔽入口，交由上层按状态展示
   });
 });
