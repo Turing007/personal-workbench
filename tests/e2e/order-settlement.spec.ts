@@ -12,7 +12,7 @@ test.beforeEach(async ({ context }) => {
 });
 
 test.describe('订单对公/对私结算与开票状态', () => {
-  test('订单表单默认对公，对私订单在订单页与财务模块显示无需开票', async ({ page }) => {
+  test('新建订单默认对私，对私订单在订单页与财务模块显示无需开票', async ({ page }) => {
     const stamp = Date.now();
     const name = `E2E结算客户${stamp}`;
 
@@ -45,12 +45,12 @@ test.describe('订单对公/对私结算与开票状态', () => {
     const personalOrder = await createOrder('personal');
     const corporateOrder = await createOrder('corporate');
 
-    // 订单表单：结算方式默认对公
+    // 订单表单：新建订单默认对私（历史订单仍按各自已存的值显示）
     await page.goto('/');
     await page.getByRole('button', { name: '订单管理' }).click();
     await page.getByRole('button', { name: '新建订单' }).click();
     const formDialog = page.getByRole('dialog', { name: '新建订单' });
-    await expect(formDialog.getByRole('combobox', { name: '结算方式' })).toHaveValue('corporate');
+    await expect(formDialog.getByRole('combobox', { name: '结算方式' })).toHaveValue('personal');
     await formDialog.getByRole('button', { name: '取消' }).click();
 
     // 订单页列表：对私显示无需开票，对公显示未申请
