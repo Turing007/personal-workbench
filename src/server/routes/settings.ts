@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { networkInterfaces } from 'node:os';
 import { FileStoreError } from '../files/file-store.js';
 import { normalizeContractTemplate } from '../../shared/contract.js';
+import { PACKAGING_PRESET_LIMIT } from '../../shared/packaging-presets.js';
 import { config } from '../config.js';
 import type { CompanyProfileInput, SettingsService } from '../services/settings-service.js';
 import {
@@ -131,6 +132,25 @@ export async function registerSettingsRoutes(app: FastifyInstance, options: Sett
       () => sendSuccess(reply, options.service.saveContractTemplate(parseContractTemplateInput(request.body))),
       reply,
     ),
+  );
+
+  app.get('/api/settings/packaging-presets', async (_request, reply) =>
+    safeRoute(() => sendSuccess(reply, { items: options.service.getPackagingPresets() }), reply),
+  );
+
+  app.put('/api/settings/packaging-presets', async (request, reply) =>
+    safeRoute(() => {
+      const body = asRecord(request.body);
+      if (!Array.isArray(body.items)) throw new ApiError(400, 'VALIDATION_ERROR', '包装预设数据格式不正确', 'items');
+      if (body.items.length > PACKAGING_PRESET_LIMIT) {
+        throw new ApiError(400, 'PRESET_LIMIT', `包装预设最多 ${PACKAGING_PRESET_LIMIT} 条，请先删除再添加`, 'items');
+      }
+      return sendSuccess(reply, { items: options.service.savePackagingPresets(body.items) });
+    }, reply),
+  );
+
+  app.post('/api/settings/packaging-presets/reseed', async (_request, reply) =>
+    safeRoute(() => sendSuccess(reply, { items: options.service.reseedPackagingPresets() }), reply),
   );
 
   app.post('/api/settings/company-profile/logo', async (request, reply) =>

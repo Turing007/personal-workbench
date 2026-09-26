@@ -257,6 +257,20 @@ export class DatabaseRepositories {
     }));
   }
 
+  /** 包装预设的统计原料：全库包装记录里与预设相关的几个字段。 */
+  listPackagingRowsForPresets(): Array<{ name: string; innerSize: string; outerSize: string; packSize: number; purchasePrice: string }> {
+    const rows = this.database
+      .prepare('SELECT name, inner_size, outer_size, pack_count, purchase_price FROM product_packaging')
+      .all() as Array<{ name: string | null; inner_size: string | null; outer_size: string | null; pack_count: number | null; purchase_price: number | null }>;
+    return rows.map((row) => ({
+      name: row.name ?? '',
+      innerSize: row.inner_size ?? '',
+      outerSize: row.outer_size ?? '',
+      packSize: row.pack_count ?? 1,
+      purchasePrice: row.purchase_price == null ? '' : String(row.purchase_price),
+    }));
+  }
+
   saveProduct(input: ProductInput, productId?: number) {
     const timestamp = now();
     return withTransaction(this.database, (database) => {

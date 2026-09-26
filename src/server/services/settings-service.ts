@@ -1,5 +1,10 @@
 import type { CompanySnapshot } from '../../shared/documents.js';
 import type { Readable } from 'node:stream';
+import {
+  derivePackagingPresets,
+  type PackagingPreset,
+  type PackagingSourceRow,
+} from '../../shared/packaging-presets.js';
 import { EMPTY_COMPANY_PROFILE, SettingsRepository } from '../db/settings-repository.js';
 import { FileStore } from '../files/file-store.js';
 import type { ContractTemplate } from '../../shared/contract.js';
@@ -10,7 +15,22 @@ export class SettingsService {
   constructor(
     private readonly settings: SettingsRepository,
     private readonly fileStore?: FileStore,
+    /** 全库包装记录，用于首次使用时统计出预设初值。 */
+    private readonly packagingSource?: () => PackagingSourceRow[],
   ) {}
+
+  getPackagingPresets(): PackagingPreset[] {
+    return this.settings.readPackagingPresets() ?? this.reseedPackagingPresets();
+  }
+
+  savePackagingPresets(value: unknown): PackagingPreset[] {
+    return this.settings.savePackagingPresets(value);
+  }
+
+  /** 按现有产品包装记录重算并覆盖，供设置页「从产品库重新统计」使用。 */
+  reseedPackagingPresets(): PackagingPreset[] {
+    return this.settings.savePackagingPresets(derivePackagingPresets(this.packagingSource?.() ?? []));
+  }
 
   getCompanyProfile(): CompanySnapshot {
     return this.settings.getCompanyProfile();

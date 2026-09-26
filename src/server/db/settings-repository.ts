@@ -1,6 +1,10 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { CompanySnapshot } from '../../shared/documents.js';
 import {
+  normalizePackagingPresets,
+  type PackagingPreset,
+} from '../../shared/packaging-presets.js';
+import {
   cloneDefaultContractTemplate,
   normalizeContractTemplate,
   type ContractTemplate,
@@ -10,6 +14,7 @@ const COMPANY_PROFILE_KEY = 'company_profile';
 const CONTRACT_TEMPLATE_KEY = 'contract_template';
 const AUTO_BACKUP_SETTINGS_KEY = 'auto_backup_settings';
 const TUNNEL_URL_KEY = 'tunnel_url';
+const PACKAGING_PRESETS_KEY = 'packaging_presets';
 
 export interface AutoBackupSettingsRecord {
   /** 自定义备份目录；空字符串 = 默认目录（数据目录/backups）。 */
@@ -132,6 +137,28 @@ export class SettingsRepository {
       )
       .run(TUNNEL_URL_KEY, normalized, new Date().toISOString());
     return normalized;
+  }
+
+  /** null = 从未写入过，由服务层触发一次自动统计；空数组是用户自己清空的，不再重算。 */
+  readPackagingPresets(): PackagingPreset[] | null {
+    const row = this.database.prepare('SELECT value FROM settings WHERE key = ?').get(PACKAGING_PRESETS_KEY) as { value?: string } | undefined;
+    if (!row?.value) return null;
+    try {
+      return normalizePackagingPresets(JSON.parse(row.value));
+    } catch {
+      return null;
+    }
+  }
+
+  savePackagingPresets(value: unknown): PackagingPreset[] {
+    const presets = normalizePackagingPresets(value);
+    this.database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(PACKAGING_PRESETS_KEY, JSON.stringify(presets), new Date().toISOString());
+    return presets;
   }
 }
 
