@@ -16,7 +16,7 @@ export function saveProductsView(view: ProductsView) {
   try { window.localStorage.setItem(STORAGE_KEY, view); } catch { /* 存储不可用时本次生效即可 */ }
 }
 
-/** 手机端默认大图浏览，桌面端默认列表（表格）。 */
-export function initialProductsView(narrow: boolean): ProductsView {
-  return loadProductsView() ?? (narrow ? 'gallery' : 'list');
+/** 默认进大图浏览；用户在工具条上手动切过列表就以他的选择为准（本地记住）。 */
+export function initialProductsView(): ProductsView {
+  return loadProductsView() ?? 'gallery';
 }

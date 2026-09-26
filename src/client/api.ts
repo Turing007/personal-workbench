@@ -1,6 +1,8 @@
 import type { OrderStatus } from '../shared/domain';
 import { calculateOrderAmountCents } from '../shared/order-prices';
 import { normalizeProductImageCategory } from '../shared/product-image-categories';
+import type { CatalogDensity } from '../shared/product-catalog';
+import { normalizeProductStatus } from '../shared/product-status';
 import type { PackagingPreset } from '../shared/packaging-presets';
 import type { StockPreparation } from '../shared/stock';
 import type {
@@ -231,6 +233,8 @@ function notifyAuthRequired(): void {
  * fetch 不 abort 就一直占着 WebView 每域 6 个连接名额，后续请求全部排队，表现就是「点了没反应」。
  */
 const REQUEST_TIMEOUT_MS = 30_000;
+// 整本图册要在无头浏览器里排几十页并内联上百张主图，30 秒的常规下载超时不够用。
+const PRODUCT_CATALOG_TIMEOUT_MS = 180_000;
 const UPLOAD_TIMEOUT_MS = 100_000;
 export const NETWORK_TIMEOUT_MESSAGE = '网络超时：请求没有回音，请检查手机网络后重试';
 
@@ -281,8 +285,8 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   });
 }
 
-export async function requestBlob(path: string, init: RequestInit = {}): Promise<Blob> {
-  return timedFetch(path, init, REQUEST_TIMEOUT_MS, async (response) => {
+export async function requestBlob(path: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Blob> {
+  return timedFetch(path, init, timeoutMs, async (response) => {
     if (!response.ok) {
       const text = await response.text();
       let payload: unknown = text;
@@ -366,7 +370,7 @@ export function mapProductRecord(row: ProductApiRecord): ProductRecord {
   const rawImages = row.images ?? (row as ProductApiRecord & { images_json?: Array<Record<string, unknown>> }).images_json ?? [];
   const packaging = (row.packaging ?? []).map((item) => asPackaging(item));
   const rawAttachments = row.attachments ?? [];
-  return { ...mapProduct(row), category: row.category ?? '', purchasePrice: purchasePrice == null ? '' : String(purchasePrice), supplier: row.supplier ?? '', parameters: typeof row.parameters === 'string' ? row.parameters : '', status: row.status === 'draft' ? 'draft' : 'active', colors: row.colors ?? [], batteryPlugs: row.batteryPlugs ?? [], images: rawImages.map((image) => ({ id: String(image.id ?? image.relativePath ?? image.relative_path), name: String(image.originalName ?? image.original_name ?? '产品图片'), url: `/files/${String(image.relativePath ?? image.relative_path ?? '')}`, category: normalizeProductImageCategory(image.category), note: String(image.note ?? '') })), attachments: rawAttachments.map((raw) => { const item = raw as Record<string, unknown>; const category = String(item.category ?? 'other'); const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id), category: (['manual', 'packaging-design', 'label-dieline', 'other'].includes(category) ? category : 'other') as ProductAttachmentCategory, name: String(item.originalName ?? item.original_name ?? '产品附件'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mimeType ?? item.mime_type ?? ''), size: Number(item.size ?? item.size_bytes ?? 0), createdAt: String(item.createdAt ?? item.created_at ?? '') }; }), accessories: row.accessories ?? '', remark: row.remark ?? '', packaging: packaging.length ? packaging : [asPackaging(undefined)], createdAt: String(row.createdAt ?? row.created_at ?? ''), updatedAt: String(row.updatedAt ?? row.updated_at ?? '') };
+  return { ...mapProduct(row), category: row.category ?? '', purchasePrice: purchasePrice == null ? '' : String(purchasePrice), supplier: row.supplier ?? '', parameters: typeof row.parameters === 'string' ? row.parameters : '', status: normalizeProductStatus(row.status), colors: row.colors ?? [], batteryPlugs: row.batteryPlugs ?? [], images: rawImages.map((image) => ({ id: String(image.id ?? image.relativePath ?? image.relative_path), name: String(image.originalName ?? image.original_name ?? '产品图片'), url: `/files/${String(image.relativePath ?? image.relative_path ?? '')}`, category: normalizeProductImageCategory(image.category), note: String(image.note ?? '') })), attachments: rawAttachments.map((raw) => { const item = raw as Record<string, unknown>; const category = String(item.category ?? 'other'); const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id), category: (['manual', 'packaging-design', 'label-dieline', 'other'].includes(category) ? category : 'other') as ProductAttachmentCategory, name: String(item.originalName ?? item.original_name ?? '产品附件'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mimeType ?? item.mime_type ?? ''), size: Number(item.size ?? item.size_bytes ?? 0), createdAt: String(item.createdAt ?? item.created_at ?? '') }; }), accessories: row.accessories ?? '', remark: row.remark ?? '', packaging: packaging.length ? packaging : [asPackaging(undefined)], createdAt: String(row.createdAt ?? row.created_at ?? ''), updatedAt: String(row.updatedAt ?? row.updated_at ?? '') };
 }
 
 export function draftToInput(draft: OrderDraft) {
@@ -476,6 +480,13 @@ export async function getProducts(q = '') {
 }
 export function exportProducts() { return requestBlob('/api/products/export'); }
 export function downloadProductImportTemplate() { return requestBlob('/api/products/import-template'); }
+/** 产品图册 PDF：只传 id，字段由服务端按库里的最新资料取，客户版不带供应商与价格。 */
+export function generateProductCatalog(ids: number[], density: CatalogDensity) {
+  return requestBlob('/api/products/catalog', {
+    method: 'POST',
+    body: JSON.stringify({ ids, density }),
+  }, PRODUCT_CATALOG_TIMEOUT_MS);
+}
 export async function importProducts(file: File) {
   const form = new FormData();
   form.append('file', file);
@@ -660,10 +671,14 @@ function packagingToInput(row: PackagingOption) {
   const imageIds = (row.images ?? []).filter((image) => !image.file && /^\d+$/.test(image.id)).map((image) => Number(image.id));
   return { id, imageIds, name: row.name.trim(), innerSize: row.innerSize.trim(), innerWeight: Math.max(0, Number(row.innerWeight || 0)), outerSize: row.outerSize.trim(), outerWeight: Math.max(0, Number(row.outerWeight || 0)), packCount: Math.max(1, Math.trunc(row.packSize)), purchasePrice: row.purchasePrice.trim() ? Math.max(0, Number(row.purchasePrice)) : null, outerLength, outerWidth, outerHeight };
 }
-export function productToInput(product: ProductRecord) { return { name: product.name.trim(), sku: product.sku.trim(), specification: product.specification.trim(), parameters: product.parameters ?? '', category: product.category, purchasePrice: Number(product.purchasePrice || 0), supplier: product.supplier, colors: product.colors, batteryPlugs: product.batteryPlugs, accessories: product.accessories, remark: product.remark, status: product.status === 'draft' ? 'draft' : 'active', packaging: product.packaging.map(packagingToInput) }; }
+export function productToInput(product: ProductRecord) { return { name: product.name.trim(), sku: product.sku.trim(), specification: product.specification.trim(), parameters: product.parameters ?? '', category: product.category, purchasePrice: Number(product.purchasePrice || 0), supplier: product.supplier, colors: product.colors, batteryPlugs: product.batteryPlugs, accessories: product.accessories, remark: product.remark, status: normalizeProductStatus(product.status), packaging: product.packaging.map(packagingToInput) }; }
 export function saveProduct(product: ProductRecord) { return request<ProductApiRecord>('/api/products', { method: 'POST', body: JSON.stringify(productToInput(product)) }); }
 export function updateProduct(id: string, product: ProductRecord) { return request<ProductApiRecord>(`/api/products/${id}`, { method: 'PUT', body: JSON.stringify(productToInput(product)) }); }
 export function deleteProduct(id: string) { return request(`/api/products/${id}`, { method: 'DELETE' }); }
+/** 在售 ↔ 停售。只切状态，产品资料与更新时间都不动。 */
+export function setProductStatus(id: string, status: 'active' | 'discontinued') {
+  return request<ProductApiRecord>(`/api/products/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) });
+}
 export async function uploadProductAttachment(productId: string, file: File, category: string) {
   const form = new FormData();
   form.append('file', file);

@@ -123,10 +123,12 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
     });
   }
 
-  if (options.fileStore && options.dataDirectory) {
-    await registerThumbnailRoutes(app, {
-      service: new ThumbnailService(options.fileStore, join(resolve(options.dataDirectory), 'thumbnails')),
-    });
+  // 缩略图服务同时供列表接口与产品图册使用，图册要把主图内联成 data URL。
+  const thumbnailService = options.fileStore && options.dataDirectory
+    ? new ThumbnailService(options.fileStore, join(resolve(options.dataDirectory), 'thumbnails'))
+    : undefined;
+  if (thumbnailService) {
+    await registerThumbnailRoutes(app, { service: thumbnailService });
   }
 
   app.setErrorHandler((error, _request, reply) => {
@@ -154,7 +156,7 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   });
 
   await registerHealthRoutes(app);
-  await registerProductRoutes(app, { repositories, fileStore: options.fileStore });
+  await registerProductRoutes(app, { repositories, fileStore: options.fileStore, thumbnailService });
   const customerRepository = new CustomerRepository(options.database);
   const customerProductRepository = new CustomerProductRepository(options.database);
   await registerCustomerProductRoutes(app, {

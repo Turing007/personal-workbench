@@ -6,6 +6,7 @@ import { OrderNumberService } from '../services/order-number-service.js';
 import { autoPack, type PackedBox } from '../../shared/packing.js';
 import { calculateOutstandingCents, deriveFinancePaymentStatus } from '../../shared/finance.js';
 import { DEFAULT_PRODUCT_IMAGE_CATEGORY } from '../../shared/product-image-categories.js';
+import { normalizeProductStatus, type ProductStatus } from '../../shared/product-status.js';
 import { cartonLabelRequirement } from '../../shared/customers.js';
 
 type SqlValue = string | number | null;
@@ -37,8 +38,8 @@ export interface ProductInput {
   batteryPlugs?: string[];
   accessories?: string;
   remark?: string;
-  /** 草稿产品允许信息不完整，正式产品才要求品名必填。 */
-  status?: 'draft' | 'active';
+  /** 草稿产品允许信息不完整，在售与停售都要求品名必填。 */
+  status?: ProductStatus;
   packaging?: PackagingInput[];
 }
 
@@ -188,7 +189,7 @@ export class DatabaseRepositories {
     return this.orderNumbers.preview(date);
   }
 
-  listProducts(filters: { query?: string; name?: string; sku?: string; specification?: string; status?: 'draft' | 'active' } = {}) {
+  listProducts(filters: { query?: string; name?: string; sku?: string; specification?: string; status?: ProductStatus } = {}) {
     const values: SqlValue[] = [];
     const conditions: string[] = [];
     const query = filters.query?.trim();
@@ -384,15 +385,24 @@ export class DatabaseRepositories {
     });
   }
 
+  /** 在售 ↔ 停售 互切。故意不刷新 updated_at：产品库按最近更新排序，改状态不该让老品窜到最前。 */
+  setProductStatus(productId: number, status: ProductStatus) {
+    if (status === 'draft') return null;
+    const result = this.database.prepare('UPDATE products SET status = ? WHERE id = ?').run(status, productId);
+    return result.changes > 0 ? this.getProduct(productId) : null;
+  }
+
   importProducts(inputs: ProductImportInput[]) {
     return withTransaction(this.database, () => {
       let created = 0;
       let updated = 0;
       const products = inputs.map(({ sourceSku, product }) => {
-        // 只按 SKU 匹配正式产品；草稿留给用户继续编辑，避免被导入数据覆盖。
+        // 按 SKU 匹配非草稿产品：停售的老品也要对上，否则重复导入会长出一条同 SKU 的新品。
         const existing = sourceSku?.trim()
-          ? this.database.prepare("SELECT id FROM products WHERE sku = ? AND status = 'active' ORDER BY id LIMIT 1").get(sourceSku.trim()) as { id?: number } | undefined
+          ? this.database.prepare("SELECT id, status FROM products WHERE sku = ? AND status != 'draft' ORDER BY id LIMIT 1").get(sourceSku.trim()) as { id?: number; status?: string } | undefined
           : undefined;
+        // 导入不带状态列，更新时保留原状态（停售的不会因为导一次 Excel 就回到在售）。
+        if (existing?.id != null) product.status = normalizeProductStatus(existing.status);
         const saved = this.saveProduct(product, existing?.id == null ? undefined : Number(existing.id));
         if (existing?.id == null) created += 1;
         else updated += 1;

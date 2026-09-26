@@ -554,15 +554,25 @@ select {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   background: var(--color-surface);
-  text-align: left;
-  cursor: pointer;
-  font: inherit;
   transition: border-color var(--ease-standard), box-shadow var(--ease-standard);
 }
 
 .product-gallery-card:hover {
   border-color: var(--color-accent-border);
   box-shadow: var(--shadow-card);
+}
+
+.product-gallery-open {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
 }
 
 .product-gallery-image {
@@ -608,6 +618,26 @@ select {
   color: var(--color-text-secondary);
   font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
+}
+
+.product-gallery-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.product-gallery-price {
+  color: var(--tone-accent-text);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.product-gallery-actions {
+  justify-content: flex-end;
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--color-divider);
 }
 
 /* ===== 产品库分页：显示层翻页 + 每页条数选择 ===== */
@@ -696,6 +726,21 @@ select {
 .products-data-table {
   min-width: 1460px;
   table-layout: auto;
+}
+
+/* 品名列：长品名截断，状态标跟在后面（原来是一串行内样式）。 */
+.product-name-cell .product-name-text {
+  display: inline-block;
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.product-name-cell .badge {
+  margin-left: var(--space-2);
 }
 
 /* 产品库工具条上的小眼睛（控制供应商 / 采购价显隐）。
@@ -2180,6 +2225,53 @@ select {
 
 .kv-value.is-accent { color: var(--color-accent); }
 
+/* ===== 产品详情弹窗：紧凑排版 =====
+   .kv-* 定义在这里之前会覆盖 .product-detail-* 的同名属性，所以整段用组合选择器提优先级。 */
+.product-detail-modal .modal-body {
+  padding: var(--space-6) var(--space-7);
+}
+
+.product-detail-content { gap: var(--space-4); }
+
+.product-detail-grid.kv-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.product-detail-grid .kv-item {
+  min-height: 0;
+  gap: 2px;
+  padding: 7px 9px;
+  border-color: var(--color-divider);
+  border-radius: var(--radius-control);
+}
+
+/* 短字段的值单行显示；放不下才省略号收尾。标签列保持固定宽，值才对齐。 */
+.product-detail-grid .product-detail-item:not(.product-detail-item-wide) .product-detail-value {
+  overflow: hidden;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.product-detail-grid .product-detail-value {
+  color: var(--color-text);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.product-detail-grid .product-detail-emphasis { font-size: var(--text-sm); }
+
+.product-detail-hint { margin-top: calc(-1 * var(--space-3)); }
+
+/* 窄屏仍是一列，避免 175px 的格子把品名截断。 */
+@media (max-width: 900px) {
+  .product-detail-grid.kv-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* 附件行 */
 .attachment-row {
   display: flex;
@@ -3055,6 +3147,17 @@ select {
 .form-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .form-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
+/* 产品编辑器首行：SKU（编辑时）+ 品名拿剩余宽度，分类/采购价/供应商用定宽窄列。 */
+.product-editor-identity {
+  grid-template-columns: minmax(0, 1fr) 176px 84px 116px;
+}
+
+.product-editor-identity.has-sku {
+  grid-template-columns: 96px minmax(0, 1fr) 176px 84px 116px;
+}
+
+.product-editor-identity .product-editor-sku { max-width: none; }
+
 .notice {
   display: flex;
   align-items: flex-start;
@@ -3157,7 +3260,9 @@ select {
   }
 
   .form-grid-3,
-  .form-grid-4 {
+  .form-grid-4,
+  .product-editor-identity,
+  .product-editor-identity.has-sku {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -3187,7 +3292,9 @@ select {
 
   .form-grid-2,
   .form-grid-3,
-  .form-grid-4 {
+  .form-grid-4,
+  .product-editor-identity,
+  .product-editor-identity.has-sku {
     grid-template-columns: 1fr;
   }
 
@@ -3529,6 +3636,85 @@ select {
   .packaging-preset-form-actions { grid-column: 1 / -1; justify-content: flex-end; }
   .packaging-preset-manage { margin-left: 0; }
 }
+
+/* ===== 锚定浮层与工具条二级菜单 ===== */
+.anchored-popover {
+  z-index: 50;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-popover);
+  overflow: auto;
+}
+
+.toolbar-menu-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar-menu-list {
+  display: grid;
+  gap: 2px;
+}
+
+.toolbar-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 34px;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: 7px;
+  color: var(--color-text);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+}
+
+.toolbar-menu-item:hover {
+  color: var(--tone-accent-text);
+  background: var(--color-accent-soft);
+}
+
+.toolbar-menu-item.is-separated {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-divider);
+  border-radius: 0 0 7px 7px;
+}
+
+/* ===== 产品分类：按品名的建议按钮 ===== */
+/* 分类列只有 176px：建议词太长就让按钮换到第二行，不挤压输入框。 */
+.product-category-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.product-category-field .input { flex: 1 1 92px; min-width: 0; }
+
+.product-category-suggest {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 var(--space-3);
+  border: 1px dashed var(--color-accent-border);
+  border-radius: var(--radius-control);
+  color: var(--tone-accent-text);
+  background: var(--color-accent-soft);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}
+
+.product-category-suggest:hover { border-style: solid; }
 
 /* 列宽提示：只在单元格上声明，表头由浏览器按同列对齐 */
 .packaging-table-col-size { width: 118px; }
@@ -4477,15 +4663,10 @@ select {
     padding: 0 var(--space-2);
     font-size: var(--text-2xs);
   }
-  .products-page .page-toolbar .toolbar-count {
-    flex: 0 1 auto;
-    min-width: 0;
-    margin-right: auto;
-    overflow: hidden;
-    font-size: var(--text-2xs);
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
+  /* 「N 个产品」与分页条上的「共 N 个产品」重复，窄屏让位给状态与分类两个筛选框。 */
+  .products-page .page-toolbar .toolbar-count { display: none; }
+  /* 分类筛选框接管原来的撑开位，把右侧按钮推到行尾。 */
+  .products-page .page-toolbar .products-category-filter { margin-right: auto; }
   .products-page .page-toolbar .button { flex: 0 0 auto; padding: 0 var(--space-3); }
   /* 刷新收成 40×40 纯图标按钮，比「图标 + 刷新」窄约 30px。 */
   .products-page .page-toolbar .products-refresh-button {

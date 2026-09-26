@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import * as XLSX from 'xlsx';
+import sharp from 'sharp';
 import type { DatabaseRepositories, PackagingInput, ProductImportInput, ProductInput } from '../db/repositories.js';
+import { normalizeProductStatus } from '../../shared/product-status.js';
 import { FileStore, FileStoreError } from '../files/file-store.js';
 import {
   ApiError,
@@ -15,15 +17,27 @@ import {
   sendSuccess,
 } from './api-response.js';
 import { contractFileOptions, imageFileOptions } from './multipart-limits.js';
+import { PdfRenderer } from '../documents/pdf-renderer.js';
+import { ThumbnailService, isResizableImage } from '../files/thumbnail-service.js';
+import {
+  catalogThumbnailSize,
+  pickCatalogImage,
+  renderProductCatalogHtml,
+  type CatalogProduct,
+} from '../documents/product-catalog-template.js';
 import {
   DEFAULT_PRODUCT_IMAGE_CATEGORY,
   MAX_PRODUCT_IMAGE_NOTE_LENGTH,
   isProductImageCategory,
   type ProductImageCategory,
 } from '../../shared/product-image-categories.js';
+import { DEFAULT_CATALOG_DENSITY, isCatalogDensity } from '../../shared/product-catalog.js';
 
 const DEFAULT_COLORS = ['蓝', '红', '黄'];
 const DEFAULT_BATTERY_PLUGS = ['牧田', '德伟', '米沃奇'];
+/** 一次图册渲染要内联上百张缩略图，再多就该让用户分批导出而不是把服务压死。 */
+const MAX_CATALOG_PRODUCTS = 200;
+const CATALOG_IMAGE_CONCURRENCY = 6;
 const PRODUCT_ATTACHMENT_CATEGORIES = new Set(['manual', 'packaging-design', 'label-dieline', 'other']);
 
 /** 删除文件前限定目录白名单，防止数据库路径被篡改后越权删除存储目录外的文件。 */
@@ -37,6 +51,8 @@ function assertDeletableImagePath(relativePath: string, expectedDirectory: strin
 interface ProductRouteOptions {
   repositories: DatabaseRepositories;
   fileStore?: FileStore;
+  pdfRenderer?: Pick<PdfRenderer, 'render'>;
+  thumbnailService?: ThumbnailService;
 }
 
 interface ImageParams {
@@ -246,7 +262,7 @@ function parseParameters(value: unknown): string {
 
 function parseProductInput(value: unknown): ProductInput {
   const body = asRecord(value);
-  const status: 'draft' | 'active' = body.status === 'draft' ? 'draft' : 'active';
+  const status = normalizeProductStatus(body.status);
   return {
     name: status === 'draft'
       ? optionalText(body.name, 'name', '品名')
@@ -390,7 +406,8 @@ async function safeRoute<T>(
 }
 
 export async function registerProductRoutes(app: FastifyInstance, options: ProductRouteOptions): Promise<void> {
-  const { repositories, fileStore } = options;
+  const { repositories, fileStore, thumbnailService } = options;
+  const pdfRenderer = options.pdfRenderer ?? new PdfRenderer();
 
   app.get('/api/products/export', async (_request, reply) =>
     safeRoute(() => {
@@ -442,10 +459,96 @@ export async function registerProductRoutes(app: FastifyInstance, options: Produ
         name: query.name,
         sku: query.sku,
         specification: query.specification,
-        status: query.status === 'draft' || query.status === 'active' ? query.status : undefined,
+        status: query.status === 'draft' || query.status === 'active' || query.status === 'discontinued' ? query.status : undefined,
       });
       const items = all.slice((page - 1) * pageSize, page * pageSize).map((row) => mapProduct(row));
       return sendSuccess(reply, { items, total: all.length, page, pageSize });
+    }, reply),
+  );
+
+  // 产品图册：把当前筛选结果排成 A4 网格 PDF（主图 + 参数 + 包装）。
+  // 客户版口径在服务端定死——供应商与各档采购价根本不进入模板。
+  app.post('/api/products/catalog', async (request, reply) =>
+    safeRoute(async () => {
+      const body = asRecord(request.body);
+      const density = isCatalogDensity(body.density) ? body.density : DEFAULT_CATALOG_DENSITY;
+      if (!Array.isArray(body.ids) || !body.ids.length) {
+        throw new ApiError(400, 'VALIDATION_ERROR', '请选择要生成图册的产品', 'ids');
+      }
+      if (body.ids.length > MAX_CATALOG_PRODUCTS) {
+        throw new ApiError(400, 'VALIDATION_ERROR', `一次最多生成 ${MAX_CATALOG_PRODUCTS} 个产品的图册`, 'ids');
+      }
+      const ids = body.ids.map((value) => parseId(String(value), 'ids'));
+      // 一次全量查询建索引，避免逐 id 命中数据库；输出顺序跟随请求里的 ids，与页面列表一致。
+      const byId = new Map(repositories.listProducts()
+        .map((row) => mapProduct(row))
+        .filter((product): product is NonNullable<typeof product> => Boolean(product))
+        .map((product) => [product.id, product] as const));
+      const products: CatalogProduct[] = ids.map((id) => {
+        const product = byId.get(id);
+        if (!product) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
+        return {
+          id: product.id,
+          name: product.name,
+          sku: product.sku,
+          category: product.category,
+          parameters: product.parameters,
+          colors: product.colors,
+          batteryPlugs: product.batteryPlugs,
+          packaging: product.packaging.map((item) => ({
+            name: item.name,
+            innerSize: item.innerSize,
+            innerWeight: item.innerWeight,
+            outerSize: item.outerSize,
+            outerWeight: item.outerWeight,
+            packCount: item.packCount,
+          })),
+          images: product.images.map((image) => ({ relativePath: image.relativePath, category: image.category })),
+        };
+      });
+
+      const imageDataUrls = new Map<number, string | undefined>();
+      if (thumbnailService) {
+        const size = catalogThumbnailSize(density);
+        const targets = products
+          .map((product) => ({ product, relativePath: pickCatalogImage(product) }))
+          .filter((item): item is { product: CatalogProduct; relativePath: string } =>
+            Boolean(item.relativePath) && isResizableImage(item.relativePath ?? ''));
+        // 原图平均 1.5MB、最大 6MB，分批处理避免一次把上百张原图读进内存。
+        for (let offset = 0; offset < targets.length; offset += CATALOG_IMAGE_CONCURRENCY) {
+          await Promise.all(targets.slice(offset, offset + CATALOG_IMAGE_CONCURRENCY).map(async (item) => {
+            try {
+              const image = await thumbnailService.get(size, item.relativePath);
+              // 缩略图缓存是 WebP，但 Chromium 打 PDF 会把 WebP 无损重编码（实测 103 图 20.8MB），
+              // 转成 JPEG 后按 DCT 直通，同一本图册 2.9MB。
+              const jpeg = await sharp(image).flatten({ background: '#ffffff' }).jpeg({ quality: 72, mozjpeg: true }).toBuffer();
+              imageDataUrls.set(item.product.id, `data:image/jpeg;base64,${jpeg.toString('base64')}`);
+            } catch {
+              // 单张图读不出来不值得整本失败，那一格回落到「图待补」。
+            }
+          }));
+        }
+      }
+
+      const pdf = await pdfRenderer.render(renderProductCatalogHtml(products, { density, imageDataUrls }));
+      return reply
+        .header('Content-Type', 'application/pdf')
+        .header('Content-Disposition', `attachment; filename="product-catalog.pdf"; filename*=UTF-8''${encodeURIComponent('产品图册.pdf')}`)
+        .send(pdf);
+    }, reply),
+  );
+
+  // 在售 ↔ 停售：只切状态，不动资料，也不刷新 updated_at（否则老品会窜到列表最前）。
+  app.post('/api/products/:id/status', async (request: FastifyRequest<{ Params: { id: string } }>, reply) =>
+    safeRoute(() => {
+      const id = parseId(request.params.id);
+      const body = asRecord(request.body);
+      if (body.status !== 'active' && body.status !== 'discontinued') {
+        throw new ApiError(400, 'VALIDATION_ERROR', '产品状态只能是「在售」或「停售」', 'status');
+      }
+      const product = repositories.setProductStatus(id, body.status);
+      if (!product) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
+      return sendSuccess(reply, mapProduct(product));
     }, reply),
   );
 

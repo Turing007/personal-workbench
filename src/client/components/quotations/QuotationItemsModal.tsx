@@ -10,13 +10,13 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { QuotationDisplayConfig } from '../../../shared/documents';
 import type { CustomerProduct, CustomerProductSaveInput } from '../../../shared/customers';
 import type { DocumentItemPriceTierDraft } from '../../documents/document-drafts';
 import { createDocumentClientKey } from '../../documents/document-drafts';
 import Modal from '../Modal';
+import AnchoredPopover from '../AnchoredPopover';
 import DocumentColumnSettings from '../documents/DocumentColumnSettings';
 import LibraryProductPicker, { type LibraryProductSelection } from '../documents/LibraryProductPicker';
 import CustomerProductPicker from '../customer-products/CustomerProductPicker';
@@ -38,73 +38,6 @@ const fieldStyle = {
 interface AnchoredPopoverState {
   lineKey: string;
   anchor: HTMLElement;
-}
-
-/**
- * 以 fixed 定位挂在 body 上的锚定弹层：脱离表格滚动容器（overflow: auto）的裁剪，
- * 保证“客户产品库 / 系统产品库”选择面板始终完整显示。空间不足时自动向上翻转。
- */
-function AnchoredPopover({ anchor, width, maxHeight, onClose, children }: {
-  anchor: HTMLElement;
-  width: number;
-  maxHeight: number;
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  const [style, setStyle] = useState<CSSProperties>();
-  const popoverRef = useRef<HTMLDivElement>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-
-  useEffect(() => {
-    const rect = anchor.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    const popoverWidth = Math.min(width, viewportWidth - 16);
-    const left = Math.max(8, Math.min(rect.left, viewportWidth - popoverWidth - 8));
-    const roomBelow = viewportHeight - rect.bottom - 8;
-    const flipUp = roomBelow < Math.min(240, maxHeight);
-    const top = flipUp ? Math.max(8, rect.top - 4 - Math.min(maxHeight, rect.top - 12)) : rect.bottom + 4;
-    const height = Math.min(maxHeight, flipUp ? Math.max(120, rect.top - 12) : Math.max(120, roomBelow));
-    setStyle({ position: 'fixed', left, top, width: popoverWidth, maxHeight: height, overflow: 'auto' });
-  }, [anchor, width, maxHeight]);
-
-  useEffect(() => {
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (popoverRef.current?.contains(target) || anchor.contains(target)) return;
-      onCloseRef.current();
-    };
-    // 捕获阶段拦截 Escape，避免把承载明细的整层弹窗一起关掉
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      event.stopPropagation();
-      onCloseRef.current();
-    };
-    // 任何容器滚动都会让锚点错位，直接关闭（弹层自身滚动除外）
-    const handleScroll = (event: Event) => {
-      if (popoverRef.current?.contains(event.target as Node)) return;
-      onCloseRef.current();
-    };
-    document.addEventListener('mousedown', handlePointerDown, true);
-    document.addEventListener('keydown', handleKeyDown, true);
-    document.addEventListener('scroll', handleScroll, true);
-    window.addEventListener('resize', handleScroll);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown, true);
-      document.removeEventListener('keydown', handleKeyDown, true);
-      document.removeEventListener('scroll', handleScroll, true);
-      window.removeEventListener('resize', handleScroll);
-    };
-  }, [anchor]);
-
-  return createPortal(
-    <div ref={popoverRef} style={{ zIndex: 50, border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff', boxShadow: '0 12px 28px rgba(15,23,42,.16)', padding: 8, ...style }}>
-      {children}
-    </div>,
-    document.body,
-  );
 }
 
 export interface QuotationItemsModalProps {

@@ -31,20 +31,19 @@ describe('产品库视图选择', () => {
     expect(loadProductsView()).toBe('gallery');
   });
 
-  it('默认视图按屏幕宽度定：手机端大图，桌面端列表', () => {
+  it('默认进大图浏览', () => {
     stubStorage();
-    expect(initialProductsView(true)).toBe('gallery');
-    expect(initialProductsView(false)).toBe('list');
+    expect(initialProductsView()).toBe('gallery');
   });
 
-  it('用户选过的视图优先于屏幕宽度', () => {
+  it('用户选过的视图优先于默认值', () => {
     stubStorage({ [KEY]: 'list' });
-    expect(initialProductsView(true)).toBe('list');
+    expect(initialProductsView()).toBe('list');
   });
 
-  it('localStorage 不可用时按宽度回落，不抛错', () => {
+  it('localStorage 不可用时回到默认大图，不抛错', () => {
     vi.stubGlobal('window', undefined);
-    expect(initialProductsView(true)).toBe('gallery');
+    expect(initialProductsView()).toBe('gallery');
     expect(() => saveProductsView('list')).not.toThrow();
   });
 });

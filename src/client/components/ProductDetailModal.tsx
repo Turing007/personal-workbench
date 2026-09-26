@@ -21,6 +21,10 @@ export interface ProductDetailModalProps {
   showSensitive?: boolean;
   onClose: () => void;
   onOpenImages: (product: ProductRecord) => void;
+  /** 停售 / 恢复在售；未传则不显示按钮。 */
+  onUpdateSaleStatus?: (product: ProductRecord, next: 'active' | 'discontinued') => void;
+  /** 删除产品入口从列表挪到了这里，属于不可逆操作，未传则不显示。 */
+  onDelete?: (product: ProductRecord) => void;
 }
 
 function packagingDetails(item: ProductRecord['packaging'][number]) {
@@ -46,7 +50,7 @@ function DetailItem({ label, children, fullWidth = false }: { label: string; chi
   );
 }
 
-export default function ProductDetailModal({ open, product, showSensitive = false, onClose, onOpenImages }: ProductDetailModalProps) {
+export default function ProductDetailModal({ open, product, showSensitive = false, onClose, onOpenImages, onUpdateSaleStatus, onDelete }: ProductDetailModalProps) {
   const [copied, setCopied] = useState(false);
   const [copiedPackagingId, setCopiedPackagingId] = useState<string>();
   const [packagingImages, setPackagingImages] = useState<{ name: string; images: ProductRecord['packaging'][number]['images'] }>();
@@ -70,6 +74,14 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
     window.setTimeout(() => setCopied(false), 1600);
   };
 
+  // 停售与删除只放在详情弹窗里：列表点开的概率高，误操作的机会也多。
+  const detailTitle = product.name || product.sku || '未命名产品';
+  const footer = <>
+    {product.status === 'discontinued'
+      ? onUpdateSaleStatus && <button className="button button-primary" type="button" onClick={() => { onUpdateSaleStatus(product, 'active'); onClose(); }}>恢复在售</button>
+      : onUpdateSaleStatus && product.status !== 'draft' && <button className="button button-secondary" type="button" title="停售后不再出现在新建报价与销售开单的产品选择里" onClick={() => { if (window.confirm(`确定把「${detailTitle}」标为停售吗？资料与图片都保留，随时可以恢复在售。`)) { onUpdateSaleStatus(product, 'discontinued'); onClose(); } }}>停售</button>}
+    {onDelete && <button className="button button-danger" type="button" onClick={() => { if (window.confirm(`确定删除产品「${detailTitle}」吗？图片、包装与附件会一并删除，不能恢复。`)) { onDelete(product); onClose(); } }}>删除产品</button>}
+  </>;
   const copyPackaging = async (item: ProductRecord['packaging'][number]) => {
     const details = packagingDetails(item);
     const text = [
@@ -86,7 +98,7 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
   };
 
   return (
-    <Modal open={open} title={`产品详情 · ${product.sku || product.name || '未命名产品'}`} onClose={onClose} width={760}>
+    <Modal open={open} className="product-detail-modal" title={`产品详情 · ${product.sku || product.name || '未命名产品'}`} onClose={onClose} width={760} footer={footer}>
       <div className="product-detail-content">
         <div className="product-detail-grid kv-grid">
           <DetailItem label="SKU"><span className="product-detail-emphasis kv-value is-accent">{product.sku || '—'}</span></DetailItem>
@@ -97,7 +109,7 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
           <DetailItem label="插脚">{product.batteryPlugs.join('、') || '—'}</DetailItem>
           <DetailItem label="配件" fullWidth>{product.accessories || '—'}</DetailItem>
           <DetailItem label="备注" fullWidth>{product.remark || '—'}</DetailItem>
-          <DetailItem label="图片">
+          <DetailItem label="图片" fullWidth>
             {image ? (
               <div className="product-detail-images">
                 <button className="product-detail-images-button" type="button" onClick={() => onOpenImages(product)}>
@@ -133,7 +145,7 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
             </div>)}</div> : <div className="product-detail-muted">暂无附件</div>}
           </DetailItem>
         </div>
-        <div className="product-detail-hint"><Package size={14} />产品详情为只读信息，编辑请使用操作栏中的编辑按钮。</div>
+        <div className="product-detail-hint"><Package size={14} />这里可以查看资料、停售或恢复在售；要改内容请用编辑按钮。</div>
       </div>
       <ProductImagesModal open={Boolean(packagingImages)} productName={packagingImages?.name ?? '包装'} images={packagingImages?.images ?? []} onClose={() => setPackagingImages(undefined)} />
     </Modal>

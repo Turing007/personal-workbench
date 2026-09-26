@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { ensureAuthenticated, injectSession } from './helpers/auth';
+import { useProductListView } from './helpers/products-view';
 
 let sessionCookie: string;
 
@@ -10,14 +11,16 @@ test.beforeAll(async ({ request }) => {
 
 test.beforeEach(async ({ context }) => {
   await injectSession(context, sessionCookie);
+  // 本用例断言表格与卡片列表，先把视图固定成列表（产品库默认是大图）。
+  await useProductListView(context);
 });
 
 const SUPPLIER = 'E2E敏感供应商';
 const PURCHASE_PRICE = 12.5;
 
-/** 桌面表格默认 9 列（SKU/图片/品名/颜色/插脚/参数/包装信息/备注/操作），点开小眼睛后 +2。 */
-const COLUMNS_WITHOUT_SENSITIVE = 9;
+/** 桌面表格默认 11 列（含供应商、价格），点小眼睛收起后剩 9 列。 */
 const COLUMNS_WITH_SENSITIVE = 11;
+const COLUMNS_WITHOUT_SENSITIVE = 9;
 
 async function seedProduct(page: Page, stamp: number) {
   const response = await page.request.post('/api/products', {
@@ -40,12 +43,10 @@ async function openProducts(page: Page, sku: string, mobile = false) {
   await page.goto('/');
   if (mobile) await page.locator('.mobile-tab-item[aria-label="更多模块"]').click();
   await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
-  // 手机端默认进大图浏览，本用例验的是卡片列表，先切回列表视图。
-  if (mobile) await page.locator('.products-page .products-view-toggle').click();
   await page.locator('.products-page .page-toolbar .search-control input').fill(sku);
 }
 
-test('桌面端：供应商与价格默认隐藏，小眼睛按钮控制显隐', async ({ page }) => {
+test('桌面端：供应商与价格默认显示，小眼睛用于临时收起', async ({ page }) => {
   const stamp = Date.now();
   const product = await seedProduct(page, stamp);
 
@@ -58,8 +59,20 @@ test('桌面端：供应商与价格默认隐藏，小眼睛按钮控制显隐',
     const toggle = page.locator('.products-page .page-toolbar .products-sensitive-toggle');
 
     await expect(row).toHaveCount(1);
-    // 默认必须是隐藏的：连表头都不该出现，而不是「存在但空着」。
+    // 默认就是可见的：表头与两列都在，不用先点小眼睛。
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(head).toHaveCount(COLUMNS_WITH_SENSITIVE);
+    await expect(row.locator('td')).toHaveCount(COLUMNS_WITH_SENSITIVE);
+    await expect(table.locator('thead')).toContainText('供应商');
+    await expect(table.locator('thead')).toContainText('价格');
+    await expect(row).toContainText(SUPPLIER);
+    await expect(row).toContainText('¥12.5');
+
+    // 点一下整列收起（连表头都不留，而不是留着空列）。
+    await toggle.click();
+
     await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(toggle).toHaveAttribute('title', '显示供应商与价格');
     await expect(head).toHaveCount(COLUMNS_WITHOUT_SENSITIVE);
     await expect(row.locator('td')).toHaveCount(COLUMNS_WITHOUT_SENSITIVE);
     await expect(table.locator('thead')).not.toContainText('供应商');
@@ -70,20 +83,8 @@ test('桌面端：供应商与价格默认隐藏，小眼睛按钮控制显隐',
     await toggle.click();
 
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
-    await expect(toggle).toHaveAttribute('title', '隐藏供应商与价格');
     await expect(head).toHaveCount(COLUMNS_WITH_SENSITIVE);
-    await expect(row.locator('td')).toHaveCount(COLUMNS_WITH_SENSITIVE);
-    await expect(table.locator('thead')).toContainText('供应商');
-    await expect(table.locator('thead')).toContainText('价格');
     await expect(row).toContainText(SUPPLIER);
-    await expect(row).toContainText('¥12.5');
-
-    await toggle.click();
-
-    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
-    await expect(head).toHaveCount(COLUMNS_WITHOUT_SENSITIVE);
-    await expect(row.locator('td')).toHaveCount(COLUMNS_WITHOUT_SENSITIVE);
-    await expect(row).not.toContainText(SUPPLIER);
   } finally {
     await page.request.delete(`/api/products/${product.id}`);
   }
@@ -99,23 +100,23 @@ test('产品详情弹窗跟随小眼睛开关', async ({ page }) => {
     const row = page.locator('.products-data-table tbody tr', { hasText: product.sku });
     const toggle = page.locator('.products-page .page-toolbar .products-sensitive-toggle');
 
-    // 隐藏状态下打开详情：供应商 / 价格 都不该出现。
+    // 默认状态下打开详情：供应商 / 价格 两行都在，且带着真实值。
     await row.locator('.product-sku-button').click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
-    await expect(dialog.locator('.product-detail-label', { hasText: '供应商' })).toHaveCount(0);
-    await expect(dialog.locator('.product-detail-label', { hasText: '价格' })).toHaveCount(0);
+    await expect(dialog.locator('.product-detail-label', { hasText: '供应商' })).toBeVisible();
+    await expect(dialog.locator('.product-detail-value', { hasText: SUPPLIER })).toBeVisible();
+    await expect(dialog.locator('.product-detail-label', { hasText: '价格' })).toBeVisible();
+    await expect(dialog.locator('.product-detail-value', { hasText: '¥12.5' })).toBeVisible();
     await dialog.locator('.modal-close').click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
-    // 打开小眼睛后再看详情：两行都要出现，且带着真实值。
+    // 收起小眼睛后再看详情：两行整块消失。
     await toggle.click();
     await row.locator('.product-sku-button').click();
     await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.locator('.product-detail-label', { hasText: '供应商' })).toBeVisible();
-    await expect(page.locator('.product-detail-value', { hasText: SUPPLIER })).toBeVisible();
-    await expect(page.locator('.product-detail-label', { hasText: '价格' })).toBeVisible();
-    await expect(page.locator('.product-detail-value', { hasText: '¥12.5' })).toBeVisible();
+    await expect(page.locator('.product-detail-label', { hasText: '供应商' })).toHaveCount(0);
+    await expect(page.locator('.product-detail-label', { hasText: '价格' })).toHaveCount(0);
   } finally {
     await page.request.delete(`/api/products/${product.id}`);
   }
@@ -124,7 +125,7 @@ test('产品详情弹窗跟随小眼睛开关', async ({ page }) => {
 test.describe('手机端：卡片列表', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 });
 
-  test('供应商 / 采购价 卡片字段默认隐藏，小眼睛控制显隐', async ({ page }) => {
+  test('供应商 / 采购价 卡片字段默认显示，小眼睛收起', async ({ page }) => {
     const stamp = Date.now();
     const product = await seedProduct(page, stamp);
 
@@ -137,11 +138,6 @@ test.describe('手机端：卡片列表', () => {
       const toggle = page.locator('.products-page .page-toolbar .products-sensitive-toggle');
 
       await expect(card).toHaveCount(1);
-      await expect(sensitiveField).toHaveCount(0);
-      await expect(card).not.toContainText(SUPPLIER);
-
-      await toggle.click();
-
       await expect(sensitiveField).toBeVisible();
       await expect(sensitiveField).toContainText(SUPPLIER);
       await expect(sensitiveField).toContainText('¥12.5');
@@ -150,6 +146,11 @@ test.describe('手机端：卡片列表', () => {
 
       await expect(sensitiveField).toHaveCount(0);
       await expect(card).not.toContainText(SUPPLIER);
+
+      await toggle.click();
+
+      await expect(sensitiveField).toBeVisible();
+      await expect(sensitiveField).toContainText(SUPPLIER);
     } finally {
       await page.request.delete(`/api/products/${product.id}`);
     }

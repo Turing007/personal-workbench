@@ -38,7 +38,7 @@ function imageUrl(image: LibraryProductImage | null | undefined): string {
 }
 
 async function defaultLoadProducts(filters: { name: string; sku: string; specification: string }): Promise<LibraryProductOption[]> {
-  // 报价/销售单只可选正式产品，草稿不对外提供。
+  // 报价/销售单只可选在售产品：草稿与已停售的都不对外提供。
   const query = new URLSearchParams({ pageSize: '100', status: 'active' });
   if (filters.name.trim()) query.set('name', filters.name.trim());
   if (filters.sku.trim()) query.set('sku', filters.sku.trim());

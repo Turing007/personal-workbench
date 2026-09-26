@@ -1,9 +1,13 @@
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Download, Edit3, Eye, EyeOff, FileDown, Image as ImageIcon, Images, List, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Download, Edit3, Eye, EyeOff, FileDown, Image as ImageIcon, Images, List, Plus, RefreshCw, Search, Upload } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getPackagingPresets } from '../api';
 import type { PackagingPreset } from '../../shared/packaging-presets';
+import type { ProductStatus } from '../../shared/product-status';
+import { CATALOG_DENSITY_OPTIONS, DEFAULT_CATALOG_DENSITY, type CatalogDensity } from '../../shared/product-catalog';
+import Modal from '../components/Modal';
 import { initialProductsView, saveProductsView, type ProductsView } from '../products-view';
 import ProductEditor, { type ProductRecord } from '../components/ProductEditor';
+import ToolbarMenu from '../components/ToolbarMenu';
 import { compareProductByNewest } from '../product-sort';
 import { PAGE_SIZES, clampPage, pageWindow, readStoredPageSize, rememberPageSize, slicePage, totalPages } from '../pagination';
 import ProductDetailModal from '../components/ProductDetailModal';
@@ -16,14 +20,18 @@ import { copyText } from '../copy-text';
 import { useIsNarrow } from '../use-is-narrow';
 import { useHideOnScroll } from '../use-hide-on-scroll';
 
-type StatusFilter = 'all' | 'active' | 'draft';
+type StatusFilter = 'all' | ProductStatus;
 
 export interface ProductsPageProps {
   products: ProductRecord[];
   loading?: boolean;
   onSave: (product: ProductRecord, mode: 'draft' | 'active') => Promise<void> | void;
   onDelete: (product: ProductRecord) => Promise<void> | void;
+  /** 详情页里的停售 / 恢复在售。 */
+  onUpdateSaleStatus?: (product: ProductRecord, next: 'active' | 'discontinued') => void;
   onExport: () => Promise<void> | void;
+  /** 图册导出：只交给父层 id 与密度，页面自己决定当前筛选结果。 */
+  onCatalog: (ids: number[], density: CatalogDensity) => Promise<void>;
   onDownloadTemplate: () => Promise<void> | void;
   onImport: (file: File) => Promise<void> | void;
   onRefresh: () => Promise<void> | void;
@@ -33,11 +41,28 @@ export interface ProductsPageProps {
 
 const statusFilterLabels: Array<{ value: StatusFilter; label: string }> = [
   { value: 'all', label: '全部产品' },
-  { value: 'active', label: '正式产品' },
+  { value: 'active', label: '在售产品' },
+  { value: 'discontinued', label: '停售产品' },
   { value: 'draft', label: '草稿' },
 ];
 
-export default function ProductsPage({ products, loading, onSave, onDelete, onExport, onDownloadTemplate, onImport, onRefresh, onManagePresets }: ProductsPageProps) {
+// 分类筛选的两个特殊选项：全部 / 没有填分类的产品。
+const CATEGORY_ALL = '__all__';
+const CATEGORY_UNCATEGORIZED = '__none__';
+
+/** 在售不加标（列表保持干净），停售灰标、草稿橙标。 */
+function statusBadge(product: ProductRecord) {
+  if (product.status === 'draft') return <span className="badge badge-warning">草稿</span>;
+  if (product.status === 'discontinued') return <span className="badge badge-neutral">停售</span>;
+  return null;
+}
+
+/** 采购价存成 0 表示没填，显示占位符而不是「¥0」。 */
+function purchasePriceLabel(value: string) {
+  return Number(value) > 0 ? `¥${value}` : '—';
+}
+
+export default function ProductsPage({ products, loading, onSave, onDelete, onUpdateSaleStatus, onExport, onCatalog, onDownloadTemplate, onImport, onRefresh, onManagePresets }: ProductsPageProps) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [pageSize, setPageSize] = useState(readStoredPageSize);
@@ -59,33 +84,55 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
   const [copiedPackagingId, setCopiedPackagingId] = useState<string>();
   const [expandedPackagingId, setExpandedPackagingId] = useState<string>();
   const [parametersProduct, setParametersProduct] = useState<ProductRecord>();
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalogDensity, setCatalogDensity] = useState<CatalogDensity>(DEFAULT_CATALOG_DENSITY);
+  const [catalogBusy, setCatalogBusy] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
   const narrow = useIsNarrow();
-  // 列表 / 大图两种浏览方式，选一次记在本地；手机端默认大图。
-  const [view, setView] = useState<ProductsView>(() => initialProductsView(narrow));
+  // 列表 / 大图两种浏览方式，默认大图；手动切过一次就记住。
+  const [view, setView] = useState<ProductsView>(initialProductsView);
   const toggleView = () => {
     const next: ProductsView = view === 'gallery' ? 'list' : 'gallery';
     setView(next);
     saveProductsView(next);
   };
   const [searchFocused, setSearchFocused] = useState(false);
-  // 供应商与采购价属于对外不能随便看的信息，默认隐藏；每次进页面都从隐藏开始，不记住上次的选择。
-  const [showSensitive, setShowSensitive] = useState(false);
+  // 供应商与采购价默认显示，工具条小眼睛用于临时收起（例如给人看屏幕时）；不记住上次的选择。
+  const [showSensitive, setShowSensitive] = useState(true);
+  const [categoryFilter, setCategoryFilter] = useState(CATEGORY_ALL);
   // 手机端搜索框悬浮在顶部：连续下滑收起，回滑展开；输入时锁住展开避免打字途中消失。
   const searchHidden = useHideOnScroll(narrow && !searchFocused);
+  // 分类候选直接来自现有产品，出现次数多的排前面；空分类归进「未分类」。
+  const categoryOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    let uncategorized = 0;
+    for (const product of products) {
+      const category = product.category?.trim();
+      if (category) counts.set(category, (counts.get(category) ?? 0) + 1);
+      else uncategorized += 1;
+    }
+    const named = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([category]) => category);
+    return { named, hasUncategorized: uncategorized > 0 };
+  }, [products]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return products
       .filter((product) => {
         if (statusFilter !== 'all' && (product.status ?? 'active') !== statusFilter) return false;
+        const category = product.category?.trim() ?? '';
+        if (categoryFilter === CATEGORY_UNCATEGORIZED) {
+          if (category) return false;
+        } else if (categoryFilter !== CATEGORY_ALL && category !== categoryFilter) {
+          return false;
+        }
         if (!needle) return true;
         return [product.name, product.sku, product.supplier, product.category].join(' ').toLowerCase().includes(needle);
       })
       // 列表按「最新」展示：最近更新的排最上面（同时间的按 id 倒序，批量导入不会乱序）。
       .sort(compareProductByNewest);
-  }, [products, query, statusFilter]);
-  // 换了搜索词或状态筛选后结果集会整个变，留在原页码会看到不相干的一页，所以回到第 1 页。
-  useEffect(() => { setPage(1); }, [query, statusFilter]);
+  }, [products, query, statusFilter, categoryFilter]);
+  // 换了搜索词、状态或分类筛选后结果集会整个变，留在原页码会看到不相干的一页，所以回到第 1 页。
+  useEffect(() => { setPage(1); }, [query, statusFilter, categoryFilter]);
   const pageCount = totalPages(filtered.length, pageSize);
   const currentPage = clampPage(page, filtered.length, pageSize);
   const visible = slicePage(filtered, currentPage, pageSize);
@@ -109,6 +156,18 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
   const refresh = async () => {
     setRefreshing(true);
     try { await onRefresh(); } finally { setRefreshing(false); }
+  };
+
+  // 图册导出的是「当前筛选结果」：先筛再导，省掉逐个勾选。失败时弹窗保持打开，父层已弹提示。
+  const generateCatalog = async () => {
+    if (!filtered.length) return;
+    setCatalogBusy(true);
+    try {
+      await onCatalog(filtered.map((product) => Number(product.id)), catalogDensity);
+      setCatalogOpen(false);
+    } finally {
+      setCatalogBusy(false);
+    }
   };
 
   const copyPackaging = async (item: ProductRecord['packaging'][number]) => {
@@ -135,29 +194,52 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
       <select aria-label="产品状态筛选" className="toolbar-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}>
         {statusFilterLabels.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
+      <select aria-label="产品分类筛选" className="toolbar-select products-category-filter" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+        <option value={CATEGORY_ALL}>全部分类</option>
+        {categoryOptions.named.map((category) => <option key={category} value={category}>{category}</option>)}
+        {categoryOptions.hasUncategorized && <option value={CATEGORY_UNCATEGORIZED}>未分类</option>}
+      </select>
       <span className="toolbar-count">{filtered.length} 个产品</span>
       <button className="button button-secondary products-view-toggle" type="button" aria-pressed={view === 'gallery'} aria-label={view === 'gallery' ? '切换到列表视图' : '切换到大图浏览'} title={view === 'gallery' ? '切换到列表视图' : '切换到大图浏览'} onClick={toggleView}>{view === 'gallery' ? <List size={15} /> : <Images size={15} />}<span className="products-mobile-hidden">{view === 'gallery' ? '列表' : '大图'}</span></button>
       <button className="icon-button products-sensitive-toggle" type="button" aria-pressed={showSensitive} aria-label={showSensitive ? '隐藏供应商与价格' : '显示供应商与价格'} title={showSensitive ? '隐藏供应商与价格' : '显示供应商与价格'} onClick={() => setShowSensitive((current) => !current)}>{showSensitive ? <EyeOff size={16} /> : <Eye size={16} />}</button>
       <button className="button button-secondary products-refresh-button" type="button" onClick={() => void refresh()} disabled={refreshing} aria-label="刷新" title="重新加载产品库"><RefreshCw size={15} /><span className="products-mobile-hidden">刷新</span></button>
-      <button className="button button-secondary products-mobile-hidden" type="button" onClick={() => void onExport()} title="导出产品库"><Download size={15} />导出</button>
-      <button className="button button-secondary products-mobile-hidden" type="button" onClick={() => void onDownloadTemplate()} title="下载 Excel 导入模板"><FileDown size={15} />下载模板</button>
-      <button className="button button-secondary products-mobile-hidden" type="button" onClick={() => importInputRef.current?.click()} title="导入 Excel 产品库"><Upload size={15} />导入</button>
+      <ToolbarMenu
+        className="products-mobile-hidden"
+        label="导入导出"
+        title="导出产品库、下载 Excel 模板、导入 Excel"
+        items={[
+          { key: 'export', label: '导出产品库', icon: <Download size={15} />, onSelect: () => void onExport() },
+          { key: 'catalog', label: '导出产品图册', icon: <Images size={15} />, separated: true, onSelect: () => setCatalogOpen(true) },
+          { key: 'template', label: '下载导入模板', icon: <FileDown size={15} />, onSelect: () => void onDownloadTemplate() },
+          { key: 'import', label: '导入 Excel', icon: <Upload size={15} />, separated: true, onSelect: () => importInputRef.current?.click() },
+        ]}
+      />
       <input ref={importInputRef} type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void onImport(file); }} />
       <button className="button button-primary" type="button" onClick={openNew}><Plus size={15} /><span>添加<span className="products-mobile-hidden">产品</span></span></button>
     </div>
     <section className="table-panel">
       {view === 'gallery' && <div className="products-gallery">
-        {visible.map((product) => <button className="product-gallery-card" type="button" key={product.id} onClick={() => setDetailProduct(product)} title="查看产品详情">
-          <span className="product-gallery-image">{product.images.length ? <img src={thumbUrl(product.images[0].url, 480)} alt={product.images[0].name} loading="lazy" decoding="async" /> : <span className="product-gallery-placeholder"><ImageIcon size={22} /><span>无图片</span></span>}</span>
-          <span className="product-gallery-name">{product.name || '（未命名草稿）'}{product.status === 'draft' && <span className="badge badge-warning">草稿</span>}</span>
-          <span className="product-gallery-sku">{product.sku || '—'}</span>
-        </button>)}
+        {visible.map((product) => <div className="product-gallery-card" key={product.id}>
+          <button className="product-gallery-open" type="button" onClick={() => setDetailProduct(product)} title="查看产品详情">
+            <span className="product-gallery-image">{product.images.length ? <img src={thumbUrl(product.images[0].url, 480)} alt={product.images[0].name} loading="lazy" decoding="async" /> : <span className="product-gallery-placeholder"><ImageIcon size={22} /><span>无图片</span></span>}</span>
+            <span className="product-gallery-name">{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}{statusBadge(product)}</span>
+            <span className="product-gallery-meta">
+              <span className="product-gallery-sku">{product.sku || '—'}</span>
+              {showSensitive && <span className="product-gallery-price">{purchasePriceLabel(product.purchasePrice)}</span>}
+            </span>
+          </button>
+          <div className="row-actions product-gallery-actions">
+            <button className="icon-button" type="button" title={product.status === 'draft' ? '继续编辑草稿' : '编辑产品'} onClick={() => openEdit(product)}><Edit3 size={14} /></button>
+            <button className="icon-button" type="button" title="复制产品为新建产品" onClick={() => openCopy(product)}><Copy size={14} /></button>
+            
+          </div>
+        </div>)}
       </div>}
       {view === 'list' && <div className="table-scroll products-table-desktop"><table className="data-table products-data-table"><thead><tr>{['SKU', '图片', '品名', '颜色', '插脚', '参数', '包装信息', '备注', ...(showSensitive ? ['供应商', '价格'] : []), '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
         <tbody>{visible.map((product) => <tr key={product.id}>
           <td className="strong-cell"><button className="product-sku-button" type="button" onClick={() => setDetailProduct(product)} title="查看产品详情">{product.sku || '查看详情'}</button></td>
           <td>{product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProduct(product)} title="查看全部图片"><span className="product-image-thumb"><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}</td>
-          <td>{product.status === 'draft' ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><span className="product-name-text" style={{ minWidth: 0, maxWidth: 220, overflow: 'hidden', display: 'inline-block', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}>{product.name || '（未命名草稿）'}</span><span className="badge badge-warning">草稿</span></span> : (product.name || '—')}</td><td>{product.colors.join('、') || '—'}</td><td>{product.batteryPlugs.join('、') || '—'}</td>
+          <td className="product-name-cell"><span className="product-name-text">{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}</span>{statusBadge(product)}</td><td>{product.colors.join('、') || '—'}</td><td>{product.batteryPlugs.join('、') || '—'}</td>
           <td className="product-parameters-cell">{product.parameters?.trim() ? <button className="product-parameters-trigger" type="button" onClick={() => setParametersProduct(product)} title="查看完整参数"><span>查看详情</span><Copy size={13} /></button> : <span>—</span>}</td>
           <td className="product-packaging-cell"><div className="product-packaging-lines">{product.packaging.length ? <>
             {(expandedPackagingId === product.id ? product.packaging : product.packaging.slice(0, 1)).map((item) => {
@@ -170,15 +252,15 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
             })}
             {product.packaging.length > 1 && <button className="product-packaging-expand" type="button" onClick={() => setExpandedPackagingId((current) => current === product.id ? undefined : product.id)}>{expandedPackagingId === product.id ? <><ChevronUp size={13} />收起</> : <><ChevronDown size={13} />... 还有 {product.packaging.length - 1} 个包装</>}</button>}
           </> : <span>—</span>}</div></td>
-          <td className="product-remark-cell">{product.remark || '—'}</td>{showSensitive && <><td>{product.supplier || '—'}</td><td>{product.purchasePrice ? `¥${product.purchasePrice}` : '—'}</td></>}
-          <td><div className="row-actions"><button className="icon-button" title={product.status === 'draft' ? '继续编辑草稿' : '编辑产品'} type="button" onClick={() => openEdit(product)}><Edit3 size={14} /></button><button className="icon-button" title="复制产品为新建产品" type="button" onClick={() => openCopy(product)}><Copy size={14} /></button><button className="icon-button danger" title="删除产品" type="button" onClick={() => { if (window.confirm(`确定删除产品“${product.name || '未命名草稿'}”吗？`)) void onDelete(product); }}><Trash2 size={14} /></button></div></td>
+          <td className="product-remark-cell">{product.remark || '—'}</td>{showSensitive && <><td>{product.supplier || '—'}</td><td>{purchasePriceLabel(product.purchasePrice)}</td></>}
+          <td><div className="row-actions"><button className="icon-button" title={product.status === 'draft' ? '继续编辑草稿' : '编辑产品'} type="button" onClick={() => openEdit(product)}><Edit3 size={14} /></button><button className="icon-button" title="复制产品为新建产品" type="button" onClick={() => openCopy(product)}><Copy size={14} /></button></div></td>
         </tr>)}</tbody></table></div>}
       {view === 'list' && <div className="products-card-list">
         {visible.map((product) => <article key={product.id} className="product-card">
           <div className="product-card-head">
             {product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProduct(product)} title="查看全部图片"><span className="product-image-thumb"><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}
             <div className="product-card-title">
-              <strong>{product.status === 'draft' ? <>{product.name || '（未命名草稿）'}<span className="badge badge-warning">草稿</span></> : (product.name || '—')}</strong>
+              <strong>{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}{statusBadge(product)}</strong>
               <button className="product-sku-button" type="button" onClick={() => setDetailProduct(product)} title="查看产品详情">{product.sku || '查看详情'}</button>
             </div>
           </div>
@@ -194,7 +276,7 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
           <div className="row-actions">
             <button className="icon-button" title={product.status === 'draft' ? '继续编辑草稿' : '编辑产品'} type="button" onClick={() => openEdit(product)}><Edit3 size={14} /></button>
             <button className="icon-button" title="复制产品为新建产品" type="button" onClick={() => openCopy(product)}><Copy size={14} /></button>
-            <button className="icon-button danger" title="删除产品" type="button" onClick={() => { if (window.confirm(`确定删除产品“${product.name || '未命名草稿'}”吗？`)) void onDelete(product); }}><Trash2 size={14} /></button>
+            
           </div>
         </article>)}</div>}
       {!!filtered.length && <div className="products-pagination">
@@ -217,9 +299,29 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onEx
       {loading && <div className="table-state">正在加载产品...</div>}
       {!loading && !filtered.length && <div className="table-state">暂无产品，点击“添加产品”开始维护。</div>}
     </section>
-    <ProductEditor key={editing?.id ?? 'new'} open={editorOpen} product={editing} copyMode={copying} packagingPresets={packagingPresets} onManagePresets={onManagePresets} onClose={() => { setEditorOpen(false); setEditing(undefined); setCopying(false); }} onSave={save} />
+    <ProductEditor key={editing?.id ?? 'new'} open={editorOpen} product={editing} copyMode={copying} packagingPresets={packagingPresets} productCategories={categoryOptions.named} onManagePresets={onManagePresets} onClose={() => { setEditorOpen(false); setEditing(undefined); setCopying(false); }} onSave={save} />
+    <Modal
+      open={catalogOpen}
+      title="导出产品图册"
+      width={420}
+      onClose={() => setCatalogOpen(false)}
+      footer={<>
+        <button className="button button-secondary" type="button" disabled={catalogBusy} onClick={() => setCatalogOpen(false)}>取消</button>
+        <button className="button button-primary" type="button" disabled={catalogBusy || !filtered.length} onClick={() => void generateCatalog()}>
+          {catalogBusy ? '排版中…' : `生成 ${filtered.length} 个产品的图册`}
+        </button>
+      </>}
+    >
+      <div className="field">
+        <span className="field-label">每页排几个产品</span>
+        <select className="toolbar-select" aria-label="图册每页产品数" value={catalogDensity} onChange={(event) => setCatalogDensity(event.target.value as CatalogDensity)}>
+          {CATALOG_DENSITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label} · {option.hint}</option>)}
+        </select>
+        <span className="field-hint">图册排主图、参数、颜色/插脚与包装尺寸；发给客户的版本不含供应商与价格。</span>
+      </div>
+    </Modal>
     <ProductParametersModal open={Boolean(parametersProduct)} productName={parametersProduct?.name} parameters={parametersProduct?.parameters} onClose={() => setParametersProduct(undefined)} />
-    <ProductDetailModal open={Boolean(detailProduct)} product={detailProduct} showSensitive={showSensitive} onClose={closeDetail} onOpenImages={(product) => { closeDetail(); setImagesProduct(product); }} />
+    <ProductDetailModal open={Boolean(detailProduct)} product={detailProduct} showSensitive={showSensitive} onClose={closeDetail} onOpenImages={(product) => { closeDetail(); setImagesProduct(product); }} onUpdateSaleStatus={onUpdateSaleStatus} onDelete={onDelete} />
     <ProductImagesModal open={Boolean(imagesProduct)} productName={imagesProduct?.name} images={imagesProduct?.images ?? []} onClose={closeImages} />
   </div>;
 }

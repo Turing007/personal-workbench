@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { ensureAuthenticated, injectSession } from './helpers/auth';
+import { useProductListView } from './helpers/products-view';
 
 let sessionCookie: string;
 
@@ -14,11 +15,14 @@ test.beforeAll(async ({ request }) => {
 });
 
 test.afterAll(async ({ request }) => {
+  // afterAll 里的 request 是新的未登录实例，要先重新拿会话再清理。
+  await ensureAuthenticated(request);
   await request.put('/api/settings/packaging-presets', { data: { items: [] } });
 });
 
 test.beforeEach(async ({ context }) => {
   await injectSession(context, sessionCookie);
+  await useProductListView(context);
 });
 
 async function seedProduct(page: Page) {
@@ -34,8 +38,6 @@ async function openEditor(page: Page, sku: string, mobile = false) {
   await page.goto('/');
   if (mobile) await page.locator('.mobile-tab-item[aria-label="更多模块"]').click();
   await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
-  // 手机端默认大图浏览，行内「编辑产品」按钮在列表视图里，先切回去。
-  if (mobile) await page.locator('.products-page .products-view-toggle').click();
   await page.locator('.products-page .page-toolbar .search-control input').fill(sku);
   // SKU 按钮开的是「查看详情」弹窗；进编辑器要点行内的「编辑产品」图标。
   await page.locator('.products-page button[title="编辑产品"]:visible').first().click();

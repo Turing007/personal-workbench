@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { ensureAuthenticated, injectSession } from './helpers/auth';
+import { useProductListView } from './helpers/products-view';
 
 let sessionCookie: string;
 
@@ -10,6 +11,7 @@ test.beforeAll(async ({ request }) => {
 
 test.beforeEach(async ({ context }) => {
   await injectSession(context, sessionCookie);
+  await useProductListView(context);
 });
 
 const PNG_1X1 = Buffer.from(

@@ -9,6 +9,7 @@ import Toast, { type ToastMessage } from './components/Toast';
 import type { CartonLabel } from './components/LabelEditorModal';
 import type { OrderContractDraft, OrderDraft, OrderItemDraft, OrderStatus } from './components/OrderForm';
 import type { ProductRecord } from './components/ProductEditor';
+import type { CatalogDensity } from '../shared/product-catalog';
 import type { Customer } from '../shared/customers';
 import OrdersPage, { fallbackLabels } from './pages/OrdersPage';
 import { getBatchAdvancePlan, type BatchAdvanceAction } from './order-workflow';
@@ -25,6 +26,7 @@ import {
   createBackup,
   deleteProduct,
   exportProducts,
+  generateProductCatalog,
   downloadProductImportTemplate,
   getCustomers,
   getCompanyProfile,
@@ -41,6 +43,7 @@ import {
   saveOrder,
   saveCustomerProduct,
   saveProduct,
+  setProductStatus,
   deleteOrderContract,
   generateOrderContractPdf,
   deleteOrder,
@@ -240,11 +243,24 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     void Promise.all([loadProducts(), loadCustomers(), loadOrders(), loadCompanyProfile()]);
   }, [loadProducts, loadCustomers, loadOrders, loadCompanyProfile]);
 
+  const toggleProductSaleStatus = async (product: ProductRecord, next: 'active' | 'discontinued') => {
+    try {
+      await setProductStatus(product.id, next);
+      await loadProducts();
+      const name = product.name || product.sku || '该产品';
+      notify(next === 'discontinued' ? `「${name}」已停售，不会再出现在报价与销售开单的产品选择里` : `「${name}」已恢复在售`, 'success');
+    } catch (error) {
+      notify((error as { message?: string }).message ?? '产品状态修改失败', 'error');
+    }
+  };
+
   const saveProductRecord = async (draft: ProductRecord, mode: 'draft' | 'active') => {
     try {
       const isExisting = /^\d+$/.test(draft.id);
       const previousProduct = products.find((item) => item.id === draft.id);
-      const payload: ProductRecord = { ...draft, status: mode === 'draft' ? 'draft' : 'active' };
+      // 停售产品编辑保存后仍是停售：只有「存为草稿」按钮能改成 draft，其余情况保留它当前的状态。
+      const preservedStatus = previousProduct?.status === 'discontinued' ? 'discontinued' : 'active';
+      const payload: ProductRecord = { ...draft, status: mode === 'draft' ? 'draft' : preservedStatus };
       const saved = isExisting ? await updateProduct(draft.id, payload) : await saveProduct(payload);
       const savedProductId = String((saved as { id?: number }).id);
       if (isExisting) {
@@ -316,6 +332,19 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
       URL.revokeObjectURL(url);
       notify('产品库已导出', 'success');
     } catch (error) { notify((error as { message?: string }).message ?? '产品库导出失败', 'error'); }
+  };
+  // 图册要在服务端排版加渲染，耗时按十几秒计；进度提示由产品库页面的按钮承担，这里只报结果。
+  const exportProductCatalog = async (ids: number[], density: CatalogDensity) => {
+    try {
+      const blob = await generateProductCatalog(ids, density);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `产品图册-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.pdf`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      notify('产品图册已生成', 'success');
+    } catch (error) { notify((error as { message?: string }).message ?? '产品图册生成失败', 'error'); }
   };
   const downloadProductTemplate = async () => {
     try {
@@ -616,7 +645,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     {active === 'stock' && <StockPage onNotify={notify} systemProducts={products} />}
     {active === 'quotations' && <QuotationPage onNotify={notify} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
     {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={async (orderId) => { await loadOrders(); setOrdersInitialOrderId(orderId); navigate('orders'); }} />}
-    {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} onExport={exportProductLibrary} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onManagePresets={() => { setSettingsInitialSection('packaging'); navigate('settings'); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} />}
+    {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} onExport={exportProductLibrary} onCatalog={exportProductCatalog} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onManagePresets={() => { setSettingsInitialSection('packaging'); navigate('settings'); }} onUpdateSaleStatus={(product, next) => { void toggleProductSaleStatus(product, next); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} />}
     {active === 'customer-products' && <CustomerProductsPage customers={customers} systemProducts={products} initialCustomerId={customerProductsInitialCustomerId ?? undefined} loading={loading} onCustomersChanged={loadCustomers} onNotify={notify} />}
     {active === 'shipping' && <ShippingPage orders={shippingOrders} initialOrder={shippingInitialOrder} initialOrders={shippingInitialOrders} onUpdateTracking={updateTracking} onSaveTracking={saveShippingTracking} onConfirm={confirmShipping} />}
     {active === 'settings' && <SettingsPage onBackup={backup} onRestore={restore} onProfileChanged={setCompanyProfile} currentUser={user} mobileTabs={mobileTabs} onMobileTabsChange={updateMobileTabs} initialSection={settingsInitialSection ?? undefined} />}

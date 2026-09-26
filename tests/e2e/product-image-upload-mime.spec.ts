@@ -77,7 +77,7 @@ test.describe('手机端：系统选图/拍照回来的文件拿不到可靠 MIM
       }
     });
 
-    await page.getByRole('dialog').locator('.form-grid-3 label', { hasText: '品名' }).locator('input').fill(`E2E手机上传${Date.now()}`);
+    await page.getByRole('dialog').getByRole('textbox', { name: '品名' }).fill(`E2E手机上传${Date.now()}`);
 
     // 安卓相机 / 系统选图最常见的两种返回值：空字符串，和 application/octet-stream。
     await pickImageFile(page, 'IMG_20260918.jpg', '', Array.from(PNG_1X1));

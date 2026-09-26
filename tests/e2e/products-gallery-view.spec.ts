@@ -9,16 +9,26 @@ const PNG_1X1 = Buffer.from(
 
 let sessionCookie: string;
 const stamp = Date.now();
+const NAME = `E2E大图${stamp}`;
+const CAT_A = `E2E分类甲${stamp}`;
+const CAT_B = `E2E分类乙${stamp}`;
 let withImage: { id: string; sku: string; name: string };
 let withoutImage: { id: string; sku: string; name: string };
+let uncategorized: { id: string; sku: string; name: string };
 
-async function seedProduct(request: Page['request'], name: string, image: boolean) {
+async function seedProduct(request: Page['request'], name: string, options: { image: boolean; category: string; purchasePrice?: number }) {
   const created = await request.post('/api/products', {
-    data: { name, status: 'active', packaging: [{ name: '彩盒包装', innerSize: '10×5×3', innerWeight: 0.5, outerSize: '40×30×25', outerWeight: 8, packCount: 24 }] },
+    data: {
+      name,
+      status: 'active',
+      category: options.category,
+      purchasePrice: options.purchasePrice ?? 0,
+      packaging: [{ name: '彩盒包装', innerSize: '10×5×3', innerWeight: 0.5, outerSize: '40×30×25', outerWeight: 8, packCount: 24 }],
+    },
   });
   if (!created.ok()) throw new Error(`创建产品失败：HTTP ${created.status()} ${await created.text()}`);
   const product = (await created.json()).data as { id: string; sku: string; name: string };
-  if (image) {
+  if (options.image) {
     const uploaded = await request.post(`/api/products/${product.id}/images?category=product`, {
       multipart: { file: { name: 'e2e-gallery.png', mimeType: 'image/png', buffer: PNG_1X1 } },
     });
@@ -29,12 +39,15 @@ async function seedProduct(request: Page['request'], name: string, image: boolea
 
 test.beforeAll(async ({ request }) => {
   sessionCookie = await ensureAuthenticated(request);
-  withImage = await seedProduct(request, `E2E大图${stamp}`, true);
-  withoutImage = await seedProduct(request, `E2E无图${stamp}`, false);
+  withImage = await seedProduct(request, `${NAME}甲`, { image: true, category: CAT_A, purchasePrice: 88 });
+  withoutImage = await seedProduct(request, `${NAME}乙`, { image: false, category: CAT_B });
+  uncategorized = await seedProduct(request, `${NAME}丙`, { image: false, category: '' });
 });
 
 test.afterAll(async ({ request }) => {
-  for (const product of [withImage, withoutImage]) await request.delete(`/api/products/${product.id}`);
+  // afterAll 里的 request 是新的未登录实例，要先重新拿会话再清理。
+  await ensureAuthenticated(request);
+  for (const product of [withImage, withoutImage, uncategorized]) await request.delete(`/api/products/${product.id}`);
 });
 
 test.beforeEach(async ({ context }) => {
@@ -49,66 +62,104 @@ async function openProducts(page: Page, mobile = false) {
 
 const toggle = (page: Page) => page.locator('.products-page .products-view-toggle');
 const gallery = (page: Page) => page.locator('.products-gallery');
+const search = (page: Page) => page.locator('.products-page .page-toolbar .search-control input');
+const categoryFilter = (page: Page) => page.locator('.products-page select[aria-label="产品分类筛选"]');
+const card = (page: Page, sku: string) => gallery(page).locator('.product-gallery-card', { hasText: sku });
 
-test('桌面端：默认列表，切到大图后卡片显示首图与名称，点卡片看详情，选择被记住', async ({ page }) => {
+test('桌面端：默认就是大图浏览，卡片带图片、价格与操作按钮', async ({ page }) => {
   await openProducts(page);
 
-  await expect(toggle(page)).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('.products-table-desktop')).toBeVisible();
-  await expect(gallery(page)).toHaveCount(0);
-
-  await toggle(page).click();
+  // 默认大图；表格与手机卡片列表根本不该出现在 DOM 里。
   await expect(toggle(page)).toHaveAttribute('aria-pressed', 'true');
   await expect(gallery(page)).toBeVisible();
-  // 大图模式下表格与手机卡片列表都不该留在 DOM 里。
   await expect(page.locator('.products-table-desktop')).toHaveCount(0);
   await expect(page.locator('.products-card-list')).toHaveCount(0);
 
-  await page.locator('.products-page .page-toolbar .search-control input').fill(`E2E大图${stamp}`);
-  const card = gallery(page).locator('.product-gallery-card', { hasText: withImage.sku });
-  await expect(card).toHaveCount(1);
-  await expect(card.locator('img')).toBeVisible();
-  await expect(card).toContainText(withImage.name);
+  await search(page).fill(NAME);
+  await expect(gallery(page).locator('.product-gallery-card')).toHaveCount(3);
 
-  // 没图的产品占位显示，而不是空一块。
-  await page.locator('.products-page .page-toolbar .search-control input').fill(`E2E无图${stamp}`);
-  await expect(gallery(page).locator('.product-gallery-placeholder')).toHaveCount(1);
+  const shot = card(page, withImage.sku);
+  await expect(shot.locator('img')).toBeVisible();
+  await expect(shot).toContainText(withImage.name);
+  // 采购价默认显示（跟随小眼睛）。
+  await expect(shot.locator('.product-gallery-price')).toHaveText('¥88');
+  // 没填价格与没图的产品也要占位，不能空一块。
+  await expect(card(page, uncategorized.sku).locator('.product-gallery-price')).toHaveText('—');
+  await expect(card(page, withoutImage.sku).locator('.product-gallery-placeholder')).toHaveCount(1);
 
-  // 点卡片打开产品详情。
-  await page.locator('.products-page .page-toolbar .search-control input').fill(withImage.sku);
-  await card.click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText(withImage.name);
-  await dialog.locator('.modal-close').click();
+  // 卡片上的操作入口：编辑直接开编辑器。
+  await shot.locator('button[title="编辑产品"]').click();
+  const editor = page.getByRole('dialog');
+  await expect(editor).toBeVisible();
+  await expect(editor.getByRole('textbox', { name: '品名' })).toHaveValue(withImage.name);
+  await editor.locator('.modal-close').click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
-  // 视图选择记在本地：刷新后仍是大图。
-  await openProducts(page);
-  await expect(toggle(page)).toHaveAttribute('aria-pressed', 'true');
-  await expect(gallery(page)).toBeVisible();
+  // 点图片区域开详情弹窗。
+  await shot.locator('.product-gallery-open').click();
+  await expect(page.getByRole('dialog')).toContainText(withImage.name);
+  await page.getByRole('dialog').locator('.modal-close').click();
 
-  // 切回列表后表格回来。
+  // 切到列表视图后表格回来，选择被记住；刷新仍是列表。
   await toggle(page).click();
+  await expect(page.locator('.products-table-desktop')).toBeVisible();
+  await openProducts(page);
+  await expect(toggle(page)).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('.products-table-desktop')).toBeVisible();
 });
 
-test('桌面端：大图与分页共用同一份筛选结果', async ({ page }) => {
+test('桌面端：分类筛选与搜索、分页共用同一份结果', async ({ page }) => {
   await openProducts(page);
-  await toggle(page).click();
-  await page.locator('.products-page .page-toolbar .search-control input').fill(`E2E大图${stamp}`);
+  await search(page).fill(NAME);
+  await expect(gallery(page).locator('.product-gallery-card')).toHaveCount(3);
+  await expect(page.locator('.products-pagination-summary')).toContainText('共 3 个产品');
+
+  // 分类下拉里能找得到本轮新建的两个分类。
+  await expect(categoryFilter(page)).toContainText(CAT_A);
+  await categoryFilter(page).selectOption({ label: CAT_A });
   await expect(gallery(page).locator('.product-gallery-card')).toHaveCount(1);
-  await expect(page.locator('.products-pagination-summary')).toContainText('共 1 个产品');
+  await expect(card(page, withImage.sku)).toHaveCount(1);
+
+  await categoryFilter(page).selectOption({ label: CAT_B });
+  await expect(card(page, withoutImage.sku)).toHaveCount(1);
+
+  // 「未分类」把没填分类的产品单独捞出来。
+  await categoryFilter(page).selectOption({ value: '__none__' });
+  await expect(gallery(page).locator('.product-gallery-card')).toHaveCount(1);
+  await expect(card(page, uncategorized.sku)).toHaveCount(1);
+
+  await categoryFilter(page).selectOption({ value: '__all__' });
+  await expect(gallery(page).locator('.product-gallery-card')).toHaveCount(3);
+});
+
+test('编辑器里的分类输入框带候选，能改能新填', async ({ page }) => {
+  await openProducts(page);
+  await search(page).fill(withImage.sku);
+  await card(page, withImage.sku).locator('button[title="编辑产品"]').click();
+  const editor = page.getByRole('dialog');
+  const categoryInput = editor.locator('input[list="product-category-options"]');
+  await expect(categoryInput).toHaveValue(CAT_A);
+  // 候选来自现有产品分类（datalist 的 option 只有 value、没有文本节点，所以按属性选择）。
+  await expect(editor.locator(`datalist#product-category-options option[value="${CAT_B}"]`)).toHaveCount(1);
+  const fresh = `E2E新分类${stamp}`;
+  await categoryInput.fill(fresh);
+  await editor.locator('button.button-primary').click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+
+  await categoryFilter(page).selectOption({ label: fresh });
+  await search(page).fill(withImage.sku);
+  await expect(card(page, withImage.sku)).toHaveCount(1);
 });
 
 test.describe('手机端', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 });
 
-  test('默认就是大图浏览，两列铺开且不需要左右滑', async ({ page }) => {
+  test('大图两列铺开，操作按钮可点且不产生横向滚动', async ({ page }) => {
     await openProducts(page, true);
+    await search(page).fill(NAME);
 
     await expect(toggle(page)).toHaveAttribute('aria-pressed', 'true');
-    await expect(gallery(page)).toBeVisible();
+    await expect(gallery(page).locator('.product-gallery-card')).toHaveCount(3);
 
     const metrics = await page.evaluate(() => {
       const scroller = document.querySelector('.app-content') as HTMLElement;
@@ -128,8 +179,13 @@ test.describe('手机端', () => {
     expect(metrics.columns).toBe(2);
     expect(metrics.cardWidth * 2).toBeLessThanOrEqual(metrics.viewportWidth);
 
-    // 点卡片仍然打开详情弹窗。
-    await gallery(page).locator('.product-gallery-card').first().click();
+    // 卡片上留编辑与复制；删除已经收进详情弹窗（见 product-discontinued.spec.ts）。
+    const target = card(page, uncategorized.sku);
+    await expect(target.locator('button[title="编辑产品"]')).toBeVisible();
+    await expect(target.locator('button[title="删除产品"]')).toHaveCount(0);
+    await target.locator('button[title="编辑产品"]').click();
     await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByRole('dialog').locator('.modal-close').click();
+    await expect(card(page, uncategorized.sku)).toHaveCount(1);
   });
 });

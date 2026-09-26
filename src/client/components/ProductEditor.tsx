@@ -8,8 +8,10 @@ import CollapsibleSection from './CollapsibleSection';
 import Modal from './Modal';
 import PackagingTable from './PackagingTable';
 import { blankPackagingRow } from '../packaging-preset';
+import { orderCategoriesWithSuggestion, suggestProductCategory } from '../product-category-suggest';
 import type { CustomerProduct, PackagingOption } from './OrderForm';
 import type { PackagingPreset } from '../../shared/packaging-presets';
+import type { ProductStatus } from '../../shared/product-status';
 
 export interface ProductRecord extends CustomerProduct {
   category: string;
@@ -17,8 +19,8 @@ export interface ProductRecord extends CustomerProduct {
   supplier: string;
   /** 系统产品参数；客户产品草稿不填写此字段。 */
   parameters?: string;
-  /** 草稿产品允许信息不完整，保存后可继续编辑。 */
-  status?: 'draft' | 'active';
+  /** 草稿产品允许信息不完整，保存后可继续编辑；停售产品保留资料但不再进新单。 */
+  status?: ProductStatus;
   colors: string[];
   batteryPlugs: string[];
   images: ImageAttachment[];
@@ -53,6 +55,8 @@ export interface ProductEditorProps {
   showParameters?: boolean;
   /** 包装方式预设卡片；为空则不显示。 */
   packagingPresets?: PackagingPreset[];
+  /** 现有产品的分类，作为分类输入框的候选（仍可自由填写新分类）。 */
+  productCategories?: string[];
   /** 点「管理预设 ›」时跳到设置页维护，未传则不显示入口。 */
   onManagePresets?: () => void;
   onClose: () => void;
@@ -133,7 +137,7 @@ function ProductAttachments({ value, onChange }: { value: ProductAttachment[]; o
   </section>;
 }
 
-export default function ProductEditor({ open, product, copyMode = false, showParameters: showParametersProp, packagingPresets, onManagePresets, onClose, onSave }: ProductEditorProps) {
+export default function ProductEditor({ open, product, copyMode = false, showParameters: showParametersProp, packagingPresets, productCategories = [], onManagePresets, onClose, onSave }: ProductEditorProps) {
   const [draft, setDraft] = useState<ProductRecord>(() => product ?? blankProduct());
   const [customColor, setCustomColor] = useState('');
   const [customPlug, setCustomPlug] = useState('');
@@ -151,15 +155,26 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
   const editingDraft = editingExisting && product?.status === 'draft';
   const saveDraft = () => onSave({ ...draft, status: 'draft' }, 'draft');
   const saveActive = () => onSave({ ...draft, status: 'active' }, 'active');
+  // 分类只做建议：按品名里出现的最长现有分类名判定，点「建议」才写入，绝不自动覆盖人工填的值。
+  const categorySuggestion = suggestProductCategory(draft.name, productCategories);
+  const categoryCandidates = orderCategoriesWithSuggestion(productCategories, categorySuggestion);
   return <Modal open={open} title={copyMode ? '复制产品（新建）' : editingDraft ? '编辑产品（草稿）' : editingExisting ? '编辑产品' : '添加产品'} onClose={onClose} width={900} footer={<><button type="button" className="button button-secondary" onClick={onClose}>取消</button>{!editingExisting || editingDraft ? <button type="button" className="button button-secondary" title="暂存当前内容，稍后继续编辑" onClick={saveDraft}>存为草稿</button> : null}<button type="button" className="button button-primary" onClick={saveActive}><Save size={14} />{editingDraft ? '完成并保存' : '保存产品'}</button></>}>
     <div className="product-editor">
       {copyMode && <div className="notice notice-accent">已复制产品资料和包装信息；图片、包装图片及附件需重新上传。</div>}
-      <div className="form-grid form-grid-3">
+      <div className={editingExisting ? 'form-grid product-editor-identity has-sku' : 'form-grid product-editor-identity'}>
+        {editingExisting && <label className="label product-editor-sku">SKU<input className="input" value={draft.sku} readOnly placeholder="系统自动生成（VT-0000）" title="SKU由系统自动生成" /></label>}
         <label className="label">品名<input className="input" value={draft.name} onChange={(event) => set('name', event.target.value)} /></label>
+        <div className="field">
+          <span className="field-label">产品分类</span>
+          <div className="product-category-field">
+            <input className="input" aria-label="产品分类" list="product-category-options" value={draft.category ?? ''} onChange={(event) => set('category', event.target.value)} placeholder="如 扳手、逆变器" />
+            {!!categorySuggestion && categorySuggestion !== (draft.category ?? '').trim() && <button className="product-category-suggest" type="button" title={`按品名判定的分类：${categorySuggestion}，点一下填入`} onClick={() => set('category', categorySuggestion)}>建议 {categorySuggestion}</button>}
+          </div>
+          <datalist id="product-category-options">{categoryCandidates.map((category) => <option key={category} value={category} />)}</datalist>
+        </div>
         <label className="label">采购价<input className="input" type="number" min="0" value={draft.purchasePrice} onChange={(event) => set('purchasePrice', event.target.value)} /></label>
         <label className="label">供应商<input className="input" value={draft.supplier ?? ''} onChange={(event) => set('supplier', event.target.value)} /></label>
       </div>
-      {editingExisting && <label className="label product-editor-sku">SKU<input className="input" value={draft.sku} readOnly placeholder="系统自动生成（VT-0000）" title="SKU由系统自动生成" /></label>}
       {showParameters && <CollapsibleSection title="产品参数" summary={draft.parameters?.trim() ? '已填写' : '未填写'}>
         <label className="label">参数<textarea className="textarea" rows={4} value={draft.parameters ?? ''} onChange={(event) => set('parameters', event.target.value)} placeholder={'例如：扭矩：35N·m\n转速：0-1500rpm\n额定电压：12V'} /></label>
       </CollapsibleSection>}
