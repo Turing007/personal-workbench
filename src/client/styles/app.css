@@ -2382,14 +2382,18 @@ select {
   padding: 8px;
   background: var(--color-surface);
 }
-.image-folder-header {
+.image-folder-header { display: flex; align-items: center; gap: 6px; padding: 0 0 8px; }
+/* 文件夹名即「当前粘贴目标」：点一下选中并高亮，Ctrl+V 的图直接进这个文件夹 */
+.image-folder-select {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  border: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
   background: transparent;
-  padding: 2px 2px 8px;
+  padding: 4px 7px;
   color: var(--color-text);
   font: inherit;
   font-size: var(--text-xs);
@@ -2397,10 +2401,26 @@ select {
   text-align: left;
   cursor: pointer;
 }
-.image-folder-header > svg:first-child { color: var(--color-accent); flex: none; }
+.image-folder-select > svg { color: var(--color-accent); flex: none; }
+.image-folder.is-active .image-folder-select { border-color: var(--color-accent-border); background: var(--color-accent-soft); color: var(--color-accent); }
 .image-folder-count { color: var(--color-text-muted); font-weight: var(--weight-medium); font-variant-numeric: tabular-nums; }
-.image-folder-chevron { margin-left: auto; color: var(--color-text-muted); transition: transform .15s ease; }
-.image-folder-header.is-collapsed .image-folder-chevron { transform: rotate(-90deg); }
+.image-folder.is-active .image-folder-count { color: var(--color-accent); }
+.image-folder-paste-hint { margin-left: auto; flex: none; font-size: 10px; }
+.image-folder-collapse {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.image-folder-collapse:hover { background: var(--color-surface-subtle); }
+.image-folder-collapse svg { transition: transform .15s ease; }
+.image-folder-header.is-collapsed .image-folder-collapse svg { transform: rotate(-90deg); }
 
 .image-upload-grid {
   display: grid;
@@ -4470,6 +4490,9 @@ select {
   .page-toolbar.customer-products-toolbar > .button { grid-row: 1; grid-column: 3; }
 
   /* 内层产品工具条上的成本价小眼睛：默认 28px 手指点不准，与产品库一样补到 40px 触控区。 */
+  /* 文件夹收起按钮在手机上也要好点 */
+  .image-folder-collapse { width: 40px; height: 40px; }
+
   .customer-products-toolbar > .products-sensitive-toggle {
     width: 40px;
     height: 40px;

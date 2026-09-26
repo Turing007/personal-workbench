@@ -71,6 +71,8 @@ export default function ImagePasteUpload({
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [collapsedFolders, setCollapsedFolders] = useState<string[]>([]);
+  /** 当前粘贴目标文件夹：点文件夹名选中并高亮，Ctrl+V 直接进这个文件夹。 */
+  const [activeFolder, setActiveFolder] = useState<string | undefined>(categories?.[0]?.value);
   const [draggingId, setDraggingId] = useState<string | undefined>(undefined);
   const [dropTarget, setDropTarget] = useState<{ id: string; before: boolean }>();
   const dropTargetRef = useRef<{ id: string; before: boolean } | undefined>(undefined);
@@ -194,7 +196,8 @@ export default function ImagePasteUpload({
     const files = Array.from(event.clipboardData.files);
     if (!files.some((item) => item.type.startsWith('image/'))) return;
     event.preventDefault();
-    void addFiles(files, '已从剪贴板添加图片').catch(() => setMessage('图片读取失败，请重试'));
+    // 粘贴落到当前选中的文件夹，不再固定进第一个分类。
+    void addFiles(files, '已从剪贴板添加图片', activeFolder).catch(() => setMessage('图片读取失败，请重试'));
   };
 
   /**
@@ -421,7 +424,9 @@ export default function ImagePasteUpload({
             onClick={() => { setSelectedIds([]); setSelectMode((current) => !current); }}
           >{selectMode ? '退出多选' : `多选管理`}</button>
         )}
-        <span className="image-upload-hint">点击区域后可 Ctrl+V</span>
+        <span className="image-upload-hint">{categories?.length && activeFolder
+          ? `Ctrl+V 粘贴到「${categories.find((option) => option.value === activeFolder)?.label ?? ''}」`
+          : '点击区域后可 Ctrl+V'}</span>
       </div>
       {selectMode && <div className="image-select-bar" role="toolbar" aria-label="图片批量操作">
         <span className="image-select-count">已选 {selectedIds.length} / {value.length} 张</span>
@@ -438,19 +443,29 @@ export default function ImagePasteUpload({
             // 历史图片没有分类，normalize 后归入「精修图」，保证任何图片都不落空。
             const entries = value.map((item, index) => ({ item, index })).filter(({ item }) => normalizeProductImageCategory(item.category) === option.value);
             const collapsed = collapsedFolders.includes(option.value);
+            const isActive = activeFolder === option.value;
             return (
-              <section key={option.value} className="image-folder">
-                <button
-                  type="button"
-                  className={collapsed ? 'image-folder-header is-collapsed' : 'image-folder-header'}
-                  aria-expanded={!collapsed}
-                  onClick={() => setCollapsedFolders((current) => current.includes(option.value) ? current.filter((item) => item !== option.value) : [...current, option.value])}
-                >
-                  <Folder size={13} />
-                  <span>{option.label}</span>
-                  <span className="image-folder-count">{entries.length} 张</span>
-                  <ChevronDown size={13} className="image-folder-chevron" />
-                </button>
+              <section key={option.value} className={isActive ? 'image-folder is-active' : 'image-folder'}>
+                <div className={collapsed ? 'image-folder-header is-collapsed' : 'image-folder-header'}>
+                  <button
+                    type="button"
+                    className="image-folder-select"
+                    aria-pressed={isActive}
+                    onClick={() => { setActiveFolder(option.value); setMessage(`Ctrl+V 的图片会放进「${option.label}」`); }}
+                  >
+                    <Folder size={13} />
+                    <span>{option.label}</span>
+                    <span className="image-folder-count">{entries.length} 张</span>
+                    {isActive && <span className="image-folder-paste-hint">粘贴到这里</span>}
+                  </button>
+                  <button
+                    type="button"
+                    className="image-folder-collapse"
+                    aria-expanded={!collapsed}
+                    aria-label={collapsed ? `展开${option.label}` : `收起${option.label}`}
+                    onClick={() => setCollapsedFolders((current) => current.includes(option.value) ? current.filter((item) => item !== option.value) : [...current, option.value])}
+                  ><ChevronDown size={13} /></button>
+                </div>
                 {!collapsed && (
                   <div className="image-upload-grid">
                     {entries.map(({ item, index }) => renderCard(item, index))}

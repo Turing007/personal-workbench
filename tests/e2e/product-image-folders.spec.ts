@@ -81,25 +81,45 @@ test.describe('产品图片按分类文件夹管理', () => {
       await expect(realShotFolder.locator('.image-folder-count')).toHaveText('1 张');
 
       // 折叠精修图后卡片从 DOM 移除，再展开恢复
-      await refineFolder.locator('.image-folder-header').click();
+      await refineFolder.getByRole('button', { name: '收起精修图' }).click();
       await expect(refineFolder.locator('.image-card')).toHaveCount(0);
-      await refineFolder.locator('.image-folder-header').click();
+      await refineFolder.getByRole('button', { name: '展开精修图' }).click();
       await expect(refineFolder.locator('.image-card')).toHaveCount(3);
 
-      // 在实拍图文件夹里上传，新图直接归入实拍图（不用手动改分类）
-      await pickIntoFolder(page, '实拍图', `e2e-folders-${stamp}.png`);
+      // 默认粘贴目标是第一个文件夹（精修图），选中别的文件夹后高亮跟着走
+      await expect(refineFolder.locator('.image-folder-select')).toHaveAttribute('aria-pressed', 'true');
+      const realShotSelect = realShotFolder.locator('.image-folder-select');
+      await realShotSelect.click();
+      await expect(realShotSelect).toHaveAttribute('aria-pressed', 'true');
+      await expect(refineFolder.locator('.image-folder-select')).toHaveAttribute('aria-pressed', 'false');
+      await expect(editor.locator('.image-upload-header .image-upload-hint')).toHaveText('Ctrl+V 粘贴到「实拍图」');
+
+      // 粘贴：图片直接进当前选中的实拍图，不用事后再逐张改分类
+      await page.evaluate((name) => {
+        const box = document.querySelector('.product-editor .image-upload');
+        if (!box) throw new Error('找不到图片上传区');
+        const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='), (c) => c.charCodeAt(0));
+        const transfer = new DataTransfer();
+        transfer.items.add(new File([bytes], name, { type: 'image/png' }));
+        box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }));
+      }, `粘贴-实拍-${stamp}.png`);
       await expect(realShotFolder.locator('.image-card')).toHaveCount(2);
       await expect(realShotFolder.locator('.image-card-category').last()).toHaveValue('customer');
-      await expect(realShotFolder.locator('.image-folder-count')).toHaveText('2 张');
+      await expect(refineFolder.locator('.image-card')).toHaveCount(3);
 
-      // 保存后服务端分类与数量一致：4 张旧图 + 1 张新图
+      // 文件夹内自己的上传入口同样直接归入该文件夹
+      await pickIntoFolder(page, '实拍图', `e2e-folders-${stamp}.png`);
+      await expect(realShotFolder.locator('.image-card')).toHaveCount(3);
+      await expect(realShotFolder.locator('.image-folder-count')).toHaveText('3 张');
+
+      // 保存后服务端分类与数量一致：4 张旧图 + 粘贴 1 张 + 文件夹内上传 1 张
       await expect(page.getByRole('dialog').locator('button.button-primary', { hasText: '保存产品' })).toBeVisible();
       await page.getByRole('dialog').locator('button.button-primary').click();
       await expect(page.getByRole('dialog')).toHaveCount(0);
       const detail = await page.request.get(`/api/products/${product.id}`);
       const images = ((await detail.json()).data as { images: Array<{ category: string }> }).images;
-      expect(images).toHaveLength(5);
-      expect(images.filter((image) => image.category === 'customer')).toHaveLength(2);
+      expect(images).toHaveLength(6);
+      expect(images.filter((image) => image.category === 'customer')).toHaveLength(3);
     } finally {
       const cleanup = await page.request.delete(`/api/products/${product.id}`);
       expect(cleanup.ok()).toBeTruthy();
