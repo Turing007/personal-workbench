@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Building2, CalendarClock, Copy, Database, Download, Ellipsis, ImageOff, KeyRound, LayoutGrid, Minus, Plus, RotateCcw, Save, ScrollText, Smartphone, Trash2, Upload, UserPlus, Users, Wifi } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Building2, CalendarClock, Copy, Database, Download, Ellipsis, ImageOff, KeyRound, LayoutGrid, Minus, Package, Plus, RotateCcw, Save, ScrollText, Smartphone, Trash2, Upload, UserPlus, Users, Wifi } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
@@ -24,6 +24,7 @@ import {
 import { navigationItem, navigationItems, type NavigationKey } from '../navigation';
 import { DEFAULT_MOBILE_TABS, MOBILE_TAB_LIMIT, isDefaultMobileTabs, loadMobileTabs, moveMobileTab, toggleMobileTab } from '../mobile-tabs';
 import { useIsNarrow } from '../use-is-narrow';
+import PackagingPresetsSection from '../components/settings/PackagingPresetsSection';
 
 const EMPTY_PROFILE: CompanySnapshot = { name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '' };
 
@@ -60,12 +61,14 @@ const defaultTemplateApi = {
   }),
 };
 
-type SettingsSectionKey = 'company' | 'contract' | 'storage' | 'backup' | 'account' | 'mobile' | 'mobile-nav';
+type SettingsSectionKey = 'company' | 'contract' | 'packaging' | 'storage' | 'backup' | 'account' | 'mobile' | 'mobile-nav';
+export type { SettingsSectionKey };
 
 // 两级菜单：分组标题 → 菜单项，内容区一次只显示激活的板块。
 const SETTINGS_MENU_GROUPS: Array<{ label: string; items: Array<{ key: SettingsSectionKey; label: string; icon: LucideIcon }> }> = [
   { label: '基础资料', items: [{ key: 'company', label: '公司资料', icon: Building2 }] },
   { label: '单据模板', items: [{ key: 'contract', label: '购销合同模板', icon: ScrollText }] },
+  { label: '产品资料', items: [{ key: 'packaging', label: '包装预设', icon: Package }] },
   {
     label: '数据与备份',
     items: [
@@ -95,6 +98,8 @@ export interface SettingsPageProps {
   /** 当前设备的底部导航配置（仅手机端可改）；未传入时组件内部自读本机存储。 */
   mobileTabs?: NavigationKey[];
   onMobileTabsChange?: (tabs: NavigationKey[]) => void;
+  /** 从产品编辑器「管理预设 ›」跳转进来时直接停在对应板块。 */
+  initialSection?: SettingsSectionKey;
 }
 
 export default function SettingsPage({
@@ -108,6 +113,7 @@ export default function SettingsPage({
   currentUser,
   mobileTabs,
   onMobileTabsChange,
+  initialSection,
 }: SettingsPageProps) {
   const isNarrow = useIsNarrow();
   const [fbMobileTabs, setFbMobileTabs] = useState<NavigationKey[]>(loadMobileTabs);
@@ -134,7 +140,7 @@ export default function SettingsPage({
   const [templateBusy, setTemplateBusy] = useState(false);
   const [templateMessage, setTemplateMessage] = useState('');
   const [templateMessageType, setTemplateMessageType] = useState<'success' | 'error'>('success');
-  const [activeSection, setActiveSection] = useState<SettingsSectionKey>('company');
+  const [activeSection, setActiveSection] = useState<SettingsSectionKey>(initialSection ?? 'company');
   const [serviceVersion, setServiceVersion] = useState<{ version: string; buildTime: string | null; mode: 'production' | 'development' }>();
 
   useEffect(() => {
@@ -334,6 +340,7 @@ export default function SettingsPage({
         </div>
       </div>
       </div>}
+      {activeSection === 'packaging' && <PackagingPresetsSection />}
       {activeSection === 'account' && <AccountSection currentUser={currentUser ?? null} />}
       {activeSection === 'mobile' && <MobileConnectCard />}
       {activeSection === 'mobile-nav' && isNarrow && <MobileNavCard tabs={mobileTabsValue} onChange={changeMobileTabs} />}

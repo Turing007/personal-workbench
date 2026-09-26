@@ -7,7 +7,9 @@ import { PRODUCT_IMAGE_CATEGORY_OPTIONS } from '../../shared/product-image-categ
 import CollapsibleSection from './CollapsibleSection';
 import Modal from './Modal';
 import PackagingTable from './PackagingTable';
+import { blankPackagingRow } from '../packaging-preset';
 import type { CustomerProduct, PackagingOption } from './OrderForm';
+import type { PackagingPreset } from '../../shared/packaging-presets';
 
 export interface ProductRecord extends CustomerProduct {
   category: string;
@@ -49,6 +51,10 @@ export interface ProductEditorProps {
   copyMode?: boolean;
   /** 客户产品复用编辑器时隐藏系统产品参数字段。 */
   showParameters?: boolean;
+  /** 包装方式预设卡片；为空则不显示。 */
+  packagingPresets?: PackagingPreset[];
+  /** 点「管理预设 ›」时跳到设置页维护，未传则不显示入口。 */
+  onManagePresets?: () => void;
   onClose: () => void;
   onSave: (product: ProductRecord, mode: 'draft' | 'active') => void;
 }
@@ -57,7 +63,7 @@ const colorPresets = ['蓝', '红', '黄'];
 const plugPresets = ['牧田', '德伟', '米沃奇'];
 
 function blankProduct(): ProductRecord {
-  return { id: `product-${Date.now()}`, name: '', sku: '', specification: '', packCount: 1, parameters: '', packaging: [{ id: `pack-${Date.now()}`, name: '彩盒包装', innerSize: '', innerWeight: '', outerSize: '', outerWeight: '', packSize: 1, purchasePrice: '', images: [] }], remark: '', category: '', purchasePrice: '', supplier: '', colors: [], batteryPlugs: [], images: [], accessories: '', attachments: [] };
+  return { id: `product-${Date.now()}`, name: '', sku: '', specification: '', packCount: 1, parameters: '', packaging: [blankPackagingRow()], remark: '', category: '', purchasePrice: '', supplier: '', colors: [], batteryPlugs: [], images: [], accessories: '', attachments: [] };
 }
 
 const attachmentCategories: Array<{ value: ProductAttachmentCategory; label: string }> = [
@@ -127,7 +133,7 @@ function ProductAttachments({ value, onChange }: { value: ProductAttachment[]; o
   </section>;
 }
 
-export default function ProductEditor({ open, product, copyMode = false, showParameters: showParametersProp, onClose, onSave }: ProductEditorProps) {
+export default function ProductEditor({ open, product, copyMode = false, showParameters: showParametersProp, packagingPresets, onManagePresets, onClose, onSave }: ProductEditorProps) {
   const [draft, setDraft] = useState<ProductRecord>(() => product ?? blankProduct());
   const [customColor, setCustomColor] = useState('');
   const [customPlug, setCustomPlug] = useState('');
@@ -163,7 +169,7 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
       <CollapsibleSection title="颜色与插脚" summary={`${draft.colors.length} 种颜色 · ${draft.batteryPlugs.length} 种插脚`}>
         <div className="form-grid form-grid-2"><div className="field"><span className="field-label">颜色（多选）</span><div className="product-editor-chips">{colorPresets.concat(draft.colors.filter((item) => !colorPresets.includes(item))).map((color) => <button type="button" key={color} className={`chip${draft.colors.includes(color) ? ' is-selected' : ''}`} onClick={() => toggle('colors', color)}>{color}</button>)}<input className="chip-input" value={customColor} onChange={(event) => setCustomColor(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addCustom('colors', customColor, setCustomColor); }} placeholder="自定义颜色" /><button type="button" className="chip-add" title="添加自定义颜色" onClick={() => addCustom('colors', customColor, setCustomColor)}><Plus size={14} /></button></div></div><div className="field"><span className="field-label">电池插脚（多选）</span><div className="product-editor-chips">{plugPresets.concat(draft.batteryPlugs.filter((item) => !plugPresets.includes(item))).map((plug) => <button type="button" key={plug} className={`chip${draft.batteryPlugs.includes(plug) ? ' is-selected' : ''}`} onClick={() => toggle('batteryPlugs', plug)}>{plug}</button>)}<input className="chip-input" value={customPlug} onChange={(event) => setCustomPlug(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addCustom('batteryPlugs', customPlug, setCustomPlug); }} placeholder="自定义插脚" /><button type="button" className="chip-add" title="添加自定义插脚" onClick={() => addCustom('batteryPlugs', customPlug, setCustomPlug)}><Plus size={14} /></button></div></div></div>
       </CollapsibleSection>
-      <PackagingTable value={draft.packaging} onChange={(packaging: PackagingOption[]) => set('packaging', packaging)} />
+      <PackagingTable value={draft.packaging} onChange={(packaging: PackagingOption[]) => set('packaging', packaging)} presets={packagingPresets} onManagePresets={onManagePresets} />
       <ImagePasteUpload label="产品图片与资料图" value={draft.images} onChange={(images) => set('images', images)} multiple showNotes sortable compact selectable categories={PRODUCT_IMAGE_CATEGORY_OPTIONS} />
       <ProductAttachments value={draft.attachments ?? []} onChange={(attachments) => set('attachments', attachments)} />
     </div>

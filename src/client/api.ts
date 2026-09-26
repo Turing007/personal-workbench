@@ -1,6 +1,7 @@
 import type { OrderStatus } from '../shared/domain';
 import { calculateOrderAmountCents } from '../shared/order-prices';
 import { normalizeProductImageCategory } from '../shared/product-image-categories';
+import type { PackagingPreset } from '../shared/packaging-presets';
 import type { StockPreparation } from '../shared/stock';
 import type {
   Customer,
@@ -460,13 +461,41 @@ export function generateOrderContractPdf(orderId: number | string) {
 
 export function advanceOrderStatus(id: number | string, to: OrderStatus, reason: 'manual' | 'first-print' = 'manual') { return request(`/api/orders/${id}/status`, { method: 'POST', body: JSON.stringify({ to, reason }) }); }
 
-export function getProducts(q = '') { return request<{ items?: ProductApiRecord[]; rows?: ProductApiRecord[] }>(`/api/products?q=${encodeURIComponent(q)}`).then((result) => (result.items ?? result.rows ?? []).map(mapProductRecord)); }
+// 服务端单次最多返回 200 条，产品库列表要全量（页面自己做显示分页），按页循环取回直到 total。
+const PRODUCTS_FETCH_SIZE = 200;
+export async function getProducts(q = '') {
+  const collected: ProductApiRecord[] = [];
+  for (let page = 1; page <= 50; page += 1) {
+    const query = new URLSearchParams({ q, page: String(page), pageSize: String(PRODUCTS_FETCH_SIZE) });
+    const result = await request<{ items?: ProductApiRecord[]; rows?: ProductApiRecord[]; total?: number }>(`/api/products?${query.toString()}`);
+    const items = result.items ?? result.rows ?? [];
+    collected.push(...items);
+    if (items.length < PRODUCTS_FETCH_SIZE || collected.length >= (result.total ?? collected.length)) break;
+  }
+  return collected.map(mapProductRecord);
+}
 export function exportProducts() { return requestBlob('/api/products/export'); }
 export function downloadProductImportTemplate() { return requestBlob('/api/products/import-template'); }
 export async function importProducts(file: File) {
   const form = new FormData();
   form.append('file', file);
   return request<{ total: number; created: number; updated: number }>('/api/products/import', { method: 'POST', body: form });
+}
+
+/** 包装方式预设：产品编辑器一键填入的常用包装组合，存在服务端供多设备共用。 */
+export async function getPackagingPresets() {
+  const result = await request<{ items?: PackagingPreset[] }>('/api/settings/packaging-presets');
+  return result.items ?? [];
+}
+
+export async function savePackagingPresets(items: PackagingPreset[]) {
+  const result = await request<{ items?: PackagingPreset[] }>('/api/settings/packaging-presets', { method: 'PUT', body: JSON.stringify({ items }) });
+  return result.items ?? [];
+}
+
+export async function reseedPackagingPresets() {
+  const result = await request<{ items?: PackagingPreset[] }>('/api/settings/packaging-presets/reseed', { method: 'POST' });
+  return result.items ?? [];
 }
 
 export function getCustomers(includeInactive = false, q = '') {

@@ -40,6 +40,8 @@ async function openProducts(page: Page, sku: string, mobile = false) {
   await page.goto('/');
   if (mobile) await page.locator('.mobile-tab-item[aria-label="更多模块"]').click();
   await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+  // 手机端默认进大图浏览，本用例验的是卡片列表，先切回列表视图。
+  if (mobile) await page.locator('.products-page .products-view-toggle').click();
   await page.locator('.products-page .page-toolbar .search-control input').fill(sku);
 }
 

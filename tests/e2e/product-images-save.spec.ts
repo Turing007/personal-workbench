@@ -63,6 +63,8 @@ async function openImagesModal(page: Page, sku: string, mobile: boolean) {
     await page.locator('.mobile-tab-item[aria-label="更多模块"]').click();
   }
   await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+  // 手机端默认进大图浏览，这里要点列表里的图片按钮，先切回列表视图。
+  if (mobile) await page.locator('.products-page .products-view-toggle').click();
   await page.locator('.products-page .page-toolbar .search-control input').fill(sku);
   await page.locator('.product-image-button:visible').first().click();
   await expect(page.locator('.product-images-content')).toBeVisible();

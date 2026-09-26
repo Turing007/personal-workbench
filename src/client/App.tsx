@@ -15,7 +15,7 @@ import { getBatchAdvancePlan, type BatchAdvanceAction } from './order-workflow';
 import ProductsPage from './pages/ProductsPage';
 import CustomerProductsPage from './pages/CustomerProductsPage';
 import ShippingPage from './pages/ShippingPage';
-import SettingsPage from './pages/SettingsPage';
+import SettingsPage, { type SettingsSectionKey } from './pages/SettingsPage';
 import QuotationPage from './pages/QuotationPage';
 import SalesDocumentsPage from './pages/SalesDocumentsPage';
 import FinancePage from './pages/FinancePage';
@@ -165,6 +165,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
   const [shippingInitialOrders, setShippingInitialOrders] = useState<OrderDraft[]>();
   const [financeInitialOrderId, setFinanceInitialOrderId] = useState<number>();
   const [ordersInitialOrderId, setOrdersInitialOrderId] = useState<number | null>(null);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSectionKey | null>(null);
   const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState<ToastMessage[]>([]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -183,6 +184,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     if (next !== 'shipping') setShippingInitialOrder(undefined);
     if (next !== 'finance') setFinanceInitialOrderId(undefined);
     if (next !== 'orders') setOrdersInitialOrderId(null);
+    if (next !== 'settings') setSettingsInitialSection(null);
     setActive(next);
     setMobileNavOpen(false);
     // 切换模块后回到列表顶部，避免手机上停留在上一个模块的滚动位置。
@@ -614,10 +616,10 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     {active === 'stock' && <StockPage onNotify={notify} systemProducts={products} />}
     {active === 'quotations' && <QuotationPage onNotify={notify} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
     {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={async (orderId) => { await loadOrders(); setOrdersInitialOrderId(orderId); navigate('orders'); }} />}
-    {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} onExport={exportProductLibrary} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} />}
+    {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} onExport={exportProductLibrary} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onManagePresets={() => { setSettingsInitialSection('packaging'); navigate('settings'); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} />}
     {active === 'customer-products' && <CustomerProductsPage customers={customers} systemProducts={products} initialCustomerId={customerProductsInitialCustomerId ?? undefined} loading={loading} onCustomersChanged={loadCustomers} onNotify={notify} />}
     {active === 'shipping' && <ShippingPage orders={shippingOrders} initialOrder={shippingInitialOrder} initialOrders={shippingInitialOrders} onUpdateTracking={updateTracking} onSaveTracking={saveShippingTracking} onConfirm={confirmShipping} />}
-    {active === 'settings' && <SettingsPage onBackup={backup} onRestore={restore} onProfileChanged={setCompanyProfile} currentUser={user} mobileTabs={mobileTabs} onMobileTabsChange={updateMobileTabs} />}
+    {active === 'settings' && <SettingsPage onBackup={backup} onRestore={restore} onProfileChanged={setCompanyProfile} currentUser={user} mobileTabs={mobileTabs} onMobileTabsChange={updateMobileTabs} initialSection={settingsInitialSection ?? undefined} />}
   </main><MobileTabBar activeKey={active} tabs={mobileTabs} onNavigate={navigate} onOpenMore={() => setMobileNavOpen(true)} /><Toast messages={messages} onDismiss={(id) => setMessages((current) => current.filter((item) => item.id !== id))} /></div>;
 }
 
