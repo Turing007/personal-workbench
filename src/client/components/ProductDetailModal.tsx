@@ -92,9 +92,9 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
           <DetailItem label="SKU"><span className="product-detail-emphasis kv-value is-accent">{product.sku || '—'}</span></DetailItem>
           <DetailItem label="品名">{product.name || '—'}</DetailItem>
           {showSensitive && <DetailItem label="供应商">{product.supplier || '—'}</DetailItem>}
+          {showSensitive && <DetailItem label="价格">{product.purchasePrice ? `¥${product.purchasePrice}` : '—'}</DetailItem>}
           <DetailItem label="颜色">{product.colors.join('、') || '—'}</DetailItem>
           <DetailItem label="插脚">{product.batteryPlugs.join('、') || '—'}</DetailItem>
-          {showSensitive && <DetailItem label="价格">{product.purchasePrice ? `¥${product.purchasePrice}` : '—'}</DetailItem>}
           <DetailItem label="配件" fullWidth>{product.accessories || '—'}</DetailItem>
           <DetailItem label="备注" fullWidth>{product.remark || '—'}</DetailItem>
           <DetailItem label="图片">
