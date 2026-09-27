@@ -3,7 +3,7 @@ import { withTransaction } from './connection.js';
 import { migratePackagingColumns } from './packaging.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 23;
+const CURRENT_SCHEMA_VERSION = 24;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -71,6 +71,18 @@ CREATE TABLE IF NOT EXISTS product_attachments (
   mime_type TEXT NOT NULL DEFAULT '',
   size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
   created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS product_purchase_quotes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  supplier TEXT NOT NULL DEFAULT '',
+  variant TEXT NOT NULL DEFAULT '',
+  price REAL NOT NULL DEFAULT 0 CHECK (price >= 0),
+  is_default INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS customers (
@@ -542,6 +554,7 @@ CREATE INDEX IF NOT EXISTS idx_products_name_sku_spec ON products(name, sku, spe
 CREATE INDEX IF NOT EXISTS idx_product_packaging_product ON product_packaging(product_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_product_packaging_images_packaging ON product_packaging_images(packaging_id, created_at, id);
 CREATE INDEX IF NOT EXISTS idx_product_attachments_product ON product_attachments(product_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_product_purchase_quotes_product ON product_purchase_quotes(product_id, is_default DESC, sort_order, id);
 CREATE INDEX IF NOT EXISTS idx_customer_product_attachments_product ON customer_product_attachments(customer_product_id, created_at, id);
 CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_order_source_types_active ON order_source_types(is_active, id);
@@ -1049,6 +1062,20 @@ function migrateVersionTwentyThree(database: DatabaseSync, now: string): void {
   // 两列必须经 ALTER 追加到表尾，不能写进 schemaSql 中段，否则备份按位置复制会列错位。
   addColumnIfMissing(database, 'product_images', 'category', "TEXT NOT NULL DEFAULT 'product'");
   addColumnIfMissing(database, 'product_images', 'note', "TEXT NOT NULL DEFAULT ''");
+  upsertSetting(database, 'schema_version', '23', now);
+}
+
+function migrateVersionTwentyFour(database: DatabaseSync, now: string): void {
+  // 多档采购报价：把每个产品已有的 supplier + purchase_price 落成一条默认报价。
+  // 只在该产品还没有任何报价时补，重复执行不会产生重复行。
+  database.exec(
+    `INSERT INTO product_purchase_quotes
+        (product_id, supplier, variant, price, is_default, sort_order, created_at, updated_at)
+      SELECT p.id, COALESCE(p.supplier, ''), '', COALESCE(p.purchase_price, 0), 1, 0, '${now}', '${now}'
+      FROM products p
+      WHERE p.purchase_price IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM product_purchase_quotes q WHERE q.product_id = p.id)`,
+  );
   upsertSetting(database, 'schema_version', String(CURRENT_SCHEMA_VERSION), now);
 }
 
@@ -1101,6 +1128,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionTwentyOne(transactionDatabase, now);
     migrateVersionTwentyTwo(transactionDatabase, now);
     migrateVersionTwentyThree(transactionDatabase, now);
+    migrateVersionTwentyFour(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

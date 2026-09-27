@@ -7,6 +7,7 @@ import { autoPack, type PackedBox } from '../../shared/packing.js';
 import { calculateOutstandingCents, deriveFinancePaymentStatus } from '../../shared/finance.js';
 import { DEFAULT_PRODUCT_IMAGE_CATEGORY } from '../../shared/product-image-categories.js';
 import { normalizeProductStatus, type ProductStatus } from '../../shared/product-status.js';
+import { mapStoredPurchaseQuotes, normalizePurchaseQuotes, purchaseQuoteMirror } from '../../shared/product-purchase-quotes.js';
 import { cartonLabelRequirement } from '../../shared/customers.js';
 
 type SqlValue = string | number | null;
@@ -40,6 +41,8 @@ export interface ProductInput {
   remark?: string;
   /** 草稿产品允许信息不完整，在售与停售都要求品名必填。 */
   status?: ProductStatus;
+  /** 多档采购报价；传了就整表覆盖，没传（如 Excel 导入）保持原样。 */
+  purchaseQuotes?: unknown[];
   packaging?: PackagingInput[];
 }
 
@@ -230,6 +233,11 @@ export class DatabaseRepositories {
             )) FROM product_packaging_images ppi WHERE ppi.packaging_id = pp.id ORDER BY ppi.created_at, ppi.id), '[]')
           )) FROM product_packaging pp WHERE pp.product_id = p.id ORDER BY pp.sort_order), '[]') AS packaging_json,
           COALESCE((SELECT json_group_array(json_object(
+            'id', q.id, 'supplier', q.supplier, 'variant', q.variant,
+            'price', q.price, 'isDefault', q.is_default
+          )) FROM product_purchase_quotes q WHERE q.product_id = p.id
+            ORDER BY q.is_default DESC, q.sort_order, q.id), '[]') AS purchase_quotes_json,
+          COALESCE((SELECT json_group_array(json_object(
             'id', ordered_pi.id, 'relativePath', ordered_pi.relative_path, 'originalName', ordered_pi.original_name,
             'mimeType', ordered_pi.mime_type, 'size', ordered_pi.size_bytes,
             'category', ordered_pi.category, 'note', ordered_pi.note
@@ -253,6 +261,7 @@ export class DatabaseRepositories {
       colors: JSON.parse(String(row.colors_json)),
       batteryPlugs: JSON.parse(String(row.battery_plugs_json)),
       packaging: JSON.parse(String(row.packaging_json)).map((item: PackagingInputLike) => mapPackagingRecord(item)),
+      purchaseQuotes: mapStoredPurchaseQuotes(JSON.parse(String(row.purchase_quotes_json ?? '[]'))),
       images: JSON.parse(String(row.images_json)),
       attachments: JSON.parse(String(row.attachments_json)),
     }));
@@ -274,6 +283,12 @@ export class DatabaseRepositories {
 
   saveProduct(input: ProductInput, productId?: number) {
     const timestamp = now();
+    // 报价数组是唯一事实：给了就用默认档的供应商与价格回写镜像列，没给（Excel 导入等老路径）沿用手上的值。
+    const quotesProvided = Array.isArray(input.purchaseQuotes);
+    const quotes = quotesProvided ? normalizePurchaseQuotes(input.purchaseQuotes) : [];
+    const mirror = quotesProvided ? purchaseQuoteMirror(quotes) : { supplier: input.supplier ?? '', purchasePrice: input.purchasePrice == null ? '' : String(input.purchasePrice) };
+    const mirrorPrice = mirror.purchasePrice.trim() === '' ? null : Number(mirror.purchasePrice);
+    const mirrorSupplier = mirror.supplier;
     return withTransaction(this.database, (database) => {
       let id = productId;
       const existingPackagingImages = productId
@@ -295,9 +310,9 @@ export class DatabaseRepositories {
             input.name.trim(),
             input.specification ?? '',
             input.category ?? '',
-            input.purchasePrice ?? null,
+            mirrorPrice,
             input.parameters ?? '',
-            input.supplier ?? '',
+            mirrorSupplier,
             json(input.colors),
             json(input.batteryPlugs),
             input.accessories ?? '',
@@ -322,8 +337,8 @@ export class DatabaseRepositories {
               input.specification ?? '',
               input.parameters ?? '',
               input.category ?? '',
-              input.purchasePrice ?? null,
-              input.supplier ?? '',
+              mirrorPrice,
+              mirrorSupplier,
               json(input.colors),
               json(input.batteryPlugs),
               input.accessories ?? '',
@@ -380,6 +395,35 @@ export class DatabaseRepositories {
           ));
         }
       });
+
+      if (quotesProvided) {
+        database.prepare('DELETE FROM product_purchase_quotes WHERE product_id = ?').run(id);
+        const insertQuote = database.prepare(
+          `INSERT INTO product_purchase_quotes
+            (product_id, supplier, variant, price, is_default, sort_order, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        );
+        quotes.forEach((quote, index) => insertQuote.run(
+          id,
+          quote.supplier,
+          quote.variant,
+          quote.price === '' ? 0 : Number(quote.price),
+          quote.isDefault ? 1 : 0,
+          index,
+          timestamp,
+          timestamp,
+        ));
+      } else {
+        // 没带报价数组的路径（Excel 导入、老客户端）：保证至少有一条默认档，镜像列不会成为孤儿事实。
+        const hasQuote = database.prepare('SELECT 1 FROM product_purchase_quotes WHERE product_id = ?').get(id);
+        if (!hasQuote && (mirrorPrice != null || mirrorSupplier)) {
+          database.prepare(
+            `INSERT INTO product_purchase_quotes
+              (product_id, supplier, variant, price, is_default, sort_order, created_at, updated_at)
+             VALUES (?, ?, '', ?, 1, 0, ?, ?)`,
+          ).run(id, mirrorSupplier, mirrorPrice ?? 0, timestamp, timestamp);
+        }
+      }
 
       return this.listProducts({}).find((product) => rowId(product) === id);
     });

@@ -278,6 +278,8 @@ function parseProductInput(value: unknown): ProductInput {
     accessories: optionalText(body.accessories, 'accessories', '配件'),
     remark: optionalText(body.remark, 'remark', '备注'),
     status,
+    // 报价数组：没带就是不动（Excel 导入路径），带了就整表覆盖。
+    purchaseQuotes: Array.isArray(body.purchaseQuotes) ? body.purchaseQuotes : undefined,
     packaging: parsePackaging(body.packaging),
   };
 }
@@ -378,6 +380,7 @@ function mapProduct(row: Record<string, unknown> | undefined) {
     remark: String(row.remark),
     status: String(row.status ?? 'active'),
     packaging: Array.isArray(row.packaging) ? row.packaging : [],
+    purchaseQuotes: Array.isArray(row.purchaseQuotes) ? row.purchaseQuotes : [],
     images: Array.isArray(row.images) ? row.images : [],
     attachments: Array.isArray(row.attachments) ? row.attachments.map((item) => mapAttachment(item as Record<string, unknown>)) : [],
     createdAt: String(row.created_at),

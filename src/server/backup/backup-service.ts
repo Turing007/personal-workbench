@@ -18,6 +18,7 @@ const tableNames = [
   'customers',
   'products',
   'product_packaging',
+  'product_purchase_quotes',
   'product_images',
   'product_packaging_images',
   'product_attachments',
