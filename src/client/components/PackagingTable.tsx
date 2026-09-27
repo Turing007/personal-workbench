@@ -1,4 +1,4 @@
-import { Image as ImageIcon, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Image as ImageIcon, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import type { PackagingOption } from './OrderForm';
 import type { PackagingPreset } from '../../shared/packaging-presets';
@@ -14,22 +14,33 @@ export interface PackagingTableProps {
   /** 传入即启用「常用包装」一键填入，仅产品编辑器使用。 */
   presets?: PackagingPreset[];
   onManagePresets?: () => void;
+  /** 只折叠「常用包装」预设条，填写用的表格始终摊开。 */
+  collapsible?: boolean;
 }
 
 /** 预设卡片超过这个数量就先折叠，避免把编辑器顶部撑满。 */
 const PRESET_COLLAPSE_AT = 6;
 
-export default function PackagingTable({ value, onChange, compact = false, showPurchasePrice = true, showImages = true, presets = [], onManagePresets }: PackagingTableProps) {
+export default function PackagingTable({ value, onChange, compact = false, showPurchasePrice = true, showImages = true, presets = [], onManagePresets, collapsible = false }: PackagingTableProps) {
   const [imagesRowId, setImagesRowId] = useState<string>();
   const [presetsExpanded, setPresetsExpanded] = useState(false);
+  const [presetsCollapsed, setPresetsCollapsed] = useState(collapsible);
   const update = (id: string, patch: Partial<PackagingOption>) => onChange(value.map((row) => row.id === id ? { ...row, ...patch } : row));
   const add = () => onChange([...value, blankPackagingRow()]);
   const imagesRow = value.find((row) => row.id === imagesRowId);
   const shownPresets = presetsExpanded ? presets : presets.slice(0, PRESET_COLLAPSE_AT);
   return (
     <div className="packaging-table-section">
-      <div className="section-box-header"><span className="section-box-title">包装方式</span><button type="button" className="link-button packaging-table-add" onClick={add}><Plus size={14} />添加包装</button></div>
-      {!!presets.length && <div className="packaging-preset-bar">
+      <div className="section-box-header">
+        <span className="section-box-title">包装方式</span>
+        <button type="button" className="link-button packaging-table-add" onClick={add}><Plus size={14} />添加包装</button>
+      </div>
+      {collapsible && !!presets.length && <button type="button" className="packaging-preset-toggle" aria-expanded={!presetsCollapsed} onClick={() => setPresetsCollapsed((current) => !current)}>
+        {presetsCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+        <span>常用包装</span>
+        <span className="packaging-preset-toggle-count">{presets.length} 套</span>
+      </button>}
+      {(!collapsible || !presetsCollapsed) && !!presets.length && <div className="packaging-preset-bar">
         <div className="packaging-preset-list">
           {shownPresets.map((preset) => <button
             key={preset.id || `${preset.name}-${preset.innerSize}-${preset.outerSize}`}

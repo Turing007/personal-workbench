@@ -4,14 +4,16 @@ import { Download, ExternalLink, FilePlus2, Plus, Save, Trash2 } from 'lucide-re
 import ImagePasteUpload, { type ImageAttachment } from './ImagePasteUpload';
 import { canPickFilesNatively, pickFilesNatively } from '../app-bridge';
 import { PRODUCT_IMAGE_CATEGORY_OPTIONS } from '../../shared/product-image-categories';
-import CollapsibleSection from './CollapsibleSection';
 import Modal from './Modal';
 import PackagingTable from './PackagingTable';
+import PurchaseQuotesTable from './PurchaseQuotesTable';
 import { blankPackagingRow } from '../packaging-preset';
 import { orderCategoriesWithSuggestion, suggestProductCategory } from '../product-category-suggest';
 import type { CustomerProduct, PackagingOption } from './OrderForm';
 import type { PackagingPreset } from '../../shared/packaging-presets';
 import type { ProductStatus } from '../../shared/product-status';
+import type { ProductPurchaseQuote } from '../../shared/product-purchase-quotes';
+import { blankPurchaseQuote } from '../../shared/product-purchase-quotes';
 
 export interface ProductRecord extends CustomerProduct {
   category: string;
@@ -27,6 +29,8 @@ export interface ProductRecord extends CustomerProduct {
   accessories: string;
   remark: string;
   packaging: PackagingOption[];
+  /** 多档采购报价；默认档决定列表价格与客户产品成本价。 */
+  purchaseQuotes?: ProductPurchaseQuote[];
   attachments: ProductAttachment[];
   /** 落库时间，由服务端 products 表带回；产品库列表按 updatedAt 倒序展示。 */
   createdAt?: string;
@@ -57,6 +61,9 @@ export interface ProductEditorProps {
   packagingPresets?: PackagingPreset[];
   /** 现有产品的分类，作为分类输入框的候选（仍可自由填写新分类）。 */
   productCategories?: string[];
+  /** 库里已用过的供应商与报价名目，作为采购报价表格的候选。 */
+  supplierOptions?: string[];
+  variantOptions?: string[];
   /** 点「管理预设 ›」时跳到设置页维护，未传则不显示入口。 */
   onManagePresets?: () => void;
   onClose: () => void;
@@ -66,8 +73,14 @@ export interface ProductEditorProps {
 const colorPresets = ['蓝', '红', '黄'];
 const plugPresets = ['牧田', '德伟', '米沃奇'];
 
+/** 打开编辑器就摆一行空报价：第一行天然就是默认档，省掉「先点添加报价才能填」。 */
+function withFirstQuoteRow(record: ProductRecord): ProductRecord {
+  if (record.purchaseQuotes?.length) return record;
+  return { ...record, purchaseQuotes: [{ ...blankPurchaseQuote(), isDefault: true }] };
+}
+
 function blankProduct(): ProductRecord {
-  return { id: `product-${Date.now()}`, name: '', sku: '', specification: '', packCount: 1, parameters: '', packaging: [blankPackagingRow()], remark: '', category: '', purchasePrice: '', supplier: '', colors: [], batteryPlugs: [], images: [], accessories: '', attachments: [] };
+  return { id: `product-${Date.now()}`, name: '', sku: '', specification: '', packCount: 1, parameters: '', packaging: [blankPackagingRow()], remark: '', category: '', purchasePrice: '', supplier: '', purchaseQuotes: [], colors: [], batteryPlugs: [], images: [], accessories: '', attachments: [] };
 }
 
 const attachmentCategories: Array<{ value: ProductAttachmentCategory; label: string }> = [
@@ -137,14 +150,14 @@ function ProductAttachments({ value, onChange }: { value: ProductAttachment[]; o
   </section>;
 }
 
-export default function ProductEditor({ open, product, copyMode = false, showParameters: showParametersProp, packagingPresets, productCategories = [], onManagePresets, onClose, onSave }: ProductEditorProps) {
-  const [draft, setDraft] = useState<ProductRecord>(() => product ?? blankProduct());
+export default function ProductEditor({ open, product, copyMode = false, showParameters: showParametersProp, packagingPresets, productCategories = [], supplierOptions = [], variantOptions = [], onManagePresets, onClose, onSave }: ProductEditorProps) {
+  const [draft, setDraft] = useState<ProductRecord>(() => withFirstQuoteRow(product ?? blankProduct()));
   const [customColor, setCustomColor] = useState('');
   const [customPlug, setCustomPlug] = useState('');
   const showParameters = showParametersProp ?? Object.prototype.hasOwnProperty.call(draft, 'parameters');
   useEffect(() => {
     if (!open) return;
-    setDraft(product ?? blankProduct());
+    setDraft(withFirstQuoteRow(product ?? blankProduct()));
     setCustomColor('');
     setCustomPlug('');
   }, [open, product]);
@@ -156,6 +169,8 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
   const saveDraft = () => onSave({ ...draft, status: 'draft' }, 'draft');
   const saveActive = () => onSave({ ...draft, status: 'active' }, 'active');
   // 分类只做建议：按品名里出现的最长现有分类名判定，点「建议」才写入，绝不自动覆盖人工填的值。
+  // 报价数组是采购价与供应商的唯一入口，默认档那一条会写回 products 的镜像列。
+  const purchaseQuotes = draft.purchaseQuotes ?? [];
   const categorySuggestion = suggestProductCategory(draft.name, productCategories);
   const categoryCandidates = orderCategoriesWithSuggestion(productCategories, categorySuggestion);
   return <Modal open={open} title={copyMode ? '复制产品（新建）' : editingDraft ? '编辑产品（草稿）' : editingExisting ? '编辑产品' : '添加产品'} onClose={onClose} width={900} footer={<><button type="button" className="button button-secondary" onClick={onClose}>取消</button>{!editingExisting || editingDraft ? <button type="button" className="button button-secondary" title="暂存当前内容，稍后继续编辑" onClick={saveDraft}>存为草稿</button> : null}<button type="button" className="button button-primary" onClick={saveActive}><Save size={14} />{editingDraft ? '完成并保存' : '保存产品'}</button></>}>
@@ -172,19 +187,22 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
           </div>
           <datalist id="product-category-options">{categoryCandidates.map((category) => <option key={category} value={category} />)}</datalist>
         </div>
-        <label className="label">采购价<input className="input" type="number" min="0" value={draft.purchasePrice} onChange={(event) => set('purchasePrice', event.target.value)} /></label>
-        <label className="label">供应商<input className="input" value={draft.supplier ?? ''} onChange={(event) => set('supplier', event.target.value)} /></label>
+        <div className="field">
+          <span className="field-label">颜色（多选）</span>
+          <div className="product-editor-chips">{colorPresets.concat(draft.colors.filter((item) => !colorPresets.includes(item))).map((color) => <button type="button" key={color} className={`chip${draft.colors.includes(color) ? ' is-selected' : ''}`} onClick={() => toggle('colors', color)}>{color}</button>)}<span className="chip-custom"><input className="chip-input" aria-label="自定义颜色" value={customColor} onChange={(event) => setCustomColor(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addCustom('colors', customColor, setCustomColor); }} placeholder="自定义" /><button type="button" className="chip-add" title="添加自定义颜色" onClick={() => addCustom('colors', customColor, setCustomColor)}><Plus size={14} /></button></span></div>
+        </div>
+        <div className="field">
+          <span className="field-label">电池插脚（多选）</span>
+          <div className="product-editor-chips">{plugPresets.concat(draft.batteryPlugs.filter((item) => !plugPresets.includes(item))).map((plug) => <button type="button" key={plug} className={`chip${draft.batteryPlugs.includes(plug) ? ' is-selected' : ''}`} onClick={() => toggle('batteryPlugs', plug)}>{plug}</button>)}<span className="chip-custom"><input className="chip-input" aria-label="自定义插脚" value={customPlug} onChange={(event) => setCustomPlug(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addCustom('batteryPlugs', customPlug, setCustomPlug); }} placeholder="自定义" /><button type="button" className="chip-add" title="添加自定义插脚" onClick={() => addCustom('batteryPlugs', customPlug, setCustomPlug)}><Plus size={14} /></button></span></div>
+        </div>
       </div>
-      {showParameters && <CollapsibleSection title="产品参数" summary={draft.parameters?.trim() ? '已填写' : '未填写'}>
-        <label className="label">参数<textarea className="textarea" rows={4} value={draft.parameters ?? ''} onChange={(event) => set('parameters', event.target.value)} placeholder={'例如：扭矩：35N·m\n转速：0-1500rpm\n额定电压：12V'} /></label>
-      </CollapsibleSection>}
-      <CollapsibleSection title="配件与备注" summary={draft.accessories.trim() || (draft.remark ?? '').trim() ? '已填写' : '未填写'}>
-        <div className="form-grid form-grid-2"><label className="label">配件<textarea className="textarea" rows={2} value={draft.accessories} onChange={(event) => set('accessories', event.target.value)} /></label><label className="label">备注<textarea className="textarea" rows={2} value={draft.remark ?? ''} onChange={(event) => set('remark', event.target.value)} /></label></div>
-      </CollapsibleSection>
-      <CollapsibleSection title="颜色与插脚" summary={`${draft.colors.length} 种颜色 · ${draft.batteryPlugs.length} 种插脚`}>
-        <div className="form-grid form-grid-2"><div className="field"><span className="field-label">颜色（多选）</span><div className="product-editor-chips">{colorPresets.concat(draft.colors.filter((item) => !colorPresets.includes(item))).map((color) => <button type="button" key={color} className={`chip${draft.colors.includes(color) ? ' is-selected' : ''}`} onClick={() => toggle('colors', color)}>{color}</button>)}<input className="chip-input" value={customColor} onChange={(event) => setCustomColor(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addCustom('colors', customColor, setCustomColor); }} placeholder="自定义颜色" /><button type="button" className="chip-add" title="添加自定义颜色" onClick={() => addCustom('colors', customColor, setCustomColor)}><Plus size={14} /></button></div></div><div className="field"><span className="field-label">电池插脚（多选）</span><div className="product-editor-chips">{plugPresets.concat(draft.batteryPlugs.filter((item) => !plugPresets.includes(item))).map((plug) => <button type="button" key={plug} className={`chip${draft.batteryPlugs.includes(plug) ? ' is-selected' : ''}`} onClick={() => toggle('batteryPlugs', plug)}>{plug}</button>)}<input className="chip-input" value={customPlug} onChange={(event) => setCustomPlug(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addCustom('batteryPlugs', customPlug, setCustomPlug); }} placeholder="自定义插脚" /><button type="button" className="chip-add" title="添加自定义插脚" onClick={() => addCustom('batteryPlugs', customPlug, setCustomPlug)}><Plus size={14} /></button></div></div></div>
-      </CollapsibleSection>
-      <PackagingTable value={draft.packaging} onChange={(packaging: PackagingOption[]) => set('packaging', packaging)} presets={packagingPresets} onManagePresets={onManagePresets} />
+      <PurchaseQuotesTable value={purchaseQuotes} onChange={(next) => set('purchaseQuotes', next)} supplierOptions={supplierOptions} variantOptions={variantOptions} />
+      <div className="form-grid product-editor-text-fields">
+        {showParameters && <label className="label">产品参数<textarea className="textarea" rows={6} value={draft.parameters ?? ''} onChange={(event) => set('parameters', event.target.value)} placeholder={'例如：扭矩：35N·m\n转速：0-1500rpm\n额定电压：12V'} /></label>}
+        <label className="label">配件<textarea className="textarea" rows={6} value={draft.accessories} onChange={(event) => set('accessories', event.target.value)} /></label>
+        <label className="label">备注<textarea className="textarea" rows={6} value={draft.remark ?? ''} onChange={(event) => set('remark', event.target.value)} /></label>
+      </div>
+      <PackagingTable collapsible value={draft.packaging} onChange={(packaging: PackagingOption[]) => set('packaging', packaging)} presets={packagingPresets} onManagePresets={onManagePresets} />
       <ImagePasteUpload label="产品图片与资料图" value={draft.images} onChange={(images) => set('images', images)} multiple showNotes sortable compact selectable categories={PRODUCT_IMAGE_CATEGORY_OPTIONS} />
       <ProductAttachments value={draft.attachments ?? []} onChange={(attachments) => set('attachments', attachments)} />
     </div>

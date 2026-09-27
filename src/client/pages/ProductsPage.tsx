@@ -62,6 +62,11 @@ function purchasePriceLabel(value: string) {
   return Number(value) > 0 ? `¥${value}` : '—';
 }
 
+/** 还有别的档时加一个 +N，提示去详情看全部；单档产品不加装饰。 */
+function extraQuoteCount(product: ProductRecord) {
+  return Math.max(0, (product.purchaseQuotes?.length ?? 0) - 1);
+}
+
 export default function ProductsPage({ products, loading, onSave, onDelete, onUpdateSaleStatus, onExport, onCatalog, onDownloadTemplate, onImport, onRefresh, onManagePresets }: ProductsPageProps) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -113,6 +118,23 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onUp
     }
     const named = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([category]) => category);
     return { named, hasUncategorized: uncategorized > 0 };
+  }, [products]);
+  // 采购报价的候选：库里用过的供应商与名目，按出现次数排。
+  const quoteOptions = useMemo(() => {
+    const suppliers = new Map<string, number>();
+    const variants = new Map<string, number>();
+    const bump = (map: Map<string, number>, key: string) => {
+      if (key) map.set(key, (map.get(key) ?? 0) + 1);
+    };
+    for (const product of products) {
+      bump(suppliers, product.supplier?.trim() ?? '');
+      for (const quote of product.purchaseQuotes ?? []) {
+        bump(suppliers, quote.supplier);
+        bump(variants, quote.variant);
+      }
+    }
+    const rank = (map: Map<string, number>) => [...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name]) => name);
+    return { suppliers: rank(suppliers), variants: rank(variants) };
   }, [products]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -225,7 +247,7 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onUp
             <span className="product-gallery-name">{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}{statusBadge(product)}</span>
             <span className="product-gallery-meta">
               <span className="product-gallery-sku">{product.sku || '—'}</span>
-              {showSensitive && <span className="product-gallery-price">{purchasePriceLabel(product.purchasePrice)}</span>}
+              {showSensitive && <span className="product-gallery-price">{purchasePriceLabel(product.purchasePrice)}{extraQuoteCount(product) > 0 && <span className="price-tier-count" title={`还有 ${extraQuoteCount(product)} 档报价`}>+{extraQuoteCount(product)}</span>}</span>}
             </span>
           </button>
           <div className="row-actions product-gallery-actions">
@@ -252,7 +274,7 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onUp
             })}
             {product.packaging.length > 1 && <button className="product-packaging-expand" type="button" onClick={() => setExpandedPackagingId((current) => current === product.id ? undefined : product.id)}>{expandedPackagingId === product.id ? <><ChevronUp size={13} />收起</> : <><ChevronDown size={13} />... 还有 {product.packaging.length - 1} 个包装</>}</button>}
           </> : <span>—</span>}</div></td>
-          <td className="product-remark-cell">{product.remark || '—'}</td>{showSensitive && <><td>{product.supplier || '—'}</td><td>{purchasePriceLabel(product.purchasePrice)}</td></>}
+          <td className="product-remark-cell">{product.remark || '—'}</td>{showSensitive && <><td>{product.supplier || '—'}</td><td>{purchasePriceLabel(product.purchasePrice)}{extraQuoteCount(product) > 0 && <span className="price-tier-count" title={`还有 ${extraQuoteCount(product)} 档报价`}>+{extraQuoteCount(product)}</span>}</td></>}
           <td><div className="row-actions"><button className="icon-button" title={product.status === 'draft' ? '继续编辑草稿' : '编辑产品'} type="button" onClick={() => openEdit(product)}><Edit3 size={14} /></button><button className="icon-button" title="复制产品为新建产品" type="button" onClick={() => openCopy(product)}><Copy size={14} /></button></div></td>
         </tr>)}</tbody></table></div>}
       {view === 'list' && <div className="products-card-list">
@@ -266,7 +288,7 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onUp
           </div>
           <div className="product-card-grid">
             <div className="product-card-field"><span>颜色 / 插脚</span><strong>{[product.colors.join('、'), product.batteryPlugs.join('、')].filter(Boolean).join(' · ') || '—'}</strong></div>
-            {showSensitive && <div className="product-card-field"><span>供应商 / 采购价</span><strong>{[product.supplier || '—', product.purchasePrice ? `¥${product.purchasePrice}` : ''].filter(Boolean).join(' · ')}</strong></div>}
+            {showSensitive && <div className="product-card-field"><span>供应商 / 采购价</span><strong>{[product.supplier || '—', purchasePriceLabel(product.purchasePrice)].join(' · ')}{extraQuoteCount(product) > 0 && <span className="price-tier-count" title={`还有 ${extraQuoteCount(product)} 档报价`}>+{extraQuoteCount(product)}</span>}</strong></div>}
           </div>
           {product.parameters?.trim() && <button className="product-parameters-trigger" type="button" onClick={() => setParametersProduct(product)} title="查看完整参数"><span>参数详情</span><Copy size={13} /></button>}
           {product.packaging.length > 0 && <div className="product-card-packaging">{product.packaging.slice(0, 1).map((item) => {
@@ -299,7 +321,7 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onUp
       {loading && <div className="table-state">正在加载产品...</div>}
       {!loading && !filtered.length && <div className="table-state">暂无产品，点击“添加产品”开始维护。</div>}
     </section>
-    <ProductEditor key={editing?.id ?? 'new'} open={editorOpen} product={editing} copyMode={copying} packagingPresets={packagingPresets} productCategories={categoryOptions.named} onManagePresets={onManagePresets} onClose={() => { setEditorOpen(false); setEditing(undefined); setCopying(false); }} onSave={save} />
+    <ProductEditor key={editing?.id ?? 'new'} open={editorOpen} product={editing} copyMode={copying} packagingPresets={packagingPresets} productCategories={categoryOptions.named} supplierOptions={quoteOptions.suppliers} variantOptions={quoteOptions.variants} onManagePresets={onManagePresets} onClose={() => { setEditorOpen(false); setEditing(undefined); setCopying(false); }} onSave={save} />
     <Modal
       open={catalogOpen}
       title="导出产品图册"

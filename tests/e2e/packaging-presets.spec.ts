@@ -34,7 +34,7 @@ async function seedProduct(page: Page) {
 }
 
 /** 打开产品库 → 编辑指定产品，返回编辑器弹窗。 */
-async function openEditor(page: Page, sku: string, mobile = false) {
+async function openEditor(page: Page, sku: string, mobile = false, expandPresets = true) {
   await page.goto('/');
   if (mobile) await page.locator('.mobile-tab-item[aria-label="更多模块"]').click();
   await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
@@ -43,8 +43,26 @@ async function openEditor(page: Page, sku: string, mobile = false) {
   await page.locator('.products-page button[title="编辑产品"]:visible').first().click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
+  // 「常用包装」预设条默认收起，用到时先展开（下面填包装的表格不折叠）。
+  if (expandPresets) await dialog.locator('.packaging-preset-toggle').click();
   return dialog;
 }
+
+test('桌面端：只有预设条折叠，包装表格打开就能直接填', async ({ page }) => {
+  const product = await seedProduct(page);
+  try {
+    const dialog = await openEditor(page, product.sku, false, false);
+    await expect(dialog.locator('.packaging-preset')).toHaveCount(0);
+    await expect(dialog.locator('.packaging-table-section:not(.purchase-quotes-section) .packaging-table-shell')).toBeVisible();
+    await dialog.locator('input[aria-label="包装名称"]').fill('不用展开也能填');
+    await expect(dialog.locator('input[aria-label="包装名称"]')).toHaveValue('不用展开也能填');
+
+    await dialog.locator('.packaging-preset-toggle').click();
+    await expect(dialog.locator('.packaging-preset', { hasText: PRESET.name })).toHaveCount(1);
+  } finally {
+    await page.request.delete(`/api/products/${product.id}`);
+  }
+});
 
 test('桌面端：点预设一次填好包装名称、内外箱尺寸、装箱数与采购价', async ({ page }) => {
   const product = await seedProduct(page);
@@ -100,15 +118,23 @@ test('桌面端：管理预设跳转设置页，改名保存后编辑器卡片�
     await expect(section).toContainText('包装预设');
     await expect(section.locator('.packaging-preset-form-row')).toHaveCount(1);
 
+    // 表头与数据行是两个独立 grid，最后一列一旦写 auto，两边 fr 宽度就会错开、整排表头跑偏。
+    const drift = await section.locator('.packaging-preset-form').evaluate((form) => {
+      const xs = (selector: string) => Array.from(document.querySelectorAll(`${selector} > *`)).map((cell) => Math.round(cell.getBoundingClientRect().x));
+      const head = xs('.packaging-preset-form-head');
+      const row = xs('.packaging-preset-form-row');
+      return head.map((x, index) => (row[index] ?? 0) - x);
+    });
+    expect(drift).toEqual([0, 0, 0, 0, 0, 0]);
+
     const renamed = 'E2E改过的包装';
     await section.locator('input[aria-label="预设1包装名称"]').fill(renamed);
     await expect(section.locator('.packaging-preset-dirty')).toBeVisible();
     await section.locator('.packaging-preset-form-footer button.button-primary').click();
     await expect(section.locator('.notice-success')).toContainText('已保存');
 
-    await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
-    await page.locator('.products-page .page-toolbar .search-control input').fill(product.sku);
-    await page.locator('.products-page button[title="编辑产品"]:visible').first().click();
+    // 回产品库重开编辑器（openEditor 会顺手展开默认折叠的包装方式）。
+    await openEditor(page, product.sku);
     await expect(page.getByRole('dialog').locator('.packaging-preset', { hasText: renamed })).toHaveCount(1);
   } finally {
     await page.request.put('/api/settings/packaging-presets', { data: { items: [PRESET] } });

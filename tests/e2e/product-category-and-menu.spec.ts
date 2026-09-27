@@ -56,12 +56,29 @@ const categoryInput = (page: Page) => page.getByRole('dialog').locator('input[ar
 test('编辑器：分类紧跟品名，按品名给建议且只在点一下时才写入', async ({ page }) => {
   const editor = await openEditor(page);
 
-  // 分类字段排在品名之后、采购价之前（同一行）。
-  const labels = await editor.locator('.product-editor-identity > *').evaluateAll((nodes) => nodes.slice(0, 4).map((node) => (node.textContent ?? '').trim().slice(0, 2)));
-  expect(labels).toEqual(['品名', '产品', '采购', '供应']);
-  const nameBox = await nameInput(page).boundingBox();
-  const categoryBox = await categoryInput(page).boundingBox();
-  expect(categoryBox && nameBox && Math.abs(categoryBox.y - nameBox.y) < 4).toBe(true);
+  // 首行顺序：品名 → 产品分类 → 颜色 → 电池插脚（采购价与供应商已并入采购报价表格）。
+  const labels = await editor.locator('.product-editor-identity > *').evaluateAll((nodes) => nodes.map((node) => (node.textContent ?? '').trim().slice(0, 2)));
+  expect(labels).toEqual(['品名', '产品', '颜色', '电池']);
+  expect(editor.locator('.product-editor-identity label', { hasText: '采购价' })).toHaveCount(0);
+  expect(editor.locator('.product-editor-identity label', { hasText: '供应商' })).toHaveCount(0);
+  // 首行四格确实排在同一行（比输入框的 y 更稳：格子里的标签结构不同会让输入框差几像素）。
+  const cellTops = await editor.locator('.product-editor-identity > *').evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().top)));
+  expect(new Set(cellTops).size).toBe(1);
+
+  // 颜色 / 电池插脚固定两行：预设 chip 占第一行，「自定义」连着加号整体落到第二行。
+  const chipRows = await editor.locator('.product-editor-identity .product-editor-chips').evaluateAll((nodes) => nodes.map((chips) => {
+    const chipTops = new Set(Array.from(chips.querySelectorAll('.chip')).map((chip) => Math.round(chip.getBoundingClientRect().top)));
+    const custom = chips.querySelector('.chip-custom')!.getBoundingClientRect();
+    const input = chips.querySelector('.chip-input')!.getBoundingClientRect();
+    const add = chips.querySelector('.chip-add')!.getBoundingClientRect();
+    return {
+      chipLines: chipTops.size,
+      customBelowChips: custom.top > Math.max(...chipTops),
+      addBesideInput: add.right <= custom.right + 1 && Math.abs(add.top - input.top) <= 1,
+    };
+  }));
+  expect(chipRows).toHaveLength(2);
+  expect(chipRows.every((row) => row.chipLines === 1 && row.customBelowChips && row.addBesideInput)).toBe(true);
 
   // 还没填品名时不给建议。
   await expect(editor.locator('.product-category-suggest')).toHaveCount(0);

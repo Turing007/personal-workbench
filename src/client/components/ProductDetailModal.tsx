@@ -5,6 +5,7 @@ import Modal from './Modal';
 import ProductImagesModal from './ProductImagesModal';
 import type { ProductRecord } from './ProductEditor';
 import { packagingDisplay } from '../packaging-display';
+import { groupPurchaseQuotesBySupplier, purchaseQuoteLabel } from '../../shared/product-purchase-quotes';
 import { copyText } from '../copy-text';
 import { thumbUrl } from '../image-urls';
 import {
@@ -57,6 +58,7 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
   if (!product) return null;
 
   const parameters = product.parameters ?? '';
+  const purchaseQuotes = product.purchaseQuotes ?? [];
   const image = product.images[0];
   // 按分类汇总图片数量，方便一眼看出这个产品有没有尺寸图/客拍图可复用。
   const imageCategoryCounts = product.images.reduce((counts, item) => {
@@ -103,10 +105,20 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
         <div className="product-detail-grid kv-grid">
           <DetailItem label="SKU"><span className="product-detail-emphasis kv-value is-accent">{product.sku || '—'}</span></DetailItem>
           <DetailItem label="品名">{product.name || '—'}</DetailItem>
-          {showSensitive && <DetailItem label="供应商">{product.supplier || '—'}</DetailItem>}
-          {showSensitive && <DetailItem label="价格">{product.purchasePrice ? `¥${product.purchasePrice}` : '—'}</DetailItem>}
           <DetailItem label="颜色">{product.colors.join('、') || '—'}</DetailItem>
           <DetailItem label="插脚">{product.batteryPlugs.join('、') || '—'}</DetailItem>
+          {showSensitive && !!purchaseQuotes.length && <DetailItem label="采购报价" fullWidth>
+            <div className="product-detail-quotes">
+              {groupPurchaseQuotesBySupplier(purchaseQuotes).map((group) => <div className="product-detail-quote-group" key={group.supplier}>
+                <span className="product-detail-quote-supplier">{group.supplier}</span>
+                <span className="product-detail-quote-items">{group.quotes.map((quote) => <span className={quote.isDefault ? 'product-detail-quote is-default' : 'product-detail-quote'} key={quote.id}>
+                  <b>{purchaseQuoteLabel(quote)}</b>
+                  <span>{quote.price ? `¥${quote.price}` : '未定价'}</span>
+                  {quote.isDefault && <em>默认</em>}
+                </span>)}</span>
+              </div>)}
+            </div>
+          </DetailItem>}
           <DetailItem label="配件" fullWidth>{product.accessories || '—'}</DetailItem>
           <DetailItem label="备注" fullWidth>{product.remark || '—'}</DetailItem>
           <DetailItem label="图片" fullWidth>

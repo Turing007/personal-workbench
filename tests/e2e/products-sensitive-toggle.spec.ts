@@ -100,23 +100,24 @@ test('产品详情弹窗跟随小眼睛开关', async ({ page }) => {
     const row = page.locator('.products-data-table tbody tr', { hasText: product.sku });
     const toggle = page.locator('.products-page .page-toolbar .products-sensitive-toggle');
 
-    // 默认状态下打开详情：供应商 / 价格 两行都在，且带着真实值。
+    // 默认状态下打开详情：供应商 / 价格 两格已经删掉，敏感信息只在「采购报价」里出现一次。
     await row.locator('.product-sku-button').click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
-    await expect(dialog.locator('.product-detail-label', { hasText: '供应商' })).toBeVisible();
-    await expect(dialog.locator('.product-detail-value', { hasText: SUPPLIER })).toBeVisible();
-    await expect(dialog.locator('.product-detail-label', { hasText: '价格' })).toBeVisible();
-    await expect(dialog.locator('.product-detail-value', { hasText: '¥12.5' })).toBeVisible();
+    await expect(dialog.locator('.product-detail-label', { hasText: '供应商' })).toHaveCount(0);
+    await expect(dialog.locator('.product-detail-label', { hasText: '价格' })).toHaveCount(0);
+    const quotes = dialog.locator('.product-detail-quotes');
+    await expect(quotes).toContainText(SUPPLIER);
+    await expect(quotes).toContainText('¥12.5');
     await dialog.locator('.modal-close').click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
-    // 收起小眼睛后再看详情：两行整块消失。
+    // 收起小眼睛后再看详情：采购报价整块消失。
     await toggle.click();
     await row.locator('.product-sku-button').click();
     await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.locator('.product-detail-label', { hasText: '供应商' })).toHaveCount(0);
-    await expect(page.locator('.product-detail-label', { hasText: '价格' })).toHaveCount(0);
+    await expect(page.locator('.product-detail-quotes')).toHaveCount(0);
+    await expect(page.getByRole('dialog')).not.toContainText(SUPPLIER);
   } finally {
     await page.request.delete(`/api/products/${product.id}`);
   }

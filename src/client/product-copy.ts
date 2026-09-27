@@ -20,5 +20,7 @@ export function cloneProductForNew(product: ProductRecord): ProductRecord {
       id: temporaryId('pack-copy'),
       images: [],
     })),
+    // 报价跟着复制（同款产品通常同价），但换掉 id：旧 id 属于被复制的那个产品。
+    purchaseQuotes: (product.purchaseQuotes ?? []).map((quote) => ({ ...quote, id: temporaryId('quote-copy') })),
   };
 }

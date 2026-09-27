@@ -31,6 +31,10 @@ function productFixture(): ProductRecord {
       purchasePrice: '3',
       images: [{ id: '51', name: '包装图.png', url: '/files/product-packaging-images/51.png' }],
     }],
+    purchaseQuotes: [
+      { id: '61', supplier: '测试供应商', variant: '含配件', price: '99', isDefault: true },
+      { id: '62', supplier: '另一家', variant: '不含配件', price: '88', isDefault: false },
+    ],
   };
 }
 
@@ -52,5 +56,9 @@ describe('产品复制草稿', () => {
     expect(copy.packaging[0]?.images).toEqual([]);
     expect(copy.colors).not.toBe(source.colors);
     expect(copy.batteryPlugs).not.toBe(source.batteryPlugs);
+    // 报价跟着复制（同款通常同价），但 id 必须换掉，不能沿用源产品的报价行主键。
+    expect(copy.purchaseQuotes?.map((quote) => quote.variant)).toEqual(['含配件', '不含配件']);
+    expect(copy.purchaseQuotes?.[0]?.isDefault).toBe(true);
+    expect(copy.purchaseQuotes?.map((quote) => quote.id)).not.toContain('61');
   });
 });

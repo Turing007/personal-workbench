@@ -3,6 +3,7 @@ import { calculateOrderAmountCents } from '../shared/order-prices';
 import { normalizeProductImageCategory } from '../shared/product-image-categories';
 import type { CatalogDensity } from '../shared/product-catalog';
 import { normalizeProductStatus } from '../shared/product-status';
+import { mapStoredPurchaseQuotes, type ProductPurchaseQuote } from '../shared/product-purchase-quotes';
 import type { PackagingPreset } from '../shared/packaging-presets';
 import type { StockPreparation } from '../shared/stock';
 import type {
@@ -175,6 +176,7 @@ export interface ProductApiRecord {
   colors?: string[];
   batteryPlugs?: string[];
   packaging?: Array<Record<string, unknown>>;
+  purchaseQuotes?: unknown[];
   remark?: string;
   accessories?: string;
   images?: Array<Record<string, unknown>>;
@@ -370,7 +372,8 @@ export function mapProductRecord(row: ProductApiRecord): ProductRecord {
   const rawImages = row.images ?? (row as ProductApiRecord & { images_json?: Array<Record<string, unknown>> }).images_json ?? [];
   const packaging = (row.packaging ?? []).map((item) => asPackaging(item));
   const rawAttachments = row.attachments ?? [];
-  return { ...mapProduct(row), category: row.category ?? '', purchasePrice: purchasePrice == null ? '' : String(purchasePrice), supplier: row.supplier ?? '', parameters: typeof row.parameters === 'string' ? row.parameters : '', status: normalizeProductStatus(row.status), colors: row.colors ?? [], batteryPlugs: row.batteryPlugs ?? [], images: rawImages.map((image) => ({ id: String(image.id ?? image.relativePath ?? image.relative_path), name: String(image.originalName ?? image.original_name ?? '产品图片'), url: `/files/${String(image.relativePath ?? image.relative_path ?? '')}`, category: normalizeProductImageCategory(image.category), note: String(image.note ?? '') })), attachments: rawAttachments.map((raw) => { const item = raw as Record<string, unknown>; const category = String(item.category ?? 'other'); const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id), category: (['manual', 'packaging-design', 'label-dieline', 'other'].includes(category) ? category : 'other') as ProductAttachmentCategory, name: String(item.originalName ?? item.original_name ?? '产品附件'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mimeType ?? item.mime_type ?? ''), size: Number(item.size ?? item.size_bytes ?? 0), createdAt: String(item.createdAt ?? item.created_at ?? '') }; }), accessories: row.accessories ?? '', remark: row.remark ?? '', packaging: packaging.length ? packaging : [asPackaging(undefined)], createdAt: String(row.createdAt ?? row.created_at ?? ''), updatedAt: String(row.updatedAt ?? row.updated_at ?? '') };
+  return { ...mapProduct(row), category: row.category ?? '', purchasePrice: purchasePrice == null ? '' : String(purchasePrice), supplier: row.supplier ?? '', parameters: typeof row.parameters === 'string' ? row.parameters : '', status: normalizeProductStatus(row.status), colors: row.colors ?? [], batteryPlugs: row.batteryPlugs ?? [], images: rawImages.map((image) => ({ id: String(image.id ?? image.relativePath ?? image.relative_path), name: String(image.originalName ?? image.original_name ?? '产品图片'), url: `/files/${String(image.relativePath ?? image.relative_path ?? '')}`, category: normalizeProductImageCategory(image.category), note: String(image.note ?? '') })), attachments: rawAttachments.map((raw) => { const item = raw as Record<string, unknown>; const category = String(item.category ?? 'other'); const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id), category: (['manual', 'packaging-design', 'label-dieline', 'other'].includes(category) ? category : 'other') as ProductAttachmentCategory, name: String(item.originalName ?? item.original_name ?? '产品附件'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mimeType ?? item.mime_type ?? ''), size: Number(item.size ?? item.size_bytes ?? 0), createdAt: String(item.createdAt ?? item.created_at ?? '') }; }), accessories: row.accessories ?? '', remark: row.remark ?? '', purchaseQuotes: mapStoredPurchaseQuotes(row.purchaseQuotes),
+    packaging: packaging.length ? packaging : [asPackaging(undefined)], createdAt: String(row.createdAt ?? row.created_at ?? ''), updatedAt: String(row.updatedAt ?? row.updated_at ?? '') };
 }
 
 export function draftToInput(draft: OrderDraft) {
@@ -671,7 +674,7 @@ function packagingToInput(row: PackagingOption) {
   const imageIds = (row.images ?? []).filter((image) => !image.file && /^\d+$/.test(image.id)).map((image) => Number(image.id));
   return { id, imageIds, name: row.name.trim(), innerSize: row.innerSize.trim(), innerWeight: Math.max(0, Number(row.innerWeight || 0)), outerSize: row.outerSize.trim(), outerWeight: Math.max(0, Number(row.outerWeight || 0)), packCount: Math.max(1, Math.trunc(row.packSize)), purchasePrice: row.purchasePrice.trim() ? Math.max(0, Number(row.purchasePrice)) : null, outerLength, outerWidth, outerHeight };
 }
-export function productToInput(product: ProductRecord) { return { name: product.name.trim(), sku: product.sku.trim(), specification: product.specification.trim(), parameters: product.parameters ?? '', category: product.category, purchasePrice: Number(product.purchasePrice || 0), supplier: product.supplier, colors: product.colors, batteryPlugs: product.batteryPlugs, accessories: product.accessories, remark: product.remark, status: normalizeProductStatus(product.status), packaging: product.packaging.map(packagingToInput) }; }
+export function productToInput(product: ProductRecord) { return { name: product.name.trim(), sku: product.sku.trim(), specification: product.specification.trim(), parameters: product.parameters ?? '', category: product.category, purchasePrice: Number(product.purchasePrice || 0), supplier: product.supplier, colors: product.colors, batteryPlugs: product.batteryPlugs, accessories: product.accessories, remark: product.remark, status: normalizeProductStatus(product.status), purchaseQuotes: product.purchaseQuotes, packaging: product.packaging.map(packagingToInput) }; }
 export function saveProduct(product: ProductRecord) { return request<ProductApiRecord>('/api/products', { method: 'POST', body: JSON.stringify(productToInput(product)) }); }
 export function updateProduct(id: string, product: ProductRecord) { return request<ProductApiRecord>(`/api/products/${id}`, { method: 'PUT', body: JSON.stringify(productToInput(product)) }); }
 export function deleteProduct(id: string) { return request(`/api/products/${id}`, { method: 'DELETE' }); }

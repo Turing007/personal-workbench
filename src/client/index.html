@@ -2,7 +2,10 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- maximum-scale=1 是给报价表这类窄表格用的：iOS Safari 只在「聚焦的输入框字号 < 16px」时
+         才强制放大整页，字号降到 13px 就必须同时关掉这个自动缩放，否则一点输入框页面就糊上来。
+         代价是全站失去双指缩放。 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
     <title>个人工作台</title>
     <meta name="description" content="报价、开单、订单、发货与财务一体的个人业务工作台" />
     <meta name="theme-color" content="#0e7368" />
