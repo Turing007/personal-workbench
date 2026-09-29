@@ -8,7 +8,7 @@ import Modal from '../components/Modal';
 import { initialProductsView, saveProductsView, type ProductsView } from '../products-view';
 import ProductEditor, { type ProductRecord } from '../components/ProductEditor';
 import ToolbarMenu from '../components/ToolbarMenu';
-import { compareProductByNewest } from '../product-sort';
+import { compareProductByName } from '../product-sort';
 import { PAGE_SIZES, clampPage, pageWindow, readStoredPageSize, rememberPageSize, slicePage, totalPages } from '../pagination';
 import ProductDetailModal from '../components/ProductDetailModal';
 import ProductImagesModal from '../components/ProductImagesModal';
@@ -26,6 +26,8 @@ export interface ProductsPageProps {
   products: ProductRecord[];
   loading?: boolean;
   onSave: (product: ProductRecord, mode: 'draft' | 'active') => Promise<void> | void;
+  /** 保存与图片/附件同步进行中：编辑器底部的保存按钮要禁用，避免连点重跑同一份差异。 */
+  saving?: boolean;
   onDelete: (product: ProductRecord) => Promise<void> | void;
   /** 详情页里的停售 / 恢复在售。 */
   onUpdateSaleStatus?: (product: ProductRecord, next: 'active' | 'discontinued') => void;
@@ -67,7 +69,7 @@ function extraQuoteCount(product: ProductRecord) {
   return Math.max(0, (product.purchaseQuotes?.length ?? 0) - 1);
 }
 
-export default function ProductsPage({ products, loading, onSave, onDelete, onUpdateSaleStatus, onExport, onCatalog, onDownloadTemplate, onImport, onRefresh, onManagePresets }: ProductsPageProps) {
+export default function ProductsPage({ products, loading, onSave, saving, onDelete, onUpdateSaleStatus, onExport, onCatalog, onDownloadTemplate, onImport, onRefresh, onManagePresets }: ProductsPageProps) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [pageSize, setPageSize] = useState(readStoredPageSize);
@@ -150,8 +152,8 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onUp
         if (!needle) return true;
         return [product.name, product.sku, product.supplier, product.category].join(' ').toLowerCase().includes(needle);
       })
-      // 列表按「最新」展示：最近更新的排最上面（同时间的按 id 倒序，批量导入不会乱序）。
-      .sort(compareProductByNewest);
+      // 列表按品名的拼音序展示：同名的按 SKU、id 兜底，保证翻页时顺序稳定。
+      .sort(compareProductByName);
   }, [products, query, statusFilter, categoryFilter]);
   // 换了搜索词、状态或分类筛选后结果集会整个变，留在原页码会看到不相干的一页，所以回到第 1 页。
   useEffect(() => { setPage(1); }, [query, statusFilter, categoryFilter]);
@@ -242,8 +244,11 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onUp
     <section className="table-panel">
       {view === 'gallery' && <div className="products-gallery">
         {visible.map((product) => <div className="product-gallery-card" key={product.id}>
+          {/* 图片看图片、名称和 SKU 看详情：两件事分开，大图模式下想直接看图就不用先开弹窗再点图片。 */}
+          {product.images.length
+            ? <button className="product-gallery-image-button" type="button" onClick={() => setImagesProduct(product)} title="查看全部图片"><span className="product-gallery-image"><img src={thumbUrl(product.images[0].url, 480)} alt={product.images[0].name} loading="lazy" decoding="async" /></span></button>
+            : <span className="product-gallery-image"><span className="product-gallery-placeholder"><ImageIcon size={22} /><span>无图片</span></span></span>}
           <button className="product-gallery-open" type="button" onClick={() => setDetailProduct(product)} title="查看产品详情">
-            <span className="product-gallery-image">{product.images.length ? <img src={thumbUrl(product.images[0].url, 480)} alt={product.images[0].name} loading="lazy" decoding="async" /> : <span className="product-gallery-placeholder"><ImageIcon size={22} /><span>无图片</span></span>}</span>
             <span className="product-gallery-name">{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}{statusBadge(product)}</span>
             <span className="product-gallery-meta">
               <span className="product-gallery-sku">{product.sku || '—'}</span>
@@ -321,7 +326,7 @@ export default function ProductsPage({ products, loading, onSave, onDelete, onUp
       {loading && <div className="table-state">正在加载产品...</div>}
       {!loading && !filtered.length && <div className="table-state">暂无产品，点击“添加产品”开始维护。</div>}
     </section>
-    <ProductEditor key={editing?.id ?? 'new'} open={editorOpen} product={editing} copyMode={copying} packagingPresets={packagingPresets} productCategories={categoryOptions.named} supplierOptions={quoteOptions.suppliers} variantOptions={quoteOptions.variants} onManagePresets={onManagePresets} onClose={() => { setEditorOpen(false); setEditing(undefined); setCopying(false); }} onSave={save} />
+    <ProductEditor key={editing?.id ?? 'new'} open={editorOpen} saving={saving} product={editing} copyMode={copying} packagingPresets={packagingPresets} productCategories={categoryOptions.named} supplierOptions={quoteOptions.suppliers} variantOptions={quoteOptions.variants} onManagePresets={onManagePresets} onClose={() => { setEditorOpen(false); setEditing(undefined); setCopying(false); }} onSave={save} />
     <Modal
       open={catalogOpen}
       title="导出产品图册"

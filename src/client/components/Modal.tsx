@@ -20,50 +20,23 @@ export interface ModalProps {
   className?: string;
 }
 
-type ModalStackEntry = {
-  id: symbol;
-  layer: number;
-  sequence: number;
-  onClose: () => void;
-};
-
-const modalStack = new Map<symbol, ModalStackEntry>();
-let modalSequence = 0;
+/** 打开着的弹窗数量：只有第一个负责锁页面滚动，最后一个关掉时才还原。 */
+const openModalIds = new Set<symbol>();
 let previousBodyOverflow: string | null = null;
 
-function getTopModal() {
-  let top: ModalStackEntry | undefined;
-  for (const entry of modalStack.values()) {
-    if (!top || entry.layer > top.layer || (entry.layer === top.layer && entry.sequence > top.sequence)) {
-      top = entry;
-    }
-  }
-  return top;
-}
-
-function handleModalKeyDown(event: KeyboardEvent) {
-  if (event.key !== 'Escape') return;
-  const top = getTopModal();
-  if (!top) return;
-  event.preventDefault();
-  top.onClose();
-}
-
-function registerModal(entry: ModalStackEntry) {
-  if (!modalStack.size) {
+function registerModal(id: symbol) {
+  if (!openModalIds.size) {
     previousBodyOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    document.addEventListener('keydown', handleModalKeyDown);
     // 弹窗打开期间让 App 暂停下拉刷新，否则弹窗内的下滑会被当成刷新页面。
     notifyOverlayOpen(true);
   }
-  modalStack.set(entry.id, entry);
+  openModalIds.add(id);
 }
 
 function unregisterModal(id: symbol) {
-  modalStack.delete(id);
-  if (modalStack.size) return;
-  document.removeEventListener('keydown', handleModalKeyDown);
+  openModalIds.delete(id);
+  if (openModalIds.size) return;
   document.body.style.overflow = previousBodyOverflow ?? '';
   previousBodyOverflow = null;
   notifyOverlayOpen(false);
@@ -75,13 +48,11 @@ export default function Modal({ open, title, children, onClose, width = 760, foo
   const previousActiveElement = useRef<HTMLElement | null>(null);
   const modalId = useRef(Symbol('modal'));
   const titleId = useRef(`modal-title-${Math.random().toString(36).slice(2)}`);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return undefined;
     previousActiveElement.current = document.activeElement as HTMLElement | null;
-    registerModal({ id: modalId.current, layer, sequence: ++modalSequence, onClose: () => onCloseRef.current() });
+    registerModal(modalId.current);
     closeButtonRef.current?.focus();
 
     const panel = panelRef.current;
@@ -114,13 +85,12 @@ export default function Modal({ open, title, children, onClose, width = 760, foo
   const isLeftDrawer = isDrawer && drawerSide === 'left';
 
   const modal = (
+    // 弹窗只能靠自己的按钮关：点遮罩和按 Esc 都不关。填了一半的表单被一次误点清空，
+    // 代价远大于少按一次 ×。每个弹窗头部都有可见的关闭按钮，不存在关不掉的死角。
     <div
       className={`modal-overlay${isDrawer ? ' is-drawer' : ''}${isLeftDrawer ? ' is-drawer-left' : ''}`}
       role="presentation"
       style={{ zIndex: layer }}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
     >
       <section ref={panelRef} className={`modal-panel${isDrawer ? ' drawer-panel' : ''}${isLeftDrawer ? ' drawer-panel-left' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId.current} style={{ '--modal-width': typeof width === 'number' ? `${width}px` : width } as CSSProperties}>
         <header className="modal-header">

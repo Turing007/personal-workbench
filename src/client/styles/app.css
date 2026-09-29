@@ -583,6 +583,16 @@ select {
   background: var(--color-surface-subtle);
 }
 
+/* 大图卡片里的图片单独可点：直接开图片浏览，不经过产品详情。 */
+.product-gallery-image-button {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
 .product-gallery-image img {
   display: block;
   width: 100%;
@@ -1238,6 +1248,9 @@ select {
 
 .product-images-side {
   display: grid;
+  /* 单列也要写成 minmax(0,1fr)：默认的 auto 轨道会拿子项的 min-content 当下限，
+     缩略图条一撑就把整列顶出弹窗，手机上只能左右滑。 */
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 10px;
   min-width: 0;
@@ -2625,8 +2638,9 @@ select {
 .image-card-check-badge.is-on { background: var(--color-accent); color: #fff; box-shadow: none; }
 
 /* 分类文件夹：产品编辑的图片墙按分类分区，历史图片归入默认分类（精修图） */
-.image-folder-list { display: grid; gap: 10px; }
+.image-folder-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .image-folder {
+  min-width: 0;
   border: 1px solid var(--color-divider);
   border-radius: 9px;
   padding: 8px;
@@ -2888,14 +2902,15 @@ select {
   }
 
   .product-images-content {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
+  /* 写死 6 列会让这一条的 min-content 变成 6×58+间距，反过来把外层网格顶宽，
+     手机上就得左右滑。auto-fill 按实际宽度决定列数，装不下就少放一列。 */
   .product-images-thumbnails {
-    grid-template-columns: repeat(6, minmax(58px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+    min-width: 0;
     max-height: none;
-    overflow-x: auto;
-    overflow-y: hidden;
   }
 
   .product-images-preview {
@@ -3232,6 +3247,25 @@ select {
 }
 
 .product-editor-identity .product-editor-sku { max-width: none; }
+
+/* 自动备份失败的常驻横幅：整块内容区顶部，红底、不自动消失。 */
+.backup-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin: var(--space-4) var(--space-5) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--tone-danger-border, #f3c5be);
+  border-radius: var(--radius-control);
+  background: var(--tone-danger-soft, #fef3f2);
+  color: var(--tone-danger-text, #b42318);
+  font-size: var(--text-sm);
+}
+
+.backup-alert-text { flex: 1 1 320px; min-width: 0; }
+
+.backup-alert-actions { display: flex; gap: var(--space-2); }
 
 .notice {
   display: flex;

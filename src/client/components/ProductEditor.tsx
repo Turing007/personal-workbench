@@ -59,6 +59,8 @@ export interface ProductEditorProps {
   showParameters?: boolean;
   /** 包装方式预设卡片；为空则不显示。 */
   packagingPresets?: PackagingPreset[];
+  /** 保存与图片/附件同步进行中：禁用两个保存按钮，连点会重跑同一份差异同步。 */
+  saving?: boolean;
   /** 现有产品的分类，作为分类输入框的候选（仍可自由填写新分类）。 */
   productCategories?: string[];
   /** 库里已用过的供应商与报价名目，作为采购报价表格的候选。 */
@@ -150,7 +152,7 @@ function ProductAttachments({ value, onChange }: { value: ProductAttachment[]; o
   </section>;
 }
 
-export default function ProductEditor({ open, product, copyMode = false, showParameters: showParametersProp, packagingPresets, productCategories = [], supplierOptions = [], variantOptions = [], onManagePresets, onClose, onSave }: ProductEditorProps) {
+export default function ProductEditor({ open, product, copyMode = false, showParameters: showParametersProp, packagingPresets, saving = false, productCategories = [], supplierOptions = [], variantOptions = [], onManagePresets, onClose, onSave }: ProductEditorProps) {
   const [draft, setDraft] = useState<ProductRecord>(() => withFirstQuoteRow(product ?? blankProduct()));
   const [customColor, setCustomColor] = useState('');
   const [customPlug, setCustomPlug] = useState('');
@@ -173,7 +175,7 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
   const purchaseQuotes = draft.purchaseQuotes ?? [];
   const categorySuggestion = suggestProductCategory(draft.name, productCategories);
   const categoryCandidates = orderCategoriesWithSuggestion(productCategories, categorySuggestion);
-  return <Modal open={open} title={copyMode ? '复制产品（新建）' : editingDraft ? '编辑产品（草稿）' : editingExisting ? '编辑产品' : '添加产品'} onClose={onClose} width={900} footer={<><button type="button" className="button button-secondary" onClick={onClose}>取消</button>{!editingExisting || editingDraft ? <button type="button" className="button button-secondary" title="暂存当前内容，稍后继续编辑" onClick={saveDraft}>存为草稿</button> : null}<button type="button" className="button button-primary" onClick={saveActive}><Save size={14} />{editingDraft ? '完成并保存' : '保存产品'}</button></>}>
+  return <Modal open={open} title={copyMode ? '复制产品（新建）' : editingDraft ? '编辑产品（草稿）' : editingExisting ? '编辑产品' : '添加产品'} onClose={onClose} width={900} footer={<><button type="button" className="button button-secondary" onClick={onClose}>取消</button>{!editingExisting || editingDraft ? <button type="button" className="button button-secondary" title="暂存当前内容，稍后继续编辑" disabled={saving} onClick={saveDraft}>存为草稿</button> : null}<button type="button" className="button button-primary" disabled={saving} onClick={saveActive}><Save size={14} />{saving ? '保存中...' : editingDraft ? '完成并保存' : '保存产品'}</button></>}>
     <div className="product-editor">
       {copyMode && <div className="notice notice-accent">已复制产品资料和包装信息；图片、包装图片及附件需重新上传。</div>}
       <div className={editingExisting ? 'form-grid product-editor-identity has-sku' : 'form-grid product-editor-identity'}>

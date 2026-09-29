@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CompanySnapshot } from '../shared/documents';
 import AuthGate from './components/auth/AuthGate';
 import Sidebar from './components/Sidebar';
@@ -24,6 +24,7 @@ import StockPage from './pages/StockPage';
 import {
   advanceOrderStatus,
   createBackup,
+  getAutoBackupStatus,
   deleteProduct,
   exportProducts,
   generateProductCatalog,
@@ -141,6 +142,15 @@ function orderKey(order: OrderDraft) { return order.id ?? order.orderNo; }
 
 const ACTIVE_NAV_STORAGE_KEY = 'workbench:active-nav';
 
+/** 要删的图片或附件已经不在服务端（404）时，结果就是我们要的状态：让它过，别把后面的上传新图打断。 */
+async function deleteIfStillThere(run: () => Promise<unknown>) {
+  try {
+    await run();
+  } catch (error) {
+    if ((error as { code?: string }).code !== 'NOT_FOUND') throw error;
+  }
+}
+
 function initialActiveNav(): NavigationKey {
   try {
     const saved = window.localStorage.getItem(ACTIVE_NAV_STORAGE_KEY);
@@ -159,6 +169,8 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
   const [active, setActive] = useState<NavigationKey>(initialActiveNav);
   const [orders, setOrders] = useState<OrderDraft[]>([]);
   const [products, setProducts] = useState<ProductRecord[]>([]);
+  const [productSaving, setProductSaving] = useState(false);
+  const productSaveTask = useRef<Promise<void> | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [companyProfile, setCompanyProfile] = useState<CompanySnapshot>({ name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '' });
   const [labelsByOrderId, setLabelsByOrderId] = useState<Record<string, CartonLabel[]>>({});
@@ -204,6 +216,21 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
       window.setTimeout(() => setMessages((current2) => current2.filter((item) => item.id !== id)), 4200);
       return [...current, { id, message, kind }];
     });
+  }, []);
+
+  const [backupAlert, setBackupAlert] = useState<string | null>(null);
+  // 自动备份失败原先只在设置页显示一行，谁都不会没事去翻；而备份停摆恰恰是最不能错过的。
+  // 所以开屏查一次状态，失败就常驻横幅，直到用户处理或手动关掉。
+  useEffect(() => {
+    let cancelled = false;
+    getAutoBackupStatus()
+      .then((status) => {
+        if (cancelled || status.lastResult !== 'failed') return;
+        const when = status.lastBackupAt ? new Date(status.lastBackupAt).toLocaleString('zh-CN', { hour12: false }) : '时间未知';
+        setBackupAlert(`最近一次自动备份失败（${when}）：${status.lastError ?? '原因未知'}。这些数据目前没有新的备份兜底，请检查备份目录是否还能写、磁盘是否满了。`);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
   }, []);
 
   const loadProducts = useCallback(async (): Promise<boolean> => {
@@ -254,7 +281,22 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     }
   };
 
-  const saveProductRecord = async (draft: ProductRecord, mode: 'draft' | 'active') => {
+  /**
+   * 保存产品：连点两次会并发跑两遍图片差异同步，互相删掉对方刚上传的图，
+   * 所以第二次点击复用第一次的任务，不再重跑。
+   */
+  const saveProductRecord = (draft: ProductRecord, mode: 'draft' | 'active') => {
+    if (productSaveTask.current) return productSaveTask.current;
+    setProductSaving(true);
+    const task = syncProductFiles(draft, mode).finally(() => {
+      productSaveTask.current = null;
+      setProductSaving(false);
+    });
+    productSaveTask.current = task;
+    return task;
+  };
+
+  const syncProductFiles = async (draft: ProductRecord, mode: 'draft' | 'active') => {
     try {
       const isExisting = /^\d+$/.test(draft.id);
       const previousProduct = products.find((item) => item.id === draft.id);
@@ -263,14 +305,17 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
       const payload: ProductRecord = { ...draft, status: mode === 'draft' ? 'draft' : preservedStatus };
       const saved = isExisting ? await updateProduct(draft.id, payload) : await saveProduct(payload);
       const savedProductId = String((saved as { id?: number }).id);
-      if (isExisting) {
-        const draftImageIds = new Set(draft.images.filter((item) => !item.file && /^\d+$/.test(item.id)).map((item) => item.id));
-        for (const image of (products.find((item) => item.id === draft.id)?.images ?? [])) {
-          if (/^\d+$/.test(image.id) && !draftImageIds.has(image.id)) await deleteProductImage(savedProductId, image.id);
-        }
+      // 图片与附件的删除差异必须以这次保存返回的服务端现状为准。列表里的快照可能已经过期
+      // （编辑器开着时手机上删过、或上一次保存失败留下的差量），照旧快照删就会对已经不存在的
+      // id 发 DELETE，404 会把整个保存打断在「上传新图」之前，表现为图永远换不上。
+      const serverImages = (Array.isArray(saved.images) ? saved.images : []).filter((image) => /^\d+$/.test(String(image.id)));
+      const serverAttachments = (Array.isArray(saved.attachments) ? saved.attachments : []).filter((item) => /^\d+$/.test(String(item.id)));
+      const draftImageIds = new Set(draft.images.filter((item) => !item.file && /^\d+$/.test(item.id)).map((item) => item.id));
+      for (const image of serverImages) {
+        if (!draftImageIds.has(String(image.id))) await deleteIfStillThere(() => deleteProductImage(savedProductId, String(image.id)));
       }
       const orderedImageIds: number[] = [];
-      const savedImages = new Map((previousProduct?.images ?? []).map((image) => [image.id, image]));
+      const savedImages = new Map(serverImages.map((image) => [String(image.id), image]));
       for (const image of draft.images) {
         if (image.file) {
           const uploaded = await uploadProductImage(savedProductId, image.file, image.category ?? '', image.note ?? '');
@@ -278,7 +323,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
         } else if (/^\d+$/.test(image.id)) {
           orderedImageIds.push(Number(image.id));
           // 已保存图片改分类或备注时直接回写，不必重建图片记录。
-          const previous = savedImages.get(image.id);
+          const previous = savedImages.get(image.id) as { category?: string; note?: string } | undefined;
           const category = image.category ?? '';
           const note = image.note ?? '';
           if (previous && (category !== (previous.category ?? '') || note !== (previous.note ?? ''))) {
@@ -295,20 +340,19 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
           await uploadProductPackagingImage(savedProductId, packagingId, image.file!);
         }
       }
-      const previousAttachments = previousProduct?.attachments ?? [];
       const currentSavedAttachmentIds = new Set(
         draft.attachments.filter((item) => !item.file && /^\d+$/.test(item.id)).map((item) => item.id),
       );
-      for (const attachment of previousAttachments) {
-        if (/^\d+$/.test(attachment.id) && !currentSavedAttachmentIds.has(attachment.id)) {
-          await deleteProductAttachment(savedProductId, attachment.id);
+      for (const attachment of serverAttachments) {
+        if (!currentSavedAttachmentIds.has(String(attachment.id))) {
+          await deleteIfStillThere(() => deleteProductAttachment(savedProductId, String(attachment.id)));
         }
       }
       for (const attachment of draft.attachments.filter((item) => item.file)) {
         await uploadProductAttachment(savedProductId, attachment.file!, attachment.category);
       }
       for (const attachment of draft.attachments.filter((item) => !item.file && /^\d+$/.test(item.id))) {
-        const previous = previousAttachments.find((item) => item.id === attachment.id);
+        const previous = serverAttachments.find((item) => String(item.id) === attachment.id) as { category?: string } | undefined;
         if (previous && previous.category !== attachment.category) {
           await updateProductAttachmentCategory(savedProductId, attachment.id, attachment.category);
         }
@@ -640,12 +684,19 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
   };
 
   return <div className="app-layout"><Sidebar activeKey={active} onNavigate={navigate} companyName={companyProfile.name} logoUrl={companyProfile.logoRelativePath ? `/files/${companyProfile.logoRelativePath}` : undefined} mobileOpen={mobileNavOpen} onMobileOpenChange={setMobileNavOpen} user={user} onLogout={onLogout} /><main className="app-content">
+    {backupAlert && <div className="backup-alert" role="alert">
+      <span className="backup-alert-text">{backupAlert}</span>
+      <span className="backup-alert-actions">
+        <button type="button" className="button button-secondary" onClick={() => navigate('settings')}>去设置查看</button>
+        <button type="button" className="button button-secondary" onClick={() => setBackupAlert(null)}>知道了</button>
+      </span>
+    </div>}
     {active === 'finance' && <FinancePage onNotify={notify} initialOrderId={financeInitialOrderId} customers={customers} />}
     {active === 'orders' && <OrdersPage orders={orders} customers={customers} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} />}
     {active === 'stock' && <StockPage onNotify={notify} systemProducts={products} />}
     {active === 'quotations' && <QuotationPage onNotify={notify} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
     {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={async (orderId) => { await loadOrders(); setOrdersInitialOrderId(orderId); navigate('orders'); }} />}
-    {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} onExport={exportProductLibrary} onCatalog={exportProductCatalog} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onManagePresets={() => { setSettingsInitialSection('packaging'); navigate('settings'); }} onUpdateSaleStatus={(product, next) => { void toggleProductSaleStatus(product, next); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} />}
+    {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} saving={productSaving} onExport={exportProductLibrary} onCatalog={exportProductCatalog} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onManagePresets={() => { setSettingsInitialSection('packaging'); navigate('settings'); }} onUpdateSaleStatus={(product, next) => { void toggleProductSaleStatus(product, next); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} />}
     {active === 'customer-products' && <CustomerProductsPage customers={customers} systemProducts={products} initialCustomerId={customerProductsInitialCustomerId ?? undefined} loading={loading} onCustomersChanged={loadCustomers} onNotify={notify} />}
     {active === 'shipping' && <ShippingPage orders={shippingOrders} initialOrder={shippingInitialOrder} initialOrders={shippingInitialOrders} onUpdateTracking={updateTracking} onSaveTracking={saveShippingTracking} onConfirm={confirmShipping} />}
     {active === 'settings' && <SettingsPage onBackup={backup} onRestore={restore} onProfileChanged={setCompanyProfile} currentUser={user} mobileTabs={mobileTabs} onMobileTabsChange={updateMobileTabs} initialSection={settingsInitialSection ?? undefined} />}

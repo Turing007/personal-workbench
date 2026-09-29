@@ -1,32 +1,27 @@
 import type { ProductRecord } from './components/ProductEditor';
 
-/** 时间倒序：越新越靠前；时间缺失或不合法时视为最旧。 */
-function compareTimeDesc(left?: string, right?: string): number {
-  const leftTime = Date.parse(left ?? '');
-  const rightTime = Date.parse(right ?? '');
-  const leftValid = !Number.isNaN(leftTime);
-  const rightValid = !Number.isNaN(rightTime);
-  if (leftValid && rightValid) return rightTime - leftTime;
-  if (leftValid) return -1;
-  if (rightValid) return 1;
-  return 0;
-}
-
-/** 时间相同时用自增 id 兜底（批量导入常落在同一秒），仍然是新的在前。 */
-function compareIdDesc(left: ProductRecord, right: ProductRecord): number {
+/** 品名相同的兜底：SKU 字典序，再退到自增 id 升序，保证顺序稳定、不会来回跳。 */
+function compareStableTail(left: ProductRecord, right: ProductRecord): number {
+  const bySku = (left.sku ?? '').localeCompare(right.sku ?? '', 'zh-Hans-CN');
+  if (bySku !== 0) return bySku;
   const leftId = Number(left.id);
   const rightId = Number(right.id);
-  if (Number.isSafeInteger(leftId) && Number.isSafeInteger(rightId)) return rightId - leftId;
-  return String(right.id).localeCompare(String(left.id));
+  if (Number.isSafeInteger(leftId) && Number.isSafeInteger(rightId)) return leftId - rightId;
+  return String(left.id).localeCompare(String(right.id));
 }
 
 /**
- * 产品库列表排序：最新的排最上面。
- * - 以「最近更新时间」为准，与客户产品库以及服务端 `ORDER BY updated_at DESC, id DESC` 保持一致；
- * - 时间相同（批量导入、批量新建常见）时按自增 id 倒序，保证顺序稳定、不会来回跳动；
- * - 本地新建但还没落库的记录没有时间，统一排在已有数据之后。
+ * 产品库列表排序：按品名的拼音序，空名（未命名草稿）统一排最后。
+ * 用 `zh-Hans-CN` 而不是默认字典序，中文才会按 玻→充→角→圆 这样的拼音排，
+ * 否则退化成 Unicode 码位序，人眼看着是乱的。
  */
-export function compareProductByNewest(left: ProductRecord, right: ProductRecord): number {
-  const byTime = compareTimeDesc(left.updatedAt, right.updatedAt);
-  return byTime !== 0 ? byTime : compareIdDesc(left, right);
+export function compareProductByName(left: ProductRecord, right: ProductRecord): number {
+  const leftName = (left.name ?? '').trim();
+  const rightName = (right.name ?? '').trim();
+  if (!leftName || !rightName) {
+    if (leftName === rightName) return compareStableTail(left, right);
+    return leftName ? -1 : 1;
+  }
+  const byName = leftName.localeCompare(rightName, 'zh-Hans-CN');
+  return byName !== 0 ? byName : compareStableTail(left, right);
 }

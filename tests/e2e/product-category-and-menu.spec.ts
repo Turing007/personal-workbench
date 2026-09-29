@@ -186,3 +186,42 @@ test('工具条：导出/下载模板/导入收进「导入导出」二级菜单
   expect(file.suggestedFilename()).toContain('.xlsx');
   await expect(page.locator('.anchored-popover')).toHaveCount(0);
 });
+
+test('编辑器：点遮罩和按 Esc 都不关闭，填过的内容不丢', async ({ page }) => {
+  const editor = await openEditor(page);
+  const name = `E2E遮罩不关${stamp}`;
+  await nameInput(page).fill(name);
+  await categoryInput(page).fill('扳手');
+
+  // 误点弹窗外的空白处：弹窗必须留着，已经填的内容一个都不能没。
+  await page.locator('.modal-overlay').click({ position: { x: 6, y: 6 } });
+  await expect(editor).toBeVisible();
+  await expect(nameInput(page)).toHaveValue(name);
+
+  // Esc 同样不关：一次误按不该毁掉半张表单。
+  await page.keyboard.press('Escape');
+  await expect(editor).toBeVisible();
+  await expect(nameInput(page)).toHaveValue(name);
+  await expect(categoryInput(page)).toHaveValue('扳手');
+
+  // 明确的关闭入口照常生效。
+  await editor.locator('.modal-close').click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('只读弹窗同样只认关闭按钮', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+  await page.locator('.products-page .page-toolbar .search-control input').fill(anchorProduct.sku);
+  await page.locator('.products-gallery .product-gallery-open').first().click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+
+  await page.locator('.modal-overlay').click({ position: { x: 6, y: 6 } });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeVisible();
+
+  await dialog.locator('.modal-close').click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});

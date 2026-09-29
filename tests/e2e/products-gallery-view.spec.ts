@@ -189,3 +189,32 @@ test.describe('手机端', () => {
     await expect(card(page, uncategorized.sku)).toHaveCount(1);
   });
 });
+
+test('大图卡片：点图片开图片浏览，点名称或 SKU 才开产品详情', async ({ page }) => {
+  await openProducts(page);
+  await search(page).fill(NAME);
+
+  // 图片：直接进图片浏览，不经过详情弹窗。
+  await card(page, withImage.sku).locator('.product-gallery-image-button').click();
+  const viewer = page.getByRole('dialog');
+  await expect(viewer).toContainText('全部图片');
+  await expect(viewer.locator('img').first()).toBeVisible();
+  await viewer.locator('.modal-close').click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+
+  // 名称与 SKU 都指向产品详情。
+  await card(page, withImage.sku).locator('.product-gallery-name').click();
+  await expect(page.getByRole('dialog')).toContainText('产品详情');
+  await page.getByRole('dialog').locator('.modal-close').click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+
+  await card(page, withImage.sku).locator('.product-gallery-sku').click();
+  await expect(page.getByRole('dialog')).toContainText('产品详情');
+  await page.getByRole('dialog').locator('.modal-close').click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+
+  // 没图片的产品不给出可点的图片区，避免开一个空浏览。
+  expect(await card(page, withoutImage.sku).locator('.product-gallery-image-button').count()).toBe(0);
+  await card(page, withoutImage.sku).locator('.product-gallery-open').click();
+  await expect(page.getByRole('dialog')).toContainText('产品详情');
+});

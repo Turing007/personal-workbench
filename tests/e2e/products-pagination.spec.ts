@@ -10,7 +10,7 @@ const TAIL_ROWS = SEED_COUNT - DEFAULT_SIZE_ROWS;
 const TAG = `E2E分页${Date.now()}`;
 
 let sessionCookie: string;
-// 造 25 条产品：新建的 id 更大、更新时间更晚，列表按最新排序，所以第 1 页是 tail..head，第 2 页才是最早的几条。
+// 造 25 条产品：品名补零到两位，按品名排序即 01..25，所以第 1 页是 01-20，第 2 页是 21-25。
 let seeded: Array<{ id: string; sku: string; name: string }> = [];
 
 test.beforeAll(async ({ request }) => {
@@ -18,7 +18,7 @@ test.beforeAll(async ({ request }) => {
   for (let index = 1; index <= SEED_COUNT; index += 1) {
     const response = await request.post('/api/products', {
       data: {
-        name: `${TAG}-${index}`,
+        name: `${TAG}-${String(index).padStart(2, '0')}`,
         status: 'active',
         packaging: [{ name: '彩盒包装', innerSize: '10×5×3', innerWeight: 0.5, outerSize: '40×30×25', outerWeight: 8, packCount: 24 }],
       },
@@ -47,8 +47,10 @@ async function openProducts(page: Page, mobile = false) {
   await page.locator('.products-page .page-toolbar .search-control input').fill(TAG);
 }
 
-const oldest = () => seeded[0];
-const newest = () => seeded[SEED_COUNT - 1];
+/** 品名序的第一条（补零后与创建序一致），落在第 1 页。 */
+const firstByName = () => seeded[0];
+/** 品名序的最后一条，落在第 2 页。 */
+const lastByName = () => seeded[SEED_COUNT - 1];
 
 test('桌面端：默认每页 20 条，可翻页、可换每页条数并记住选择', async ({ page }) => {
   await openProducts(page);
@@ -62,20 +64,20 @@ test('桌面端：默认每页 20 条，可翻页、可换每页条数并记住�
   const next = page.locator('.products-pagination button[aria-label="下一页"]');
   await expect(search).toHaveValue(TAG);
 
-  // 25 条按默认 20 条分页：第 1 页 20 条，最早那条不在本页，而不是被丢掉。
+  // 25 条按默认 20 条分页：第 1 页 20 条，品名序最后那条不在本页，而不是被丢掉。
   await expect(page.locator('.products-page .page-toolbar .toolbar-count')).toHaveText(`${SEED_COUNT} 个产品`);
   await expect(sizeSelect).toHaveValue('20');
   await expect(rows).toHaveCount(DEFAULT_SIZE_ROWS);
   await expect(summary).toHaveText(`共 ${SEED_COUNT} 个产品 · 第 1-${DEFAULT_SIZE_ROWS} 条`);
   await expect(position).toHaveText('第 1 / 2 页');
-  await expect(rows.filter({ hasText: newest().sku })).toHaveCount(1);
-  await expect(rows.filter({ hasText: oldest().sku })).toHaveCount(0);
+  await expect(rows.filter({ hasText: firstByName().sku })).toHaveCount(1);
+  await expect(rows.filter({ hasText: lastByName().sku })).toHaveCount(0);
   await expect(prev).toBeDisabled();
 
-  // 翻到第 2 页看到剩下的 5 条，含最早那条；下一页到底后禁用。
+  // 翻到第 2 页看到剩下的 5 条，含品名序最后那条；下一页到底后禁用。
   await page.locator('.products-pager').getByRole('button', { name: '2', exact: true }).click();
   await expect(rows).toHaveCount(TAIL_ROWS);
-  await expect(rows.filter({ hasText: oldest().sku })).toHaveCount(1);
+  await expect(rows.filter({ hasText: lastByName().sku })).toHaveCount(1);
   await expect(summary).toHaveText(`共 ${SEED_COUNT} 个产品 · 第 21-${SEED_COUNT} 条`);
   await expect(position).toHaveText('第 2 / 2 页');
   await expect(next).toBeDisabled();
@@ -94,7 +96,7 @@ test('桌面端：默认每页 20 条，可翻页、可换每页条数并记住�
   await sizeSelect.selectOption('20');
   await page.locator('.products-pager').getByRole('button', { name: '2', exact: true }).click();
   await expect(position).toHaveText('第 2 / 2 页');
-  await search.fill(oldest().sku);
+  await search.fill(firstByName().sku);
   await expect(rows).toHaveCount(1);
   await expect(position).toHaveText('第 1 / 1 页');
 });
@@ -110,12 +112,12 @@ test.describe('手机端', () => {
     const prev = page.locator('.products-pagination button[aria-label="上一页"]');
 
     await expect(cards).toHaveCount(DEFAULT_SIZE_ROWS);
-    await expect(cards.filter({ hasText: oldest().sku })).toHaveCount(0);
+    await expect(cards.filter({ hasText: lastByName().sku })).toHaveCount(0);
     await expect(prev).toBeDisabled();
 
     await next.tap();
     await expect(cards).toHaveCount(TAIL_ROWS);
-    await expect(cards.filter({ hasText: oldest().sku })).toHaveCount(1);
+    await expect(cards.filter({ hasText: lastByName().sku })).toHaveCount(1);
     await expect(page.locator('.products-pagination-page')).toHaveText(`第 2 / 2 页`);
 
     // 分页条落在屏幕内：手机端左右滑动手势麻烦，出现横向滚动即为回归。
