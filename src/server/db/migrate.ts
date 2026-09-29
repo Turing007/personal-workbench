@@ -1,9 +1,10 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { withTransaction } from './connection.js';
 import { migratePackagingColumns } from './packaging.js';
+import { sortByImageLeadNumber } from '../../shared/product-image-order.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 24;
+const CURRENT_SCHEMA_VERSION = 25;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -1079,6 +1080,37 @@ function migrateVersionTwentyFour(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', String(CURRENT_SCHEMA_VERSION), now);
 }
 
+/**
+ * 一次性按文件名前导编号重排产品图片顺序。
+ * 只在首次执行：之后用户可以自由拖动，不能被每次启动覆盖回去，所以用独立标记位守着。
+ */
+function migrateVersionTwentyFive(database: DatabaseSync, now: string): void {
+  const done = database
+    .prepare("SELECT value FROM settings WHERE key = 'product_images_ordered_by_filename_v25'")
+    .get();
+  if (done !== undefined) return;
+
+  const rows = database
+    .prepare('SELECT id, product_id, original_name, sort_order FROM product_images')
+    .all() as Array<{ id: number; product_id: number; original_name: string; sort_order: number }>;
+  const byProduct = new Map<number, typeof rows>();
+  for (const row of rows) {
+    const list = byProduct.get(row.product_id);
+    if (list) list.push(row);
+    else byProduct.set(row.product_id, [row]);
+  }
+
+  const update = database.prepare('UPDATE product_images SET sort_order = ? WHERE id = ?');
+  for (const list of byProduct.values()) {
+    const ordered = sortByImageLeadNumber(list.map((row) => ({ name: row.original_name, row }))).map((entry) => entry.row);
+    ordered.forEach((row, index) => {
+      if (row.sort_order !== index) update.run(index, row.id);
+    });
+  }
+  upsertSetting(database, 'product_images_ordered_by_filename_v25', now, now);
+  upsertSetting(database, 'schema_version', String(CURRENT_SCHEMA_VERSION), now);
+}
+
 export function migrateDatabase(database: DatabaseSync): void {
   if (database.isTransaction) {
     throw new Error('Database migration cannot run inside an active transaction');
@@ -1129,6 +1161,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionTwentyTwo(transactionDatabase, now);
     migrateVersionTwentyThree(transactionDatabase, now);
     migrateVersionTwentyFour(transactionDatabase, now);
+    migrateVersionTwentyFive(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

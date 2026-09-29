@@ -4,6 +4,7 @@ import type { ChangeEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { canPickFilesNatively, pickFilesNatively } from '../app-bridge';
 import { normalizeUploadImage, SUPPORTED_IMAGE_HINT } from '../image-mime';
 import { normalizeProductImageCategory } from '../../shared/product-image-categories';
+import { sortByImageLeadNumber } from '../../shared/product-image-order';
 
 export interface ImageAttachment {
   id: string;
@@ -107,7 +108,9 @@ export default function ImagePasteUpload({
     const uploadable = resolved.filter((file): file is File => Boolean(file));
     const current = valueRef.current;
     const remaining = Math.max(0, fileLimit - current.length);
-    const accepted = uploadable.slice(0, remaining);
+    // 一次选的多个文件先按文件名前导编号排好再入库：系统返回的多半是字符串序
+    // （0,10,1,2…），不排就会永久存成乱序。超出上限时保留编号靠前的那几张。
+    const accepted = sortByImageLeadNumber(uploadable).slice(0, remaining);
     if (uploadable.length < files.length) setMessage(SUPPORTED_IMAGE_HINT);
     else if (uploadable.length > remaining) setMessage(`最多添加 ${fileLimit} 张图片`);
     else setMessage(successMessage);

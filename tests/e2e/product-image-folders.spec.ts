@@ -159,3 +159,65 @@ test.describe('产品图片按分类文件夹管理', () => {
     }
   });
 });
+
+test('一次上传乱序文件时按文件名编号入库', async ({ page }) => {
+  const stamp = Date.now();
+  const created = await page.request.post('/api/products', {
+    data: { name: `E2E编号排序${stamp}`, status: 'active', packaging: [{ name: '彩盒包装', packCount: 10 }] },
+  });
+  const product = (await created.json()).data as { id: string; sku: string };
+  try {
+    await openProductEditor(page, product.sku);
+    const editor = page.getByRole('dialog');
+    // 故意按 10、0、1、2 的顺序选：系统给回来的就是这个顺序，落库前必须重排。
+    await editor.locator('input[type=file][aria-label="添加精修图"]').setInputFiles(
+      ['10-图.png', '0-图.png', '1-图.png', '2-图.png'].map((name) => ({ name, mimeType: 'image/png', buffer: PNG_1X1 })),
+    );
+    await expect(editor.locator('.image-folder .image-card')).toHaveCount(4);
+    await editor.getByRole('button', { name: '保存产品' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    const stored = await page.request.get(`/api/products/${product.id}`);
+    const names = ((await stored.json()).data.images as Array<{ originalName: string }>).map((image) => image.originalName);
+    expect(names).toEqual(['0-图.png', '1-图.png', '2-图.png', '10-图.png']);
+  } finally {
+    await page.request.delete(`/api/products/${product.id}`);
+  }
+});
+
+test.describe('手机端图片文件夹', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 });
+
+  test('图片浏览弹窗不需要左右滑动：文件夹与缩略图都在屏宽内', async ({ page }) => {
+    const stamp = Date.now();
+    const product = await seedProductWithImages(page, stamp);
+    try {
+      await page.goto('/');
+      await page.locator('.mobile-tab-item[aria-label="更多模块"]').click();
+      await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+      await page.locator('.products-page .page-toolbar .search-control input').fill(product.sku);
+      await page.locator('.product-image-button:visible').first().click();
+      await expect(page.locator('.product-images-content')).toBeVisible();
+
+      const metrics = await page.evaluate(() => {
+        const body = document.querySelector('.modal-body') as HTMLElement;
+        const list = document.querySelector('.product-images-content .image-folder-list') as HTMLElement;
+        const strip = document.querySelector('.product-images-content .product-images-thumbnails') as HTMLElement;
+        return {
+          viewport: window.innerWidth,
+          bodyOverflow: body.scrollWidth - body.clientWidth,
+          listRight: Math.round(list.getBoundingClientRect().right),
+          stripOverflow: strip.scrollWidth - strip.clientWidth,
+          columns: getComputedStyle(strip).gridTemplateColumns.split(' ').length,
+        };
+      });
+      // 弹窗正文不许有横向滚动；缩略图条按屏宽自动排列列数，不靠左右滑。
+      expect(metrics.bodyOverflow).toBeLessThanOrEqual(0);
+      expect(metrics.listRight).toBeLessThanOrEqual(metrics.viewport);
+      expect(metrics.stripOverflow).toBeLessThanOrEqual(0);
+      expect(metrics.columns).toBeGreaterThanOrEqual(3);
+    } finally {
+      await page.request.delete(`/api/products/${product.id}`);
+    }
+  });
+});
