@@ -600,7 +600,7 @@ export async function registerProductRoutes(app: FastifyInstance, options: Produ
       const note = parseImageNote(request.query?.note ?? '');
       const file = await request.file(imageFileOptions);
       if (!file) throw new ApiError(400, 'FILE_REQUIRED', '请选择产品图片', 'file');
-      const stored = await fileStore.saveImage(file.file, 'product', file.filename, file.mimetype);
+      const stored = await fileStore.optimizeStoredImage(await fileStore.saveImage(file.file, 'product', file.filename, file.mimetype));
       try {
         const image = repositories.addProductImage(id, stored, category, note);
         return sendSuccess(reply, image ? mapImage(image) : null, 201);

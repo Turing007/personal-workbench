@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
+import { compressImageBuffer } from './image-compress.js';
 import {
   ALLOWED_CONTRACT_EXTENSIONS,
   ALLOWED_CONTRACT_MIME_TYPES,
@@ -406,6 +407,26 @@ export class FileStore {
 
   async readFile(relativePath: string): Promise<Buffer> {
     return readFile(this.resolvePublicPath(relativePath));
+  }
+
+  /**
+   * 就地把已存好的图片压到展示够用的尺寸：相机原图动辄 4096×3072 / 6MB，
+   * 全库四千张就是 6GB 以上，备份体积也跟着线性膨胀。
+   * 压缩失败绝不阻断上传——宁可留大图，不能丢图。
+   */
+  async optimizeStoredImage(stored: StoredFile): Promise<StoredFile> {
+    const path = this.resolvePublicPath(stored.relativePath);
+    const temporaryPath = `${path}.compressing`;
+    try {
+      const result = await compressImageBuffer(await readFile(path));
+      if (!result.buffer) return stored;
+      await writeFile(temporaryPath, result.buffer);
+      await rename(temporaryPath, path);
+      return { ...stored, size: result.buffer.length };
+    } catch {
+      await rm(temporaryPath, { force: true }).catch(() => undefined);
+      return stored;
+    }
   }
 
   private resolveStagedFile(stagedFile: StagedFile): string {
