@@ -5,6 +5,8 @@ test-results
 playwright-report
 docs
 scripts
+# npm run build 的最后一步要跑它写 dist/build-info.json，整目录排除会让镜像构建必然失败
+!scripts/write-build-info.mjs
 deploy
 android
 .git

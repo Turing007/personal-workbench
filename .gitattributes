@@ -1,0 +1,5 @@
+# 仓库整体是 CRLF（Windows 上开发），但 Linux 端的 bash 解析不了带 CR 的脚本：
+# 部署脚本必须在版本库里就保持 LF，否则 scp 到服务器后 `bash script.sh` 直接语法错误。
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf

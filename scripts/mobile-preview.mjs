@@ -4,7 +4,7 @@
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
 
-const base = process.argv[2] ?? 'http://127.0.0.1:52341';
+const base = process.argv[2] ?? 'http://127.0.0.1:52342';
 const outDir = 'test-results/mobile';
 mkdirSync(outDir, { recursive: true });
 

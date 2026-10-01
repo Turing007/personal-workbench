@@ -1,4 +1,5 @@
 import { join, resolve } from 'node:path';
+import { normalizeEnvironment, type WorkbenchEnvironment } from '../shared/environment.js';
 
 export const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 export const ALLOWED_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
@@ -73,6 +74,7 @@ export interface WorkbenchConfig {
   allowedImageMimeTypes: readonly AllowedImageMimeType[];
   maxContractSize: number;
   allowedContractMimeTypes: readonly AllowedContractMimeType[];
+  environment: WorkbenchEnvironment;
 }
 
 export function createConfig(projectDirectory = process.cwd()): WorkbenchConfig {
@@ -83,7 +85,11 @@ export function createConfig(projectDirectory = process.cwd()): WorkbenchConfig 
   return {
     // 监听所有网卡，手机连同一局域网即可访问；如只想本机使用可设 WORKBENCH_HOST=127.0.0.1。
     host: process.env.WORKBENCH_HOST ?? '0.0.0.0',
-    port: Number(process.env.WORKBENCH_PORT ?? 52341),
+    // 刻意避开服务器占用的 52341：本机一旦同时存在两个实例，两份库会各改各的分叉。
+    // 镜像里 Dockerfile 与 compose 都显式钉住 52341，所以这里的默认值不影响线上。
+    port: Number(process.env.WORKBENCH_PORT ?? 52342),
+    // 由部署链路显式设置：本机启动器写 test，Docker 镜像写 production。
+    environment: normalizeEnvironment(process.env.WORKBENCH_ENV),
     trustProxy: process.env.WORKBENCH_TRUST_PROXY === '1',
     projectDirectory: projectRoot,
     dataDirectory,

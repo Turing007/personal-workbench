@@ -5,9 +5,13 @@ $ErrorActionPreference = 'Stop'
 $Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $PidFile = Join-Path $Root '.workbench.pid'
 $DataDirectory = Join-Path $Root 'data'
-$Port = if ($env:WORKBENCH_PORT) { [int]$env:WORKBENCH_PORT } else { 52341 }
+$Port = if ($env:WORKBENCH_PORT) { [int]$env:WORKBENCH_PORT } else { 52342 }
 $Url = "http://127.0.0.1:$Port/"
 $HealthUrl = "http://127.0.0.1:$Port/health"
+# 让服务进程绑定启动器实际探测的端口，避免脚本与代码默认值各说一套。
+$env:WORKBENCH_PORT = "$Port"
+# 本机实例一律按测试端对待，页面上会常驻「测试环境」横条；线上由 Docker 显式设 production。
+$env:WORKBENCH_ENV = 'test'
 
 function Test-Health {
   try {
@@ -205,6 +209,8 @@ try {
 
   Write-Host "Personal Workbench started: $Url"
   Write-Host "本次启动版本 : $startedLabel"
+  Write-Host '注意：这是本机副本，读写的是本地 data/，不会同步到服务器。'
+  Write-Host '线上主数据在服务器的 52341 端口，两边同时改会造成数据分叉，只能覆盖其中一边。'
 
   $lanAddresses = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
     Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
@@ -214,7 +220,7 @@ try {
     foreach ($address in $lanAddresses) {
       Write-Host "  http://${address}:$Port/"
     }
-    Write-Host 'If the phone cannot open the address, allow TCP port 52341 in Windows Firewall.'
+    Write-Host "If the phone cannot open the address, allow TCP port $Port in Windows Firewall."
   }
   if (-not $NoBrowser) { Start-Process $Url }
   exit 0

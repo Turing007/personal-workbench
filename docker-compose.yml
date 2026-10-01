@@ -1,22 +1,44 @@
 services:
   workbench:
-    build: .
+    build:
+      context: .
+      args:
+        # 部署脚本把本机当前 commit 写进 .env，这样线上 /health 能看出跑的是哪一版
+        WORKBENCH_GIT_COMMIT: ${WORKBENCH_GIT_COMMIT:-}
     image: personal-workbench:latest
     restart: unless-stopped
     environment:
-      - WORKBENCH_TRUST_PROXY=1
+      # 显式钉住容器内端口：代码默认值已经让给本机实例（52342），
+      # 只靠 Dockerfile 的 ENV 或默认值，端口会和下面 ports 的右侧悄悄错开。
+      - WORKBENCH_PORT=52341
+      # 线上实例不带测试横条；万一要在服务器上跑测试数据，把它改成 test 即可。
+      - WORKBENCH_ENV=${WORKBENCH_ENV:-production}
+      # 只有前面真的挂了反向代理（https 档位的 Caddy）时才信任 X-Forwarded-*：
+      # IP 直连模式下信任代理头会让登录限流按可伪造的 IP 计数，等于形同虚设。
+      - WORKBENCH_TRUST_PROXY=${WORKBENCH_TRUST_PROXY:-0}
       # 如需改端口/数据目录，在服务器上的 .env 里配置对应的 WORKBENCH_* 变量。
+    ports:
+      # IP 直连模式（无域名/无备案）就靠这个端口访问；配了域名走 Caddy 时也不影响。
+      - "${WORKBENCH_PUBLIC_PORT:-52341}:52341"
     volumes:
-      - workbench-data:/data
+      # 用 bind mount 而不是命名卷：迁移现有数据时可以直接把本机 data/ 拷进
+      # ~/workbench/data，不必绕道备份恢复（备份 ZIP 走 multipart 上传，上限只有 20MB，
+      # 而图片压缩后全量仍有数百 MB，UI 那条路传不上去）。
+      - ./data:/data
 
+  # 只在配了域名的时候启用：docker compose --profile https up -d
+  # 大陆服务器未备案的域名会被云厂商拦掉 80/443，所以默认不启动。
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    profiles: ["https"]
     ports:
       - "80:80"
       - "443:443"
     environment:
-      - WORKBENCH_DOMAIN=${WORKBENCH_DOMAIN:?请在 .env 中设置 WORKBENCH_DOMAIN，例如 1-2-3-4.sslip.io}
+      # 不用 ${VAR:?}：Compose 对未启用的 profile 服务照样做插值校验，
+      # 会让「IP 直连、根本没开 https 档」的部署直接失败。域名缺失由 remote-deploy.sh 拦住。
+      - WORKBENCH_DOMAIN=${WORKBENCH_DOMAIN:-}
       - ACME_EMAIL=${ACME_EMAIL:-}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
@@ -26,6 +48,5 @@ services:
       - workbench
 
 volumes:
-  workbench-data:
   caddy-data:
   caddy-config:

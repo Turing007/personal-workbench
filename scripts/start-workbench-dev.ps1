@@ -3,8 +3,8 @@
 $Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $DevPidFile = Join-Path $Root '.workbench-dev.pid'
 $ProdPidFile = Join-Path $Root '.workbench.pid'
-$VitePort = 52342
-$ServerPort = 52341
+$VitePort = 52343
+$ServerPort = 52342
 $DevUrl = "http://127.0.0.1:$VitePort/"
 
 $SourceVersion = '0.0.0'

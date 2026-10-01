@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $DevPidFile = Join-Path $Root '.workbench-dev.pid'
-$Ports = @(52342, 52341)
+$Ports = @(52343, 52342)
 
 function Get-NodeCommandLine([int]$ProcessId) {
   try {

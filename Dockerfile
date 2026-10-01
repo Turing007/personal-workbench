@@ -7,12 +7,18 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json tsconfig.server.json vite.config.ts ./
 COPY src ./src
+# npm run build 末尾要执行它生成 dist/build-info.json；镜像里没有 .git，
+# commit 号由构建参数 WORKBENCH_GIT_COMMIT 从外部传进来。
+COPY scripts/write-build-info.mjs ./scripts/
+ARG WORKBENCH_GIT_COMMIT=
+ENV WORKBENCH_GIT_COMMIT=${WORKBENCH_GIT_COMMIT}
 RUN npm run build
 
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production \
     WORKBENCH_HOST=0.0.0.0 \
     WORKBENCH_PORT=52341 \
+    WORKBENCH_ENV=production \
     WORKBENCH_DATA_DIR=/data \
     WORKBENCH_TRUST_PROXY=1
 WORKDIR /app
