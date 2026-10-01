@@ -38,8 +38,9 @@ fi
 SSH=(ssh)
 SCP=(scp)
 if [ -n "${SSH_KEY:-}" ]; then
-  SSH=(-i "$SSH_KEY" -o IdentitiesOnly=yes)
-  SCP=(-i "$SSH_KEY" -o IdentitiesOnly=yes)
+  # 数组里必须带上 ssh/scp 本身：漏掉的话整条命令会以 -i 开头，bash 直接报 command not found。
+  SSH=(ssh -i "$SSH_KEY" -o IdentitiesOnly=yes)
+  SCP=(scp -i "$SSH_KEY" -o IdentitiesOnly=yes)
 fi
 
 echo "==> [1/5] 检查服务器连通性与 Docker..."
