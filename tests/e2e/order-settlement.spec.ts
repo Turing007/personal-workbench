@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { dateInputValue } from '../../src/shared/date-input';
 import { ensureAuthenticated, injectSession } from './helpers/auth';
 
 let sessionCookie: string;
@@ -26,7 +27,9 @@ test.describe('订单对公/对私结算与开票状态', () => {
       const response = await page.request.post('/api/orders', {
         data: {
           orderNo: '',
-          orderedAt: new Date().toISOString(),
+          // 必须用本地日期：toISOString 取的是 UTC 日期，北京时间 0–8 点会落到前一天，
+          // 于是订单进了上月，财务页按月筛选就查不到（这个用例深夜跑是绿的，早上跑就红）。
+          orderedAt: dateInputValue(),
           customerId: customer.id,
           recipientName: '结算联系人',
           recipientInfo: '杭州市西湖区',
@@ -47,7 +50,7 @@ test.describe('订单对公/对私结算与开票状态', () => {
 
     // 订单表单：新建订单默认对私（历史订单仍按各自已存的值显示）
     await page.goto('/');
-    await page.getByRole('button', { name: '订单管理' }).click();
+    await page.getByRole('button', { name: '订单', exact: true }).click();
     await page.getByRole('button', { name: '新建订单' }).click();
     const formDialog = page.getByRole('dialog', { name: '新建订单' });
     await expect(formDialog.getByRole('combobox', { name: '结算方式' })).toHaveValue('personal');
@@ -62,7 +65,7 @@ test.describe('订单对公/对私结算与开票状态', () => {
     await expect(corporateRow).toContainText('对公');
 
     // 财务模块：对私发票列显示无需开票，详情隐藏新建开票申请
-    await page.getByRole('button', { name: '财务管理' }).click();
+    await page.getByRole('button', { name: '财务', exact: true }).click();
     await page.getByRole('textbox', { name: '搜索订单号或客户' }).fill(name);
     const financePersonalRow = page.locator('tbody tr', { hasText: personalOrder.orderNo });
     await expect(financePersonalRow).toContainText('无需开票');

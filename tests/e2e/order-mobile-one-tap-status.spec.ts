@@ -15,7 +15,7 @@ test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true
 
 async function navigateToOrders(page: import('@playwright/test').Page) {
   await page.locator('.mobile-tab-item[aria-label="更多模块"]').click();
-  await page.locator('.sidebar-nav').getByRole('button', { name: '订单管理', exact: true }).click();
+  await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
 }
 
 async function openOrdersModule(page: import('@playwright/test').Page) {

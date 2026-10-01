@@ -24,13 +24,13 @@ export interface NavigationItem {
 /* 按业务流程排序：报价 → 开单 → 订单 → 备货 → 发货 → 收款，其后是资料库与设置 */
 export const navigationItems: NavigationItem[] = [
   { key: 'quotations', label: '报价单', shortLabel: '报价', icon: ReceiptText },
-  { key: 'sales-documents', label: '销售开单', shortLabel: '开单', icon: FileSpreadsheet },
-  { key: 'orders', label: '订单管理', shortLabel: '订单', icon: ClipboardList },
+  { key: 'sales-documents', label: '销售单', shortLabel: '销售', icon: FileSpreadsheet },
+  { key: 'orders', label: '订单', shortLabel: '订单', icon: ClipboardList },
   { key: 'stock', label: '备货', shortLabel: '备货', icon: PackageOpen },
-  { key: 'shipping', label: '发货管理', shortLabel: '发货', icon: PackageCheck },
-  { key: 'finance', label: '财务管理', shortLabel: '财务', icon: WalletCards },
+  { key: 'shipping', label: '发货', shortLabel: '发货', icon: PackageCheck },
+  { key: 'finance', label: '财务', shortLabel: '财务', icon: WalletCards },
   { key: 'products', label: '产品库', shortLabel: '产品', icon: Boxes },
-  { key: 'customer-products', label: '客户产品库', shortLabel: '客户产品', icon: ShoppingBag },
+  { key: 'customer-products', label: '客户', shortLabel: '客户', icon: ShoppingBag },
   { key: 'settings', label: '设置', shortLabel: '设置', icon: Settings },
 ];
 

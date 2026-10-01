@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
+import { dateInputValue } from '../../src/shared/date-input';
 import { ensureAuthenticated, injectSession } from './helpers/auth';
 
 async function seedOrder(request: APIRequestContext): Promise<void> {
@@ -6,7 +7,8 @@ async function seedOrder(request: APIRequestContext): Promise<void> {
   const response = await request.post('/api/orders', {
     data: {
       orderNo,
-      orderedAt: new Date().toISOString().slice(0, 10),
+      // 本地日期，不能用 toISOString（UTC）：北京时间 0–8 点会落到前一天，按月筛选就查不到
+      orderedAt: dateInputValue(),
       recipientName: 'e2e 收件人',
       recipientInfo: 'e2e 收件人 13800000000 e2e 测试地址',
       items: [{ name: 'e2e 测试产品', quantity: 2, packCount: 1, unitPriceCents: 500 }],
@@ -29,8 +31,8 @@ test.describe('财务管理工作台', () => {
 
   test('显示财务列表、统计卡和订单财务详情', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('button', { name: '财务管理' })).toBeVisible();
-    await page.getByRole('button', { name: '财务管理' }).click();
+    await expect(page.getByRole('button', { name: '财务', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '财务', exact: true }).click();
 
     // 页头标题 / 副标题已移除（手机端太占地方），改为断言工具栏里的搜索框与三个状态筛选已就位。
     await expect(page.getByText('本期应收')).toBeVisible();
@@ -59,7 +61,8 @@ test.describe('财务管理工作台', () => {
     const orderResponse = await page.request.post('/api/orders', {
       data: {
         orderNo: '',
-        orderedAt: new Date().toISOString(),
+        // 本地日期，不能用 toISOString（UTC）：北京时间 0–8 点会落到前一天，按月筛选就查不到
+        orderedAt: dateInputValue(),
         customerId: customer.id,
         recipientName: '联系人',
         recipientInfo: '北京市朝阳区',
@@ -76,7 +79,7 @@ test.describe('财务管理工作台', () => {
 
     try {
       await page.goto('/');
-      const orderNav = page.getByRole('button', { name: '订单管理' });
+      const orderNav = page.getByRole('button', { name: '订单', exact: true });
       await expect(orderNav).toBeVisible();
       await orderNav.click();
       const orderRow = page.locator('tbody tr', { hasText: String(order.order_no) });
@@ -108,7 +111,8 @@ test.describe('财务管理工作台', () => {
     const orderResponse = await page.request.post('/api/orders', {
       data: {
         orderNo: '',
-        orderedAt: new Date().toISOString(),
+        // 本地日期，不能用 toISOString（UTC）：北京时间 0–8 点会落到前一天，按月筛选就查不到
+        orderedAt: dateInputValue(),
         customerId: customer.id,
         recipientName: '开票联系人',
         recipientInfo: '上海市浦东新区',
@@ -124,7 +128,7 @@ test.describe('财务管理工作台', () => {
     const orderId = Number(order.id ?? order.order_id);
 
     await page.goto('/');
-    await page.getByRole('button', { name: '财务管理' }).click();
+    await page.getByRole('button', { name: '财务', exact: true }).click();
     await page.getByRole('textbox', { name: '搜索订单号或客户' }).fill(name);
     await page.getByRole('button', { name: '查看财务' }).first().click();
 

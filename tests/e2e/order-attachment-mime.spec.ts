@@ -58,7 +58,7 @@ async function createOrderWithItem(page: Page, stamp: number) {
 
 async function openOrderFormInEdit(page: Page, orderNo: string) {
   await page.goto('/');
-  await page.getByRole('button', { name: '订单管理' }).click();
+  await page.getByRole('button', { name: '订单', exact: true }).click();
   await page.locator('tbody tr', { hasText: orderNo }).getByRole('button', { name: '编辑' }).click();
   await expect(page.getByRole('dialog', { name: `编辑订单 · ${orderNo}` })).toBeVisible();
 }

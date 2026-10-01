@@ -104,7 +104,7 @@ test('手机端订单管理：短距离回滑即可唤回悬浮搜索框，且�
   await expectFloatingSearchRevealsOnShortSlideBack(
     page,
     context,
-    '订单管理',
+    '订单',
     '.orders-page',
     '.orders-page .orders-table-toolbar .search-control',
   );
@@ -120,7 +120,7 @@ test('手机端客户产品库：短距离回滑即可唤回悬浮搜索框，�
   await expectFloatingSearchRevealsOnShortSlideBack(
     page,
     context,
-    '客户产品库',
+    '客户',
     '.customer-products-page',
     '.customer-products-page .page-toolbar .search-control',
   );

@@ -35,7 +35,7 @@ async function seedOrder(page: Page, stamp: number) {
 
 async function openShipping(page: Page) {
   await page.goto('/');
-  await page.locator('.sidebar-nav').getByRole('button', { name: '发货管理', exact: true }).click();
+  await page.locator('.sidebar-nav').getByRole('button', { name: '发货', exact: true }).click();
 }
 
 test.describe('发货工作区收未发货订单', () => {

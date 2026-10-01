@@ -42,7 +42,7 @@ test('手机端主导航抽屉：打开时锁住背景滚动，关闭后恢复',
   // 否则跳过去的页面在真机上会整个滑不动。
   await page.locator('.mobile-tab-item[aria-label="更多模块"]').click();
   await expect(drawer).toHaveClass(/is-mobile-open/);
-  await page.locator('.sidebar-nav').getByRole('button', { name: '订单管理', exact: true }).click();
+  await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
   await expect(page.locator('.orders-page')).toBeVisible();
   await expect(drawer).not.toHaveClass(/is-mobile-open/);
   await expect.poll(() => readBodyOverflow(page)).toBe('');

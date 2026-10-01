@@ -29,7 +29,7 @@ for (const viewportWidth of VIEWPORT_WIDTHS) {
     test('手机端订单筛选：7 个状态平铺成两行且不用横滑，点一下即切换', async ({ page }) => {
       await page.goto('/');
       await page.locator('.mobile-tab-item[aria-label="更多模块"]').click();
-      await page.locator('.sidebar-nav').getByRole('button', { name: '订单管理', exact: true }).click();
+      await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
 
       const filters = page.locator('.orders-page .status-cards .status-card');
       await expect(filters).toHaveCount(STATUS_FILTERS.length);

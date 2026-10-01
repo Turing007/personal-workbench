@@ -30,7 +30,7 @@ async function seedCustomerProduct(page: Page, stamp: number) {
 
 async function openCustomerProducts(page: Page, customerName: string) {
   await page.goto('/');
-  await page.locator('.sidebar-nav').getByRole('button', { name: '客户产品库', exact: true }).click();
+  await page.locator('.sidebar-nav').getByRole('button', { name: '客户', exact: true }).click();
   await page.locator('.customer-list-item:visible').filter({ hasText: customerName }).first().click();
 }
 
@@ -69,7 +69,7 @@ test.describe('客户产品库成本价显隐', () => {
         await page.goto('/');
         // 窄屏下「客户产品库」收在底部 Tab 的更多模块抽屉里，侧栏按钮是隐藏的。
         await page.locator('.mobile-tab-item[aria-label="更多模块"]').click();
-        await page.getByRole('button', { name: '客户产品库', exact: true }).last().click();
+        await page.getByRole('button', { name: '客户', exact: true }).last().click();
         // 客户列表也收进抽屉，先开抽屉再选人。
         await page.locator('.customer-list-trigger:visible').first().click();
         await page.locator('.customer-list-item:visible').filter({ hasText: customerName }).first().click();
