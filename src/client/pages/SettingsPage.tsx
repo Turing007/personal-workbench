@@ -141,12 +141,12 @@ export default function SettingsPage({
   const [templateMessage, setTemplateMessage] = useState('');
   const [templateMessageType, setTemplateMessageType] = useState<'success' | 'error'>('success');
   const [activeSection, setActiveSection] = useState<SettingsSectionKey>(initialSection ?? 'company');
-  const [serviceVersion, setServiceVersion] = useState<{ version: string; buildTime: string | null; mode: 'production' | 'development' }>();
+  const [serviceVersion, setServiceVersion] = useState<{ version: string; buildTime: string | null; mode: 'production' | 'development'; environment: 'test' | 'production' }>();
 
   useEffect(() => {
     let active = true;
     void getServiceVersion().then((info) => {
-      if (active) setServiceVersion({ version: info.version, buildTime: info.buildTime, mode: info.mode });
+      if (active) setServiceVersion({ version: info.version, buildTime: info.buildTime, mode: info.mode, environment: info.environment });
     }).catch(() => undefined);
     return () => { active = false; };
   }, []);
@@ -344,7 +344,7 @@ export default function SettingsPage({
       {activeSection === 'account' && <AccountSection currentUser={currentUser ?? null} />}
       {activeSection === 'mobile' && <MobileConnectCard />}
       {activeSection === 'mobile-nav' && isNarrow && <MobileNavCard tabs={mobileTabsValue} onChange={changeMobileTabs} />}
-      {activeSection === 'storage' && <div className="settings-section card"><div className="settings-heading"><Database size={18} /><strong>运行环境</strong></div><p>数据保存在服务端（SQLite + 附件目录），所有设备登录后访问同一份数据。</p><div className="setting-row"><span>服务地址</span><code>{window.location.origin}</code></div><div className="setting-row"><span>存储方式</span><span>SQLite + 服务端附件目录</span></div></div>}
+      {activeSection === 'storage' && <div className="settings-section card"><div className="settings-heading"><Database size={18} /><strong>运行环境</strong></div><p>数据保存在服务端（SQLite + 附件目录），所有设备登录后访问同一份数据。</p><div className="setting-row"><span>服务地址</span><code>{window.location.origin}</code></div><div className="setting-row"><span>当前环境</span><span>{serviceVersion ? (serviceVersion.environment === 'production' ? '线上（正式数据）' : '测试（本机数据，不会同步到线上）') : '读取中…'}</span></div><div className="setting-row"><span>存储方式</span><span>SQLite + 服务端附件目录</span></div></div>}
       {activeSection === 'backup' && <div style={{ display: 'grid', gap: 14 }}>
         <AutoBackupCard />
         <div className="settings-section card"><div className="settings-heading"><Download size={18} /><strong>手动备份与恢复</strong></div><p>备份包含订单、产品、箱唛、打印历史、报价单、销售单及相关附件。恢复前会自动保留当前数据备份。</p><p style={{ color: 'var(--color-text-muted)', fontSize: 12 }}>{serviceVersion ? `当前服务版本 v${serviceVersion.version}${serviceVersion.mode === 'development' ? '（开发模式，源码即时生效）' : serviceVersion.buildTime ? `，构建于 ${formatDateTime(serviceVersion.buildTime)}` : ''}。若页面功能与预期不符，请关闭本程序后重新运行“启动个人工作台”。` : '正在读取服务版本...'}</p><div className="settings-actions"><button className="button button-primary" type="button" onClick={() => void onBackup?.()}><Download size={15} />创建备份</button><label className="button button-secondary"><RotateCcw size={15} />选择备份恢复<input type="file" accept=".zip,application/zip" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onRestore?.(file); event.target.value = ''; }} hidden /></label></div></div>
@@ -359,6 +359,7 @@ function MobileConnectCard() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copied, setCopied] = useState('');
   const [lanAddresses, setLanAddresses] = useState<string[]>([]);
+  const [environment, setEnvironment] = useState<'test' | 'production'>('production');
   const [tunnelUrl, setTunnelUrl] = useState('');
   const [tunnelDraft, setTunnelDraft] = useState('');
   const [tunnelSaving, setTunnelSaving] = useState(false);
@@ -368,13 +369,16 @@ function MobileConnectCard() {
   const appBridge = getAppBridge();
   const [appNetworks, setAppNetworks] = useState<WorkbenchAppNetwork[]>([]);
 
-  useEffect(() => {
+  // 读取一次已保存网络；删除后需要重新读，所以抽成函数而不是只放在 effect 里。
+  const loadAppNetworks = useCallback(() => {
     if (!appBridge) return;
     try {
       const parsed = JSON.parse(appBridge.getNetworks()) as WorkbenchAppNetwork[];
       if (Array.isArray(parsed)) setAppNetworks(parsed.filter((item) => item && typeof item.url === 'string'));
     } catch { /* 桥接数据异常时忽略该区块 */ }
   }, [appBridge]);
+
+  useEffect(() => { loadAppNetworks(); }, [loadAppNetworks]);
   // 优先展示局域网地址：手机扫本机 127.0.0.1 的二维码是连不上的。
   const serverUrl = lanAddresses[0] ?? browserUrl;
 
@@ -385,18 +389,21 @@ function MobileConnectCard() {
       if (result.addresses.length) setLanAddresses(result.addresses);
       setTunnelUrl(result.tunnelUrl);
       setTunnelDraft(result.tunnelUrl);
+      setEnvironment(result.environment);
     }).catch(() => { /* 获取失败时回退为当前浏览器地址 */ });
     return () => { active = false; };
   }, []);
 
   // 配置了隧道时，二维码写入「局域网 + 隧道」两条网络，App 端可在两者间切换或自动回退；
   // 未配置隧道时保持普通地址二维码，兼容旧版 App 与手机相机直接打开。
+  // 标签带上环境：本机实例和线上在手机的网络列表里长得一样，只有标签能让人立刻分辨。
+  const envLabel = environment === 'test' ? '本地测试' : '线上';
   const qrContent = tunnelUrl
     ? JSON.stringify({
       app: 'workbench',
       addresses: [
-        ...(serverUrl ? [{ label: '局域网', url: serverUrl }] : []),
-        { label: '隧道', url: tunnelUrl },
+        ...(serverUrl ? [{ label: `${envLabel} · 局域网`, url: serverUrl }] : []),
+        { label: `${envLabel} · 隧道`, url: tunnelUrl },
       ],
     })
     : serverUrl;
@@ -480,13 +487,29 @@ function MobileConnectCard() {
       <p>App 里点选下方网络即可切换访问线路，切换后页面自动重新加载；当前网络连不上时 App 也会自动换到另一条。</p>
       <div className="settings-app-network-list">
         {appNetworks.map((network) => (
-          <button
-            key={network.url}
-            type="button"
-            className={network.active ? 'chip is-selected' : 'chip'}
-            title={network.url}
-            onClick={() => { if (!network.active) appBridge.switchNetwork(network.url); }}
-          >{network.active ? '✓ ' : ''}{network.label}<em>{network.url.replace(/^https?:\/\//, '')}</em></button>
+          <span key={network.url} className="app-network-item">
+            <button
+              type="button"
+              className={network.active ? 'chip is-selected' : 'chip'}
+              title={network.url}
+              onClick={() => { if (!network.active) appBridge.switchNetwork(network.url); }}
+            >{network.active ? '✓ ' : ''}{network.label}<em>{network.url.replace(/^https?:\/\//, '')}</em></button>
+            <button
+              type="button"
+              className="app-network-remove"
+              title={`删除「${network.label}」`}
+              aria-label={`删除「${network.label}」`}
+              onClick={() => {
+                if (typeof appBridge.removeNetwork !== 'function') {
+                  window.alert('当前 App 版本不支持删除网络，请更新手机端 App');
+                  return;
+                }
+                if (!window.confirm(`确定从 App 里删除「${network.label}」（${network.url}）吗？`)) return;
+                appBridge.removeNetwork(network.url);
+                loadAppNetworks();
+              }}
+            ><Trash2 size={13} /></button>
+          </span>
         ))}
       </div>
       <div className="settings-actions">

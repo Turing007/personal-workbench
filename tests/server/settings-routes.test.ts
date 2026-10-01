@@ -173,6 +173,8 @@ describe('手机连接网络地址', () => {
     expect(initial.statusCode).toBe(200);
     expect(initial.json().data.tunnelUrl).toBe('');
     expect(Array.isArray(initial.json().data.addresses)).toBe(true);
+    // 测试进程没设 WORKBENCH_ENV，按 fail-safe 落回 test：手机端据此给地址打「测试环境」徽标
+    expect(initial.json().data.environment).toBe('test');
 
     // 非法隧道地址被拒绝，且不会落库
     const invalid = await app.inject({

@@ -1,4 +1,5 @@
 import type { OrderStatus } from '../shared/domain';
+import type { WorkbenchEnvironment } from '../shared/environment';
 import { calculateOrderAmountCents } from '../shared/order-prices';
 import { normalizeProductImageCategory } from '../shared/product-image-categories';
 import type { CatalogDensity } from '../shared/product-catalog';
@@ -814,7 +815,7 @@ export interface BackupResult {
 }
 
 export function getServiceVersion() {
-  return request<{ status: string; version: string; buildTime: string | null; gitCommit: string | null; mode: 'production' | 'development' }>('/health');
+  return request<{ status: string; version: string; buildTime: string | null; gitCommit: string | null; mode: 'production' | 'development'; environment: WorkbenchEnvironment }>('/health');
 }
 
 export function createBackup() { return request<BackupResult>('/api/backups', { method: 'POST' }); }
@@ -1017,6 +1018,8 @@ export interface NetworkAddresses {
   addresses: string[];
   /** 内网穿透/隧道地址，手机在流量网络下使用；空字符串表示未配置。 */
   tunnelUrl: string;
+  /** 当前实例是测试端还是线上，手机端二维码靠它给地址打标签。 */
+  environment: WorkbenchEnvironment;
 }
 
 /** 本机局域网地址与隧道地址（供「手机连接」二维码与网络切换使用）。 */

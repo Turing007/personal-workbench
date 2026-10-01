@@ -3,6 +3,7 @@ package com.workbench.app;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.DownloadManager;
 import android.content.ClipData;
 import android.content.ContentValues;
@@ -24,6 +25,7 @@ import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.text.TextUtils;
 import android.util.Base64;
+import android.view.Gravity;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
@@ -505,11 +507,18 @@ public class MainActivity extends Activity {
         testButton.setEnabled(false);
         showTestResult(-1, 0);
         executor.execute(() -> {
-            boolean ok = isReachable(url);
+            HealthProbe probe = probeHealth(url);
             mainHandler.post(() -> {
                 testButton.setEnabled(true);
-                showTestResult(ok ? R.string.test_ok : R.string.test_fail,
-                        ok ? R.color.success : R.color.danger);
+                if (!probe.reachable) {
+                    showTestResult(R.string.test_fail, R.color.danger);
+                } else if ("test".equals(probe.environment)) {
+                    showTestResultText(getString(R.string.test_ok_test, probe.latencyMs), R.color.env_test);
+                } else if ("production".equals(probe.environment)) {
+                    showTestResultText(getString(R.string.test_ok_production, probe.latencyMs), R.color.success);
+                } else {
+                    showTestResultText(getString(R.string.test_ok, probe.latencyMs), R.color.success);
+                }
             });
         });
     }
@@ -572,6 +581,17 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void openAddressEditor() {
             runOnUiThread(MainActivity.this::openSetupView);
+        }
+
+        /**
+         * 删除一条已保存的网络（网页「设置 → 手机连接 → App 网络」里的删除按钮）。
+         * 这里必须写成 MainActivity.this.removeNetwork，否则会递归调用桥方法自己。
+         */
+        @JavascriptInterface
+        public void removeNetwork(String url) {
+            String normalized = normalizeUrl(url);
+            if (normalized == null) return;
+            runOnUiThread(() -> MainActivity.this.removeNetwork(normalized));
         }
 
         /**
@@ -723,14 +743,20 @@ public class MainActivity extends Activity {
 
         final Map<String, TextView> statusViews = new LinkedHashMap<>();
         for (SavedNetwork network : networks) {
+            // 行 = 左侧信息区（点哪条连哪条）+ 右侧删除按钮：保存过的地址原来只增不减。
             LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.VERTICAL);
-            row.setPadding(dp(14), dp(12), dp(14), dp(12));
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(14), dp(10), dp(6), dp(10));
             LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
             rowParams.bottomMargin = dp(8);
             row.setLayoutParams(rowParams);
             row.setBackgroundResource(R.drawable.input_bg);
+
+            LinearLayout content = new LinearLayout(this);
+            content.setOrientation(LinearLayout.VERTICAL);
+            content.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
             TextView title = new TextView(this);
             title.setText(network.url.equals(active)
@@ -751,23 +777,46 @@ public class MainActivity extends Activity {
             status.setTextSize(12);
             status.setPadding(0, dp(6), 0, 0);
 
-            row.addView(title);
-            row.addView(address);
-            row.addView(status);
-            row.setOnClickListener(v -> switchNetwork(network));
+            content.addView(title);
+            content.addView(address);
+            content.addView(status);
+            content.setOnClickListener(v -> switchNetwork(network));
+
+            TextView remove = new TextView(this);
+            remove.setText(R.string.network_remove_button);
+            remove.setTextColor(getColor(R.color.danger));
+            remove.setTextSize(13);
+            remove.setPadding(dp(12), dp(8), dp(10), dp(8));
+            remove.setOnClickListener(v -> confirmRemoveNetwork(network));
+
+            row.addView(content);
+            row.addView(remove);
             networkList.addView(row);
             statusViews.put(network.url, status);
         }
 
-        // 后台逐个探测 /health，把「可连接 / 连不上」写回对应行。
+        // 后台逐个探测 /health，把「可连接 · 测试环境 / 线上 / 连不上」写回对应行。
         executor.execute(() -> {
             for (SavedNetwork network : networks) {
-                boolean reachable = isReachable(network.url);
+                HealthProbe probe = probeHealth(network.url);
                 mainHandler.post(() -> {
                     TextView status = statusViews.get(network.url);
                     if (status == null) return;
-                    status.setText(reachable ? R.string.network_page_ok : R.string.network_page_fail);
-                    status.setTextColor(getColor(reachable ? R.color.success : R.color.danger));
+                    if (!probe.reachable) {
+                        status.setText(R.string.network_page_fail);
+                        status.setTextColor(getColor(R.color.danger));
+                        return;
+                    }
+                    if ("test".equals(probe.environment)) {
+                        status.setText(getString(R.string.network_page_ok_test, probe.latencyMs));
+                        status.setTextColor(getColor(R.color.env_test));
+                    } else if ("production".equals(probe.environment)) {
+                        status.setText(getString(R.string.network_page_ok_production, probe.latencyMs));
+                        status.setTextColor(getColor(R.color.success));
+                    } else {
+                        status.setText(getString(R.string.network_page_ok, probe.latencyMs));
+                        status.setTextColor(getColor(R.color.success));
+                    }
                 });
             }
         });
@@ -781,6 +830,48 @@ public class MainActivity extends Activity {
         preferences().edit().putString(KEY_SERVER_URL, network.url).apply();
         Toast.makeText(this, getString(R.string.network_switched, network.label), Toast.LENGTH_SHORT).show();
         loadServer(network.url);
+    }
+
+    /** 删除确认：删当前正在用的那条要先说清之后会连哪儿，别让人以为会被踢到空白页。 */
+    private void confirmRemoveNetwork(SavedNetwork network) {
+        boolean isActive = network.url.equals(preferences().getString(KEY_SERVER_URL, ""));
+        String message = isActive
+                ? getString(R.string.network_remove_active_confirm, network.label)
+                : getString(R.string.network_remove_confirm, network.label, network.url);
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.network_remove_title)
+                .setMessage(message)
+                .setNegativeButton(R.string.dialog_cancel, null)
+                .setPositiveButton(R.string.dialog_delete, (dialog, which) -> removeNetwork(network.url))
+                .show();
+    }
+
+    /** 删除一条已保存的网络。删的是当前地址时切到剩下第一条，一条不剩就回到「添加地址」页。 */
+    private void removeNetwork(String rawUrl) {
+        List<SavedNetwork> networks = loadNetworks();
+        SavedNetwork removed = null;
+        for (int index = 0; index < networks.size(); index += 1) {
+            if (networks.get(index).url.equals(rawUrl)) {
+                removed = networks.remove(index);
+                break;
+            }
+        }
+        if (removed == null) return;
+        persistNetworks(networks);
+        Toast.makeText(this, getString(R.string.network_removed, removed.label), Toast.LENGTH_SHORT).show();
+
+        boolean wasActive = removed.url.equals(preferences().getString(KEY_SERVER_URL, ""));
+        if (!wasActive) {
+            renderNetworkList();
+            return;
+        }
+        String nextUrl = networks.isEmpty() ? "" : networks.get(0).url;
+        preferences().edit().putString(KEY_SERVER_URL, nextUrl).apply();
+        if (TextUtils.isEmpty(nextUrl)) {
+            openSetupView();
+        } else {
+            loadServer(nextUrl);
+        }
     }
 
     /** 解析扫码结果：既支持普通地址，也支持带 label 的多地址 JSON（电脑端二维码）。 */
@@ -856,6 +947,29 @@ public class MainActivity extends Activity {
 
     /** 在后台线程访问 /health 判断服务器是否可达。 */
     private boolean isReachable(String baseUrl) {
+        return probeHealth(baseUrl).reachable;
+    }
+
+    /** /health 探测结果：能否连通、往返耗时，以及该实例是测试端还是线上（老版本服务端没有该字段时为 null）。 */
+    private static final class HealthProbe {
+        final boolean reachable;
+        final String environment;
+        final long latencyMs;
+
+        HealthProbe(boolean reachable, String environment, long latencyMs) {
+            this.reachable = reachable;
+            this.environment = environment;
+            this.latencyMs = latencyMs;
+        }
+    }
+
+    /**
+     * 读 /health：既判断可达性，也读出环境标识与延迟。
+     * 本机测试实例和线上在列表里长得一模一样，只有环境字段能让人当场分辨；
+     * 而"能不能连"用户一眼就能从延迟数字上看出来，所以列表直接报毫秒数。
+     */
+    private HealthProbe probeHealth(String baseUrl) {
+        long startedAt = System.nanoTime();
         try {
             HttpURLConnection connection = (HttpURLConnection) new URL(baseUrl + "/health").openConnection();
             connection.setConnectTimeout(5000);
@@ -863,13 +977,26 @@ public class MainActivity extends Activity {
             connection.setRequestMethod("GET");
             int code = connection.getResponseCode();
             InputStream stream = code >= 400 ? connection.getErrorStream() : connection.getInputStream();
+            String body = stream == null ? "" : new String(readAllBytes(stream), "UTF-8");
             if (stream != null) {
                 stream.close();
             }
             connection.disconnect();
-            return code >= 200 && code < 500; // 4xx 说明服务在，只是健康检查路径受保护
+            long latencyMs = Math.max(1, Math.round((System.nanoTime() - startedAt) / 1_000_000.0));
+            if (code < 200 || code >= 500) return new HealthProbe(false, null, 0); // 4xx 说明服务在，只是健康检查路径受保护
+            String environment = null;
+            try {
+                JSONObject data = new JSONObject(body).optJSONObject("data");
+                if (data != null) {
+                    String value = data.optString("environment", "");
+                    if (!TextUtils.isEmpty(value)) environment = value;
+                }
+            } catch (JSONException ignored) {
+                // 旧版本服务端没有 environment 字段，按未知处理
+            }
+            return new HealthProbe(true, environment, latencyMs);
         } catch (Exception e) {
-            return false;
+            return new HealthProbe(false, null, 0);
         }
     }
 

@@ -306,14 +306,14 @@ export default function SalesDocumentForm({
         <strong style={{ fontSize: 13 }}>单据信息</strong>
         <span title="请在销售单列表中变更状态" style={{ padding: '5px 9px', border: '1px solid #dbe3ea', borderRadius: 5, color: '#475569', background: '#f8fafc' }}>{statusLabels[value.documentStatus]}</span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
+      <div className="sales-doc-fields is-four">
         <label>开单日期<input type="date" value={value.documentDate} onChange={(event) => setDraft('documentDate', event.target.value)} style={fieldStyle} /></label>
         <label>采购单号<input value={value.purchaseOrderNo} onChange={(event) => setDraft('purchaseOrderNo', event.target.value)} style={fieldStyle} /></label>
         <label>开单人<input value={value.issuer} onChange={(event) => setDraft('issuer', event.target.value)} style={fieldStyle} /></label>
         <label>收货人<input value={value.consignee} onChange={(event) => setDraft('consignee', event.target.value)} style={fieldStyle} /></label>
       </div>
       <CustomerSelector value={value.customerId} customers={customers} onChange={chooseCustomer} onCreateCustomer={onCreateCustomer} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+      <div className="sales-doc-fields is-three">
         <label>客户名称<input value={value.customerName} onChange={(event) => setDraft('customerName', event.target.value)} style={fieldStyle} /></label>
         <label>联系人<input value={value.contactName} onChange={(event) => setDraft('contactName', event.target.value)} style={fieldStyle} /></label>
         <label>联系电话<input value={value.contactPhone} onChange={(event) => setDraft('contactPhone', event.target.value)} style={fieldStyle} /></label>

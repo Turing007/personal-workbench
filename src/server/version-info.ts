@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { normalizeEnvironment, type WorkbenchEnvironment } from '../shared/environment.js';
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 // src/server 与 dist/server 都位于项目根的下两级
@@ -13,6 +14,7 @@ export interface WorkbenchVersionInfo {
   buildTime?: string;
   gitCommit?: string;
   mode: 'production' | 'development';
+  environment: WorkbenchEnvironment;
 }
 
 let cached: WorkbenchVersionInfo | undefined;
@@ -47,6 +49,7 @@ export function getVersionInfo(): WorkbenchVersionInfo {
     buildTime,
     gitCommit,
     mode: isDevelopment ? 'development' : 'production',
+    environment: normalizeEnvironment(process.env.WORKBENCH_ENV),
   };
   return cached;
 }

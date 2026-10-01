@@ -9,4 +9,6 @@
     <color name="text_muted">#8A93A2</color>
     <color name="danger">#B42318</color>
     <color name="success">#15803D</color>
+    <!-- 测试端徽标与网页顶部横条同色系，避免两处用了不同颜色还要记两套含义 -->
+    <color name="env_test">#B45309</color>
 </resources>

@@ -16,6 +16,17 @@
     <string name="network_page_checking">检测中…</string>
     <string name="network_page_ok">可连接</string>
     <string name="network_page_fail">连不上</string>
+    <string name="network_page_ok_test">延迟 %1$dms · 测试环境</string>
+    <string name="network_page_ok_production">延迟 %1$dms · 线上</string>
+    <string name="env_test">测试环境</string>
+    <string name="env_production">线上</string>
+    <string name="network_remove_button">删除</string>
+    <string name="network_remove_title">删除这条网络</string>
+    <string name="network_remove_confirm">确定删除「%1$s」吗？\n%2$s</string>
+    <string name="network_remove_active_confirm">「%1$s」是当前正在使用的网络。删除后会切换到剩下的第一条；一条都不剩时会回到「添加地址」页。</string>
+    <string name="network_removed">已删除「%1$s」</string>
+    <string name="dialog_cancel">取消</string>
+    <string name="dialog_delete">删除</string>
     <string name="network_page_current">当前使用</string>
     <string name="network_row_current">%1$s（当前使用）</string>
     <string name="network_page_switching">正在连接…</string>
@@ -31,6 +42,8 @@
     <string name="save_image_started">正在保存到相册…</string>
     <string name="save_image_done">已保存到手机相册</string>
     <string name="save_image_failed">保存失败，请长按图片重试</string>
-    <string name="test_ok">连接成功，可以进入</string>
+    <string name="test_ok">连接成功 · 延迟 %1$dms</string>
+    <string name="test_ok_test">连接成功（测试环境，本机数据）· 延迟 %1$dms</string>
+    <string name="test_ok_production">连接成功（线上）· 延迟 %1$dms</string>
     <string name="test_fail">连接失败，请检查地址与网络</string>
 </resources>

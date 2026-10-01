@@ -36,7 +36,7 @@ select {
 
 .app-layout {
   display: flex;
-  min-height: 100vh;
+  min-height: calc(100vh - var(--env-banner-h));
   /* 环境光：右上角一抹极淡的品牌青，让灰底有空气感 */
   background:
     radial-gradient(1100px 460px at 88% -12%, rgba(14, 115, 104, .05), transparent 62%),
@@ -46,8 +46,43 @@ select {
 .app-content {
   flex: 1;
   min-width: 0;
-  min-height: 100vh;
+  min-height: calc(100vh - var(--env-banner-h));
   overflow: auto;
+}
+
+/* 测试环境横条（见 EnvironmentShell.tsx）：只在 environment !== production 的实例渲染。
+   本机实例与线上只差一个端口，认错就是拿错库录数据，所以这条常驻在最上面。
+   高度统一走 --env-banner-h：线上它是 0px，所有全高容器都写 calc(... - var(--env-banner-h))，
+   两种环境下布局完全一致。
+   变量挂在 :root 上而不是 shell 上：弹窗、浮层都是 createPortal 到 body 的，
+   挂在 shell 上它们读不到，就会被横条压住顶部。 */
+:root { --env-banner-h: 0px; }
+:root.env-test { --env-banner-h: 26px; }
+
+.environment-shell.is-test {
+  padding-top: var(--env-banner-h);
+}
+
+.environment-banner {
+  position: fixed;
+  inset: 0 0 auto 0;
+  /* 压过弹窗(20)与保存进度层(55)，但低于 toast(60)，保存提示仍浮在最上面 */
+  z-index: calc(var(--z-toast) - 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--env-banner-h);
+  padding: 0 var(--space-4);
+  color: #7a4a04;
+  background: repeating-linear-gradient(135deg, #fdeacb, #fdeacb 12px, #fbdfb0 12px, #fbdfb0 24px);
+  border-bottom: 1px solid #f0c987;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: .02em;
+  white-space: nowrap;
+  overflow: hidden;
+  /* 永不拦截点击：横条只是标识，不能挡住任何操作 */
+  pointer-events: none;
 }
 
 .page-shell {
@@ -59,7 +94,7 @@ select {
   grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 16px;
-  min-height: 100vh;
+  min-height: calc(100vh - var(--env-banner-h));
   padding: 22px 28px 30px;
   animation: page-enter 280ms cubic-bezier(.2, .6, .25, 1) both;
 }
@@ -204,7 +239,7 @@ select {
 
 .table-scroll {
   overflow: auto;
-  max-height: max(320px, calc(100vh - 240px));
+  max-height: max(320px, calc(100vh - 240px - var(--env-banner-h)));
 }
 
 .data-table {
@@ -309,6 +344,8 @@ select {
 .modal-overlay {
   position: fixed;
   inset: 0;
+  /* 让开顶部横条：横条层级比遮罩高，不退的话弹窗头部会被压在下面 */
+  top: var(--env-banner-h);
   z-index: 20;
   display: grid;
   place-items: center;
@@ -321,7 +358,7 @@ select {
 
 .modal-panel {
   width: min(100%, var(--modal-width, 760px));
-  max-height: calc(100vh - 40px);
+  max-height: calc(100vh - 40px - var(--env-banner-h));
   /* 头部/底部固定、仅内容区滚动：长表单在手机上也能随时点到保存按钮。 */
   display: flex;
   flex-direction: column;
@@ -518,8 +555,8 @@ select {
 .products-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  height: 100dvh;
+  height: calc(100vh - var(--env-banner-h));
+  height: calc(100dvh - var(--env-banner-h));
 }
 
 .products-page .table-panel {
@@ -2367,8 +2404,8 @@ select {
   gap: 18px;
   width: 208px;
   min-width: 208px;
-  height: 100vh;
-  max-height: 100vh;
+  height: calc(100vh - var(--env-banner-h));
+  max-height: calc(100vh - var(--env-banner-h));
   overflow-y: auto;
   align-self: flex-start;
   padding: 16px 12px;
@@ -4365,7 +4402,7 @@ select {
 
 /* ===== 登录 / 管理员初始化 ===== */
 .auth-screen {
-  min-height: 100dvh;
+  min-height: calc(100dvh - var(--env-banner-h));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4711,7 +4748,7 @@ select {
     display: grid;
     align-content: start;
     height: auto;
-    min-height: 100vh;
+    min-height: calc(100vh - var(--env-banner-h));
   }
   .products-page .table-panel {
     flex: none;
@@ -5317,6 +5354,37 @@ select {
   font-size: var(--text-2xs);
 }
 
+/* 每条网络 = 可切换的 chip + 删除按钮；删除入口原先完全没有，地址只增不减。 */
+.app-network-item {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--tone-border-cool);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.app-network-item .chip {
+  border: 0;
+  border-radius: 0;
+}
+
+.app-network-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  border: 0;
+  border-left: 1px solid var(--tone-border-cool);
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: color var(--ease-standard), background var(--ease-standard);
+}
+
+.app-network-remove:hover {
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
 /* ===== 表单折叠分区（手机端）与弹窗移动端适配 ===== */
 .form-section {
   display: grid;
@@ -5414,14 +5482,42 @@ select {
 @media (max-width: 900px) {
   .modal-overlay { padding: 10px; align-items: flex-start; }
   .modal-panel {
-    max-height: calc(100dvh - 20px);
+    max-height: calc(100dvh - 20px - var(--env-banner-h));
     width: 100%;
   }
-  .modal-body { padding: 16px; }
-  .modal-footer { padding: 12px 16px; gap: var(--space-4); }
+  .modal-body { padding: 12px; }
+  .modal-footer { padding: 10px 12px; gap: var(--space-4); }
 
   /* 手机上没有 Ctrl+V，隐藏粘贴提示 */
   .image-upload-hint { display: none; }
+}
+
+/* 销售单抬头字段：原先写死在行内 style 里，手机端四列会把开单日期挤到只剩「2026/0」、
+   「联系电话」「默认开单人」标签折成两行。提到 CSS 才能按屏幕宽度改列数。 */
+.sales-doc-fields { display: grid; gap: 8px; }
+.sales-doc-fields.is-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.sales-doc-fields.is-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* 公司显示字段：与销售单抬头同样的问题，行内 style 改成类才能按屏幕宽度改列数。 */
+.company-snapshot-fields {
+  display: grid;
+  grid-template-columns: 88px 1.25fr 1fr 1.5fr 1fr;
+  gap: 9px;
+  align-items: end;
+}
+
+@media (max-width: 900px) {
+  /* 两列：日期半屏宽足够连日历图标一起显示，标签也不再折行 */
+  .sales-doc-fields.is-four,
+  .sales-doc-fields.is-three {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* 公司显示：桌面是「Logo + 四个字段」一行五列，手机上会把"联系电话""默认开单人"拆成两行；
+     改成三列，Logo 仍与第一行对齐，其余字段自动流到下一行。 */
+  .company-snapshot-fields {
+    grid-template-columns: 88px minmax(0, 1fr) minmax(0, 1fr);
+  }
 }
 
 /* ============================================================
@@ -5429,16 +5525,38 @@ select {
    这些规则与具体页面无关，集中放在文件末尾，改一处即可全局生效。
    ============================================================ */
 @media (max-width: 900px) {
-  /* iOS Safari 聚焦 font-size 小于 16px 的输入框时，会把整个页面强制放大，
-     表现为「手指一点输入框，页面突然变大、布局错位」。把控件字号提到 16px 后不再触发。
-     这里必须用 !important：编辑器里大量输入框是行内 style={{ fontSize: 12 }}，
+  /* 控件字号 13px：与订单页正文同一档（订单卡片那边就是 13px，元信息 11–12px）。
+     原先这里是 16px，为的是绕开 iOS Safari 聚焦小字号输入框时的整页放大；
+     现在 viewport 已经带 maximum-scale=1（做报价表 13px 时就接受的取舍），
+     Android 与 App 内 WebView 本来也没有聚焦放大这回事。
+     遗留风险：若以后有人在 iPhone 上用 Safari，聚焦时可能重新触发整页放大 —— 真遇到再按平台单独提回 16px。
+     这里必须用 !important：编辑器里大量输入框是行内 style={{ fontSize: 'var(--text-xs)' }}，
      行内样式优先级高于任何类选择器，只写普通规则会恰好漏掉最常输入的那几个框。
      复选框/单选框/文件选择的大小由控件自身决定、不受字号影响，排除掉避免误伤。 */
   input:not([type='checkbox']):not([type='radio']):not([type='file']),
   select,
   textarea {
-    font-size: 16px !important;
+    font-size: 13px !important;
   }
+
+  /* ===== 弹窗编辑器紧凑化：手机上一屏能看到的字段越多越省事 =====
+     只作用于弹窗内的表单，页面级布局与桌面端一律不动。
+     内边距在上面那个 ≤900px 块里已经收过（modal-body 12px / modal-footer 10px 12px）。 */
+
+  /* 标签与输入框之间原本 5px（订单表单还是行内 gap），压到 3px */
+  .modal-panel label { gap: 3px !important; }
+
+  /* 输入框内边距与最小高度：桌面是 7px 9px / 36px，手机上太占纵向空间 */
+  .modal-panel input:not([type='checkbox']):not([type='radio']):not([type='file']),
+  .modal-panel select,
+  .modal-panel textarea {
+    padding: 5px 8px !important;
+    min-height: 32px;
+  }
+
+  /* 字段块之间的间距：订单表单与通用表单原本都是 12px */
+  .modal-panel .order-form-grid,
+  .modal-panel .form-grid { gap: 8px; }
 
   /* 统一关闭点按高亮：iOS / Android 默认会在被点元素上盖一块矩形灰蓝色块，
      在圆角按钮上会露出直角，而且和 :active 反馈叠加成两层动效，观感很脏。 */

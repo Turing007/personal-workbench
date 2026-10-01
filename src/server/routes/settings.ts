@@ -96,6 +96,8 @@ export async function registerSettingsRoutes(app: FastifyInstance, options: Sett
     safeRoute(() => sendSuccess(reply, {
       addresses: collectLanAddresses(),
       tunnelUrl: options.service.getTunnelUrl(),
+      // 手机端二维码要靠它给地址打「本地测试 / 线上」标签，两端长得一样时只能靠这个分辨。
+      environment: config.environment,
     }), reply),
   );
 
@@ -108,7 +110,7 @@ export async function registerSettingsRoutes(app: FastifyInstance, options: Sett
         throw new ApiError(400, 'VALIDATION_ERROR', '隧道地址需以 http:// 或 https:// 开头', 'tunnelUrl');
       }
       const tunnelUrl = options.service.saveTunnelUrl(raw);
-      return sendSuccess(reply, { addresses: collectLanAddresses(), tunnelUrl });
+      return sendSuccess(reply, { addresses: collectLanAddresses(), tunnelUrl, environment: config.environment });
     }, reply),
   );
 

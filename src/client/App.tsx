@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CompanySnapshot } from '../shared/documents';
 import AuthGate from './components/auth/AuthGate';
+import EnvironmentShell from './components/EnvironmentShell';
 import Sidebar from './components/Sidebar';
 import { navigationKeys, type NavigationKey } from './navigation';
 import { loadMobileTabs, saveMobileTabs } from './mobile-tabs';
@@ -705,5 +706,9 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
 
 /** 会话门卫在最外层：未登录只渲染登录页，登录成功才挂载工作台并开始加载数据。 */
 export default function App() {
-  return <AuthGate>{({ user, onLogout }) => <Workbench key={user.id} user={user} onLogout={onLogout} />}</AuthGate>;
+  return (
+    <EnvironmentShell>
+      <AuthGate>{({ user, onLogout }) => <Workbench key={user.id} user={user} onLogout={onLogout} />}</AuthGate>
+    </EnvironmentShell>
+  );
 }

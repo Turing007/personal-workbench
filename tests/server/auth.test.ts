@@ -58,6 +58,8 @@ describe('鉴权门', () => {
 
     const health = await app.inject({ method: 'GET', url: '/health' });
     expect(health.statusCode).toBe(200);
+    // 未登录也能读：登录页要靠它决定是否显示测试横条
+    expect(health.json().data.environment).toBe('test');
   });
 
   it('status 反映初始化状态；setup 创建首个管理员并自动登录', async () => {

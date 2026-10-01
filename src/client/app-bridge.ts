@@ -10,6 +10,8 @@ export interface WorkbenchAppBridge {
   getNetworks(): string;
   switchNetwork(url: string): void;
   openAddressEditor(): void;
+  /** 删除一条已保存的网络（1.13 之前的 App 没有该方法）。 */
+  removeNetwork?(url: string): void;
   /** 弹窗等覆盖层打开时暂停下拉刷新（1.6 之前的 App 没有该方法）。 */
   setOverlayOpen?(open: boolean): void;
   /** 由原生把图片写进系统相册（1.8 之前的 App 没有该方法）。 */
