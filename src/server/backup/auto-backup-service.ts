@@ -4,9 +4,11 @@ import { join, resolve } from 'node:path';
 import { BackupService } from './backup-service.js';
 
 export const AUTO_BACKUP_PREFIX = '自动备份-个人工作台-';
-/** 每日备份时间：本机时间 03:00（避开工作时段）。 */
+/** 每日备份时间：03:00 Asia/Shanghai（避开工作时段；与进程所在时区无关）。 */
 export const AUTO_BACKUP_HOUR = 3;
 const AUTO_BACKUP_MINUTE = 0;
+/** Asia/Shanghai 全年固定 +08:00（1991 年后没有夏令时），直接按偏移换算即可。 */
+const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
 /** 定时器最大间隔（Node 定时器超过 2^31-1 毫秒会溢出）。 */
 const MAX_TIMEOUT_MS = 2 ** 31 - 1;
 /** 默认保留最近 3 份自动备份，防止磁盘被 200MB 级附件包撑爆。 */
@@ -29,12 +31,17 @@ export function shanghaiDateKey(date: Date): string {
   return `${map.year}-${map.month}-${map.day}`;
 }
 
-/** 计算下一个备份触发时刻（本机时间每天 03:00，毫秒时间戳）。 */
+/**
+ * 计算下一个备份触发时刻（毫秒时间戳）：每天 03:00 Asia/Shanghai。
+ * 必须显式按上海时区算，不能用 setHours 走进程本地时区 —— 容器里是 UTC，
+ * 那样会变成 03:00 UTC = 北京 11:00，正好撞进工作时段（线上就是这么跑偏的）。
+ */
 function nextRunAt(now: Date): number {
-  const next = new Date(now);
-  next.setHours(AUTO_BACKUP_HOUR, AUTO_BACKUP_MINUTE, 0, 0);
-  if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
-  return next.getTime();
+  const shanghai = new Date(now.getTime() + SHANGHAI_OFFSET_MS);
+  shanghai.setUTCHours(AUTO_BACKUP_HOUR, AUTO_BACKUP_MINUTE, 0, 0);
+  let next = shanghai.getTime() - SHANGHAI_OFFSET_MS;
+  if (next <= now.getTime()) next += 24 * 60 * 60 * 1000;
+  return next;
 }
 
 export interface AutoBackupFileInfo {

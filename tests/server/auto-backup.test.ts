@@ -16,12 +16,14 @@ import { migrateDatabase } from '../../src/server/db/migrate';
 const temporaryDirectories: string[] = [];
 const databases: DatabaseSync[] = [];
 
-/** 距下一个本机 03:00 的毫秒数（与调度器算法一致）。 */
+/** 距下一个 03:00（Asia/Shanghai）的毫秒数（与调度器算法一致；服务器容器是 UTC，不能按本地时区算）。 */
 function msUntilNextThreeAm(now: Date): number {
-  const next = new Date(now);
-  next.setHours(3, 0, 0, 0);
-  if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
-  return next.getTime() - now.getTime();
+  const offset = 8 * 60 * 60 * 1000;
+  const shanghai = new Date(now.getTime() + offset);
+  shanghai.setUTCHours(3, 0, 0, 0);
+  let next = shanghai.getTime() - offset;
+  if (next <= now.getTime()) next += 24 * 60 * 60 * 1000;
+  return next - now.getTime();
 }
 
 afterEach(async () => {
