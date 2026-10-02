@@ -4,6 +4,7 @@
 # 用法:
 #   bash scripts/deploy-to-server.sh 用户名@服务器IP                # IP 直连（无需备案）
 #   bash scripts/deploy-to-server.sh 用户名@服务器IP 已备案域名      # 附带 HTTPS
+#   bash scripts/deploy-to-server.sh 用户名@服务器IP 'a.com,www.a.com'  # 多个名字共用一张证书
 #
 # 需要指定私钥时用环境变量传：
 #   SSH_KEY=~/.ssh/workbench_deploy_ed25519 bash scripts/deploy-to-server.sh root@1.2.3.4
@@ -31,9 +32,16 @@ SERVER="$1"
 DOMAIN="${2:-}"
 REMOTE_DIR="~/workbench"
 # 域名要拼进远端命令，先卡死字符集，避免把 shell 元字符带过去。
-if [ -n "$DOMAIN" ] && ! printf '%s' "$DOMAIN" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$'; then
-  echo "!! 域名格式无效：$DOMAIN" >&2
-  exit 1
+# 允许写多个（逗号分隔）：Caddy 会给站点块里所有名字签同一张证书，
+# 线上就是 vigortech.xyz + www.vigortech.xyz 一起覆盖。
+if [ -n "$DOMAIN" ]; then
+  printf '%s' "$DOMAIN" | grep -Eq '[A-Za-z0-9]' || { echo "!! 域名无效：$DOMAIN" >&2; exit 1; }
+  for domain_part in $(printf '%s' "$DOMAIN" | tr ',' ' '); do
+    if ! printf '%s' "$domain_part" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$'; then
+      echo "!! 域名格式无效：$domain_part" >&2
+      exit 1
+    fi
+  done
 fi
 SSH=(ssh)
 SCP=(scp)
@@ -89,10 +97,22 @@ echo "==> [5/5] 在服务器上构建并启动..."
 # 部署包里没有 .git，把本机当前 commit 通过 .env 传进去，线上 /health 才能看出跑的是哪一版
 GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo '')"
 if [ -n "$DOMAIN" ]; then
+  # 两个约束同时成立才行：
+  #   1) Caddyfile 里多个站点名必须是 `a.com, b.com`（逗号后要空格，否则 Caddy 报错）；
+  #   2) .env 会被远端用 bash source 一次，裸空格会让 bash 把第二个域名当成命令执行。
+  # 所以这里统一规范化成「逗号+空格」，写进 .env 时再整体加单引号 —— bash 与 docker compose
+  # 都认带引号的值，compose 会把引号剥掉再传给 Caddy。
+  # 逗号列表统一成「逗号+空格」。注意两点坑：
+  #   1) 不能用 tr -d '[:space:]'：它是流式删除，会把上一行拆分出的换行一起删掉，
+  #      两行直接粘成 a.comb.com —— 静默出错，比报错还难查；只删空格与制表符即可。
+  #   2) 不用 paste -sd', '：Git Bash 上多字符分隔符会被吃掉。
+  DOMAIN_VALUE="$(printf '%s' "$DOMAIN" | tr ',' '\n' | tr -d ' \t' | sed '/^$/d' | tr '\n' ',' | sed 's/,/, /g; s/, *$//')"
   # 走 Caddy 反向代理，才需要信任 X-Forwarded-*；WORKBENCH_ENV 显式写 production，线上不显示测试横条。
-  "${SSH[@]}" "$SERVER" "cd ${REMOTE_DIR} && printf 'WORKBENCH_DOMAIN=%s\nWORKBENCH_TRUST_PROXY=1\nWORKBENCH_ENV=production\nWORKBENCH_GIT_COMMIT=%s\n' '${DOMAIN}' '${GIT_COMMIT}' > .env && bash deploy/remote-deploy.sh"
+  # WORKBENCH_PUBLIC_PORT 写成 127.0.0.1:52341：域名模式下应用只需要被 Caddy 通过 compose 内网访问，
+  # 不必再对公网发布一个端口（值里不能有空格，否则远端 source .env 会报 command not found）。
+  "${SSH[@]}" "$SERVER" "cd ${REMOTE_DIR} && printf \"WORKBENCH_DOMAIN='%s'\nWORKBENCH_TRUST_PROXY=1\nWORKBENCH_PUBLIC_PORT=127.0.0.1:52341\nWORKBENCH_ENV=production\nWORKBENCH_GIT_COMMIT=%s\n\" '${DOMAIN_VALUE}' '${GIT_COMMIT}' > .env && bash deploy/remote-deploy.sh"
   echo ""
-  echo "==> 完成。首次访问 https://${DOMAIN} 时，页面会引导你创建管理员账号。"
+  echo "==> 完成。首次访问 https://$(printf '%s' "$DOMAIN_VALUE" | cut -d, -f1) 时，页面会引导你创建管理员账号。"
 else
   "${SSH[@]}" "$SERVER" "cd ${REMOTE_DIR} && printf 'WORKBENCH_ENV=production\nWORKBENCH_GIT_COMMIT=%s\n' '${GIT_COMMIT}' > .env && bash deploy/remote-deploy.sh"
   echo ""

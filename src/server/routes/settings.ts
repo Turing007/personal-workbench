@@ -16,8 +16,11 @@ import {
 import { imageFileOptions } from './multipart-limits.js';
 
 /** 收集本机局域网 IPv4 地址并拼成工作台访问地址，供「手机连接」二维码使用。
- *  家庭路由器多为 192.168.x.x，排在前；172.x 常见于 WSL/虚拟网卡，排后。 */
+ *  家庭路由器多为 192.168.x.x，排在前；172.x 常见于 WSL/虚拟网卡，排后。
+ *  线上实例直接返回空：那是云服务器的 VPC 内网地址（172.17.x.x），手机根本到不了，
+ *  之前被写进二维码，扫出来就是一条永远连不上的网络。线上该给的是域名。 */
 function collectLanAddresses(): string[] {
+  if (config.environment === 'production') return [];
   const addresses: string[] = [];
   for (const list of Object.values(networkInterfaces())) {
     for (const item of list ?? []) {

@@ -15,7 +15,10 @@ cd "$(dirname "$0")/.."
 if [ -f .env ]; then
   set -a
   # shellcheck disable=SC1091
-  . ./.env
+  if ! . ./.env 2>/dev/null; then
+    echo "!! 读取 .env 失败：值里不能带空格或引号（多域名请写成 a.com,www.a.com 这种无空格形式）。" >&2
+    exit 1
+  fi
   set +a
 fi
 
@@ -49,8 +52,27 @@ for _ in $(seq 1 40); do
   if probe; then
     echo "==> 工作台服务已启动 ✓"
     if [ -n "${WORKBENCH_DOMAIN:-}" ]; then
-      echo "==> Caddy 正在申请 HTTPS 证书（首次约需 1-2 分钟）"
-      echo "==> 稍后访问: https://${WORKBENCH_DOMAIN}"
+      PRIMARY_DOMAIN="$(printf '%s' "$WORKBENCH_DOMAIN" | cut -d, -f1 | tr -d '[:space:]')"
+      # 只探应用容器是不够的：Caddy 配置写错时它只会反复重启，应用却完全健康，
+      # 脚本照样报「已启动 ✓」而站点其实是打不开的（踩过一次）。这里把整条 HTTPS 链路也验一遍：
+      # 用 --resolve 指到 127.0.0.1，既走 Caddy 又校验证书与 SNI，还不受 DNS 回环影响。
+      echo "==> 等待 Caddy 就绪并申请 HTTPS 证书（首次约需 1-2 分钟）..."
+      https_ready=0
+      for _ in $(seq 1 24); do
+        if curl -fsS --max-time 10 --resolve "${PRIMARY_DOMAIN}:443:127.0.0.1" "https://${PRIMARY_DOMAIN}/health" >/dev/null 2>&1; then
+          https_ready=1
+          break
+        fi
+        sleep 5
+      done
+      if [ "$https_ready" != "1" ]; then
+        echo "!! 应用是好的，但 HTTPS 在 2 分钟内没能就绪 —— 站点目前打不开，别当成功。" >&2
+        docker compose "${COMPOSE_PROFILE[@]}" logs caddy --tail 20 >&2 || true
+        echo "   常见原因：Caddyfile 语法错（多个域名逗号后必须有空格）、域名没解析到本机、80/443 未放行。" >&2
+        docker compose "${COMPOSE_PROFILE[@]}" ps
+        exit 1
+      fi
+      echo "==> HTTPS 链路已就绪 ✓  https://${PRIMARY_DOMAIN}"
     else
       echo "==> 访问地址: http://<服务器公网IP>:${WORKBENCH_PUBLIC_PORT}"
       echo "!! 记得在阿里云轻量控制台「防火墙」里放行 ${WORKBENCH_PUBLIC_PORT}/tcp"

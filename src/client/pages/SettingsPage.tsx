@@ -397,12 +397,15 @@ function MobileConnectCard() {
   // 配置了隧道时，二维码写入「局域网 + 隧道」两条网络，App 端可在两者间切换或自动回退；
   // 未配置隧道时保持普通地址二维码，兼容旧版 App 与手机相机直接打开。
   // 标签带上环境：本机实例和线上在手机的网络列表里长得一样，只有标签能让人立刻分辨。
+  // 线上实例不再出现「局域网」字样：服务端已经不下发 VPC 内网地址，这里给的就是当前访问的域名。
   const envLabel = environment === 'test' ? '本地测试' : '线上';
+  const primaryIsLan = lanAddresses.length > 0 && serverUrl === lanAddresses[0];
+  const primaryLabel = primaryIsLan ? `${envLabel} · 局域网` : envLabel;
   const qrContent = tunnelUrl
     ? JSON.stringify({
       app: 'workbench',
       addresses: [
-        ...(serverUrl ? [{ label: `${envLabel} · 局域网`, url: serverUrl }] : []),
+        ...(serverUrl ? [{ label: primaryLabel, url: serverUrl }] : []),
         { label: `${envLabel} · 隧道`, url: tunnelUrl },
       ],
     })
@@ -445,7 +448,7 @@ function MobileConnectCard() {
       <canvas ref={canvasRef} className="settings-mobile-qrcode" aria-label="服务地址二维码" />
       <div style={{ display: 'grid', gap: 10, alignContent: 'start' }}>
         <div className="setting-row" style={{ alignItems: 'center' }}>
-          <span>{tunnelUrl ? '二维码包含：局域网 + 隧道' : '局域网地址'}</span>
+          <span>{tunnelUrl ? '二维码包含：访问地址 + 隧道' : primaryIsLan ? '局域网地址' : '访问地址'}</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <code style={{ fontSize: 12, wordBreak: 'break-all' }}>{serverUrl}</code>
             <button className="icon-button" type="button" title="复制地址" onClick={() => void copy(serverUrl)}><Copy size={14} /></button>

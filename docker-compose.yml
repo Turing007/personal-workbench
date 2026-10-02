@@ -19,7 +19,16 @@ services:
       # 如需改端口/数据目录，在服务器上的 .env 里配置对应的 WORKBENCH_* 变量。
     ports:
       # IP 直连模式（无域名/无备案）就靠这个端口访问；配了域名走 Caddy 时也不影响。
+      # 走域名时部署脚本会把它写成 127.0.0.1:52341 —— Caddy 是走 compose 内网访问应用的，
+      # 不依赖这个发布端口，所以没必要再对公网开一个入口（防火墙那道之外的第二道防线）。
       - "${WORKBENCH_PUBLIC_PORT:-52341}:52341"
+    logging:
+      # 应用每个请求都记一条日志。不设上限的话 json-file 会一直长，
+      # 40GB 的盘跑上几个月就会被日志吃掉 —— 这里滚动保留 3 × 10MB。
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       # 用 bind mount 而不是命名卷：迁移现有数据时可以直接把本机 data/ 拷进
       # ~/workbench/data，不必绕道备份恢复（备份 ZIP 走 multipart 上传，上限只有 20MB，
@@ -44,6 +53,12 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    logging:
+      # 同上：Caddy 的访问日志同样不设上限会长满磁盘
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       - workbench
 

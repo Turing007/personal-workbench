@@ -1,5 +1,7 @@
 # Caddy 配置：自动申请并续期 Let's Encrypt 证书。
-# 域名来自 docker-compose 注入的 WORKBENCH_DOMAIN 环境变量（例如 1-2-3-4.sslip.io）。
+# 域名来自 docker-compose 注入的 WORKBENCH_DOMAIN 环境变量，可以写多个（逗号分隔），
+# 例如 vigortech.xyz, www.vigortech.xyz —— Caddy 会给整块里的所有名字签同一张证书，
+# 所以每个名字都必须解析到本机，否则整张证书都会签不下来。
 # 如需接收证书到期提醒，可在此文件顶部添加：{ email your@example.com }
 {$WORKBENCH_DOMAIN} {
 	reverse_proxy workbench:52341
