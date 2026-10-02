@@ -230,6 +230,34 @@ npm run build
 
 恢复会替换当前订单、产品、箱唛、打印历史和附件。系统会自动创建恢复前安全备份，但仍建议在重要操作前手动下载一份备份 ZIP。
 
+### 从备份恢复（灾难恢复）
+
+两条路，效果不同，先看清再动手：
+
+| 方式 | 怎么用 | 账号会怎样 |
+|---|---|---|
+| 界面恢复 | 设置 → 备份与恢复 → 选择备份 ZIP | **保留当前账号**（备份里的账号表不参与覆盖） |
+| 整库恢复 | 解压 ZIP，把 `workbench.sqlite` 与 `files/` 拷回数据目录 | 用备份里的账号，密码回到备份那一刻 |
+
+全量数据（图片附件数百 MB）超出界面上传上限（20MB），所以真正救急只能走文件：
+
+```bash
+# 1) 停应用（保留 Caddy 运行，可省一步）
+docker compose --profile https stop workbench
+# 2) 解压备份
+unzip 自动备份-个人工作台-20260101T010950Z.zip -d /tmp/restore
+# 3) 替换数据库与附件目录；-wal/-shm 不删会和新库对不上
+cp /tmp/restore/workbench.sqlite ~/workbench/data/workbench.sqlite
+rm -f ~/workbench/data/workbench.sqlite-wal ~/workbench/data/workbench.sqlite-shm
+cp -r /tmp/restore/files/. ~/workbench/data/files/
+# 4) 起回来
+docker compose --profile https up -d
+```
+
+2026-10-02 做过一次完整演练：备份里的 4422 个文件与服务器逐条一致（相对路径 + 字节数），
+38 张表的行数与备份清单全部对上，`PRAGMA integrity_check` 通过；并把恢复出来的数据
+真正启动应用验证过 —— 订单 35 条、产品库卡片与图片全部正常加载。
+
 ### 连续输错密码被锁了怎么办
 
 登录失败按 **来源 IP + 用户名** 计数（别人的 IP 猜你的用户名，不会把你锁住）。连续 3 次失败开始锁定，之后继续失败逐级拉长：
