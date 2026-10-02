@@ -72,9 +72,11 @@ export async function registerAuthRoutes(app: FastifyInstance, options: AuthRout
   });
 
   app.post('/api/auth/login', async (request, reply) => {
+    let attemptedUsername = '';
     try {
       const body = asRecord(request.body);
       const username = requiredText(body.username, 'username', '用户名');
+      attemptedUsername = username;
       const password = requiredText(body.password, 'password', '密码');
       const context = await service.login({
         username,
@@ -84,6 +86,13 @@ export async function registerAuthRoutes(app: FastifyInstance, options: AuthRout
       reply.setCookie(SESSION_COOKIE, context.token, sessionCookieAttributes(SESSION_TTL_MS / 1000));
       return sendSuccess(reply, { user: context.user });
     } catch (error) {
+      // 命中限流要留痕：否则有人在外面持续猜密码，日志里一条记录都没有。
+      if (error instanceof ApiError && error.code === 'AUTH_RATE_LIMITED') {
+        request.log.warn(
+          { ip: request.ip, username: attemptedUsername },
+          '登录被限流：该来源连续失败次数过多',
+        );
+      }
       return sendFailure(reply, error);
     }
   });

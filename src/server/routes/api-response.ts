@@ -20,6 +20,8 @@ export class ApiError extends Error {
     public readonly code: string,
     message: string,
     public readonly field?: string,
+    /** 需要一并写进响应的头，例如 429 的 Retry-After。 */
+    public readonly headers?: Record<string, string>,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -42,6 +44,7 @@ export function sendFailure(reply: FastifyReply, error: unknown, statusCode = 50
       ...(apiError.field ? { field: apiError.field } : {}),
     },
   };
+  if (apiError.headers) reply.headers(apiError.headers);
   return reply.status(apiError.statusCode).send(body);
 }
 

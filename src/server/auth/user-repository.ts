@@ -1,5 +1,14 @@
 import type { DatabaseSync } from 'node:sqlite';
 
+const LOGIN_LOCKOUTS_KEY = 'login_lockouts';
+
+/** 单条登录失败记录：计数、首次失败时间、锁定截止时间。 */
+export interface LoginLockoutRecord {
+  count: number;
+  firstFailureAt: number;
+  lockedUntil: number;
+}
+
 export type UserRole = 'admin' | 'member';
 
 export interface UserRecord {
@@ -210,5 +219,42 @@ export class UserRepository {
   /** 登录时顺带清理过期会话，避免 sessions 无限增长。 */
   purgeExpiredSessions(now: string): void {
     this.database.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(now);
+  }
+
+  /**
+   * 登录失败计数与锁定状态。
+   * 存 settings 表而不是内存：重启容器不该把锁定状态清零，
+   * 否则攻击者只要等到发版重启就又能重新猜。
+   */
+  readLoginLockouts(): Record<string, LoginLockoutRecord> {
+    const row = this.database.prepare('SELECT value FROM settings WHERE key = ?').get(LOGIN_LOCKOUTS_KEY) as { value?: string } | undefined;
+    if (!row?.value) return {};
+    try {
+      const parsed: unknown = JSON.parse(row.value);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+      // 手改过的库或旧格式一律丢掉：宁可从头计数，也不能让坏数据变成永久锁定。
+      const result: Record<string, LoginLockoutRecord> = {};
+      for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+        const entry = value as Partial<LoginLockoutRecord> | null;
+        if (!entry || typeof entry !== 'object') continue;
+        const count = Number(entry.count);
+        const firstFailureAt = Number(entry.firstFailureAt);
+        const lockedUntil = Number(entry.lockedUntil ?? 0);
+        if (!Number.isFinite(count) || !Number.isFinite(firstFailureAt)) continue;
+        result[key] = { count, firstFailureAt, lockedUntil: Number.isFinite(lockedUntil) ? lockedUntil : 0 };
+      }
+      return result;
+    } catch {
+      return {};
+    }
+  }
+
+  saveLoginLockouts(lockouts: Record<string, LoginLockoutRecord>): void {
+    this.database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(LOGIN_LOCKOUTS_KEY, JSON.stringify(lockouts), new Date().toISOString());
   }
 }

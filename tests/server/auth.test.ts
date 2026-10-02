@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { DatabaseSync } from 'node:sqlite';
 import type { FastifyInstance } from 'fastify';
 import { createApp } from '../../src/server/app';
+import { LOGIN_LOCKOUT_LADDER_MS, LOGIN_LOCKOUT_THRESHOLD } from '../../src/server/auth/auth-service';
 import { openDatabase } from '../../src/server/db/connection';
 import { migrateDatabase } from '../../src/server/db/migrate';
 import { authInject, getAdminCredential, loginAs, setupAdmin } from './helpers/auth';
@@ -130,11 +131,11 @@ describe('登录与会话', () => {
     expect(ok.cookies.some((cookie) => cookie.name === 'wb_session')).toBe(true);
   });
 
-  it('连续失败达到上限后锁定，即使密码正确也返回 429', async () => {
+  it('连续失败到阈值即锁定，即使密码正确也返回 429 并带 Retry-After', async () => {
     const { app } = await createAppFixture();
     await setupAdmin(app, { password: fixturePasswordFor(ADMIN_USERNAME) });
 
-    for (let attempt = 0; attempt < 5; attempt += 1) {
+    for (let attempt = 0; attempt < LOGIN_LOCKOUT_THRESHOLD; attempt += 1) {
       const failure = await app.inject({
         method: 'POST',
         url: '/api/auth/login',
@@ -150,6 +151,98 @@ describe('登录与会话', () => {
     });
     expect(locked.statusCode).toBe(429);
     expect(locked.json().error.code).toBe('AUTH_RATE_LIMITED');
+    // 客户端与网关都靠 Retry-After 退避，必须是十进制秒数，且不超过第一档锁定时长
+    const retryAfter = Number(locked.headers['retry-after']);
+    expect(Number.isInteger(retryAfter)).toBe(true);
+    expect(retryAfter).toBeGreaterThan(0);
+    expect(retryAfter).toBeLessThanOrEqual(LOGIN_LOCKOUT_LADDER_MS[0] / 1000);
+  });
+
+  it('锁定状态落盘：重启服务后仍被锁', async () => {
+    const { app, database } = await createAppFixture();
+    await setupAdmin(app, { password: fixturePasswordFor(ADMIN_USERNAME) });
+    for (let attempt = 0; attempt < LOGIN_LOCKOUT_THRESHOLD; attempt += 1) {
+      await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { username: 'admin', password: fixturePasswordFor('wrong') },
+      });
+    }
+    expect((await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: 'admin', password: fixturePasswordFor('admin') },
+    })).statusCode).toBe(429);
+
+    // 模拟容器重启：同一份数据库上重新建一个 app，锁定不该因为重启而消失
+    const restarted = await createApp({ database });
+    apps.push(restarted);
+    const afterRestart = await restarted.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: 'admin', password: fixturePasswordFor('admin') },
+    });
+    expect(afterRestart.statusCode).toBe(429);
+  });
+
+  it('反复失败沿退避阶梯升级：第 4 次锁 15 分钟，而不是每轮都停在 5 分钟', async () => {
+    const { app, database } = await createAppFixture();
+    await setupAdmin(app, { password: fixturePasswordFor(ADMIN_USERNAME) });
+
+    // 直接写一份「已失败到阈值、且第一档锁定刚过期」的落盘状态，等价于等满 5 分钟再来猜。
+    database.prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    ).run(
+      'login_lockouts',
+      JSON.stringify({
+        '127.0.0.1|admin': {
+          count: LOGIN_LOCKOUT_THRESHOLD,
+          firstFailureAt: Date.now() - 60_000,
+          lockedUntil: Date.now() - 1_000,
+        },
+      }),
+      new Date().toISOString(),
+    );
+
+    const failure = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: 'admin', password: fixturePasswordFor('wrong') },
+    });
+    expect(failure.statusCode).toBe(401);
+
+    const locked = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: 'admin', password: fixturePasswordFor('admin') },
+    });
+    expect(locked.statusCode).toBe(429);
+    expect(Number(locked.headers['retry-after'])).toBe(LOGIN_LOCKOUT_LADDER_MS[1] / 1000);
+  });
+
+  it('登录成功后失败计数清零，不会把偶发手误累积成锁定', async () => {
+    const { app } = await createAppFixture();
+    await setupAdmin(app, { password: fixturePasswordFor(ADMIN_USERNAME) });
+
+    const fail = () => app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: 'admin', password: fixturePasswordFor('wrong') },
+    });
+    const succeed = () => app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { username: 'admin', password: fixturePasswordFor('admin') },
+    });
+
+    // 差一次就到阈值时登录成功
+    for (let attempt = 0; attempt < LOGIN_LOCKOUT_THRESHOLD - 1; attempt += 1) expect((await fail()).statusCode).toBe(401);
+    expect((await succeed()).statusCode).toBe(200);
+
+    // 计数已清零：再连错两次仍然没到阈值，正确密码照常能进
+    for (let attempt = 0; attempt < LOGIN_LOCKOUT_THRESHOLD - 1; attempt += 1) expect((await fail()).statusCode).toBe(401);
+    expect((await succeed()).statusCode).toBe(200);
   });
 
   it('登出后原会话失效', async () => {

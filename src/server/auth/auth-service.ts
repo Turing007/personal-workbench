@@ -12,8 +12,26 @@ const SESSION_TOUCH_INTERVAL_MS = 60 * 60 * 1000;
 export const USERNAME_PATTERN = /^[a-zA-Z0-9_-]{2,32}$/;
 export const MIN_PASSWORD_LENGTH = 8;
 
-const LOGIN_MAX_FAILURES = 5;
-const LOGIN_LOCKOUT_MS = 10 * 60 * 1000;
+/** 连续失败到该次数开始锁定。 */
+export const LOGIN_LOCKOUT_THRESHOLD = 3;
+/**
+ * 递进锁定时长：第 3 次失败锁 5 分钟，继续失败逐级拉长到 24 小时封顶。
+ * 刻意不做"永久锁定"：永久锁既会被攻击者反向利用（拿别人的用户名把某个 IP 永久挡在门外），
+ * 也会让本人在手机上多按错几次就把自己锁死；封顶 + 成功后清零 + 手工解锁通道已经够用。
+ */
+export const LOGIN_LOCKOUT_LADDER_MS = [5 * 60_000, 15 * 60_000, 60 * 60_000, 6 * 60 * 60_000, 24 * 60 * 60_000] as const;
+/**
+ * 失败计数的保留窗口。取最长的锁定时长，而不是短窗口：
+ * 否则锁一过期计数就归零，攻击者每轮都能重新拿到 3 次机会，退避等于没用。
+ */
+const LOGIN_FAILURE_WINDOW_MS = LOGIN_LOCKOUT_LADDER_MS[LOGIN_LOCKOUT_LADDER_MS.length - 1];
+
+/** 第 count 次失败对应的锁定时长；未到阈值返回 0。 */
+function lockDurationFor(count: number): number {
+  const step = count - LOGIN_LOCKOUT_THRESHOLD;
+  if (step < 0) return 0;
+  return LOGIN_LOCKOUT_LADDER_MS[Math.min(step, LOGIN_LOCKOUT_LADDER_MS.length - 1)];
+}
 
 interface LoginFailureEntry {
   count: number;
@@ -40,6 +58,8 @@ function nowIso(): string {
  */
 export class AuthService {
   private readonly loginFailures = new Map<string, LoginFailureEntry>();
+  /** 是否已把落盘的锁定状态读进内存（懒加载，避免启动时多一次查询）。 */
+  private lockoutsLoaded = false;
 
   constructor(private readonly users: UserRepository) {}
 
@@ -73,6 +93,7 @@ export class AuthService {
       throw new ApiError(403, 'AUTH_ACCOUNT_DISABLED', '该账号已被停用，请联系管理员');
     }
     this.loginFailures.delete(input.clientKey);
+    this.persistLockouts();
     this.users.purgeExpiredSessions(nowIso());
     return { user: this.toPublic(user), token: this.createSession(user.id) };
   }
@@ -221,25 +242,65 @@ export class AuthService {
   }
 
   private assertNotLocked(clientKey: string): void {
+    this.ensureLockoutsLoaded();
     const entry = this.loginFailures.get(clientKey);
     if (!entry) return;
-    if (entry.lockedUntil > Date.now()) {
-      const minutes = Math.max(1, Math.ceil((entry.lockedUntil - Date.now()) / 60_000));
-      throw new ApiError(429, 'AUTH_RATE_LIMITED', `登录失败次数过多，请约 ${minutes} 分钟后再试`);
+    const now = Date.now();
+    if (entry.lockedUntil > now) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((entry.lockedUntil - now) / 1000));
+      const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+      throw new ApiError(
+        429,
+        'AUTH_RATE_LIMITED',
+        `登录失败次数过多，请约 ${minutes} 分钟后再试`,
+        undefined,
+        { 'Retry-After': String(retryAfterSeconds) },
+      );
     }
-    if (Date.now() - entry.firstFailureAt > LOGIN_LOCKOUT_MS) this.loginFailures.delete(clientKey);
+    if (now - entry.firstFailureAt > LOGIN_FAILURE_WINDOW_MS) {
+      this.loginFailures.delete(clientKey);
+      this.persistLockouts();
+    }
   }
 
   private recordLoginFailure(clientKey: string): void {
+    this.ensureLockoutsLoaded();
     const now = Date.now();
     const entry = this.loginFailures.get(clientKey);
-    if (!entry || now - entry.firstFailureAt > LOGIN_LOCKOUT_MS) {
+    if (!entry || now - entry.firstFailureAt > LOGIN_FAILURE_WINDOW_MS) {
       this.loginFailures.set(clientKey, { count: 1, firstFailureAt: now, lockedUntil: 0 });
-      return;
+    } else {
+      entry.count += 1;
+      const duration = lockDurationFor(entry.count);
+      if (duration > 0) entry.lockedUntil = now + duration;
     }
-    entry.count += 1;
-    if (entry.count >= LOGIN_MAX_FAILURES) {
-      entry.lockedUntil = now + LOGIN_LOCKOUT_MS;
+    this.persistLockouts();
+  }
+
+  /** 首次用到限流时才读盘，且读失败一律从空开始 —— 不能因为限流状态读不出来就拒绝登录。 */
+  private ensureLockoutsLoaded(): void {
+    if (this.lockoutsLoaded) return;
+    this.lockoutsLoaded = true;
+    try {
+      const now = Date.now();
+      for (const [key, entry] of Object.entries(this.users.readLoginLockouts())) {
+        if (now - entry.firstFailureAt <= LOGIN_FAILURE_WINDOW_MS) this.loginFailures.set(key, entry);
+      }
+    } catch {
+      /* 旧库没有 settings 行时按空处理 */
+    }
+  }
+
+  private persistLockouts(): void {
+    try {
+      const now = Date.now();
+      const snapshot: Record<string, LoginFailureEntry> = {};
+      for (const [key, entry] of this.loginFailures) {
+        if (now - entry.firstFailureAt <= LOGIN_FAILURE_WINDOW_MS) snapshot[key] = entry;
+      }
+      this.users.saveLoginLockouts(snapshot);
+    } catch {
+      // 写不进去也不能让登录流程报错：内存里的锁定照常生效，只是重启后会丢。
     }
   }
 }
