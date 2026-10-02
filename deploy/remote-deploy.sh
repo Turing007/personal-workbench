@@ -8,6 +8,17 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# 部署参数写在同目录的 .env 里。docker compose 会自动读它，但 bash 不会 ——
+# 不显式载入的话，域名模式永远判成空、走不进 https 分支，Caddy 根本不会启动，
+# 而 .env 里的 WORKBENCH_TRUST_PROXY=1 又已经生效：等于让公网直连的 52341
+# 无条件信任 X-Forwarded-For，登录限流可以被伪造头绕过。
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env
+  set +a
+fi
+
 : "${WORKBENCH_PUBLIC_PORT:=52341}"
 
 if [ -n "${WORKBENCH_DOMAIN:-}" ]; then
