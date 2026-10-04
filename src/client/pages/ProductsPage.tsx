@@ -39,6 +39,8 @@ export interface ProductsPageProps {
   onRefresh: () => Promise<void> | void;
   /** 编辑器里点「管理预设 ›」时跳到设置页维护包装预设。 */
   onManagePresets?: () => void;
+  /** 有文件正在后台上传的产品 id：列表上给这些产品打「图片上传中」标记。 */
+  uploadingProductIds?: string[];
 }
 
 const statusFilterLabels: Array<{ value: StatusFilter; label: string }> = [
@@ -59,6 +61,12 @@ function statusBadge(product: ProductRecord) {
   return null;
 }
 
+/** 还有文件在后台上传：必须标出来，否则用户会以为刚存的图丢了。 */
+function uploadBadge(product: ProductRecord, uploadingIds: Set<string>) {
+  if (!uploadingIds.has(String(product.id))) return null;
+  return <span className="badge badge-info" title="图片与附件正在后台上传，传完会自动出现在这里">图片上传中</span>;
+}
+
 /** 采购价存成 0 表示没填，显示占位符而不是「¥0」。 */
 function purchasePriceLabel(value: string) {
   return Number(value) > 0 ? `¥${value}` : '—';
@@ -69,7 +77,8 @@ function extraQuoteCount(product: ProductRecord) {
   return Math.max(0, (product.purchaseQuotes?.length ?? 0) - 1);
 }
 
-export default function ProductsPage({ products, loading, onSave, saving, onDelete, onUpdateSaleStatus, onExport, onCatalog, onDownloadTemplate, onImport, onRefresh, onManagePresets }: ProductsPageProps) {
+export default function ProductsPage({ products, loading, onSave, saving, onDelete, onUpdateSaleStatus, onExport, onCatalog, onDownloadTemplate, onImport, onRefresh, onManagePresets, uploadingProductIds }: ProductsPageProps) {
+  const uploadingIds = new Set(uploadingProductIds ?? []);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [pageSize, setPageSize] = useState(readStoredPageSize);
@@ -250,6 +259,9 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
             : <span className="product-gallery-image"><span className="product-gallery-placeholder"><ImageIcon size={22} /><span>无图片</span></span></span>}
           <button className="product-gallery-open" type="button" onClick={() => setDetailProduct(product)} title="查看产品详情">
             <span className="product-gallery-name">{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}{statusBadge(product)}</span>
+            {/* 「图片上传中」不能放进 .product-gallery-name：那是两行截断 + overflow:hidden 的容器，
+                名字一长就把标记裁掉，只剩一条边。放在它外面自成一行才看得见。 */}
+            {uploadBadge(product, uploadingIds)}
             <span className="product-gallery-meta">
               <span className="product-gallery-sku">{product.sku || '—'}</span>
               {showSensitive && <span className="product-gallery-price">{purchasePriceLabel(product.purchasePrice)}{extraQuoteCount(product) > 0 && <span className="price-tier-count" title={`还有 ${extraQuoteCount(product)} 档报价`}>+{extraQuoteCount(product)}</span>}</span>}
@@ -266,7 +278,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
         <tbody>{visible.map((product) => <tr key={product.id}>
           <td className="strong-cell"><button className="product-sku-button" type="button" onClick={() => setDetailProduct(product)} title="查看产品详情">{product.sku || '查看详情'}</button></td>
           <td>{product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProduct(product)} title="查看全部图片"><span className="product-image-thumb"><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}</td>
-          <td className="product-name-cell"><span className="product-name-text">{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}</span>{statusBadge(product)}</td><td>{product.colors.join('、') || '—'}</td><td>{product.batteryPlugs.join('、') || '—'}</td>
+          <td className="product-name-cell"><span className="product-name-text">{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}</span>{statusBadge(product)}{uploadBadge(product, uploadingIds)}</td><td>{product.colors.join('、') || '—'}</td><td>{product.batteryPlugs.join('、') || '—'}</td>
           <td className="product-parameters-cell">{product.parameters?.trim() ? <button className="product-parameters-trigger" type="button" onClick={() => setParametersProduct(product)} title="查看完整参数"><span>查看详情</span><Copy size={13} /></button> : <span>—</span>}</td>
           <td className="product-packaging-cell"><div className="product-packaging-lines">{product.packaging.length ? <>
             {(expandedPackagingId === product.id ? product.packaging : product.packaging.slice(0, 1)).map((item) => {
@@ -287,7 +299,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
           <div className="product-card-head">
             {product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProduct(product)} title="查看全部图片"><span className="product-image-thumb"><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}
             <div className="product-card-title">
-              <strong>{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}{statusBadge(product)}</strong>
+              <strong>{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}{statusBadge(product)}{uploadBadge(product, uploadingIds)}</strong>
               <button className="product-sku-button" type="button" onClick={() => setDetailProduct(product)} title="查看产品详情">{product.sku || '查看详情'}</button>
             </div>
           </div>

@@ -70,16 +70,20 @@ test('编辑器打开后图片被别处删过，仍能删光重传并保存成�
 
     await editor.getByRole('button', { name: '保存产品' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(page.locator('.toast')).toContainText('产品已保存');
+    // 保存会立刻弹一条「产品已保存，N 个文件正在后台上传」；上传完成后还会再弹一条，
+    // 所以这里按文本过滤，不能用未过滤的 .toast（会同时命中两条）。
+    await expect(page.locator('.toast', { hasText: '产品已保存' })).toBeVisible();
 
+    // 上传改成后台队列后，编辑器先关、图片随后才到，所以这里要等结果而不是立刻读。
     // 旧图全部清掉、新图进来：不再卡在「产品图片不存在」。
-    expect(await serverImageNames(page, product.id)).toEqual(['新图.png']);
+    await expect.poll(() => serverImageNames(page, product.id), { timeout: 20_000, message: '新图该在后台传完并落库' })
+      .toEqual(['新图.png']);
   } finally {
     await page.request.delete(`/api/products/${product.id}`);
   }
 });
 
-test('保存进行中禁用保存按钮，连点不会重跑一遍图片同步', async ({ page }) => {
+test('连点保存不会把同一张图传两遍', async ({ page }) => {
   const product = await seedProduct(page, 2);
   try {
     const editor = await openEditor(page, product.sku);
@@ -87,14 +91,22 @@ test('保存进行中禁用保存按钮，连点不会重跑一遍图片同步',
     await editor.locator('input[type=file]').first().setInputFiles([{ name: '一张.png', mimeType: 'image/png', buffer: PNG }]);
     await expect(editor.locator('[aria-label="删除图片"]')).toHaveCount(1);
 
+    const uploads: string[] = [];
+    page.on('request', (request) => {
+      if (/^\/api\/products\/\d+\/images$/.test(new URL(request.url()).pathname) && request.method() === 'POST') {
+        uploads.push(request.url());
+      }
+    });
+
     const saveButton = editor.locator('.modal-footer button.button-primary');
     await saveButton.click();
     // 第二次点击落在禁用态上：Playwright 会因元素不可用而拒绝，正是我们要的行为，超时收掉即可。
-    await expect(saveButton).toBeDisabled();
     await saveButton.click({ timeout: 500 }).catch(() => {});
 
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    expect(await serverImageNames(page, product.id)).toEqual(['一张.png']);
+    await expect.poll(() => serverImageNames(page, product.id), { timeout: 20_000 }).toEqual(['一张.png']);
+    // 真正的不可变量：同一张图只发过一次上传请求（连点没有让它重跑一遍）。
+    expect(uploads).toHaveLength(1);
   } finally {
     await page.request.delete(`/api/products/${product.id}`);
   }

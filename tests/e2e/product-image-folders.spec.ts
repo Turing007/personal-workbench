@@ -114,14 +114,16 @@ test.describe('产品图片按分类文件夹管理', () => {
       await expect(realShotFolder.locator('.image-card')).toHaveCount(3);
       await expect(realShotFolder.locator('.image-folder-count')).toHaveText('3 张');
 
-      // 保存后服务端分类与数量一致：4 张旧图 + 粘贴 1 张 + 文件夹内上传 1 张
+      // 保存后服务端分类与数量一致：4 张旧图 + 粘贴 1 张 + 文件夹内上传 1 张。
       await expect(page.getByRole('dialog').locator('button.button-primary', { hasText: '保存产品' })).toBeVisible();
       await page.getByRole('dialog').locator('button.button-primary').click();
       await expect(page.getByRole('dialog')).toHaveCount(0);
-      const detail = await page.request.get(`/api/products/${product.id}`);
-      const images = ((await detail.json()).data as { images: Array<{ category: string }> }).images;
-      expect(images).toHaveLength(6);
-      expect(images.filter((image) => image.category === 'customer')).toHaveLength(3);
+      // 上传走后台队列，编辑器先关、图片随后到，所以轮询等结果。
+      await expect.poll(async () => {
+        const detail = await page.request.get(`/api/products/${product.id}`);
+        const images = ((await detail.json()).data as { images: Array<{ category: string }> }).images;
+        return `${images.length}/${images.filter((image) => image.category === 'customer').length}`;
+      }, { timeout: 20_000, message: '6 张图都该上传完成，其中 3 张属于实拍图' }).toBe('6/3');
     } finally {
       const cleanup = await page.request.delete(`/api/products/${product.id}`);
       expect(cleanup.ok()).toBeTruthy();
@@ -177,9 +179,13 @@ test('一次上传乱序文件时按文件名编号入库', async ({ page }) => 
     await editor.getByRole('button', { name: '保存产品' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
-    const stored = await page.request.get(`/api/products/${product.id}`);
-    const names = ((await stored.json()).data.images as Array<{ originalName: string }>).map((image) => image.originalName);
-    expect(names).toEqual(['0-图.png', '1-图.png', '2-图.png', '10-图.png']);
+    // 上传走后台队列：编辑器先关，图片与排序随后完成，所以轮询等最终顺序。
+    await expect.poll(async () => {
+      const stored = await page.request.get(`/api/products/${product.id}`);
+      return ((await stored.json()).data.images as Array<{ originalName: string }>)
+        .map((image) => image.originalName)
+        .join(',');
+    }, { timeout: 20_000, message: '四张图都该落库并按编号排好' }).toBe('0-图.png,1-图.png,2-图.png,10-图.png');
   } finally {
     await page.request.delete(`/api/products/${product.id}`);
   }

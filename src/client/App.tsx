@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { CompanySnapshot } from '../shared/documents';
 import AuthGate from './components/auth/AuthGate';
 import EnvironmentShell from './components/EnvironmentShell';
+import { productUploadQueue, type UploadBatch } from './product-upload-queue';
 import Sidebar from './components/Sidebar';
 import { navigationKeys, type NavigationKey } from './navigation';
 import { loadMobileTabs, saveMobileTabs } from './mobile-tabs';
@@ -54,12 +55,8 @@ import {
   uploadPaymentProof,
   uploadOrderContract,
   uploadOrderDetailImage,
-  uploadProductImage,
   updateProductImage,
   deleteProductImage,
-  reorderProductImages,
-  uploadProductPackagingImage,
-  uploadProductAttachment,
   updateProductAttachmentCategory,
   deleteProductAttachment,
   updateProduct,
@@ -234,9 +231,31 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     return () => { cancelled = true; };
   }, []);
 
+  // 后台上传队列：进度条、产品库标记、续传提示都读这一份状态。
+  const uploadQueue = useSyncExternalStore(productUploadQueue.subscribe, productUploadQueue.getSnapshot);
+  const uploadWasActive = useRef(false);
+
   const loadProducts = useCallback(async (): Promise<boolean> => {
     try { setProducts(await getProducts()); return true; } catch (error) { notify((error as { message?: string }).message ?? '产品库加载失败', 'error'); return false; }
   }, [notify]);
+
+  // 一个产品的文件传完（或最终失败）就刷新产品库，让图片立刻出现在列表里。
+  useEffect(() => {
+    productUploadQueue.setBatchSettledHandler(() => { void loadProducts(); });
+    void productUploadQueue.initialize();
+  }, [loadProducts]);
+
+  // 整轮上传结束时给一次结果提示；失败项必须说出来，不能让"已保存"掩盖"图少了"。
+  useEffect(() => {
+    if (uploadWasActive.current && !uploadQueue.active) {
+      if (uploadQueue.failures.length) {
+        notify(`有 ${uploadQueue.failures.length} 个文件没传成功，顶部提示里可以重试`, 'error');
+      } else if (uploadQueue.done > 0) {
+        notify('图片已全部上传完成', 'success');
+      }
+    }
+    uploadWasActive.current = uploadQueue.active;
+  }, [uploadQueue.active, uploadQueue.done, uploadQueue.failures.length, notify]);
   const loadCompanyProfile = useCallback(async () => {
     try { setCompanyProfile(await getCompanyProfile()); } catch { /* company branding is optional; keep the fallback */ }
   }, []);
@@ -312,45 +331,41 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
       const serverImages = (Array.isArray(saved.images) ? saved.images : []).filter((image) => /^\d+$/.test(String(image.id)));
       const serverAttachments = (Array.isArray(saved.attachments) ? saved.attachments : []).filter((item) => /^\d+$/.test(String(item.id)));
       const draftImageIds = new Set(draft.images.filter((item) => !item.file && /^\d+$/.test(item.id)).map((item) => item.id));
-      for (const image of serverImages) {
-        if (!draftImageIds.has(String(image.id))) await deleteIfStillThere(() => deleteProductImage(savedProductId, String(image.id)));
-      }
-      const orderedImageIds: number[] = [];
-      const savedImages = new Map(serverImages.map((image) => [String(image.id), image]));
-      for (const image of draft.images) {
-        if (image.file) {
-          const uploaded = await uploadProductImage(savedProductId, image.file, image.category ?? '', image.note ?? '');
-          orderedImageIds.push(Number(uploaded.id));
-        } else if (/^\d+$/.test(image.id)) {
-          orderedImageIds.push(Number(image.id));
-          // 已保存图片改分类或备注时直接回写，不必重建图片记录。
-          const previous = savedImages.get(image.id) as { category?: string; note?: string } | undefined;
-          const category = image.category ?? '';
-          const note = image.note ?? '';
-          if (previous && (category !== (previous.category ?? '') || note !== (previous.note ?? ''))) {
-            await updateProductImage(savedProductId, image.id, { category, note });
-          }
+      // 该产品还有文件在后台上传时，绝不能执行删除差异：此刻列表里看不到"刚传上去、还没进列表"的图，
+      // 照旧快照删就会把它们当多余的删掉。宁可这次不处理删除，也不能误删。改完再存一次即可。
+      const skipDeletes = productUploadQueue.hasPending(savedProductId);
+      if (skipDeletes) {
+        const pendingDeletes = serverImages.filter((image) => !draftImageIds.has(String(image.id))).length;
+        if (pendingDeletes) {
+          notify('该产品还有文件正在后台上传，这次没有处理图片删除；等上传完成后再保存一次即可', 'error');
         }
       }
-      if (orderedImageIds.length) await reorderProductImages(savedProductId, orderedImageIds);
-      const savedPackaging = Array.isArray(saved.packaging) ? saved.packaging : [];
-      for (const [index, packaging] of draft.packaging.entries()) {
-        const packagingId = savedPackaging[index] && String((savedPackaging[index] as Record<string, unknown>).id ?? '');
-        if (!packagingId) continue;
-        for (const image of (packaging.images ?? []).filter((item) => item.file)) {
-          await uploadProductPackagingImage(savedProductId, packagingId, image.file!);
+      if (!skipDeletes) {
+        for (const image of serverImages) {
+          if (!draftImageIds.has(String(image.id))) await deleteIfStillThere(() => deleteProductImage(savedProductId, String(image.id)));
+        }
+      }
+      // 已保存图片改分类/备注、附件改分类都是小请求，留在前台立即生效；
+      // 真正耗时的是上传文件本身，交给后台队列。
+      const savedImages = new Map(serverImages.map((image) => [String(image.id), image]));
+      for (const image of draft.images) {
+        if (image.file || !/^\d+$/.test(image.id)) continue;
+        const previous = savedImages.get(image.id) as { category?: string; note?: string } | undefined;
+        const category = image.category ?? '';
+        const note = image.note ?? '';
+        if (previous && (category !== (previous.category ?? '') || note !== (previous.note ?? ''))) {
+          await updateProductImage(savedProductId, image.id, { category, note });
         }
       }
       const currentSavedAttachmentIds = new Set(
         draft.attachments.filter((item) => !item.file && /^\d+$/.test(item.id)).map((item) => item.id),
       );
-      for (const attachment of serverAttachments) {
-        if (!currentSavedAttachmentIds.has(String(attachment.id))) {
-          await deleteIfStillThere(() => deleteProductAttachment(savedProductId, String(attachment.id)));
+      if (!skipDeletes) {
+        for (const attachment of serverAttachments) {
+          if (!currentSavedAttachmentIds.has(String(attachment.id))) {
+            await deleteIfStillThere(() => deleteProductAttachment(savedProductId, String(attachment.id)));
+          }
         }
-      }
-      for (const attachment of draft.attachments.filter((item) => item.file)) {
-        await uploadProductAttachment(savedProductId, attachment.file!, attachment.category);
       }
       for (const attachment of draft.attachments.filter((item) => !item.file && /^\d+$/.test(item.id))) {
         const previous = serverAttachments.find((item) => String(item.id) === attachment.id) as { category?: string } | undefined;
@@ -358,8 +373,65 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
           await updateProductAttachmentCategory(savedProductId, attachment.id, attachment.category);
         }
       }
-      await loadProducts();
-      notify(mode === 'draft' ? '草稿已保存，可稍后继续编辑' : '产品已保存', 'success');
+
+      // ===== 以下是耗时的文件上传，打包成一批交给后台队列 =====
+      const productLabel = draft.name.trim() || draft.sku.trim() || `产品 ${savedProductId}`;
+      const savedPackaging = Array.isArray(saved.packaging) ? saved.packaging : [];
+      const batch: UploadBatch = { productId: savedProductId, productLabel, imageOrder: [], files: [] };
+      const stamp = Date.now();
+      let sequence = 0;
+      const nextTaskId = (kind: string) => `up-${savedProductId}-${stamp}-${sequence++}-${kind}`;
+      draft.images.forEach((image, index) => {
+        if (image.file) {
+          const taskId = nextTaskId('image');
+          batch.imageOrder.push({ taskId });
+          batch.files.push({
+            meta: {
+              id: taskId, productId: savedProductId, productLabel, kind: 'image',
+              category: image.category ?? '', note: image.note ?? '', fileName: image.name || `图片-${index + 1}`,
+            },
+            file: image.file,
+          });
+        } else if (/^\d+$/.test(image.id)) {
+          batch.imageOrder.push({ imageId: Number(image.id) });
+        }
+      });
+      draft.packaging.forEach((packaging, index) => {
+        const packagingId = savedPackaging[index] && String((savedPackaging[index] as Record<string, unknown>).id ?? '');
+        for (const image of (packaging.images ?? []).filter((item) => item.file)) {
+          if (!packagingId) continue;
+          const taskId = nextTaskId('packaging');
+          batch.files.push({
+            meta: {
+              id: taskId, productId: savedProductId, productLabel, kind: 'packaging-image',
+              category: '', note: '', packagingId, fileName: image.file!.name,
+            },
+            file: image.file!,
+          });
+        }
+      });
+      for (const attachment of draft.attachments.filter((item) => item.file)) {
+        const taskId = nextTaskId('attachment');
+        batch.files.push({
+          meta: {
+            id: taskId, productId: savedProductId, productLabel, kind: 'attachment',
+            category: attachment.category, note: '', fileName: attachment.name || attachment.file!.name,
+          },
+          file: attachment.file!,
+        });
+      }
+
+      const uploadCount = batch.files.length;
+      await productUploadQueue.enqueue(batch);
+      if (uploadCount) {
+        // 立刻刷一次列表：新产品要马上出现在产品库里（带「图片上传中」标记），
+        // 不然用户会以为没存上；批次结束时队列还会再刷一次，把图片带回来。
+        await loadProducts();
+        notify(`${mode === 'draft' ? '草稿已保存' : '产品已保存'}，${uploadCount} 个文件正在后台上传，可以继续做别的`, 'success');
+      } else {
+        await loadProducts();
+        notify(mode === 'draft' ? '草稿已保存，可稍后继续编辑' : '产品已保存', 'success');
+      }
     } catch (error) {
       notify((error as { message?: string }).message ?? '产品保存失败', 'error');
       // 抛出错误让产品库页面保持编辑器打开，避免未保存的内容丢失。
@@ -692,12 +764,32 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
         <button type="button" className="button button-secondary" onClick={() => setBackupAlert(null)}>知道了</button>
       </span>
     </div>}
+    {uploadQueue.resumableCount > 0 && <div className="upload-notice" role="status">
+      <span>上次有 {uploadQueue.resumableCount} 个文件没传完（可能是刷新或关掉了浏览器）。</span>
+      <span className="upload-notice-actions">
+        <button type="button" className="button button-primary" onClick={() => productUploadQueue.resume()}>继续上传</button>
+        <button type="button" className="button button-secondary" onClick={() => void productUploadQueue.discardPending()}>丢弃</button>
+      </span>
+    </div>}
+    {uploadQueue.active && <div className="upload-progress" role="status">
+      <span className="upload-progress-bar" style={{ width: `${uploadQueue.total ? Math.round((uploadQueue.done / uploadQueue.total) * 100) : 0}%` }} />
+      <span className="upload-progress-text">正在后台上传文件 {uploadQueue.done}/{uploadQueue.total}…（可以继续做别的）</span>
+    </div>}
+    {uploadQueue.failures.length > 0 && <div className="upload-notice upload-notice-error" role="alert">
+      <span>
+        有 {uploadQueue.failures.length} 个文件没传成功：{uploadQueue.failures.slice(0, 3).map((failure) => `${failure.productLabel} / ${failure.fileName}`).join('、')}
+        {uploadQueue.failures.length > 3 ? ' 等' : ''}。产品资料已保存，缺的是这些图。
+      </span>
+      <span className="upload-notice-actions">
+        <button type="button" className="button button-secondary" onClick={() => void productUploadQueue.retryFailures()}>重试</button>
+      </span>
+    </div>}
     {active === 'finance' && <FinancePage onNotify={notify} initialOrderId={financeInitialOrderId} customers={customers} />}
     {active === 'orders' && <OrdersPage orders={orders} customers={customers} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} />}
     {active === 'stock' && <StockPage onNotify={notify} systemProducts={products} />}
     {active === 'quotations' && <QuotationPage onNotify={notify} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
     {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={async (orderId) => { await loadOrders(); setOrdersInitialOrderId(orderId); navigate('orders'); }} />}
-    {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} saving={productSaving} onExport={exportProductLibrary} onCatalog={exportProductCatalog} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onManagePresets={() => { setSettingsInitialSection('packaging'); navigate('settings'); }} onUpdateSaleStatus={(product, next) => { void toggleProductSaleStatus(product, next); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} />}
+    {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} saving={productSaving} onExport={exportProductLibrary} onCatalog={exportProductCatalog} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onManagePresets={() => { setSettingsInitialSection('packaging'); navigate('settings'); }} onUpdateSaleStatus={(product, next) => { void toggleProductSaleStatus(product, next); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} uploadingProductIds={uploadQueue.uploadingProductIds} />}
     {active === 'customer-products' && <CustomerProductsPage customers={customers} systemProducts={products} initialCustomerId={customerProductsInitialCustomerId ?? undefined} loading={loading} onCustomersChanged={loadCustomers} onNotify={notify} />}
     {active === 'shipping' && <ShippingPage orders={shippingOrders} initialOrder={shippingInitialOrder} initialOrders={shippingInitialOrders} onUpdateTracking={updateTracking} onSaveTracking={saveShippingTracking} onConfirm={confirmShipping} />}
     {active === 'settings' && <SettingsPage onBackup={backup} onRestore={restore} onProfileChanged={setCompanyProfile} currentUser={user} mobileTabs={mobileTabs} onMobileTabsChange={updateMobileTabs} initialSection={settingsInitialSection ?? undefined} />}
