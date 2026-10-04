@@ -234,6 +234,9 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
   // 后台上传队列：进度条、产品库标记、续传提示都读这一份状态。
   const uploadQueue = useSyncExternalStore(productUploadQueue.subscribe, productUploadQueue.getSnapshot);
   const uploadWasActive = useRef(false);
+  // 手机端这几个页面的搜索框固定在视口顶部，进度条要自己让开它（见 app.css 的 is-below-floating-search）
+  const floatingSearchPage = active === 'products' || active === 'orders' || active === 'finance';
+  const uploadBarClass = floatingSearchPage ? ' is-below-floating-search' : '';
 
   const loadProducts = useCallback(async (): Promise<boolean> => {
     try { setProducts(await getProducts()); return true; } catch (error) { notify((error as { message?: string }).message ?? '产品库加载失败', 'error'); return false; }
@@ -764,18 +767,18 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
         <button type="button" className="button button-secondary" onClick={() => setBackupAlert(null)}>知道了</button>
       </span>
     </div>}
-    {uploadQueue.resumableCount > 0 && <div className="upload-notice" role="status">
+    {uploadQueue.resumableCount > 0 && <div className={`upload-notice${uploadBarClass}`} role="status">
       <span>上次有 {uploadQueue.resumableCount} 个文件没传完（可能是刷新或关掉了浏览器）。</span>
       <span className="upload-notice-actions">
         <button type="button" className="button button-primary" onClick={() => productUploadQueue.resume()}>继续上传</button>
         <button type="button" className="button button-secondary" onClick={() => void productUploadQueue.discardPending()}>丢弃</button>
       </span>
     </div>}
-    {uploadQueue.active && <div className="upload-progress" role="status">
+    {uploadQueue.active && <div className={`upload-progress${uploadBarClass}`} role="status">
       <span className="upload-progress-bar" style={{ width: `${uploadQueue.total ? Math.round((uploadQueue.done / uploadQueue.total) * 100) : 0}%` }} />
       <span className="upload-progress-text">正在后台上传文件 {uploadQueue.done}/{uploadQueue.total}…（可以继续做别的）</span>
     </div>}
-    {uploadQueue.failures.length > 0 && <div className="upload-notice upload-notice-error" role="alert">
+    {uploadQueue.failures.length > 0 && <div className={`upload-notice upload-notice-error${uploadBarClass}`} role="alert">
       <span>
         有 {uploadQueue.failures.length} 个文件没传成功：{uploadQueue.failures.slice(0, 3).map((failure) => `${failure.productLabel} / ${failure.fileName}`).join('、')}
         {uploadQueue.failures.length > 3 ? ' 等' : ''}。产品资料已保存，缺的是这些图。
