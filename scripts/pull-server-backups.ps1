@@ -2,7 +2,7 @@
 #
 # 手动跑一次：
 #   powershell -ExecutionPolicy Bypass -File scripts\pull-server-backups.ps1
-# 注册成每天 03:00 自动跑：
+# 注册成每天 03:40 自动跑：
 #   powershell -ExecutionPolicy Bypass -File scripts\pull-server-backups.ps1 -Register
 #
 # 前提：能免密 SSH 到服务器（默认用 ~/.ssh/workbench_deploy_ed25519）。
@@ -14,7 +14,7 @@ param(
     [string]$KeyPath = "$env:USERPROFILE\.ssh\workbench_deploy_ed25519",
     [string]$RemoteDir = "workbench/data/backups",
     [string]$LocalDir = "D:\工作台服务器备份",
-    [int]$Keep = 7,
+    [int]$Keep = 2,
     [switch]$Register
 )
 
@@ -95,12 +95,24 @@ $b64 = ($listingB64 -replace '\s', '')
 $listingText = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64))
 $downloaded = 0
 
+# 只拉每类最新的 $Keep 份：比这更旧的远端文件本地反正会删，没必要先下载再删
+$names = @($listingText -split "`n" | ForEach-Object {
+    $parts = $_ -split ' ', 2
+    if ($parts.Length -ge 2) { $parts[1].Trim() }
+} | Where-Object { $_ })
+$eligible = @{}
+foreach ($ext in @('.zip', '.sqlite')) {
+    $class = @($names | Where-Object { $_.EndsWith($ext) } | Sort-Object -Descending)
+    for ($i = 0; $i -lt $class.Count -and $i -lt $Keep; $i++) { $eligible[$class[$i]] = $true }
+}
+
 foreach ($row in ($listingText -split "`n")) {
     if (-not $row.Trim()) { continue }
     $parts = $row -split ' ', 2
     if ($parts.Length -lt 2) { continue }
     $remoteSize = [int64]$parts[0]
     $name = $parts[1].Trim()
+    if (-not $eligible.ContainsKey($name)) { continue }
     $local = Join-Path $LocalDir $name
 
     # 本地已有同样字节数的文件，说明上一轮拉过且完整，跳过
