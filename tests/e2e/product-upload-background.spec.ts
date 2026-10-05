@@ -3,10 +3,13 @@ import { ensureAuthenticated, injectSession } from './helpers/auth';
 
 /**
  * 产品文件后台上传：点保存之后不等图片传完就能走开，图片在后台继续传并最终落到产品上。
+ * 产品图库里按张显示上传占位（本地预览 + 图下进度条），失败的单张标红、可单独重试。
  *
- * 这里刻意把图片上传拖慢（每张 1.2 秒），模拟手机原图上传的真实耗时 ——
- * 不拖慢的话图片几乎瞬间传完，"编辑器先关、图片后到"根本测不出来。
+ * 这里刻意把图片上传拖慢（每张 2.5 秒），模拟手机原图上传的真实耗时 ——
+ * 不拖慢的话图片几乎瞬间传完，"编辑器先关、占位在传"根本测不出来。
  */
+test.describe.configure({ timeout: 90_000 });
+
 let sessionCookie: string;
 
 test.beforeAll(async ({ request }) => {
@@ -39,11 +42,21 @@ async function pickImageFile(page: Page, name: string) {
   }, { name, bytes: Array.from(PNG_1X1) });
 }
 
+/** 按名字筛出唯一一个产品并打开它的「全部图片」。切过页面后搜索词会被清掉，每次都要重新筛。 */
+async function openProductImages(page: Page, name: string) {
+  await page.locator('.search-control input').fill(name);
+  await expect(page.locator('.product-gallery-card')).toHaveCount(1);
+  await page.locator('.product-gallery-card .product-gallery-image-button').first().click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.locator('.product-images-side')).toBeVisible();
+  return dialog;
+}
+
 test.describe('产品图片后台上传', () => {
-  test('点保存后编辑器立刻关闭，图片在后台传完并落到产品上', async ({ page }) => {
-    // 每张图上传耗时 1.2 秒：串行两张要 2.4 秒，足够暴露"是不是在等上传"。
+  test('点保存后编辑器立刻关闭，图库里逐张显示进度，传完自动变成正式图片', async ({ page }) => {
+    // 每张图上传耗时 2.5 秒：串行两张要 5 秒，够我们打开图库看到还在传的占位与进度条。
     await page.route('**/api/products/*/images*', async (route) => {
-      if (route.request().method() === 'POST') await new Promise((resolve) => setTimeout(resolve, 1200));
+      if (route.request().method() === 'POST') await new Promise((resolve) => setTimeout(resolve, 2500));
       await route.continue();
     });
 
@@ -64,7 +77,7 @@ test.describe('产品图片后台上传', () => {
     await page.getByRole('dialog').getByRole('button', { name: '保存产品' }).click();
     const productId = String((await (await createResponse).json()).data.id);
 
-    // 断言 1：不等图片传完，编辑器就先关了（上传还在跑，至少 2.4 秒）
+    // 断言 1：不等图片传完，编辑器就先关了（上传还在跑，至少 5 秒）
     await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 4000 });
 
     // 断言 2：顶部出现进度条，并给该产品打上「图片上传中」。
@@ -73,21 +86,74 @@ test.describe('产品图片后台上传', () => {
     await page.locator('.search-control input').fill(name);
     await expect(page.locator('.badge', { hasText: '图片上传中' }).first()).toBeVisible();
 
-    // 断言 3：切到别的页面，上传不受影响
+    // 断言 3：打开产品的「全部图片」，正在传的图逐张占位：本地预览 + 图下进度条。
+    const imagesDialog = await openProductImages(page, name);
+    await expect(imagesDialog.locator('.product-images-pending')).toBeVisible();
+    await expect.poll(() => imagesDialog.locator('.product-upload-tile').count()).toBeGreaterThan(0);
+    await expect(imagesDialog.locator('.upload-tile-bar').first()).toBeVisible();
+
+    // 关掉弹窗，切到别的页面，上传不受影响
+    await imagesDialog.locator('.modal-close').click();
     await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
     await expect(page.locator('.upload-progress')).toBeVisible();
     await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
 
-    // 断言 4：两张图最终都落到产品上
+    // 断言 4：弹窗开着不动，传完的图自动从占位变成正式图片
+    await openProductImages(page, name);
+    await expect(imagesDialog.locator('.product-images-pending')).toHaveCount(0, { timeout: 30_000 });
+    await expect(imagesDialog.locator('.product-image-thumbnail')).toHaveCount(2, { timeout: 15_000 });
+    await imagesDialog.locator('.modal-close').click();
+
+    // 断言 5：两张图最终都落到产品上
     await expect.poll(async () => {
       const response = await page.request.get(`/api/products?q=${encodeURIComponent(name)}`);
       const body = await response.json();
       const items = body.data.items ?? body.data.rows ?? [];
-      const product = items.find((item: { name?: string }) => item.name === name);
+      const product = items.find((item: { name?: string; id?: number }) => item.name === name || String(item.id) === productId);
       return product ? (product.images ?? []).length : -1;
     }, { timeout: 30_000, message: '两张图片最终都该上传完成' }).toBe(2);
 
-    // 断言 5：传完进度条自动消失
+    // 断言 6：传完进度条自动消失
     await expect(page.locator('.upload-progress')).toHaveCount(0, { timeout: 30_000 });
+  });
+
+  test('单张失败在图库里看得见原因，点「重试」只重跑这一张', async ({ page }) => {
+    let failUploads = true;
+    await page.route('**/api/products/*/images*', async (route) => {
+      if (route.request().method() === 'POST' && failUploads) {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ ok: false, error: { code: 'INJECTED', message: '测试：上传失败' } }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+    await page.locator('.products-page .page-toolbar .button-primary').click();
+    const name = `E2E上传失败重试${Date.now()}`;
+    await page.getByRole('dialog').getByRole('textbox', { name: '品名' }).fill(name);
+    await pickImageFile(page, 'IMG_FAIL.jpg');
+    const createResponse = page.waitForResponse((response) => (
+      new URL(response.url()).pathname === '/api/products' && response.request().method() === 'POST'
+    ));
+    await page.getByRole('dialog').getByRole('button', { name: '保存产品' }).click();
+    await (await createResponse).json();
+    await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 4000 });
+
+    // 自动重试两次（1s + 3s）后判失败：图库里的占位标红，并写明失败原因。
+    const imagesDialog = await openProductImages(page, name);
+    const failedTile = imagesDialog.locator('.product-upload-tile.is-failed');
+    await expect(failedTile).toBeVisible({ timeout: 20_000 });
+    await expect(failedTile.locator('.product-upload-tile-error')).toContainText('上传失败');
+
+    // 放通上传，点这一张的「重试」：传成功后占位换成正式图片。
+    failUploads = false;
+    await failedTile.getByRole('button', { name: '重试' }).click();
+    await expect(imagesDialog.locator('.product-images-pending')).toHaveCount(0, { timeout: 30_000 });
+    await expect(imagesDialog.locator('.product-image-thumbnail')).toHaveCount(1, { timeout: 15_000 });
   });
 });

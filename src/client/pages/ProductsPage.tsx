@@ -12,6 +12,8 @@ import { compareProductByName } from '../product-sort';
 import { PAGE_SIZES, clampPage, pageWindow, readStoredPageSize, rememberPageSize, slicePage, totalPages } from '../pagination';
 import ProductDetailModal from '../components/ProductDetailModal';
 import ProductImagesModal from '../components/ProductImagesModal';
+import PendingImageTile from '../components/PendingImageTile';
+import type { UploadFileSnapshot } from '../product-upload-queue';
 import ProductParametersModal from '../components/ProductParametersModal';
 import { cloneProductForNew } from '../product-copy';
 import { thumbUrl } from '../image-urls';
@@ -41,6 +43,10 @@ export interface ProductsPageProps {
   onManagePresets?: () => void;
   /** 有文件正在后台上传的产品 id：列表上给这些产品打「图片上传中」标记。 */
   uploadingProductIds?: string[];
+  /** 后台上传中文件的实时快照：图库给每个产品的待传图片画逐张进度。 */
+  uploadFiles?: UploadFileSnapshot[];
+  /** 单张上传失败后的重试入口。 */
+  onRetryUploadFile?: (taskId: string) => void;
 }
 
 const statusFilterLabels: Array<{ value: StatusFilter; label: string }> = [
@@ -77,7 +83,7 @@ function extraQuoteCount(product: ProductRecord) {
   return Math.max(0, (product.purchaseQuotes?.length ?? 0) - 1);
 }
 
-export default function ProductsPage({ products, loading, onSave, saving, onDelete, onUpdateSaleStatus, onExport, onCatalog, onDownloadTemplate, onImport, onRefresh, onManagePresets, uploadingProductIds }: ProductsPageProps) {
+export default function ProductsPage({ products, loading, onSave, saving, onDelete, onUpdateSaleStatus, onExport, onCatalog, onDownloadTemplate, onImport, onRefresh, onManagePresets, uploadingProductIds, uploadFiles, onRetryUploadFile }: ProductsPageProps) {
   const uploadingIds = new Set(uploadingProductIds ?? []);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -95,8 +101,12 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
   }, [editorOpen]);
   const [editing, setEditing] = useState<ProductRecord>();
   const [copying, setCopying] = useState(false);
-  const [detailProduct, setDetailProduct] = useState<ProductRecord>();
-  const [imagesProduct, setImagesProduct] = useState<ProductRecord>();
+  // 弹窗里的产品从最新列表里按 id 派生：后台上传每传完一张会刷新产品记录，
+  // 若把对象存成状态，弹窗会停在旧快照上，看不到新传上去的图片。
+  const [detailProductId, setDetailProductId] = useState<string>();
+  const [imagesProductId, setImagesProductId] = useState<string>();
+  const detailProduct = detailProductId ? products.find((item) => String(item.id) === detailProductId) : undefined;
+  const imagesProduct = imagesProductId ? products.find((item) => String(item.id) === imagesProductId) : undefined;
   const [copiedPackagingId, setCopiedPackagingId] = useState<string>();
   const [expandedPackagingId, setExpandedPackagingId] = useState<string>();
   const [parametersProduct, setParametersProduct] = useState<ProductRecord>();
@@ -116,6 +126,21 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
   // 供应商与采购价默认显示，工具条小眼睛用于临时收起（例如给人看屏幕时）；不记住上次的选择。
   const [showSensitive, setShowSensitive] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState(CATEGORY_ALL);
+  // 每个产品正在上传的图片，按入队顺序。已传完但正式图还没进记录的先继续显示，
+  // 靠 uploadedId 和产品图片对齐：正式图一到，占位就撤掉。
+  const pendingByProduct = useMemo(() => {
+    const map = new Map<string, UploadFileSnapshot[]>();
+    for (const item of uploadFiles ?? []) {
+      if (item.kind !== 'image') continue;
+      const list = map.get(item.productId);
+      if (list) list.push(item);
+      else map.set(item.productId, [item]);
+    }
+    return map;
+  }, [uploadFiles]);
+  const pendingImagesFor = (product: ProductRecord) => (pendingByProduct.get(String(product.id)) ?? []).filter(
+    (item) => !(item.status === 'done' && item.uploadedId !== undefined && product.images.some((image) => String(image.id) === String(item.uploadedId))),
+  );
   // 手机端搜索框悬浮在顶部：连续下滑收起，回滑展开；输入时锁住展开避免打字途中消失。
   const searchHidden = useHideOnScroll(narrow && !searchFocused);
   // 分类候选直接来自现有产品，出现次数多的排前面；空分类归进「未分类」。
@@ -218,8 +243,8 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
     if (copied) window.setTimeout(() => setCopiedPackagingId((current) => current === item.id ? undefined : current), 1600);
   };
 
-  const closeDetail = () => setDetailProduct(undefined);
-  const closeImages = () => setImagesProduct(undefined);
+  const closeDetail = () => setDetailProductId(undefined);
+  const closeImages = () => setImagesProductId(undefined);
 
   return <div className="page-shell products-page">
     <div className="page-toolbar">
@@ -252,12 +277,16 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
     </div>
     <section className="table-panel">
       {view === 'gallery' && <div className="products-gallery">
-        {visible.map((product) => <div className="product-gallery-card" key={product.id}>
+        {visible.map((product) => {
+          const pending = pendingImagesFor(product);
+          return <div className="product-gallery-card" key={product.id}>
           {/* 图片看图片、名称和 SKU 看详情：两件事分开，大图模式下想直接看图就不用先开弹窗再点图片。 */}
           {product.images.length
-            ? <button className="product-gallery-image-button" type="button" onClick={() => setImagesProduct(product)} title="查看全部图片"><span className="product-gallery-image"><img src={thumbUrl(product.images[0].url, 480)} alt={product.images[0].name} loading="lazy" decoding="async" /></span></button>
-            : <span className="product-gallery-image"><span className="product-gallery-placeholder"><ImageIcon size={22} /><span>无图片</span></span></span>}
-          <button className="product-gallery-open" type="button" onClick={() => setDetailProduct(product)} title="查看产品详情">
+            ? <button className="product-gallery-image-button" type="button" onClick={() => setImagesProductId(String(product.id))} title="查看全部图片"><span className="product-gallery-image"><img src={thumbUrl(product.images[0].url, 480)} alt={product.images[0].name} loading="lazy" decoding="async" /></span></button>
+            : pending.length
+              ? <button className="product-gallery-image-button" type="button" onClick={() => setImagesProductId(String(product.id))} title="图片正在上传，点开看逐张进度"><span className="product-gallery-image"><PendingImageTile item={pending[0]} compact /></span></button>
+              : <span className="product-gallery-image"><span className="product-gallery-placeholder"><ImageIcon size={22} /><span>无图片</span></span></span>}
+          <button className="product-gallery-open" type="button" onClick={() => setDetailProductId(String(product.id))} title="查看产品详情">
             <span className="product-gallery-name">{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}{statusBadge(product)}</span>
             {/* 「图片上传中」不能放进 .product-gallery-name：那是两行截断 + overflow:hidden 的容器，
                 名字一长就把标记裁掉，只剩一条边。放在它外面自成一行才看得见。 */}
@@ -272,12 +301,13 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
             <button className="icon-button" type="button" title="复制产品为新建产品" onClick={() => openCopy(product)}><Copy size={14} /></button>
             
           </div>
-        </div>)}
+          </div>;
+        })}
       </div>}
       {view === 'list' && <div className="table-scroll products-table-desktop"><table className="data-table products-data-table"><thead><tr>{['SKU', '图片', '品名', '颜色', '插脚', '参数', '包装信息', '备注', ...(showSensitive ? ['供应商', '价格'] : []), '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
         <tbody>{visible.map((product) => <tr key={product.id}>
-          <td className="strong-cell"><button className="product-sku-button" type="button" onClick={() => setDetailProduct(product)} title="查看产品详情">{product.sku || '查看详情'}</button></td>
-          <td>{product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProduct(product)} title="查看全部图片"><span className="product-image-thumb"><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}</td>
+          <td className="strong-cell"><button className="product-sku-button" type="button" onClick={() => setDetailProductId(String(product.id))} title="查看产品详情">{product.sku || '查看详情'}</button></td>
+          <td>{product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProductId(String(product.id))} title="查看全部图片"><span className="product-image-thumb"><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}</td>
           <td className="product-name-cell"><span className="product-name-text">{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}</span>{statusBadge(product)}{uploadBadge(product, uploadingIds)}</td><td>{product.colors.join('、') || '—'}</td><td>{product.batteryPlugs.join('、') || '—'}</td>
           <td className="product-parameters-cell">{product.parameters?.trim() ? <button className="product-parameters-trigger" type="button" onClick={() => setParametersProduct(product)} title="查看完整参数"><span>查看详情</span><Copy size={13} /></button> : <span>—</span>}</td>
           <td className="product-packaging-cell"><div className="product-packaging-lines">{product.packaging.length ? <>
@@ -297,10 +327,10 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
       {view === 'list' && <div className="products-card-list">
         {visible.map((product) => <article key={product.id} className="product-card">
           <div className="product-card-head">
-            {product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProduct(product)} title="查看全部图片"><span className="product-image-thumb"><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}
+            {product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProductId(String(product.id))} title="查看全部图片"><span className="product-image-thumb"><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}
             <div className="product-card-title">
               <strong>{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}{statusBadge(product)}{uploadBadge(product, uploadingIds)}</strong>
-              <button className="product-sku-button" type="button" onClick={() => setDetailProduct(product)} title="查看产品详情">{product.sku || '查看详情'}</button>
+              <button className="product-sku-button" type="button" onClick={() => setDetailProductId(String(product.id))} title="查看产品详情">{product.sku || '查看详情'}</button>
             </div>
           </div>
           <div className="product-card-grid">
@@ -360,7 +390,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
       </div>
     </Modal>
     <ProductParametersModal open={Boolean(parametersProduct)} productName={parametersProduct?.name} parameters={parametersProduct?.parameters} onClose={() => setParametersProduct(undefined)} />
-    <ProductDetailModal open={Boolean(detailProduct)} product={detailProduct} showSensitive={showSensitive} onClose={closeDetail} onOpenImages={(product) => { closeDetail(); setImagesProduct(product); }} onUpdateSaleStatus={onUpdateSaleStatus} onDelete={onDelete} />
-    <ProductImagesModal open={Boolean(imagesProduct)} productName={imagesProduct?.name} images={imagesProduct?.images ?? []} onClose={closeImages} />
+    <ProductDetailModal open={Boolean(detailProduct)} product={detailProduct} showSensitive={showSensitive} pendingImages={detailProduct ? pendingImagesFor(detailProduct) : []} onClose={closeDetail} onOpenImages={(product) => { closeDetail(); setImagesProductId(String(product.id)); }} onUpdateSaleStatus={onUpdateSaleStatus} onDelete={onDelete} />
+    <ProductImagesModal open={Boolean(imagesProduct)} productName={imagesProduct?.name} images={imagesProduct?.images ?? []} pendingImages={imagesProduct ? pendingImagesFor(imagesProduct) : []} onRetryUploadFile={onRetryUploadFile} onClose={closeImages} />
   </div>;
 }

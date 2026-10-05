@@ -1,7 +1,9 @@
-import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Copy, Download, ExternalLink, Folder, Hand, Image as ImageIcon, X } from 'lucide-react';
+import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Copy, Download, ExternalLink, Folder, Hand, Image as ImageIcon, Upload, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Modal from './Modal';
+import PendingImageTile from './PendingImageTile';
+import type { UploadFileSnapshot } from '../product-upload-queue';
 import { canSaveImageNatively, registerImageSavedHandler, saveImageNatively } from '../app-bridge';
 import { thumbUrl } from '../image-urls';
 import { useIsNarrow } from '../use-is-narrow';
@@ -16,6 +18,10 @@ export interface ProductImagesModalProps {
   open: boolean;
   productName?: string;
   images: ImageAttachment[];
+  /** 还在后台上传的图（本地预览 + 逐张进度）；传完会被正式图片顶掉。 */
+  pendingImages?: UploadFileSnapshot[];
+  /** 单张上传失败时的重试入口（不走整体重试）。 */
+  onRetryUploadFile?: (taskId: string) => void;
   onClose: () => void;
 }
 
@@ -99,7 +105,7 @@ async function toClipboardBlob(blob: Blob) {
   }
 }
 
-export default function ProductImagesModal({ open, productName = '产品', images, onClose }: ProductImagesModalProps) {
+export default function ProductImagesModal({ open, productName = '产品', images, pendingImages = [], onRetryUploadFile, onClose }: ProductImagesModalProps) {
   const [previewId, setPreviewId] = useState(images[0]?.id ?? '');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(images[0] ? [images[0].id] : []));
   const [collapsedFolders, setCollapsedFolders] = useState<string[]>([]);
@@ -306,13 +312,14 @@ export default function ProductImagesModal({ open, productName = '产品', image
 
   return (
     <Modal open={open} title={`${productName} · 全部图片`} onClose={onClose} width={820}>
-      {!images.length ? (
+      {!images.length && !pendingImages.length ? (
         <div className="product-images-empty"><ImageIcon size={28} /><span>暂无产品图片</span></div>
       ) : (
         <div className="product-images-content">
           <div className="product-images-preview-wrap">
             <div className="product-images-preview">
               {selectedImage && <img src={selectedImage.url} alt={selectedImage.name} draggable={false} />}
+              {!selectedImage && pendingImages.length > 0 && <div className="product-images-preview-uploading"><Upload size={20} /><span>图片正在上传，完成后会显示在这里</span></div>}
               <button className="product-images-preview-nav product-images-preview-nav-prev" type="button" aria-label="上一张图片" title="上一张图片" disabled={previewIndex <= 0} onClick={() => goPreview(-1)}><ChevronLeft size={22} /></button>
               <button className="product-images-preview-nav product-images-preview-nav-next" type="button" aria-label="下一张图片" title="下一张图片" disabled={previewIndex < 0 || previewIndex >= visibleImages.length - 1} onClick={() => goPreview(1)}><ChevronRight size={22} /></button>
             </div>
@@ -323,13 +330,23 @@ export default function ProductImagesModal({ open, productName = '产品', image
             </div>}
           </div>
           <div className="product-images-side">
-            <div className="product-images-selection-toolbar">
+            {!!pendingImages.length && <section className="product-images-pending" aria-label="正在上传的图片">
+              <div className={`product-images-pending-header${pendingImages.some((item) => item.status === 'failed') && !pendingImages.some((item) => item.status === 'queued' || item.status === 'uploading') ? ' is-failed' : ''}`}>
+                <Upload size={13} />
+                <span>{pendingImages.some((item) => item.status === 'queued' || item.status === 'uploading') ? '正在上传' : '上传失败'}</span>
+                <span className="image-folder-count">{pendingImages.length} 张</span>
+              </div>
+              <div className="product-images-thumbnails product-images-pending-thumbnails">
+                {pendingImages.map((item) => <PendingImageTile key={item.id} item={item} onRetry={onRetryUploadFile} />)}
+              </div>
+            </section>}
+            {!!visibleImages.length && <div className="product-images-selection-toolbar">
               <span>已选 {selectedImages.length} / {visibleImages.length}</span>
               <button className="product-images-select-all" type="button" onClick={toggleAll}>
                 {allSelected ? <CheckCheck size={13} /> : <Check size={13} />}
                 {allSelected ? '取消全选' : '全选'}
               </button>
-            </div>
+            </div>}
             <div className="image-folder-list" aria-label="产品图片列表">
               {PRODUCT_IMAGE_CATEGORY_SEQUENCE
                 .filter((category) => categoryCounts.has(category))
@@ -401,10 +418,10 @@ export default function ProductImagesModal({ open, productName = '产品', image
               </>
             )}
             {copyMessage && <div className="product-images-copy-message" role="status">{copyMessage}</div>}
-            <div className="product-images-help">
+            {!!visibleImages.length && <div className="product-images-help">
               点击缩略图可预览并切换选择状态，
               {touchDevice ? (nativeSave ? '点「保存到相册」即可存进手机相册。' : '长按大图可保存到相册。') : '也可以右键保存图片。'}
-            </div>
+            </div>}
           </div>
         </div>
       )}

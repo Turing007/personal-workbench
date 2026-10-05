@@ -288,6 +288,50 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   });
 }
 
+/**
+ * XHR 版上传：只有 XMLHttpRequest 能在上传过程中拿到字节进度（fetch 没有），
+ * 产品图库的逐张进度条靠它。错误映射与 request() 保持一致，超时同样按 UPLOAD_TIMEOUT_MS 处理。
+ */
+function xhrUpload<T>(path: string, form: FormData, onProgress?: (percent: number | undefined) => void): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', path);
+    xhr.timeout = UPLOAD_TIMEOUT_MS;
+    if (onProgress) {
+      xhr.upload.onprogress = (event) => {
+        // 总大小未知时给 undefined：界面画流动条，不假装 0%。
+        onProgress(event.lengthComputable && event.total > 0 ? Math.round((event.loaded / event.total) * 100) : undefined);
+      };
+    }
+    xhr.onload = () => {
+      let payload: unknown = null;
+      try { payload = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch { payload = xhr.responseText; }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const error = toError(payload, xhr.statusText || '请求失败', xhr.status);
+        if (error.code === 'AUTH_REQUIRED') notifyAuthRequired();
+        reject(error);
+        return;
+      }
+      if (payload && typeof payload === 'object' && 'ok' in payload) {
+        const envelope = payload as { ok?: boolean; data?: T };
+        if (envelope.ok === false) {
+          const error = toError(payload, '请求失败', xhr.status);
+          if (error.code === 'AUTH_REQUIRED') notifyAuthRequired();
+          reject(error);
+          return;
+        }
+        resolve(envelope.data as T);
+        return;
+      }
+      resolve(payload as T);
+    };
+    xhr.onerror = () => reject({ code: 'NETWORK_ERROR', message: '网络异常，上传失败，请重试' } satisfies ApiErrorShape);
+    xhr.ontimeout = () => reject({ code: 'NETWORK_TIMEOUT', message: NETWORK_TIMEOUT_MESSAGE } satisfies ApiErrorShape);
+    xhr.onabort = () => reject({ code: 'NETWORK_ABORTED', message: '上传已取消' } satisfies ApiErrorShape);
+    xhr.send(form);
+  });
+}
+
 export async function requestBlob(path: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Blob> {
   return timedFetch(path, init, timeoutMs, async (response) => {
     if (!response.ok) {
@@ -481,6 +525,10 @@ export async function getProducts(q = '') {
     if (items.length < PRODUCTS_FETCH_SIZE || collected.length >= (result.total ?? collected.length)) break;
   }
   return collected.map(mapProductRecord);
+}
+/** 单品刷新：后台上传每传完一张就拉一次这个产品，比整表刷新轻得多。 */
+export function getProduct(id: string) {
+  return request<ProductApiRecord>(`/api/products/${id}`).then(mapProductRecord);
 }
 export function exportProducts() { return requestBlob('/api/products/export'); }
 export function downloadProductImportTemplate() { return requestBlob('/api/products/import-template'); }
@@ -694,14 +742,14 @@ export function updateProductAttachmentCategory(productId: string, attachmentId:
 export function deleteProductAttachment(productId: string, attachmentId: string) {
   return request<null>(`/api/products/${productId}/attachments/${attachmentId}`, { method: 'DELETE' });
 }
-export async function uploadProductImage(id: string, file: File, category = '', note = '') {
+export async function uploadProductImage(id: string, file: File, category = '', note = '', onProgress?: (percent: number | undefined) => void) {
   const form = new FormData();
   form.append('file', file);
   const search = new URLSearchParams();
   if (category) search.set('category', category);
   if (note) search.set('note', note);
   const query = search.toString();
-  return request<ProductImageApiRecord>(`/api/products/${id}/images${query ? `?${query}` : ''}`, { method: 'POST', body: form });
+  return xhrUpload<ProductImageApiRecord>(`/api/products/${id}/images${query ? `?${query}` : ''}`, form, onProgress);
 }
 export function updateProductImage(productId: string, imageId: string, patch: { category?: string; note?: string }) {
   return request<ProductImageApiRecord>(`/api/products/${productId}/images/${imageId}`, { method: 'PATCH', body: JSON.stringify(patch) });

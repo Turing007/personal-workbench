@@ -2,8 +2,10 @@ import { Check, Copy, Download, ExternalLink, FileText, Image, Package } from 'l
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import Modal from './Modal';
+import PendingImageTile from './PendingImageTile';
 import ProductImagesModal from './ProductImagesModal';
 import type { ProductRecord } from './ProductEditor';
+import type { UploadFileSnapshot } from '../product-upload-queue';
 import { packagingDisplay } from '../packaging-display';
 import { groupPurchaseQuotesBySupplier, purchaseQuoteLabel } from '../../shared/product-purchase-quotes';
 import { copyText } from '../copy-text';
@@ -20,6 +22,8 @@ export interface ProductDetailModalProps {
   product?: ProductRecord;
   /** 供应商与采购价默认隐藏，跟随产品库工具条上的小眼睛按钮。 */
   showSensitive?: boolean;
+  /** 还在后台上传的图：详情里先给预览和进度，点开看全部图片时逐张可见。 */
+  pendingImages?: UploadFileSnapshot[];
   onClose: () => void;
   onOpenImages: (product: ProductRecord) => void;
   /** 停售 / 恢复在售；未传则不显示按钮。 */
@@ -51,7 +55,7 @@ function DetailItem({ label, children, fullWidth = false }: { label: string; chi
   );
 }
 
-export default function ProductDetailModal({ open, product, showSensitive = false, onClose, onOpenImages, onUpdateSaleStatus, onDelete }: ProductDetailModalProps) {
+export default function ProductDetailModal({ open, product, showSensitive = false, pendingImages = [], onClose, onOpenImages, onUpdateSaleStatus, onDelete }: ProductDetailModalProps) {
   const [copied, setCopied] = useState(false);
   const [copiedPackagingId, setCopiedPackagingId] = useState<string>();
   const [packagingImages, setPackagingImages] = useState<{ name: string; images: ProductRecord['packaging'][number]['images'] }>();
@@ -60,6 +64,7 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
   const parameters = product.parameters ?? '';
   const purchaseQuotes = product.purchaseQuotes ?? [];
   const image = product.images[0];
+  const pendingFailedCount = pendingImages.filter((item) => item.status === 'failed').length;
   // 按分类汇总图片数量，方便一眼看出这个产品有没有尺寸图/客拍图可复用。
   const imageCategoryCounts = product.images.reduce((counts, item) => {
     const category = normalizeProductImageCategory(item.category);
@@ -122,11 +127,13 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
           <DetailItem label="配件" fullWidth>{product.accessories || '—'}</DetailItem>
           <DetailItem label="备注" fullWidth>{product.remark || '—'}</DetailItem>
           <DetailItem label="图片" fullWidth>
-            {image ? (
+            {image || pendingImages.length ? (
               <div className="product-detail-images">
                 <button className="product-detail-images-button" type="button" onClick={() => onOpenImages(product)}>
-                  <img src={thumbUrl(image.url, 240)} alt={image.name} loading="lazy" decoding="async" />
-                  <span><Image size={13} />查看全部 {product.images.length} 张图片</span>
+                  {image
+                    ? <img src={thumbUrl(image.url, 240)} alt={image.name} loading="lazy" decoding="async" />
+                    : <PendingImageTile item={pendingImages[0]} compact />}
+                  <span><Image size={13} />查看全部 {product.images.length + pendingImages.length} 张图片{pendingImages.length ? `（${pendingImages.length} 张上传中${pendingFailedCount ? `，${pendingFailedCount} 张失败` : ''}）` : ''}</span>
                 </button>
                 {imageCategorySummary.length > 1 && <span className="product-detail-images-summary">{imageCategorySummary.join(' · ')}</span>}
               </div>

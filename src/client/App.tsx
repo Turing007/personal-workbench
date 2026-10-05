@@ -38,6 +38,7 @@ import {
   getNextOrderNumber,
   getOrders,
   getProducts,
+  getProduct,
   mergeLabels,
   mapProductRecord,
   recordPrintHistory,
@@ -242,11 +243,32 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     try { setProducts(await getProducts()); return true; } catch (error) { notify((error as { message?: string }).message ?? '产品库加载失败', 'error'); return false; }
   }, [notify]);
 
+  // 后台上传每传完一张，就单独刷新那个产品（GET /api/products/:id，比整表刷新轻），
+  // 让正式图片尽早顶掉图库里的上传占位；同一产品并发触发时合并成一次。
+  const productRefreshState = useRef({ inFlight: new Set<string>(), dirty: new Set<string>() });
+  const refreshProductById = useCallback(async (productId: string): Promise<void> => {
+    const state = productRefreshState.current;
+    if (state.inFlight.has(productId)) { state.dirty.add(productId); return; }
+    state.inFlight.add(productId);
+    try {
+      do {
+        state.dirty.delete(productId);
+        const fresh = await getProduct(productId);
+        setProducts((current) => current.map((item) => (String(item.id) === productId ? fresh : item)));
+      } while (state.dirty.has(productId));
+    } catch {
+      // 单品刷新失败不打断上传；批次结束时还会整表刷新一次兜底。
+    } finally {
+      state.inFlight.delete(productId);
+    }
+  }, []);
+
   // 一个产品的文件传完（或最终失败）就刷新产品库，让图片立刻出现在列表里。
   useEffect(() => {
     productUploadQueue.setBatchSettledHandler(() => { void loadProducts(); });
+    productUploadQueue.setFileUploadedHandler((productId) => { void refreshProductById(productId); });
     void productUploadQueue.initialize();
-  }, [loadProducts]);
+  }, [loadProducts, refreshProductById]);
 
   // 整轮上传结束时给一次结果提示；失败项必须说出来，不能让"已保存"掩盖"图少了"。
   useEffect(() => {
@@ -792,7 +814,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     {active === 'stock' && <StockPage onNotify={notify} systemProducts={products} />}
     {active === 'quotations' && <QuotationPage onNotify={notify} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
     {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={async (orderId) => { await loadOrders(); setOrdersInitialOrderId(orderId); navigate('orders'); }} />}
-    {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} saving={productSaving} onExport={exportProductLibrary} onCatalog={exportProductCatalog} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onManagePresets={() => { setSettingsInitialSection('packaging'); navigate('settings'); }} onUpdateSaleStatus={(product, next) => { void toggleProductSaleStatus(product, next); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} uploadingProductIds={uploadQueue.uploadingProductIds} />}
+    {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} saving={productSaving} onExport={exportProductLibrary} onCatalog={exportProductCatalog} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onManagePresets={() => { setSettingsInitialSection('packaging'); navigate('settings'); }} onUpdateSaleStatus={(product, next) => { void toggleProductSaleStatus(product, next); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} uploadingProductIds={uploadQueue.uploadingProductIds} uploadFiles={uploadQueue.files} onRetryUploadFile={(taskId) => productUploadQueue.retryFailure(taskId)} />}
     {active === 'customer-products' && <CustomerProductsPage customers={customers} systemProducts={products} initialCustomerId={customerProductsInitialCustomerId ?? undefined} loading={loading} onCustomersChanged={loadCustomers} onNotify={notify} />}
     {active === 'shipping' && <ShippingPage orders={shippingOrders} initialOrder={shippingInitialOrder} initialOrders={shippingInitialOrders} onUpdateTracking={updateTracking} onSaveTracking={saveShippingTracking} onConfirm={confirmShipping} />}
     {active === 'settings' && <SettingsPage onBackup={backup} onRestore={restore} onProfileChanged={setCompanyProfile} currentUser={user} mobileTabs={mobileTabs} onMobileTabsChange={updateMobileTabs} initialSection={settingsInitialSection ?? undefined} />}
