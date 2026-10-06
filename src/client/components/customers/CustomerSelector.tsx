@@ -1,4 +1,4 @@
-import { ChevronDown, Plus, UserRound } from 'lucide-react';
+import { ChevronDown, Plus, UserRound, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Customer, CustomerSaveInput } from '../../../shared/customers';
 import CustomerEditorModal from './CustomerEditorModal';
@@ -57,6 +57,8 @@ export default function CustomerSelector({ value, customers, onChange, onCreateC
     }
   };
 
+  // 显示文本：打开下拉时是搜索词，否则是已选客户名；一键清空按同一份文本判断有没有内容。
+  const shownText = open ? query : selected?.name ?? query;
   return <>
     <label style={{ display: 'grid', gap: 5, position: 'relative', color: '#64748b', fontSize: 12 }}>
       {label}
@@ -71,8 +73,9 @@ export default function CustomerSelector({ value, customers, onChange, onCreateC
           onBlur={() => window.setTimeout(() => setOpen(false), 140)}
           placeholder="搜索并选择客户"
           autoComplete="off"
-          style={inputStyle}
+          style={shownText.trim() ? { ...inputStyle, paddingRight: 48 } : inputStyle}
         />
+        {!!shownText.trim() && !disabled && <button type="button" aria-label="清空客户" title="清空" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(''); onChange(null); setOpen(true); }} style={{ position: 'absolute', right: 26, top: '50%', transform: 'translateY(-50%)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, border: 0, borderRadius: '50%', padding: 0, color: '#94a3b8', background: 'transparent', cursor: 'pointer' }}><X size={13} /></button>}
         <ChevronDown size={14} style={{ position: 'absolute', right: 9, top: 9, color: '#94a3b8', pointerEvents: 'none' }} />
       </span>
       {open && <div role="listbox" style={{ position: 'absolute', zIndex: 14, top: 56, left: 0, right: 0, maxHeight: 270, overflowY: 'auto', border: '1px solid #dbe3ea', borderRadius: 6, background: '#fff', boxShadow: '0 12px 28px rgba(15,23,42,.14)' }}>

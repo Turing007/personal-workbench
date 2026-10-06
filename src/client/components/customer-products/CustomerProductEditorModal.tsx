@@ -1,4 +1,4 @@
-import { Download, ExternalLink, FilePlus2, ImagePlus, Plus, Save, Trash2 } from 'lucide-react';
+import { Download, ExternalLink, FilePlus2, ImagePlus, Plus, Save, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import type { CustomerProduct, CustomerProductAttachmentCategory, CustomerProductBatchItemInput, CustomerProductBatchSaveInput, CustomerProductPackaging, CustomerProductSaveInput } from '../../../shared/customers';
@@ -317,13 +317,14 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
             onChange={(event) => { setSystemProductQuery(event.target.value); setSystemProductId(null); setSystemProductPickerOpen(true); }}
             onFocus={() => setSystemProductPickerOpen(true)}
             onKeyDown={(event) => { if (event.key === 'Escape') setSystemProductPickerOpen(false); }}
-            style={{ ...inputStyle, paddingRight: systemProductId == null ? 9 : 72 }}
+            style={{ ...inputStyle, paddingRight: systemProductId == null ? (systemProductQuery ? 30 : 9) : 72 }}
             placeholder="输入品名、规格、SKU或产品编号搜索"
             aria-label="搜索系统产品"
             role="combobox"
             aria-expanded={systemProductPickerOpen}
             aria-controls="customer-product-system-picker"
           />
+          {systemProductId == null && !!systemProductQuery && <button type="button" aria-label="清空搜索" title="清空" onMouseDown={(event) => event.preventDefault()} onClick={() => setSystemProductQuery('')} style={{ position: 'absolute', right: 5, top: '50%', transform: 'translateY(-50%)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, border: 0, borderRadius: '50%', padding: 0, color: '#94a3b8', background: 'transparent', cursor: 'pointer' }}><X size={13} /></button>}
           {systemProductId != null && <button type="button" onClick={() => chooseSystemProduct('')} disabled={busy} title="改为临时添加" style={{ position: 'absolute', right: 6, top: 5, height: 24, border: 0, color: '#64748b', background: 'transparent', cursor: 'pointer', fontSize: 11 }}>清除</button>}
           {systemProductPickerOpen && <div id="customer-product-system-picker" role="listbox" style={{ position: 'absolute', zIndex: 20, top: 'calc(100% + 4px)', left: 0, right: 0, maxHeight: 220, overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: 5, background: '#fff', boxShadow: '0 8px 20px rgba(15, 23, 42, .12)' }}>
             <button type="button" role="option" aria-selected={systemProductId == null} onClick={() => chooseSystemProduct('')} disabled={busy} style={{ display: 'block', width: '100%', padding: '9px 10px', border: 0, borderBottom: '1px solid #edf0f2', color: '#64748b', background: '#fff', cursor: 'pointer', textAlign: 'left', fontSize: 12 }}>临时添加，不关联系统产品</button>

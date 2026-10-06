@@ -156,7 +156,7 @@ select {
   height: 38px;
   border: 1px solid rgba(23, 32, 47, .13);
   border-radius: var(--radius-control);
-  padding: 0 12px 0 32px;
+  padding: 0 36px 0 32px;
   color: var(--color-text);
   background: var(--color-surface);
   font-size: 13px;
@@ -174,6 +174,37 @@ select {
 
 .search-control input::placeholder {
   color: var(--color-text-muted);
+}
+
+/* 搜索框一键清空：有内容才出现的小叉，点一下清空；不抢焦点，手机键盘不收起。 */
+.search-clear {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--color-text-muted);
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.search-clear:hover {
+  color: var(--color-text);
+  background: var(--color-surface-subtle);
+}
+
+/* 覆盖通用规则：.search-control svg 的绝对定位是给放大镜的，小叉里的图标要回到按钮内。 */
+.search-control .search-clear svg {
+  position: static;
+  left: auto;
+  pointer-events: auto;
 }
 
 .button {

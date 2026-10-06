@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Download, Edit3, Eye, EyeOff, FileDown, Image as ImageIcon, Images, List, Plus, RefreshCw, Search, Upload } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Download, Edit3, Eye, EyeOff, FileDown, Image as ImageIcon, Images, List, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getPackagingPresets } from '../api';
 import type { PackagingPreset } from '../../shared/packaging-presets';
@@ -13,6 +13,7 @@ import { PAGE_SIZES, clampPage, pageWindow, readStoredPageSize, rememberPageSize
 import ProductDetailModal from '../components/ProductDetailModal';
 import ProductImagesModal from '../components/ProductImagesModal';
 import PendingImageTile from '../components/PendingImageTile';
+import SearchInput from '../components/SearchInput';
 import type { UploadFileSnapshot } from '../product-upload-queue';
 import ProductParametersModal from '../components/ProductParametersModal';
 import { cloneProductForNew } from '../product-copy';
@@ -248,7 +249,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
 
   return <div className="page-shell products-page">
     <div className="page-toolbar">
-      <div className={`search-control${searchHidden ? ' is-scroll-hidden' : ''}`}><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="按品名、SKU、供应商、分类筛选" /></div>
+      <SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="按品名、SKU、供应商、分类筛选" />
       <select aria-label="产品状态筛选" className="toolbar-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}>
         {statusFilterLabels.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>

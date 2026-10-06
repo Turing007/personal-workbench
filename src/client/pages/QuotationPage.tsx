@@ -6,7 +6,6 @@ import {
   PackageSearch,
   Plus,
   RefreshCw,
-  Search,
   Send,
   Trash2,
   XCircle,
@@ -17,6 +16,7 @@ import type { Customer, CustomerSaveInput } from '../../shared/customers';
 import * as api from '../api';
 import { quotationDetailToDraft, quotationDraftToFormData, type QuotationDraft } from '../documents/document-drafts';
 import Modal from '../components/Modal';
+import SearchInput from '../components/SearchInput';
 import QuotationForm, { createEmptyQuotationDraft } from '../components/quotations/QuotationForm';
 import QuotationProductDetailModal from '../components/quotations/QuotationProductDetailModal';
 import QuotationSyncModal from '../components/quotations/QuotationSyncModal';
@@ -207,7 +207,7 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
 
   return <div className="page-shell quotation-page">
     <div className="page-toolbar quotation-toolbar">
-      <div className={`search-control${searchHidden ? ' is-scroll-hidden' : ''}`}><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索单号、客户、联系人、电话" /></div>
+      <SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索单号、客户、联系人、电话" />
       <div className="segmented">{statusOptions.map((option) => <button key={option.value} className={`segmented-item${filter === option.value ? ' is-active' : ''}`} type="button" title={`筛选${option.label}报价单`} onClick={() => setFilter(option.value)}>{option.label}</button>)}</div>
       <span className="toolbar-count">{visibleRows.length} 份</span>
       <button className="icon-button" type="button" title="刷新报价列表" disabled={loading} onClick={() => void load()}><RefreshCw size={15} /></button>

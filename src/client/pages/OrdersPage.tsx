@@ -1,8 +1,9 @@
-import { Package, PackageCheck, ListFilter, Plus, Printer, Search, Trash2, Truck } from 'lucide-react';
+import { Package, PackageCheck, ListFilter, Plus, Printer, Trash2, Truck } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { autoPack } from '../../shared/packing';
 import LabelEditorModal, { type CartonLabel } from '../components/LabelEditorModal';
 import Modal from '../components/Modal';
+import SearchInput from '../components/SearchInput';
 import OrderDetailModal from '../components/OrderDetailModal';
 import OrderItemsTable from '../components/OrderItemsTable';
 import OrderForm, { type CustomerProduct, type OrderDraft, type OrderStatus } from '../components/OrderForm';
@@ -270,7 +271,7 @@ export default function OrdersPage({ orders, customers, statusCounts, labelsByOr
     <section className="table-panel">
       <div className="page-toolbar table-toolbar orders-table-toolbar">
         <button type="button" className="button button-primary" onClick={() => setCreating(true)}><Plus size={15} />新建订单</button>
-        <div className={`search-control${searchHidden ? ' is-scroll-hidden' : ''}`}><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索订单号、客户、收件人、品名、SKU、规格" /></div>
+        <SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索订单号、客户、收件人、品名、SKU、规格" />
         <span className="toolbar-count"><ListFilter size={14} style={{ verticalAlign: -2, marginRight: 3 }} />{visibleOrders.length} 条订单</span>
         {selectedOrders.length > 0 && <><span className="badge badge-accent">已选 {selectedOrders.length} 条</span><button type="button" className="button button-secondary button-sm" title="将所选待备货订单标记为已备货" onClick={() => onBatchAdvance?.(selectedOrders, 'stock')}><PackageCheck size={14} />一键备货</button><button type="button" className="button button-secondary button-sm" title="将所选已备货/待打包订单完成打包，推进到待发货" onClick={() => onBatchAdvance?.(selectedOrders, 'pack')}><Package size={14} />一键打包</button><button type="button" className="button button-secondary button-sm" title="将所选待发货订单（已填物流单号）标记为已发货" onClick={() => onBatchAdvance?.(selectedOrders, 'ship')}><Truck size={14} />一键发货</button><button type="button" className="button button-secondary button-sm" onClick={bulkPrint}><Printer size={14} />批量打印箱唛</button></>}
       </div>

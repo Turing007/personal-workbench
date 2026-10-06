@@ -5,7 +5,6 @@ import {
   EyeOff,
   Plus,
   RefreshCw,
-  Search,
   ToggleLeft,
   ToggleRight,
   Trash2,
@@ -15,6 +14,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Customer, CustomerProduct, CustomerProductBatchSaveInput, CustomerProductSaveInput } from '../../shared/customers';
 import type { ProductRecord } from '../components/ProductEditor';
+import SearchInput from '../components/SearchInput';
 import {
   createCustomer,
   deleteCustomer,
@@ -296,7 +296,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
   return <div className="page-shell customer-products-page">
     <div className="page-toolbar customer-products-toolbar">
       <div className="page-title customer-products-title"><UserRound size={17} />客户产品库</div>
-      <div className={`search-control customer-search-control${searchHidden ? ' is-scroll-hidden' : ''}`}><Search size={15} /><input value={customerQuery} onChange={(event) => setCustomerQuery(event.target.value)} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索客户名称、联系人、电话" /></div>
+      <SearchInput value={customerQuery} onChange={setCustomerQuery} className={`customer-search-control${searchHidden ? ' is-scroll-hidden' : ''}`} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索客户名称、联系人、电话" />
       <span className="toolbar-count">{filteredCustomers.length} 个客户</span>
       <button className="customer-list-trigger" type="button" title="打开客户列表" aria-haspopup="dialog" aria-expanded={customerDrawerOpen} onClick={() => setCustomerDrawerOpen(true)}><Users size={15} />{filteredCustomers.length} 个客户</button>
       <button className="icon-button" type="button" title="刷新客户资料" disabled={loading} onClick={() => void onCustomersChanged()}><RefreshCw size={15} /></button>
@@ -322,7 +322,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
           {selectedCustomer && <div className="row-actions"><button className="icon-button" type="button" title="编辑客户资料" onClick={() => { setEditingCustomer(selectedCustomer); setCustomerEditorOpen(true); }}><Edit3 size={14} /></button><button className="icon-button" type="button" title={selectedCustomer.isActive ? '停用客户' : '启用客户'} onClick={() => { void toggleCustomer(selectedCustomer); }}>{selectedCustomer.isActive ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}</button><button className="icon-button danger" type="button" title="删除客户" onClick={() => { void removeCustomer(selectedCustomer); }}><Trash2 size={14} /></button></div>}
         </div>
         <div className="customer-products-toolbar">
-          <div className="search-control customer-product-search"><Search size={15} /><input disabled={!selectedCustomer} value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="按品名、客户 SKU、规格筛选" /></div>
+          <SearchInput value={productQuery} onChange={setProductQuery} className="customer-product-search" disabled={!selectedCustomer} placeholder="按品名、客户 SKU、规格筛选" />
           <select aria-label="客户产品状态筛选" className="toolbar-select customer-product-status-select" disabled={!selectedCustomer} value={productStatus} onChange={(event) => setProductStatus(event.target.value as typeof productStatus)}><option value="all">全部状态</option><option value="complete">已完善</option><option value="incomplete">待完善</option></select>
           <button className="icon-button products-sensitive-toggle" type="button" disabled={!selectedCustomer} aria-pressed={showCostPrice} aria-label={showCostPrice ? '隐藏成本价' : '显示成本价'} title={showCostPrice ? '隐藏成本价' : '显示成本价'} onClick={() => setShowCostPrice((current) => !current)}>{showCostPrice ? <EyeOff size={16} /> : <Eye size={16} />}</button>
           {selectedProductIds.length > 0 && <button className="button button-secondary" type="button" onClick={() => { void batchRemoveProducts(); }}><Trash2 size={14} />删除选中</button>}
@@ -373,7 +373,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
 
     <Modal className="customer-list-drawer-panel" open={customerDrawerOpen} variant="drawer" drawerSide="left" title="客户档案" width={400} onClose={() => setCustomerDrawerOpen(false)}>
       <div className="customer-drawer">
-        <div className="search-control customer-drawer-search"><Search size={15} /><input value={customerQuery} onChange={(event) => setCustomerQuery(event.target.value)} placeholder="搜索客户名称、联系人、电话" /></div>
+        <SearchInput value={customerQuery} onChange={setCustomerQuery} className="customer-drawer-search" placeholder="搜索客户名称、联系人、电话" />
         <div className="customer-list-scroll">
           {filteredCustomers.map((customer) => <button key={customer.id} className={`customer-list-item${customer.id === selectedCustomerId ? ' is-selected' : ''}`} type="button" onClick={() => { setSelectedCustomerId(customer.id); setCustomerDrawerOpen(false); }} style={{ width: '100%', display: 'grid', gap: 5, padding: '11px 12px', border: 0, borderBottom: '1px solid #edf0f2', borderLeft: `3px solid ${customer.id === selectedCustomerId ? '#0f766e' : 'transparent'}`, background: customer.id === selectedCustomerId ? '#f0fdfa' : '#fff', textAlign: 'left', cursor: 'pointer', opacity: customer.isActive ? 1 : .62 }}>
             <div className="customer-list-item-heading"><strong>{customer.name}</strong><span className={`badge ${customer.isActive ? 'badge-success' : 'badge-neutral'}`}>{customer.isActive ? '启用' : '停用'}</span></div>

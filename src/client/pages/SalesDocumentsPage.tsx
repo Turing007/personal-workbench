@@ -1,4 +1,5 @@
-import { ClipboardList, Edit3, ExternalLink, Plus, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { ClipboardList, Edit3, ExternalLink, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import SearchInput from '../components/SearchInput';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   CompanySnapshot,
@@ -196,7 +197,7 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
 
   return <div className="page-shell sales-documents-page">
     <div className="page-toolbar sales-docs-toolbar">
-      <div className={`search-control${searchHidden ? ' is-scroll-hidden' : ''}`}><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索销售单号、客户、采购单号" /></div>
+      <SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索销售单号、客户、采购单号" />
       <div className="sales-doc-status-row">
         <select className="toolbar-select" aria-label="单据状态筛选" value={documentStatus} onChange={(event) => setDocumentStatusFilter(event.target.value as 'all' | SalesDocumentStatus)}>
           <option value="all">全部单据状态</option><option value="draft">草稿</option><option value="issued">已开单</option><option value="void">已作废</option>
