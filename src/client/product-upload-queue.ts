@@ -11,10 +11,11 @@ import { createImageThumbUrl } from './preview-thumbs';
  *
  * 背景：原先「保存产品」是一条串行长链，新图逐张上传且必须等完，10 张手机原图要等几十秒。
  * 现在产品记录、删除差异、分类回写这些"快且必须与本次保存意图一致"的部分留在前台，
- * 新图/包装图/附件的上传与最终排序交给这个队列在后台跑，界面只显示进度。
+ * 新图/包装图/附件的上传与最终排序交给这个队列在后台跑，界面只显示进度；
  *
  * 三条硬约束：
- *  1. 同一个产品的文件必须按顺序上传，传完才能重排 —— 否则排序会和上传打架；
+ *  1. 图片最终顺序只在"该产品的文件全部传完"后用一次重排统一确定，与上传先后无关，
+ *     所以同一产品的文件也可以并发上传（全局同时最多 MAX_PARALLEL_FILES 个）；
  *  2. 任务要落盘（IndexedDB，localStorage 放不下几 MB 的原图），刷新或关掉浏览器后
  *     下次打开可以继续，否则"没传完"的图会静默丢失；
  *  3. 失败重试两次仍不成功就记下来，绝不静默吞掉 —— 产品已经存了、图少了，必须让人看到。
@@ -98,7 +99,8 @@ const DB_NAME = 'workbench-product-upload';
 const DB_VERSION = 1;
 const BATCH_STORE = 'batches';
 const FILE_STORE = 'files';
-const MAX_PARALLEL_PRODUCTS = 2;
+/** 全局同时上传的文件数上限（跨产品合计）。手机上 3 个是速度与稳定性的平衡点。 */
+export const MAX_PARALLEL_FILES = 3;
 /** 单张失败后的自动重试间隔（毫秒），共两次。 */
 export const RETRY_DELAYS_MS = [1_000, 3_000];
 
@@ -129,8 +131,8 @@ interface InternalBatch {
   productLabel: string;
   imageOrder: UploadBatch['imageOrder'];
   items: QueueItem[];
-  /** 单项重试：这一轮只跑集合里的任务，跑完即清。 */
-  retryOnly?: Set<string>;
+  /** 正在做收尾（重排 + 清理），防止并发完成时重复执行。 */
+  settling?: boolean;
 }
 
 /** 把上传成功的 taskId 映射回真实图片 id，得到最终顺序；失败的图跳过但保持相对顺序。 */
@@ -202,8 +204,8 @@ export class ProductUploadQueue {
   };
   /** 待处理任务：产品 id → 批次。落盘与内存各一份，落盘失败时退化为仅内存。 */
   private readonly batches = new Map<string, InternalBatch>();
-  private readonly runningProducts = new Set<string>();
-  private activeWorkers = 0;
+  /** 全局在传的文件数（跨产品合计），上限 MAX_PARALLEL_FILES。 */
+  private activeUploads = 0;
   private initialized = false;
   /** 完成一个产品的这一轮后通知外部刷新产品库。 */
   private onBatchSettled: (() => void) | undefined;
@@ -315,7 +317,6 @@ export class ProductUploadQueue {
     for (const batch of this.batches.values()) {
       const item = batch.items.find((entry) => entry.meta.id === taskId && entry.status === 'failed');
       if (!item) continue;
-      (batch.retryOnly ??= new Set()).add(taskId);
       item.status = 'queued';
       item.message = undefined;
       item.progress = undefined;
@@ -325,9 +326,9 @@ export class ProductUploadQueue {
     }
   }
 
-  /** 该产品是否还有文件在处理（排队、上传中或等待重试）。 */
+  /** 该产品是否还有文件在处理（排队、上传中或等待重试）；批次还在就为 true。 */
   hasPending(productId: string): boolean {
-    return this.batches.has(productId) || this.runningProducts.has(productId);
+    return this.batches.has(productId);
   }
 
   private pendingFileCount(): number {
@@ -379,7 +380,7 @@ export class ProductUploadQueue {
     const next: UploadQueueSnapshot = {
       ...this.snapshot,
       ...patch,
-      uploadingProductIds: [...this.runningProducts],
+      uploadingProductIds: [...new Set(files.filter((item) => item.status === 'queued' || item.status === 'uploading').map((item) => item.productId))],
       files,
       failures: files
         .filter((item) => item.status === 'failed')
@@ -397,67 +398,70 @@ export class ProductUploadQueue {
   }
 
   private pump(): void {
-    while (this.activeWorkers < MAX_PARALLEL_PRODUCTS) {
-      const next = [...this.batches.values()].find((batch) => !this.runningProducts.has(batch.productId) && batch.items.some((item) => item.status === 'queued'));
+    while (this.activeUploads < MAX_PARALLEL_FILES) {
+      const next = this.nextQueuedItem();
       if (!next) break;
-      this.activeWorkers += 1;
-      this.runningProducts.add(next.productId);
+      const { batch, item } = next;
+      this.activeUploads += 1;
+      item.status = 'uploading';
+      item.message = undefined;
+      item.progress = 0;
       this.publish();
-      void this.runBatch(next)
+      void this.runItem(batch, item)
         .catch(() => undefined)
         .then(() => {
-          this.activeWorkers -= 1;
-          this.runningProducts.delete(next.productId);
+          this.activeUploads -= 1;
           this.publish();
           this.pump();
         });
     }
     // 只剩失败项在等用户处理时不算"正在上传"：顶部进度条要收掉，失败提示才接管画面。
     const hasQueued = [...this.batches.values()].some((batch) => batch.items.some((item) => item.status === 'queued'));
-    if (!this.activeWorkers && !hasQueued) this.publish({ active: false });
+    if (!this.activeUploads && !hasQueued) this.publish({ active: false });
   }
 
-  private async runBatch(batch: InternalBatch): Promise<void> {
-    const retryOnly = batch.retryOnly;
-    batch.retryOnly = undefined;
-    for (const item of batch.items) {
-      if (item.status !== 'queued') continue;
-      if (retryOnly && !retryOnly.has(item.meta.id)) continue;
-      const uploaded = await this.uploadWithRetry(item);
-      if (uploaded === undefined) continue;
+  /** 下一个待传文件：按批次、再按批内顺序取第一个排队的；同一产品的图可以并发上传。 */
+  private nextQueuedItem(): { batch: InternalBatch; item: QueueItem } | undefined {
+    for (const batch of this.batches.values()) {
+      const item = batch.items.find((entry) => entry.status === 'queued');
+      if (item) return { batch, item };
+    }
+    return undefined;
+  }
+
+  private async runItem(batch: InternalBatch, item: QueueItem): Promise<void> {
+    const uploaded = await this.uploadWithRetry(item);
+    if (uploaded !== undefined) {
       item.status = 'done';
       item.progress = 100;
       if (uploaded !== null) item.uploadedId = uploaded;
+      // 已传完的从续传存储里去掉：万一中途崩溃，重开也不会重复上传这一张。
+      await this.removeItemFromStorage(item.meta.id);
       this.publish({ done: this.snapshot.done + 1 });
       this.onFileUploaded?.(batch.productId);
     }
-
-    // 该产品的文件全部传完（成功）才重排一次，让图片最终顺序与草稿一致；
-    // 还有失败的就保持原样，等重试成功后再排。
-    const allDone = batch.items.every((item) => item.status === 'done');
-    if (allDone) {
-      const uploadedByTaskId = new Map<string, number>();
-      for (const item of batch.items) {
-        if (item.uploadedId !== undefined) uploadedByTaskId.set(item.meta.id, item.uploadedId);
-      }
-      await this.reorderIfNeeded(batch, uploadedByTaskId);
-      this.batches.delete(batch.productId);
-      for (const item of batch.items) revokePreviewUrl(item);
-      await this.removeBatchFromStorage(batch.productId);
-    } else {
-      await this.persistBatch(batch);
-    }
+    await this.settleBatchIfDone(batch);
     this.publish();
+  }
+
+  /** 该产品的文件全部传完（成功）才重排一次并收尾；还有失败的保持原样等重试。 */
+  private async settleBatchIfDone(batch: InternalBatch): Promise<void> {
+    if (batch.settling || !batch.items.every((item) => item.status === 'done')) return;
+    batch.settling = true;
+    const uploadedByTaskId = new Map<string, number>();
+    for (const item of batch.items) {
+      if (item.uploadedId !== undefined) uploadedByTaskId.set(item.meta.id, item.uploadedId);
+    }
+    await this.reorderIfNeeded(batch, uploadedByTaskId);
+    this.batches.delete(batch.productId);
+    for (const item of batch.items) revokePreviewUrl(item);
+    await this.removeBatchFromStorage(batch.productId);
     this.onBatchSettled?.();
   }
 
   /** 返回：图片 id（成功）/ null（非图片，成功）/ undefined（最终失败）。 */
   private async uploadWithRetry(item: QueueItem): Promise<number | null | undefined> {
     const { meta, file } = item;
-    item.status = 'uploading';
-    item.message = undefined;
-    item.progress = 0;
-    this.publish();
     const reportProgress = (percent: number | undefined) => {
       item.progress = percent;
       this.publish();
@@ -523,6 +527,23 @@ export class ProductUploadQueue {
         if (item.status === 'done') continue;
         fileStore.put({ meta: item.meta, blob: item.file } satisfies StoredFile);
       }
+      await new Promise<void>((resolve) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => resolve();
+        transaction.onabort = () => resolve();
+      });
+    } finally {
+      db.close();
+    }
+  }
+
+  /** 单张传完就把它从续传存储里删掉（批次记录保留），避免中途崩溃后重复上传。 */
+  private async removeItemFromStorage(taskId: string): Promise<void> {
+    const db = await openDatabase();
+    if (!db) return;
+    try {
+      const transaction = db.transaction(FILE_STORE, 'readwrite');
+      transaction.objectStore(FILE_STORE).delete(taskId);
       await new Promise<void>((resolve) => {
         transaction.oncomplete = () => resolve();
         transaction.onerror = () => resolve();

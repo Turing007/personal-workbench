@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { canPickFilesNatively, nativeFileToFile, pickFilesNatively } from '../../src/client/app-bridge';
+import { canPickFilesNatively, nativeFileToFile, pickFilesNatively, startUploadKeepAlive, stopUploadKeepAlive, updateUploadKeepAlive } from '../../src/client/app-bridge';
 
 /** 1×1 PNG，68 字节。 */
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
@@ -154,5 +154,33 @@ describe('原生选文件桥（App 内上传通路）', () => {
     };
     const files = await pickFilesNatively(['image/*'], true, 9)!;
     expect(files.map((file) => file.name)).toEqual(['right.jpg']);
+  });
+
+  it('上传保活：桥有方法时按参数透传；旧壳没有时静默跳过', () => {
+    const calls: Array<[string, number, number]> = [];
+    let stopped = 0;
+    const fake: FakeWindow = {};
+    installWindow(fake);
+    fake.workbenchApp = {
+      startUploadKeepAlive: (text: string, done: number, total: number) => { calls.push([text, done, total]); },
+      updateUploadKeepAlive: (text: string, done: number, total: number) => { calls.push([text, done, total]); },
+      stopUploadKeepAlive: () => { stopped += 1; },
+    };
+    startUploadKeepAlive('正在后台上传 1/3 个文件', 1, 3);
+    updateUploadKeepAlive('正在后台上传 2/3 个文件', 2, 3);
+    stopUploadKeepAlive();
+    expect(calls).toEqual([
+      ['正在后台上传 1/3 个文件', 1, 3],
+      ['正在后台上传 2/3 个文件', 2, 3],
+    ]);
+    expect(stopped).toBe(1);
+
+    // 旧壳没有这些方法：静默跳过，不抛异常。
+    installWindow({ workbenchApp: {} });
+    expect(() => {
+      startUploadKeepAlive('t', 0, 1);
+      updateUploadKeepAlive('t', 0, 1);
+      stopUploadKeepAlive();
+    }).not.toThrow();
   });
 });

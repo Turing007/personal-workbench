@@ -4,6 +4,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 扫描二维码填入服务器地址所用；zxing 的 CaptureActivity 自带运行时权限申请。 -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- 上传期间保活：前台服务 + 通知栏进度。Android 13+ 通知需运行时权限（拒绝也照常上传）。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- API 28 及以下由系统下载到公共下载目录时需要；29+ 由 DownloadManager 免权限处理。 -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
@@ -49,5 +53,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 上传期间的前台服务：防止 App 退到后台被系统冻结、上传中断。 -->
+        <service
+            android:name=".UploadKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 </manifest>

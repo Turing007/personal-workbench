@@ -21,6 +21,10 @@ export interface WorkbenchAppBridge {
    * 返回 true 表示已拉起，结果经 window.__workbenchPickedFiles(requestId, files) 异步回传。
    */
   pickFiles?(acceptJson: string, multiple: boolean, maxCount: number, requestId: string): boolean;
+  /** 上传期间保活（前台服务 + 通知栏进度；1.16 之前的 App 没有这些方法）。 */
+  startUploadKeepAlive?(text: string, done: number, total: number): void;
+  updateUploadKeepAlive?(text: string, done: number, total: number): void;
+  stopUploadKeepAlive?(): void;
 }
 
 /** 原生选文件回传的单条数据；data 为 base64 编码的文件字节。 */
@@ -94,6 +98,23 @@ export function canPickFilesNatively(): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * 上传期间请壳把 App 保活（前台服务 + 通知栏进度）。
+ * 安卓在 App 退到后台后会把整个应用冻结、上传随之停住，挂着前台服务就能继续传；
+ * 旧壳没有这些方法时静默跳过，网页版不受影响。
+ */
+export function startUploadKeepAlive(text: string, done: number, total: number): void {
+  try { getAppBridge()?.startUploadKeepAlive?.(text, done, total); } catch { /* 旧壳忽略 */ }
+}
+
+export function updateUploadKeepAlive(text: string, done: number, total: number): void {
+  try { getAppBridge()?.updateUploadKeepAlive?.(text, done, total); } catch { /* 旧壳忽略 */ }
+}
+
+export function stopUploadKeepAlive(): void {
+  try { getAppBridge()?.stopUploadKeepAlive?.(); } catch { /* 旧壳忽略 */ }
 }
 
 /**

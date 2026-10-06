@@ -39,6 +39,10 @@
     <string name="download_started">已开始下载</string>
     <string name="file_chooser_unavailable">无法打开系统选图/拍照界面，请检查手机是否已启用「文件」或「相册」相关应用</string>
     <string name="page_out_of_memory_reloading">页面内存不足，已自动重新加载；已保存的数据不受影响</string>
+    <string name="upload_channel_name">后台上传</string>
+    <string name="upload_channel_description">上传期间保活，保证退到后台或锁屏也能继续传</string>
+    <string name="upload_notification_title">图片上传中</string>
+    <string name="upload_notification_default_text">正在后台上传，传完自动消失</string>
     <string name="pick_files_partial_failed">部分文件读取失败已跳过（单个文件不超过 25MB）</string>
     <string name="save_image_started">正在保存到相册…</string>
     <string name="save_image_done">已保存到手机相册</string>

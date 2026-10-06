@@ -3,6 +3,7 @@ import type { CompanySnapshot } from '../shared/documents';
 import AuthGate from './components/auth/AuthGate';
 import EnvironmentShell from './components/EnvironmentShell';
 import { productUploadQueue, type UploadBatch } from './product-upload-queue';
+import { startUploadKeepAlive, stopUploadKeepAlive, updateUploadKeepAlive } from './app-bridge';
 import Sidebar from './components/Sidebar';
 import { navigationKeys, type NavigationKey } from './navigation';
 import { loadMobileTabs, saveMobileTabs } from './mobile-tabs';
@@ -281,6 +282,24 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     }
     uploadWasActive.current = uploadQueue.active;
   }, [uploadQueue.active, uploadQueue.done, uploadQueue.failures.length, notify]);
+
+  // 上传期间请手机壳把 App 保活（前台服务 + 通知栏进度）：安卓退到后台会把应用冻结、
+  // 上传随之停住，挂着前台服务就能继续传；网页版里这些都是空操作。
+  const uploadKeepAlive = useRef(false);
+  useEffect(() => {
+    if (uploadQueue.active) {
+      const text = `正在后台上传 ${uploadQueue.done}/${uploadQueue.total} 个文件`;
+      if (!uploadKeepAlive.current) {
+        uploadKeepAlive.current = true;
+        startUploadKeepAlive(text, uploadQueue.done, uploadQueue.total);
+      } else {
+        updateUploadKeepAlive(text, uploadQueue.done, uploadQueue.total);
+      }
+    } else if (uploadKeepAlive.current) {
+      uploadKeepAlive.current = false;
+      stopUploadKeepAlive();
+    }
+  }, [uploadQueue.active, uploadQueue.done, uploadQueue.total]);
   const loadCompanyProfile = useCallback(async () => {
     try { setCompanyProfile(await getCompanyProfile()); } catch { /* company branding is optional; keep the fallback */ }
   }, []);

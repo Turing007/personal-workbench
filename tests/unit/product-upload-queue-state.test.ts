@@ -8,7 +8,7 @@ vi.mock('../../src/client/api', () => ({
 }));
 
 import { reorderProductImages, uploadProductImage } from '../../src/client/api';
-import { ProductUploadQueue, type UploadBatch } from '../../src/client/product-upload-queue';
+import { MAX_PARALLEL_FILES, ProductUploadQueue, type UploadBatch } from '../../src/client/product-upload-queue';
 
 const mockUploadImage = vi.mocked(uploadProductImage);
 const mockReorder = vi.mocked(reorderProductImages);
@@ -51,9 +51,9 @@ describe('后台上传队列：逐张状态', () => {
     await queue.enqueue(makeBatch('7', ['a.jpg', 'b.jpg']));
     await flush();
 
-    // 同一产品的文件顺序上传：第一张在传，第二张排队。
+    // 并发上传：同一产品的两张图同时开传。
     let files = queue.getSnapshot().files;
-    expect(files.map((item) => item.status)).toEqual(['uploading', 'queued']);
+    expect(files.map((item) => item.status)).toEqual(['uploading', 'uploading']);
 
     // XHR 进度回调写进快照，界面据此画条。
     const reportProgress = mockUploadImage.mock.calls[0][4] as (percent?: number) => void;
@@ -111,5 +111,37 @@ describe('后台上传队列：逐张状态', () => {
     expect(mockReorder).toHaveBeenCalledWith('9', [55, 66]);
     // 重排包含两次重试各自的结果，中途成功的那张不会被漏掉。
     expect(queue.hasPending('9')).toBe(false);
+  });
+
+  it('全局同时最多传 3 张：一张传完立刻补位下一张', async () => {
+    const queue = new ProductUploadQueue();
+    const pending = Array.from({ length: 4 }, () => deferred<{ id: number }>());
+    let callIndex = 0;
+    mockUploadImage.mockImplementation(() => pending[Math.min(callIndex++, pending.length - 1)].promise as never);
+
+    await queue.enqueue(makeBatch('7', ['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg']));
+    await flush();
+
+    expect(MAX_PARALLEL_FILES).toBe(3);
+    expect(mockUploadImage).toHaveBeenCalledTimes(3);
+    expect(queue.getSnapshot().files.filter((item) => item.status === 'uploading')).toHaveLength(3);
+    expect(queue.getSnapshot().files.filter((item) => item.status === 'queued')).toHaveLength(1);
+
+    // 第一张传完：第 4 张立刻补位，始终满载但不超过上限。
+    pending[0].resolve({ id: 101 });
+    await flush();
+    expect(mockUploadImage).toHaveBeenCalledTimes(4);
+    expect(queue.getSnapshot().files.filter((item) => item.status === 'uploading')).toHaveLength(3);
+
+    pending[1].resolve({ id: 102 });
+    await flush();
+    pending[2].resolve({ id: 103 });
+    await flush();
+    pending[3].resolve({ id: 104 });
+    await flush();
+
+    // 全部传完：批次清空并按草稿顺序重排一次。
+    expect(queue.getSnapshot().files).toEqual([]);
+    expect(mockReorder).toHaveBeenCalledWith('7', [101, 102, 103, 104]);
   });
 });

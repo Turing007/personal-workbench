@@ -87,6 +87,8 @@ public class MainActivity extends Activity {
     private static final int STORAGE_PERMISSION_REQUEST = 1002;
     /** 原生选图/选文件（AppBridge.pickFiles）的返回码。 */
     private static final int PICK_FILES_REQUEST = 1003;
+    /** Android 13+ 通知权限的申请码（上传保活通知用）。 */
+    private static final int NOTIFICATION_PERMISSION_REQUEST = 1004;
     /** 单个文件上限：base64 经 evaluateJavascript 回传会放大约 1/3，更大的文件请走电脑端上传。 */
     private static final int MAX_PICKED_BYTES = 25 * 1024 * 1024;
     /** 相册里的子目录，便于用户在工作台 App 存图后一眼找到。 */
@@ -519,6 +521,14 @@ public class MainActivity extends Activity {
         });
     }
 
+    /** Android 13+ 上传保活通知需要运行时权限；拒绝也不影响上传，只是通知不显示。 */
+    private void ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_PERMISSION_REQUEST);
+        }
+    }
+
     private JSONObject readPickedFile(Uri uri) throws IOException, JSONException {
         byte[] bytes;
         try (InputStream input = getContentResolver().openInputStream(uri)) {
@@ -736,6 +746,30 @@ public class MainActivity extends Activity {
                 Thread.currentThread().interrupt();
             }
             return launched[0];
+        }
+
+        /**
+         * 上传开始：拉起前台服务保活并显示通知栏进度。
+         * 安卓在 App 退到后台后会把应用冻结、上传随之停住；挂着前台服务就能继续传。
+         */
+        @JavascriptInterface
+        public void startUploadKeepAlive(String text, int done, int total) {
+            runOnUiThread(() -> {
+                ensureNotificationPermission();
+                UploadKeepAliveService.start(MainActivity.this, text, done, total);
+            });
+        }
+
+        /** 上传进度变化：更新通知里的文字与进度条。 */
+        @JavascriptInterface
+        public void updateUploadKeepAlive(String text, int done, int total) {
+            runOnUiThread(() -> UploadKeepAliveService.start(MainActivity.this, text, done, total));
+        }
+
+        /** 上传结束（全部成功或最终失败）：收掉通知与前台服务。 */
+        @JavascriptInterface
+        public void stopUploadKeepAlive() {
+            runOnUiThread(() -> UploadKeepAliveService.stop(MainActivity.this));
         }
     }
 
