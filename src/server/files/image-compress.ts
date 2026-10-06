@@ -5,8 +5,9 @@ import sharp, { type Metadata } from 'sharp';
 /** 压缩目标：长边不超过 2048（A4 300dpi 打印也够），质量 80，格式保持不变。 */
 export const IMAGE_MAX_EDGE = 2048;
 export const IMAGE_QUALITY = 80;
-/** 长边已达标且小于这个体积的图不再重压：避免为省几十 KB 反复掉画质。 */
-export const IMAGE_SKIP_UNDER_BYTES = 400 * 1024;
+/** 长边已达标且小于这个体积的图不再重压：手机端已经压好的图直接放过，
+ *  既避免二次压缩掉画质，也省掉这部分 CPU（重压只留给旧客户端/其他入口传的大图）。 */
+export const IMAGE_SKIP_UNDER_BYTES = 1_536 * 1024;
 
 export type CompressReason = 'compressed' | 'already-small' | 'unsupported' | 'not-worth-it';
 

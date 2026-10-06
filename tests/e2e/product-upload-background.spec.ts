@@ -76,6 +76,34 @@ async function pickBigImage(page: Page, name: string, width: number, height: num
   }, { name, width, height });
 }
 
+/** 造一张"噪声大图"（随机像素，接近真实照片的体积量级），返回原文件字节数。 */
+async function pickNoisyBigImage(page: Page, name: string, width: number, height: number) {
+  return await page.evaluate(async ({ name, width, height }) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('no 2d context');
+    const image = context.createImageData(width, height);
+    for (let index = 0; index < image.data.length; index += 4) {
+      image.data[index] = (index * 7 + 13) % 251;
+      image.data[index + 1] = (index * 13 + 29) % 253;
+      image.data[index + 2] = (index * 29 + 47) % 249;
+      image.data[index + 3] = 255;
+    }
+    context.putImageData(image, 0, 0);
+    const blob = await new Promise<Blob>((resolve) => canvas.toBlob((value) => resolve(value as Blob), 'image/jpeg', 0.92));
+    const file = new File([blob], name, { type: 'image/jpeg' });
+    const input = document.querySelector('.product-editor .image-upload-empty input[type=file]') as HTMLInputElement | null;
+    if (!input) throw new Error('找不到产品编辑器的图片上传输入框');
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    input.files = transfer.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return file.size;
+  }, { name, width, height });
+}
+
 test.describe('产品图片后台上传', () => {
   test('点保存后编辑器立刻关闭，图库里逐张显示进度，传完自动变成正式图片', async ({ page }) => {
     // 每张图上传耗时 2.5 秒：串行两张要 5 秒，够我们打开图库看到还在传的占位与进度条。
@@ -220,5 +248,42 @@ test.describe('产品图片后台上传', () => {
 
     // 等上传完成，别把未传完的批次留在库里影响其它用例。
     await expect(page.getByRole('dialog').locator('.product-images-pending')).toHaveCount(0, { timeout: 30_000 });
+  });
+
+  test('手机端先压再传：实际上传的体积明显小于原图', async ({ page }) => {
+    let uploadedBytes = 0;
+    await page.route('**/api/products/*/images*', async (route) => {
+      if (route.request().method() === 'POST') {
+        uploadedBytes = route.request().postDataBuffer()?.length ?? 0;
+      }
+      await route.continue();
+    });
+
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+    await page.locator('.products-page .page-toolbar .button-primary').click();
+    await expect(page.getByRole('dialog').locator('.product-editor')).toBeVisible();
+
+    const name = `E2E先压再传${Date.now()}`;
+    await page.getByRole('dialog').getByRole('textbox', { name: '品名' }).fill(name);
+    // 2400×1800 的噪声大图：体积接近真实相机原图，走原始流程会整张上传。
+    const originalSize = await pickNoisyBigImage(page, '大图-A.jpg', 2400, 1800);
+    expect(originalSize).toBeGreaterThan(600 * 1024);
+
+    await page.getByRole('dialog').getByRole('button', { name: '保存产品' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 4000 });
+
+    // 等上传请求真正发生，并断言体积明显小于原图（长边 2048 + 质量 85 的客户端预压缩）。
+    await expect.poll(() => uploadedBytes, { timeout: 30_000 }).toBeGreaterThan(0);
+    expect(uploadedBytes).toBeLessThan(originalSize * 0.85);
+
+    // 服务端确实收到了这张图。
+    await expect.poll(async () => {
+      const response = await page.request.get(`/api/products?q=${encodeURIComponent(name)}`);
+      const body = await response.json();
+      const items = body.data.items ?? body.data.rows ?? [];
+      const product = items.find((item: { name?: string }) => item.name === name);
+      return product ? (product.images ?? []).length : -1;
+    }, { timeout: 30_000 }).toBe(1);
   });
 });

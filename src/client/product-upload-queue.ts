@@ -5,6 +5,7 @@ import {
   uploadProductPackagingImage,
 } from './api';
 import { createImageThumbUrl } from './preview-thumbs';
+import { compressImageForUpload } from './upload-image-compress';
 
 /**
  * 产品文件后台上传队列。
@@ -12,6 +13,7 @@ import { createImageThumbUrl } from './preview-thumbs';
  * 背景：原先「保存产品」是一条串行长链，新图逐张上传且必须等完，10 张手机原图要等几十秒。
  * 现在产品记录、删除差异、分类回写这些"快且必须与本次保存意图一致"的部分留在前台，
  * 新图/包装图/附件的上传与最终排序交给这个队列在后台跑，界面只显示进度；
+ * 产品图在联网上传前先在手机端压到长边 2048（见 upload-image-compress），上传体积约降 80%。
  *
  * 三条硬约束：
  *  1. 图片最终顺序只在"该产品的文件全部传完"后用一次重排统一确定，与上传先后无关，
@@ -206,6 +208,8 @@ export class ProductUploadQueue {
   private readonly batches = new Map<string, InternalBatch>();
   /** 全局在传的文件数（跨产品合计），上限 MAX_PARALLEL_FILES。 */
   private activeUploads = 0;
+  /** 每张图最终上传用的文件（手机端压过一次就缓存复用，重试不重复压）。 */
+  private readonly uploadFiles = new WeakMap<QueueItem, Promise<File>>();
   private initialized = false;
   /** 完成一个产品的这一轮后通知外部刷新产品库。 */
   private onBatchSettled: (() => void) | undefined;
@@ -459,9 +463,26 @@ export class ProductUploadQueue {
     this.onBatchSettled?.();
   }
 
+  /** 上传用的文件：产品图先在手机端压到长边 2048（每张只压一次，重试/续传复用同一份）。 */
+  private resolveUploadFile(item: QueueItem): Promise<File> {
+    let pending = this.uploadFiles.get(item);
+    if (!pending) {
+      if (item.meta.kind === 'image') {
+        item.progress = undefined; // 压缩阶段进度未知，界面画流动条
+        this.publish();
+        pending = compressImageForUpload(item.file);
+      } else {
+        pending = Promise.resolve(item.file);
+      }
+      this.uploadFiles.set(item, pending);
+    }
+    return pending;
+  }
+
   /** 返回：图片 id（成功）/ null（非图片，成功）/ undefined（最终失败）。 */
   private async uploadWithRetry(item: QueueItem): Promise<number | null | undefined> {
-    const { meta, file } = item;
+    const { meta } = item;
+    const file = await this.resolveUploadFile(item);
     const reportProgress = (percent: number | undefined) => {
       item.progress = percent;
       this.publish();
