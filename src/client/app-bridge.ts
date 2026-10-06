@@ -100,6 +100,11 @@ export function canPickFilesNatively(): boolean {
  * App 内选文件的原生通道。
  * 部分 ROM 的 WebView 里 <input type=file> 的点击激活链整条失效（点了连系统选择器都不弹），
  * 只能由原生拉起系统选择器，再把文件字节以 base64 回传。
+ *
+ * 回传协议有两版，用户装的新旧 App 都可能遇到：
+ *  - 新版（App 1.15+）：逐张调用 __workbenchPickedFile，最后 __workbenchPickedFilesDone 收尾；
+ *    原生一次只把一张图的字节交给页面，选多张大图时两边内存都只占一张的量。
+ *  - 旧版：一次性调用 __workbenchPickedFiles 回传整个数组。
  * 返回 undefined 表示当前环境没有该能力或拉起失败，调用方应退回 <input type=file> 路径；
  * 用户取消选择时 Promise resolve 为空数组。
  */
@@ -116,12 +121,36 @@ export function pickFilesNatively(accept: string[], multiple: boolean, maxCount:
     }
     if (!launched) return undefined;
     return new Promise<File[]>((resolve) => {
-      const target = window as unknown as { __workbenchPickedFiles?: (id: string, files: PickedNativeFile[]) => void };
-      target.__workbenchPickedFiles = (id, files) => {
-        if (id !== requestId) return; // 不是本次调用的回执，忽略
+      const target = window as unknown as {
+        __workbenchPickedFiles?: (id: string, files: PickedNativeFile[]) => void;
+        __workbenchPickedFile?: (id: string, file: PickedNativeFile) => void;
+        __workbenchPickedFilesDone?: (id: string) => void;
+      };
+      const collected: File[] = [];
+      const finish = () => {
         delete target.__workbenchPickedFiles;
+        delete target.__workbenchPickedFile;
+        delete target.__workbenchPickedFilesDone;
+        resolve(collected.slice());
+      };
+      // 与原生侧的能力探测对应：__workbenchPickedFile 存在 = 支持逐张回传。
+      target.__workbenchPickedFile = (id, picked) => {
+        if (id !== requestId) return; // 不是本次调用的回执，忽略
+        const file = nativeFileToFile(picked);
+        if (file) collected.push(file);
+      };
+      target.__workbenchPickedFilesDone = (id) => {
+        if (id !== requestId) return;
+        finish();
+      };
+      target.__workbenchPickedFiles = (id, files) => {
+        if (id !== requestId) return;
         const list = Array.isArray(files) ? files : [];
-        resolve(list.map(nativeFileToFile).filter((file): file is File => Boolean(file)));
+        for (const picked of list) {
+          const file = nativeFileToFile(picked);
+          if (file) collected.push(file);
+        }
+        finish();
       };
     });
   } catch {

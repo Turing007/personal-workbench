@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { canPickFilesNatively, pickFilesNatively } from '../app-bridge';
 import { normalizeUploadImage, SUPPORTED_IMAGE_HINT } from '../image-mime';
+import { createImageThumbUrl } from '../preview-thumbs';
 import { normalizeProductImageCategory } from '../../shared/product-image-categories';
 import { sortByImageLeadNumber } from '../../shared/product-image-order';
 
@@ -39,8 +40,12 @@ export interface ImagePasteUploadProps {
   selectable?: boolean;
 }
 
+/** 缩略图生成前的占位：1×1 透明图。绝不拿原图当预览 —— 一张 1200 万像素解码约 48MB，
+ *  几张同时上屏就把 WebView 内存打爆（手机 App 会直接闪退）。 */
+const PLACEHOLDER_IMAGE_URL = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+
 function fileToAttachment(file: File): ImageAttachment {
-  return { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, name: file.name || '粘贴图片', url: URL.createObjectURL(file), file };
+  return { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, name: file.name || '粘贴图片', url: PLACEHOLDER_IMAGE_URL, file };
 }
 
 type PointerDragSession = {
@@ -119,9 +124,23 @@ export default function ImagePasteUpload({
       const attachment = fileToAttachment(file);
       return defaultCategory ? { ...attachment, category: defaultCategory } : attachment;
     });
-    attachments.forEach((attachment) => objectUrls.current.add(attachment.url));
     const next = multiple || fileLimit > 1 ? [...current, ...attachments] : attachments;
     if (accepted.length) onChange(next);
+    // 大图不当预览：逐个压成小图后替换占位（生成内部串行，避免多张原图同时解码占内存）。
+    for (const attachment of attachments) {
+      const picked = attachment.file;
+      if (!picked) continue;
+      void createImageThumbUrl(picked).then((url) => {
+        if (!url) return;
+        // 生成期间用户可能已经把这张删了：不要再挂上去，直接回收。
+        if (!valueRef.current.some((entry) => entry.id === attachment.id && entry.file === picked)) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        objectUrls.current.add(url);
+        onChange(valueRef.current.map((entry) => (entry.id === attachment.id ? { ...entry, url } : entry)));
+      });
+    }
   };
 
   const removeAttachment = async (attachment: ImageAttachment) => {

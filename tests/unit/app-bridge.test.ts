@@ -7,6 +7,8 @@ const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNk
 type FakeWindow = Record<string, unknown> & {
   workbenchApp?: unknown;
   __workbenchPickedFiles?: (id: string, files: unknown[]) => void;
+  __workbenchPickedFile?: (id: string, file: unknown) => void;
+  __workbenchPickedFilesDone?: (id: string) => void;
 };
 
 function installWindow(fake: FakeWindow) {
@@ -106,5 +108,51 @@ describe('原生选文件桥（App 内上传通路）', () => {
     const files = await pickFilesNatively(['image/*'], true, 9)!;
     expect(files).toHaveLength(1);
     expect(files[0].name).toBe('right.png');
+  });
+
+  it('新版 App 逐张回传：Done 之前不 resolve，Done 后一次收齐并清理回调', async () => {
+    const fake: FakeWindow = {};
+    installWindow(fake);
+    let doneSent = false;
+    let earlyResolve = false;
+    fake.workbenchApp = {
+      pickFiles(_accept: string, _multiple: boolean, _max: number, requestId: string) {
+        setTimeout(() => fake.__workbenchPickedFile?.(requestId, { name: 'a.jpg', type: 'image/jpeg', size: 68, data: PNG_BASE64 }), 0);
+        setTimeout(() => fake.__workbenchPickedFile?.(requestId, { name: 'b.jpg', type: 'image/jpeg', size: 68, data: PNG_BASE64 }), 5);
+        setTimeout(() => {
+          doneSent = true;
+          fake.__workbenchPickedFilesDone?.(requestId);
+        }, 10);
+        return true;
+      },
+    };
+    const pending = pickFilesNatively(['image/*'], true, 9)!;
+    void pending.then(() => {
+      if (!doneSent) earlyResolve = true;
+    });
+    const files = await pending;
+    expect(earlyResolve).toBe(false);
+    expect(files.map((file) => file.name)).toEqual(['a.jpg', 'b.jpg']);
+    // 收尾时把全局回调清掉，避免残留在页面上被下一次选图误用。
+    expect(fake.__workbenchPickedFile).toBeUndefined();
+    expect(fake.__workbenchPickedFilesDone).toBeUndefined();
+    expect(fake.__workbenchPickedFiles).toBeUndefined();
+  });
+
+  it('新版 App 逐张回传：requestId 对不上的单张被忽略', async () => {
+    const fake: FakeWindow = {};
+    installWindow(fake);
+    fake.workbenchApp = {
+      pickFiles(_accept: string, _multiple: boolean, _max: number, requestId: string) {
+        setTimeout(() => {
+          fake.__workbenchPickedFile?.('别的请求', { name: 'x.jpg', type: 'image/jpeg', size: 68, data: PNG_BASE64 });
+          fake.__workbenchPickedFile?.(requestId, { name: 'right.jpg', type: 'image/jpeg', size: 68, data: PNG_BASE64 });
+          fake.__workbenchPickedFilesDone?.(requestId);
+        }, 0);
+        return true;
+      },
+    };
+    const files = await pickFilesNatively(['image/*'], true, 9)!;
+    expect(files.map((file) => file.name)).toEqual(['right.jpg']);
   });
 });

@@ -52,6 +52,30 @@ async function openProductImages(page: Page, name: string) {
   return dialog;
 }
 
+/** 造一张指定尺寸的真图片文件塞进编辑器的图片输入框（用来验证预览被压缩）。 */
+async function pickBigImage(page: Page, name: string, width: number, height: number) {
+  await page.evaluate(async ({ name, width, height }) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('no 2d context');
+    context.fillStyle = '#2f6f66';
+    context.fillRect(0, 0, width, height);
+    context.fillStyle = '#fff';
+    context.font = '80px sans-serif';
+    context.fillText(name, 40, Math.round(height / 2));
+    const blob = await new Promise<Blob>((resolve) => canvas.toBlob((value) => resolve(value as Blob), 'image/jpeg', 0.9));
+    const file = new File([blob], name, { type: 'image/jpeg' });
+    const input = document.querySelector('.product-editor .image-upload-empty input[type=file]') as HTMLInputElement | null;
+    if (!input) throw new Error('找不到产品编辑器的图片上传输入框');
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    input.files = transfer.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, { name, width, height });
+}
+
 test.describe('产品图片后台上传', () => {
   test('点保存后编辑器立刻关闭，图库里逐张显示进度，传完自动变成正式图片', async ({ page }) => {
     // 每张图上传耗时 2.5 秒：串行两张要 5 秒，够我们打开图库看到还在传的占位与进度条。
@@ -155,5 +179,46 @@ test.describe('产品图片后台上传', () => {
     await failedTile.getByRole('button', { name: '重试' }).click();
     await expect(imagesDialog.locator('.product-images-pending')).toHaveCount(0, { timeout: 30_000 });
     await expect(imagesDialog.locator('.product-image-thumbnail')).toHaveCount(1, { timeout: 15_000 });
+  });
+
+  test('大图预览自动压成小图，编辑器和上传占位都不再拿原图当预览', async ({ page }) => {
+    // 上传拖慢 4 秒：保存后留出时间在图库里看到"上传中"的占位。
+    await page.route('**/api/products/*/images*', async (route) => {
+      if (route.request().method() === 'POST') await new Promise((resolve) => setTimeout(resolve, 4000));
+      await route.continue();
+    });
+
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+    await page.locator('.products-page .page-toolbar .button-primary').click();
+    await expect(page.getByRole('dialog').locator('.product-editor')).toBeVisible();
+
+    const name = `E2E大图预览${Date.now()}`;
+    await page.getByRole('dialog').getByRole('textbox', { name: '品名' }).fill(name);
+    // 2400×1800 的"相机大图"：原图直接当预览，一张就要解码十几 MB，几张就爆内存。
+    await pickBigImage(page, '大图-A.jpg', 2400, 1800);
+
+    // 编辑器卡片：等占位（1×1）被压缩预览替换，最长边不超过 512。
+    const cardImage = page.locator('.product-editor .image-card-img').first();
+    await expect.poll(
+      async () => cardImage.evaluate((element: HTMLImageElement) => element.naturalWidth > 1 && element.naturalWidth <= 512),
+      { timeout: 15_000 },
+    ).toBe(true);
+
+    await page.getByRole('dialog').getByRole('button', { name: '保存产品' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 4000 });
+    await page.locator('.search-control input').fill(name);
+    await expect(page.locator('.product-gallery-card')).toHaveCount(1);
+    await page.locator('.product-gallery-card .product-gallery-image-button').first().click();
+
+    // 图库里的上传占位同样是小图。
+    const tileImage = page.getByRole('dialog').locator('.product-upload-tile-image img').first();
+    await expect(tileImage).toBeVisible({ timeout: 15_000 });
+    const tileWidth = await tileImage.evaluate((element: HTMLImageElement) => element.naturalWidth);
+    expect(tileWidth).toBeGreaterThan(1);
+    expect(tileWidth).toBeLessThanOrEqual(512);
+
+    // 等上传完成，别把未传完的批次留在库里影响其它用例。
+    await expect(page.getByRole('dialog').locator('.product-images-pending')).toHaveCount(0, { timeout: 30_000 });
   });
 });

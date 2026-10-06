@@ -27,8 +27,10 @@ import android.text.TextUtils;
 import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -96,6 +98,8 @@ public class MainActivity extends Activity {
     private static final String THUMB_PATH = "/api/thumbs/";
 
     private WebView webView;
+    /** 渲染进程被系统回收后重建 WebView 时，用它把页面重新加载回来。 */
+    private String lastLoadedUrl;
     private SwipeRefreshLayout swipeRefresh;
     private ProgressBar loadProgress;
     private View browserView;
@@ -147,6 +151,26 @@ public class MainActivity extends Activity {
 
     private SharedPreferences preferences() {
         return getSharedPreferences(PREFS, MODE_PRIVATE);
+    }
+
+    /** 渲染进程崩溃后的自救：销毁已经坏掉的 WebView，在原位置重建并重新加载页面。 */
+    private void recreateWebViewAfterCrash() {
+        try {
+            ViewGroup parent = webView.getParent() instanceof ViewGroup ? (ViewGroup) webView.getParent() : null;
+            ViewGroup.LayoutParams params = webView.getLayoutParams();
+            int index = parent == null ? -1 : parent.indexOfChild(webView);
+            if (parent != null) parent.removeView(webView);
+            webView.destroy();
+            WebView fresh = new WebView(this);
+            webView = fresh;
+            if (parent != null) parent.addView(fresh, index, params);
+            configureWebView();
+            swipeRefresh.setRefreshing(false);
+            if (!TextUtils.isEmpty(lastLoadedUrl)) webView.loadUrl(lastLoadedUrl);
+        } catch (Exception error) {
+            // 重建失败也不能让 App 死：退回设置页，用户可手动重进。
+            showView(setupView);
+        }
     }
 
     private void configureWebView() {
@@ -201,6 +225,18 @@ public class MainActivity extends Activity {
                 if (!request.isForMainFrame()) return;
                 // 连不上时不自动切换，直接进入手动选择网络页（逐条显示可用性）。
                 showNetworkPage();
+            }
+
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                // 渲染进程被系统回收（最常见的原因是上传大图时内存不足）。默认行为是整个
+                // App 跟着一起闪退，这里是唯一的兜底：提示后重建 WebView 重新加载页面。
+                // 上传队列在网页端有本地续传，没传完的图会提示「继续上传」，不会丢。
+                if (webView == view) {
+                    Toast.makeText(MainActivity.this, R.string.page_out_of_memory_reloading, Toast.LENGTH_LONG).show();
+                    recreateWebViewAfterCrash();
+                }
+                return true;
             }
         });
 
@@ -403,6 +439,23 @@ public class MainActivity extends Activity {
             deliverPickedFiles(requestId, new JSONArray());
             return;
         }
+        // 先问页面端支不支持逐张回传：新版页面（缓存已更新的）走 __workbenchPickedFile，
+        // 一次只把一张图的字节交给页面 —— 选多张大图时原生和网页两边都只占一张图的内存；
+        // 旧页面退回原来的整批回传，保证装新壳后旧缓存页面也能用。
+        mainHandler.post(() -> {
+            if (webView == null) {
+                deliverPickedFilesLegacy(requestId, uris);
+                return;
+            }
+            webView.evaluateJavascript("typeof window.__workbenchPickedFile==='function'", value -> {
+                if ("true".equals(value)) deliverPickedFilesStreaming(requestId, uris);
+                else deliverPickedFilesLegacy(requestId, uris);
+            });
+        });
+    }
+
+    /** 旧协议：整批读进内存、拼一个 JSON 一次回传（页面端还是旧版缓存时用）。 */
+    private void deliverPickedFilesLegacy(String requestId, List<Uri> uris) {
         executor.execute(() -> {
             JSONArray files = new JSONArray();
             int failed = 0;
@@ -420,6 +473,48 @@ public class MainActivity extends Activity {
                     Toast.makeText(MainActivity.this, R.string.pick_files_partial_failed, Toast.LENGTH_LONG).show();
                 }
                 deliverPickedFiles(requestId, result);
+            });
+        });
+    }
+
+    /** 新协议：一张一张读、一张一张交给页面，最后发 __workbenchPickedFilesDone 收尾。 */
+    private void deliverPickedFilesStreaming(String requestId, List<Uri> uris) {
+        final String quotedId = JSONObject.quote(requestId);
+        executor.execute(() -> {
+            int failed = 0;
+            for (Uri uri : uris) {
+                String payload;
+                try {
+                    payload = readPickedFile(uri).toString();
+                } catch (Exception error) {
+                    failed += 1;
+                    continue;
+                }
+                final String item = payload;
+                final CountDownLatch delivered = new CountDownLatch(1);
+                mainHandler.post(() -> {
+                    if (webView == null) {
+                        delivered.countDown();
+                        return;
+                    }
+                    webView.evaluateJavascript(
+                            "window.__workbenchPickedFile&&window.__workbenchPickedFile(" + quotedId + "," + item + ");",
+                            value -> delivered.countDown());
+                });
+                try {
+                    // 等这一张真正进了页面再读下一张：内存峰值就是一张图的字节数。
+                    delivered.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException ignored) {
+                }
+            }
+            final int failedCount = failed;
+            mainHandler.post(() -> {
+                if (webView == null) return;
+                if (failedCount > 0) {
+                    Toast.makeText(MainActivity.this, R.string.pick_files_partial_failed, Toast.LENGTH_LONG).show();
+                }
+                webView.evaluateJavascript(
+                        "window.__workbenchPickedFilesDone&&window.__workbenchPickedFilesDone(" + quotedId + ");", null);
             });
         });
     }
@@ -537,6 +632,7 @@ public class MainActivity extends Activity {
 
     private void loadServer(String url) {
         showView(browserView);
+        lastLoadedUrl = url;
         webView.loadUrl(url);
     }
 

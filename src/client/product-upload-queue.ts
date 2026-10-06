@@ -4,6 +4,7 @@ import {
   uploadProductImage,
   uploadProductPackagingImage,
 } from './api';
+import { createImageThumbUrl } from './preview-thumbs';
 
 /**
  * 产品文件后台上传队列。
@@ -149,16 +150,7 @@ export function resolveImageOrder(
   return ids;
 }
 
-/** 原图预览放进 Object URL；环境不支持时退化为没有预览（图库里显示占位图标）。 */
-function createPreviewUrl(file: File): string | undefined {
-  try {
-    if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return undefined;
-    return URL.createObjectURL(file);
-  } catch {
-    return undefined;
-  }
-}
-
+/** 释放缩略图的 Object URL；环境不支持时忽略。 */
 function revokePreviewUrl(item: QueueItem): void {
   if (!item.previewUrl) return;
   try { URL.revokeObjectURL(item.previewUrl); } catch { /* 关页瞬间可能失败，忽略 */ }
@@ -252,14 +244,10 @@ export class ProductUploadQueue {
         const batch = byProduct.get(stored.meta.productId);
         if (!batch) continue;
         const file = new File([stored.blob], stored.meta.fileName);
-        batch.items.push({
-          meta: stored.meta,
-          file,
-          status: 'queued',
-          previewUrl: stored.meta.kind === 'image' ? createPreviewUrl(file) : undefined,
-        });
+        batch.items.push({ meta: stored.meta, file, status: 'queued' });
       }
       for (const [productId, batch] of byProduct) if (batch.items.length) this.batches.set(productId, batch);
+      for (const batch of this.batches.values()) for (const item of batch.items) this.attachThumb(item);
       this.publish({ resumableCount: this.pendingFileCount() });
     } finally {
       db.close();
@@ -291,7 +279,6 @@ export class ProductUploadQueue {
       meta: entry.meta,
       file: entry.file,
       status: 'queued',
-      previewUrl: entry.meta.kind === 'image' ? createPreviewUrl(entry.file) : undefined,
     }));
     const existing = this.batches.get(batch.productId);
     if (existing) for (const item of existing.items) revokePreviewUrl(item);
@@ -304,6 +291,7 @@ export class ProductUploadQueue {
       total: wasActive ? this.snapshot.total + batch.files.length : this.pendingFileCount(),
       done: wasActive ? this.snapshot.done : 0,
     });
+    for (const item of items) this.attachThumb(item);
     this.pump();
   }
 
@@ -346,6 +334,26 @@ export class ProductUploadQueue {
     let count = 0;
     for (const batch of this.batches.values()) for (const item of batch.items) if (item.status !== 'done') count += 1;
     return count;
+  }
+
+  /** 图片的本地预览统一用小图（最长边约 480px），生成好再挂上；期间界面显示占位图标。 */
+  private attachThumb(item: QueueItem): void {
+    if (item.meta.kind !== 'image' || item.previewUrl) return;
+    void createImageThumbUrl(item.file).then((url) => {
+      if (!url) return;
+      if (this.isTracked(item)) {
+        item.previewUrl = url;
+        this.publish();
+      } else {
+        // 批次已经结束或被丢弃：生成结果没人用，直接回收。
+        try { URL.revokeObjectURL(url); } catch { /* 页面收尾中 */ }
+      }
+    });
+  }
+
+  private isTracked(item: QueueItem): boolean {
+    for (const batch of this.batches.values()) if (batch.items.includes(item)) return true;
+    return false;
   }
 
   private publish(patch: Partial<UploadQueueSnapshot> = {}): void {
