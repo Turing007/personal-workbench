@@ -4,7 +4,7 @@ import fastifyStatic from '@fastify/static';
 import cookie from '@fastify/cookie';
 import type { DatabaseSync } from 'node:sqlite';
 import { join, resolve } from 'node:path';
-import { MAX_CONTRACT_SIZE } from './config.js';
+import { MAX_CONTRACT_SIZE, MAX_VIDEO_SIZE } from './config.js';
 import { AuthService, SESSION_COOKIE } from './auth/auth-service.js';
 import { UserRepository } from './auth/user-repository.js';
 import { createRepositories, type DatabaseRepositories } from './db/repositories.js';
@@ -93,7 +93,8 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
       files: 50,
       fields: 12,
       parts: 80,
-      fileSize: MAX_CONTRACT_SIZE,
+      // 全局按最大的视频放开；图片/合同/附件各自的路由会再按自己的上限卡（见 multipart-limits）。
+      fileSize: MAX_VIDEO_SIZE,
     },
   });
 

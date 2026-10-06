@@ -292,6 +292,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
             {/* 「图片上传中」不能放进 .product-gallery-name：那是两行截断 + overflow:hidden 的容器，
                 名字一长就把标记裁掉，只剩一条边。放在它外面自成一行才看得见。 */}
             {uploadBadge(product, uploadingIds)}
+            {!!product.videos?.length && <span className="badge badge-neutral" title="该产品有视频，详情里可播放">视频 {product.videos.length}</span>}
             <span className="product-gallery-meta">
               <span className="product-gallery-sku">{product.sku || '—'}</span>
               {showSensitive && <span className="product-gallery-price">{purchasePriceLabel(product.purchasePrice)}{extraQuoteCount(product) > 0 && <span className="price-tier-count" title={`还有 ${extraQuoteCount(product)} 档报价`}>+{extraQuoteCount(product)}</span>}</span>}

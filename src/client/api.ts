@@ -181,6 +181,7 @@ export interface ProductApiRecord {
   remark?: string;
   accessories?: string;
   images?: Array<Record<string, unknown>>;
+  videos?: Array<Record<string, unknown>>;
   attachments?: Array<Record<string, unknown>>;
   status?: string;
   createdAt?: string;
@@ -290,20 +291,45 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
 
 /**
  * XHR 版上传：只有 XMLHttpRequest 能在上传过程中拿到字节进度（fetch 没有），
- * 产品图库的逐张进度条靠它。错误映射与 request() 保持一致，超时同样按 UPLOAD_TIMEOUT_MS 处理。
+ * 产品图库的逐张进度条靠它。错误映射与 request() 保持一致。
+ *
+ * stallMs：断流检测 —— 连续这么久收不到任何上传进度就中止。大文件（视频）不能用
+ * 固定总超时一刀切：传 200MB 本身就要好几分钟，真正要防的是"卡住不动"。
  */
-function xhrUpload<T>(path: string, form: FormData, onProgress?: (percent: number | undefined) => void): Promise<T> {
+function xhrUpload<T>(
+  path: string,
+  form: FormData,
+  options: { onProgress?: (percent: number | undefined) => void; timeoutMs?: number; stallMs?: number } = {},
+): Promise<T> {
+  const { onProgress, timeoutMs = UPLOAD_TIMEOUT_MS, stallMs = 0 } = options;
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', path);
-    xhr.timeout = UPLOAD_TIMEOUT_MS;
+    xhr.timeout = timeoutMs;
+    let stalled = false;
+    let stallTimer: number | undefined;
+    const clearStall = () => {
+      if (stallTimer !== undefined) { clearTimeout(stallTimer); stallTimer = undefined; }
+    };
+    const armStall = () => {
+      if (!stallMs) return;
+      clearStall();
+      stallTimer = window.setTimeout(() => {
+        stalled = true;
+        try { xhr.abort(); } catch { /* 已经结束时忽略 */ }
+      }, stallMs);
+    };
     if (onProgress) {
       xhr.upload.onprogress = (event) => {
+        armStall();
         // 总大小未知时给 undefined：界面画流动条，不假装 0%。
         onProgress(event.lengthComputable && event.total > 0 ? Math.round((event.loaded / event.total) * 100) : undefined);
       };
     }
+    // 整个请求体已经发出：后面的等待交给总超时，不再按"没有进度"判死。
+    xhr.upload.onload = () => clearStall();
     xhr.onload = () => {
+      clearStall();
       let payload: unknown = null;
       try { payload = xhr.responseText ? JSON.parse(xhr.responseText) : null; } catch { payload = xhr.responseText; }
       if (xhr.status < 200 || xhr.status >= 300) {
@@ -325,9 +351,14 @@ function xhrUpload<T>(path: string, form: FormData, onProgress?: (percent: numbe
       }
       resolve(payload as T);
     };
-    xhr.onerror = () => reject({ code: 'NETWORK_ERROR', message: '网络异常，上传失败，请重试' } satisfies ApiErrorShape);
-    xhr.ontimeout = () => reject({ code: 'NETWORK_TIMEOUT', message: NETWORK_TIMEOUT_MESSAGE } satisfies ApiErrorShape);
-    xhr.onabort = () => reject({ code: 'NETWORK_ABORTED', message: '上传已取消' } satisfies ApiErrorShape);
+    xhr.onerror = () => { clearStall(); reject({ code: 'NETWORK_ERROR', message: '网络异常，上传失败，请重试' } satisfies ApiErrorShape); };
+    xhr.ontimeout = () => { clearStall(); reject({ code: 'NETWORK_TIMEOUT', message: NETWORK_TIMEOUT_MESSAGE } satisfies ApiErrorShape); };
+    xhr.onabort = () => {
+      clearStall();
+      if (stalled) reject({ code: 'NETWORK_TIMEOUT', message: NETWORK_TIMEOUT_MESSAGE } satisfies ApiErrorShape);
+      else reject({ code: 'NETWORK_ABORTED', message: '上传已取消' } satisfies ApiErrorShape);
+    };
+    armStall();
     xhr.send(form);
   });
 }
@@ -417,7 +448,7 @@ export function mapProductRecord(row: ProductApiRecord): ProductRecord {
   const rawImages = row.images ?? (row as ProductApiRecord & { images_json?: Array<Record<string, unknown>> }).images_json ?? [];
   const packaging = (row.packaging ?? []).map((item) => asPackaging(item));
   const rawAttachments = row.attachments ?? [];
-  return { ...mapProduct(row), category: row.category ?? '', purchasePrice: purchasePrice == null ? '' : String(purchasePrice), supplier: row.supplier ?? '', parameters: typeof row.parameters === 'string' ? row.parameters : '', status: normalizeProductStatus(row.status), colors: row.colors ?? [], batteryPlugs: row.batteryPlugs ?? [], images: rawImages.map((image) => ({ id: String(image.id ?? image.relativePath ?? image.relative_path), name: String(image.originalName ?? image.original_name ?? '产品图片'), url: `/files/${String(image.relativePath ?? image.relative_path ?? '')}`, category: normalizeProductImageCategory(image.category), note: String(image.note ?? '') })), attachments: rawAttachments.map((raw) => { const item = raw as Record<string, unknown>; const category = String(item.category ?? 'other'); const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id), category: (['manual', 'packaging-design', 'label-dieline', 'other'].includes(category) ? category : 'other') as ProductAttachmentCategory, name: String(item.originalName ?? item.original_name ?? '产品附件'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mimeType ?? item.mime_type ?? ''), size: Number(item.size ?? item.size_bytes ?? 0), createdAt: String(item.createdAt ?? item.created_at ?? '') }; }), accessories: row.accessories ?? '', remark: row.remark ?? '', purchaseQuotes: mapStoredPurchaseQuotes(row.purchaseQuotes),
+  return { ...mapProduct(row), category: row.category ?? '', purchasePrice: purchasePrice == null ? '' : String(purchasePrice), supplier: row.supplier ?? '', parameters: typeof row.parameters === 'string' ? row.parameters : '', status: normalizeProductStatus(row.status), colors: row.colors ?? [], batteryPlugs: row.batteryPlugs ?? [], images: rawImages.map((image) => ({ id: String(image.id ?? image.relativePath ?? image.relative_path), name: String(image.originalName ?? image.original_name ?? '产品图片'), url: `/files/${String(image.relativePath ?? image.relative_path ?? '')}`, category: normalizeProductImageCategory(image.category), note: String(image.note ?? '') })), videos: (row.videos ?? []).map((raw) => { const item = raw as Record<string, unknown>; const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id ?? relativePath), name: String(item.originalName ?? item.original_name ?? '产品视频'), size: Number(item.size ?? item.size_bytes ?? 0), url: `/files/${relativePath}` }; }), attachments: rawAttachments.map((raw) => { const item = raw as Record<string, unknown>; const category = String(item.category ?? 'other'); const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id), category: (['manual', 'packaging-design', 'label-dieline', 'other'].includes(category) ? category : 'other') as ProductAttachmentCategory, name: String(item.originalName ?? item.original_name ?? '产品附件'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mimeType ?? item.mime_type ?? ''), size: Number(item.size ?? item.size_bytes ?? 0), createdAt: String(item.createdAt ?? item.created_at ?? '') }; }), accessories: row.accessories ?? '', remark: row.remark ?? '', purchaseQuotes: mapStoredPurchaseQuotes(row.purchaseQuotes),
     packaging: packaging.length ? packaging : [asPackaging(undefined)], createdAt: String(row.createdAt ?? row.created_at ?? ''), updatedAt: String(row.updatedAt ?? row.updated_at ?? '') };
 }
 
@@ -731,10 +762,10 @@ export function deleteProduct(id: string) { return request(`/api/products/${id}`
 export function setProductStatus(id: string, status: 'active' | 'discontinued') {
   return request<ProductApiRecord>(`/api/products/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) });
 }
-export async function uploadProductAttachment(productId: string, file: File, category: string) {
+export async function uploadProductAttachment(productId: string, file: File, category: string, onProgress?: (percent: number | undefined) => void) {
   const form = new FormData();
   form.append('file', file);
-  return request<ProductAttachmentApiRecord>(`/api/products/${productId}/attachments?category=${encodeURIComponent(category)}`, { method: 'POST', body: form });
+  return xhrUpload<ProductAttachmentApiRecord>(`/api/products/${productId}/attachments?category=${encodeURIComponent(category)}`, form, { onProgress, timeoutMs: 10 * 60_000, stallMs: 60_000 });
 }
 export function updateProductAttachmentCategory(productId: string, attachmentId: string, category: string) {
   return request<ProductAttachmentApiRecord>(`/api/products/${productId}/attachments/${attachmentId}`, { method: 'PATCH', body: JSON.stringify({ category }) });
@@ -749,20 +780,30 @@ export async function uploadProductImage(id: string, file: File, category = '', 
   if (category) search.set('category', category);
   if (note) search.set('note', note);
   const query = search.toString();
-  return xhrUpload<ProductImageApiRecord>(`/api/products/${id}/images${query ? `?${query}` : ''}`, form, onProgress);
+  return xhrUpload<ProductImageApiRecord>(`/api/products/${id}/images${query ? `?${query}` : ''}`, form, { onProgress, timeoutMs: 10 * 60_000, stallMs: 60_000 });
 }
 export function updateProductImage(productId: string, imageId: string, patch: { category?: string; note?: string }) {
   return request<ProductImageApiRecord>(`/api/products/${productId}/images/${imageId}`, { method: 'PATCH', body: JSON.stringify(patch) });
 }
 export function deleteProductImage(productId: string, imageId: string) { return request(`/api/products/${productId}/images/${imageId}`, { method: 'DELETE' }); }
 export function reorderProductImages(productId: string, imageIds: number[]) { return request<null>(`/api/products/${productId}/images/order`, { method: 'PUT', body: JSON.stringify({ imageIds }) }); }
-export async function uploadProductPackagingImage(productId: string, packagingId: string, file: File) {
+export async function uploadProductPackagingImage(productId: string, packagingId: string, file: File, onProgress?: (percent: number | undefined) => void) {
   const form = new FormData();
   form.append('file', file);
-  return request(`/api/products/${productId}/packaging/${packagingId}/images`, { method: 'POST', body: form });
+  return xhrUpload(`/api/products/${productId}/packaging/${packagingId}/images`, form, { onProgress, timeoutMs: 10 * 60_000, stallMs: 60_000 });
 }
 export function deleteProductPackagingImage(productId: string, packagingId: string, imageId: string) {
   return request(`/api/products/${productId}/packaging/${packagingId}/images/${imageId}`, { method: 'DELETE' });
+}
+
+/** 产品视频上传：大文件用"长超时 + 断流检测"，传 200MB 时不再被固定超时砍断。 */
+export async function uploadProductVideo(productId: string, file: File, onProgress?: (percent: number | undefined) => void) {
+  const form = new FormData();
+  form.append('file', file);
+  return xhrUpload<{ id: number }>(`/api/products/${productId}/videos`, form, { onProgress, timeoutMs: 30 * 60_000, stallMs: 60_000 });
+}
+export function deleteProductVideo(productId: string, videoId: string) {
+  return request<null>(`/api/products/${productId}/videos/${videoId}`, { method: 'DELETE' });
 }
 export function getLabels(orderId: number | string) { return request<{ labels: Array<Record<string, unknown>> }>(`/api/orders/${orderId}/labels`); }
 export function mergeLabels(orderId: number | string, labelIds: Array<number | string>) {

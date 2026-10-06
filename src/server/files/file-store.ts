@@ -9,10 +9,12 @@ import {
   ALLOWED_INVOICE_EXTENSIONS,
   ALLOWED_INVOICE_MIME_TYPES,
   ALLOWED_PRODUCT_ATTACHMENT_EXTENSIONS,
+  ALLOWED_VIDEO_EXTENSIONS,
   ALLOWED_IMAGE_MIME_TYPES,
   MAX_CONTRACT_SIZE,
   MAX_IMAGE_SIZE,
   MAX_INVOICE_SIZE,
+  MAX_VIDEO_SIZE,
   type AllowedImageMimeType,
 } from '../config.js';
 
@@ -28,6 +30,7 @@ export type FileKind =
   | 'order-contract'
   | 'order-detail'
   | 'product-attachment'
+  | 'product-video'
   | 'customer-product-attachment'
   | 'order-item-requirement'
   | 'finance-invoice';
@@ -44,6 +47,7 @@ export type PublicFileDirectory =
   | 'order-contracts'
   | 'order-detail-images'
   | 'product-attachments'
+  | 'product-videos'
   | 'customer-product-attachments'
   | 'order-item-requirements'
   | 'finance-invoices';
@@ -68,6 +72,8 @@ export class FileStoreError extends Error {
       | 'CONTRACT_TOO_LARGE'
       | 'UNSUPPORTED_PRODUCT_ATTACHMENT_TYPE'
       | 'PRODUCT_ATTACHMENT_TOO_LARGE'
+      | 'UNSUPPORTED_VIDEO_TYPE'
+      | 'VIDEO_TOO_LARGE'
       | 'UNSUPPORTED_INVOICE_TYPE'
       | 'INVOICE_TOO_LARGE'
       | 'INVALID_FILE_PATH'
@@ -122,6 +128,7 @@ const directoryByKind: Record<FileKind, PublicFileDirectory> = {
   'order-contract': 'order-contracts',
   'order-detail': 'order-detail-images',
   'product-attachment': 'product-attachments',
+  'product-video': 'product-videos',
   'customer-product-attachment': 'customer-product-attachments',
   'order-item-requirement': 'order-item-requirements',
   'finance-invoice': 'finance-invoices',
@@ -166,6 +173,28 @@ function assertAllowedProductAttachmentFile(originalName: string, _mime: string)
     throw new FileStoreError('UNSUPPORTED_PRODUCT_ATTACHMENT_TYPE', '产品附件支持 PDF、Office、图片、压缩包及常见设计源文件');
   }
   return extension;
+}
+
+/** 视频按扩展名判定：部分 ROM 回传的 MIME 不可靠，扩展名更稳。 */
+function assertAllowedVideoFile(originalName: string): string {
+  const extension = basename(originalName.replaceAll('\\', '/')).toLowerCase().slice(basename(originalName.replaceAll('\\', '/')).lastIndexOf('.'));
+  if (!(ALLOWED_VIDEO_EXTENSIONS as readonly string[]).includes(extension)) {
+    throw new FileStoreError('UNSUPPORTED_VIDEO_TYPE', '产品视频支持 MP4、MOV、M4V、WebM 格式');
+  }
+  return extension;
+}
+
+function multipartSizeLimit(kind: FileKind, maxContractSize: number): number {
+  if (kind === 'finance-invoice') return MAX_INVOICE_SIZE;
+  if (kind === 'product-video') return MAX_VIDEO_SIZE;
+  return maxContractSize;
+}
+
+function tooLargeError(kind: FileKind, maxSize: number): FileStoreError {
+  if (kind === 'order-contract') return new FileStoreError('CONTRACT_TOO_LARGE', `合同不能超过 ${maxSize / 1024 / 1024}MB`);
+  if (kind === 'finance-invoice') return new FileStoreError('INVOICE_TOO_LARGE', `发票不能超过 ${maxSize / 1024 / 1024}MB`);
+  if (kind === 'product-video') return new FileStoreError('VIDEO_TOO_LARGE', `视频不能超过 ${maxSize / 1024 / 1024}MB`);
+  return new FileStoreError('PRODUCT_ATTACHMENT_TOO_LARGE', `附件不能超过 ${maxSize / 1024 / 1024}MB`);
 }
 
 export class FileStore {
@@ -263,7 +292,7 @@ export class FileStore {
     originalName: string,
     mime: string,
   ): Promise<StagedFile> {
-    if (kind !== 'order-contract' && kind !== 'product-attachment' && kind !== 'customer-product-attachment' && kind !== 'order-item-requirement' && kind !== 'finance-invoice') {
+    if (kind !== 'order-contract' && kind !== 'product-attachment' && kind !== 'product-video' && kind !== 'customer-product-attachment' && kind !== 'order-item-requirement' && kind !== 'finance-invoice') {
       throw new FileStoreError('INVALID_FILE_PATH', '通用附件类型无效');
     }
     const safeOriginalName = normalizeOriginalName(originalName);
@@ -271,7 +300,9 @@ export class FileStore {
       ? assertAllowedContractFile(safeOriginalName, mime)
       : kind === 'finance-invoice'
         ? assertAllowedInvoiceFile(safeOriginalName, mime)
-        : assertAllowedProductAttachmentFile(safeOriginalName, mime);
+        : kind === 'product-video'
+          ? assertAllowedVideoFile(safeOriginalName)
+          : assertAllowedProductAttachmentFile(safeOriginalName, mime);
     const directoryName = targetDirectoryName(kind);
     const stagingDirectory = join(this.rootDirectory, '.staging');
     await mkdir(stagingDirectory, { recursive: true });
@@ -286,16 +317,15 @@ export class FileStore {
       for await (const chunk of stream as AsyncIterable<Buffer | Uint8Array | string>) {
         const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
         size += buffer.byteLength;
-        const maxSize = kind === 'finance-invoice' ? MAX_INVOICE_SIZE : this.maxContractSize;
+        const maxSize = multipartSizeLimit(kind, this.maxContractSize);
         if (size > maxSize) {
-          throw new FileStoreError(kind === 'order-contract' ? 'CONTRACT_TOO_LARGE' : kind === 'finance-invoice' ? 'INVOICE_TOO_LARGE' : 'PRODUCT_ATTACHMENT_TOO_LARGE', `附件不能超过 ${maxSize / 1024 / 1024}MB`);
+          throw tooLargeError(kind, maxSize);
         }
         chunks.push(buffer);
       }
 
       if ((stream as NodeJS.ReadableStream & { truncated?: boolean }).truncated) {
-        const maxSize = kind === 'finance-invoice' ? MAX_INVOICE_SIZE : this.maxContractSize;
-        throw new FileStoreError(kind === 'order-contract' ? 'CONTRACT_TOO_LARGE' : kind === 'finance-invoice' ? 'INVOICE_TOO_LARGE' : 'PRODUCT_ATTACHMENT_TOO_LARGE', `附件不能超过 ${maxSize / 1024 / 1024}MB`);
+        throw tooLargeError(kind, multipartSizeLimit(kind, this.maxContractSize));
       }
 
       await writeFile(temporaryPath, Buffer.concat(chunks));

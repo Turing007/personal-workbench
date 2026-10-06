@@ -4,6 +4,8 @@ import { normalizeEnvironment, type WorkbenchEnvironment } from '../shared/envir
 export const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 export const ALLOWED_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
 export const MAX_CONTRACT_SIZE = 20 * 1024 * 1024;
+/** 产品视频上限：手机拍 1~2 分钟 1080p 够用，同时按住备份 ZIP 的体积。 */
+export const MAX_VIDEO_SIZE = 200 * 1024 * 1024;
 export const ALLOWED_CONTRACT_MIME_TYPES = [
   'application/pdf',
   'application/msword',
@@ -43,6 +45,9 @@ export const ALLOWED_PRODUCT_ATTACHMENT_EXTENSIONS = [
   '.dwg',
   '.dxf',
 ] as const;
+
+/** 产品视频允许的扩展名（按扩展名判定，和老 ROM 上拿不到可靠 MIME 的机型兼容）。 */
+export const ALLOWED_VIDEO_EXTENSIONS = ['.mp4', '.mov', '.m4v', '.webm'] as const;
 
 export type AllowedImageMimeType = (typeof ALLOWED_IMAGE_MIME_TYPES)[number];
 export type AllowedContractMimeType = (typeof ALLOWED_CONTRACT_MIME_TYPES)[number];

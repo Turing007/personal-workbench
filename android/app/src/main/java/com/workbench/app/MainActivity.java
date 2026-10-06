@@ -91,6 +91,10 @@ public class MainActivity extends Activity {
     private static final int NOTIFICATION_PERMISSION_REQUEST = 1004;
     /** 单个文件上限：base64 经 evaluateJavascript 回传会放大约 1/3，更大的文件请走电脑端上传。 */
     private static final int MAX_PICKED_BYTES = 25 * 1024 * 1024;
+    /** 视频单文件上限（与服务器 200MB 一致）；分块回传下不再受"整包 base64"的内存限制。 */
+    private static final long MAX_PICKED_VIDEO_BYTES = 200L * 1024 * 1024;
+    /** 分块回传的块大小：原生与网页的内存峰值都压到这一块的量级。 */
+    private static final int PICK_CHUNK_BYTES = 2 * 1024 * 1024;
     /** 相册里的子目录，便于用户在工作台 App 存图后一眼找到。 */
     private static final String GALLERY_FOLDER = "个人工作台";
     /** 只接管「图片地址」的长按，避免把普通链接当成图片存进相册。 */
@@ -449,11 +453,110 @@ public class MainActivity extends Activity {
                 deliverPickedFilesLegacy(requestId, uris);
                 return;
             }
-            webView.evaluateJavascript("typeof window.__workbenchPickedFile==='function'", value -> {
-                if ("true".equals(value)) deliverPickedFilesStreaming(requestId, uris);
-                else deliverPickedFilesLegacy(requestId, uris);
+            webView.evaluateJavascript("typeof window.__workbenchPickedFileBegin==='function'", chunkedValue -> {
+                if ("true".equals(chunkedValue)) {
+                    deliverPickedFilesChunked(requestId, uris);
+                    return;
+                }
+                webView.evaluateJavascript("typeof window.__workbenchPickedFile==='function'", value -> {
+                    if ("true".equals(value)) deliverPickedFilesStreaming(requestId, uris);
+                    else deliverPickedFilesLegacy(requestId, uris);
+                });
             });
         });
+    }
+
+    /** 新协议（1.17 页面）：按 2MB 一块边读边发，配 Begin/Chunk/End/Abort，视频等大文件内存只占一块。 */
+    private void deliverPickedFilesChunked(String requestId, List<Uri> uris) {
+        final String quotedId = JSONObject.quote(requestId);
+        executor.execute(() -> {
+            int failed = 0;
+            for (Uri uri : uris) {
+                try {
+                    deliverOneFileChunked(quotedId, uri);
+                } catch (Exception error) {
+                    failed += 1;
+                }
+            }
+            final int failedCount = failed;
+            mainHandler.post(() -> {
+                if (webView == null) return;
+                if (failedCount > 0) {
+                    Toast.makeText(MainActivity.this, R.string.pick_files_partial_failed, Toast.LENGTH_LONG).show();
+                }
+                webView.evaluateJavascript(
+                        "window.__workbenchPickedFilesDone&&window.__workbenchPickedFilesDone(" + quotedId + ");", null);
+            });
+        });
+    }
+
+    /** 读一个文件并分块回传；超大（声明或实际字节超上限）就中止这一个、其余照常。 */
+    private void deliverOneFileChunked(String quotedId, Uri uri) throws IOException {
+        String name = queryDisplayName(uri);
+        String type = getContentResolver().getType(uri);
+        boolean video = isVideoLike(name, type);
+        if (TextUtils.isEmpty(type)) type = video ? "video/mp4" : "application/octet-stream";
+        long maxBytes = video ? MAX_PICKED_VIDEO_BYTES : MAX_PICKED_BYTES;
+        if (queryDisplaySize(uri) > maxBytes) throw new IOException("file too large");
+        try (InputStream input = getContentResolver().openInputStream(uri)) {
+            if (input == null) throw new IOException("open failed");
+            byte[] buffer = new byte[PICK_CHUNK_BYTES];
+            long total = 0;
+            boolean begun = false;
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                total += read;
+                if (total > maxBytes) {
+                    // 声明大小不可靠时边读边卡；已经发过的块让页面丢弃，别让半个文件冒充完整。
+                    if (begun) waitForEvaluateJavascript("window.__workbenchPickedFileAbort&&window.__workbenchPickedFileAbort(" + quotedId + ");");
+                    throw new IOException("file too large");
+                }
+                String base64 = Base64.encodeToString(buffer, 0, read, Base64.NO_WRAP);
+                if (!begun) {
+                    begun = true;
+                    waitForEvaluateJavascript("window.__workbenchPickedFileBegin&&window.__workbenchPickedFileBegin("
+                            + quotedId + "," + JSONObject.quote(name) + "," + JSONObject.quote(type) + ");");
+                }
+                waitForEvaluateJavascript("window.__workbenchPickedFileChunk&&window.__workbenchPickedFileChunk("
+                        + quotedId + "," + JSONObject.quote(base64) + ");");
+            }
+            if (total == 0) throw new IOException("empty file");
+            waitForEvaluateJavascript("window.__workbenchPickedFileEnd&&window.__workbenchPickedFileEnd(" + quotedId + ");");
+        }
+    }
+
+    /** 后台线程同步等一次 evaluateJavascript 执行完：分块必须按顺序送达。 */
+    private void waitForEvaluateJavascript(String script) {
+        final CountDownLatch latch = new CountDownLatch(1);
+        mainHandler.post(() -> {
+            if (webView == null) {
+                latch.countDown();
+                return;
+            }
+            webView.evaluateJavascript(script, value -> latch.countDown());
+        });
+        try {
+            latch.await(10, TimeUnit.SECONDS);
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static boolean isVideoLike(String name, String type) {
+        if (type != null && type.startsWith("video/")) return true;
+        String lower = name == null ? "" : name.toLowerCase();
+        return lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".m4v") || lower.endsWith(".webm");
+    }
+
+    private long queryDisplaySize(Uri uri) {
+        try (Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int index = cursor.getColumnIndex(OpenableColumns.SIZE);
+                if (index >= 0 && !cursor.isNull(index)) return cursor.getLong(index);
+            }
+        } catch (Exception ignored) {
+        }
+        return -1;
     }
 
     /** 旧协议：整批读进内存、拼一个 JSON 一次回传（页面端还是旧版缓存时用）。 */

@@ -20,6 +20,7 @@ const tableNames = [
   'product_packaging',
   'product_purchase_quotes',
   'product_images',
+  'product_videos',
   'product_packaging_images',
   'product_attachments',
   'customer_products',

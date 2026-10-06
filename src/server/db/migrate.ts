@@ -4,7 +4,7 @@ import { migratePackagingColumns } from './packaging.js';
 import { sortByImageLeadNumber } from '../../shared/product-image-order.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 25;
+const CURRENT_SCHEMA_VERSION = 26;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -44,6 +44,16 @@ CREATE TABLE IF NOT EXISTS product_packaging (
 );
 
 CREATE TABLE IF NOT EXISTS product_images (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  relative_path TEXT NOT NULL UNIQUE,
+  original_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS product_videos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   relative_path TEXT NOT NULL UNIQUE,
@@ -1084,6 +1094,21 @@ function migrateVersionTwentyFour(database: DatabaseSync, now: string): void {
  * 一次性按文件名前导编号重排产品图片顺序。
  * 只在首次执行：之后用户可以自由拖动，不能被每次启动覆盖回去，所以用独立标记位守着。
  */
+function migrateVersionTwentySix(database: DatabaseSync, now: string): void {
+  database.exec(
+    `CREATE TABLE IF NOT EXISTS product_videos (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+       relative_path TEXT NOT NULL UNIQUE,
+       original_name TEXT NOT NULL,
+       mime_type TEXT NOT NULL,
+       size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+       created_at TEXT NOT NULL
+     )`,
+  );
+  upsertSetting(database, 'schema_version', '26', now);
+}
+
 function migrateVersionTwentyFive(database: DatabaseSync, now: string): void {
   const done = database
     .prepare("SELECT value FROM settings WHERE key = 'product_images_ordered_by_filename_v25'")
@@ -1162,6 +1187,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionTwentyThree(transactionDatabase, now);
     migrateVersionTwentyFour(transactionDatabase, now);
     migrateVersionTwentyFive(transactionDatabase, now);
+    migrateVersionTwentySix(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

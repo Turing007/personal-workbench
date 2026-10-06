@@ -9,6 +9,10 @@ type FakeWindow = Record<string, unknown> & {
   __workbenchPickedFiles?: (id: string, files: unknown[]) => void;
   __workbenchPickedFile?: (id: string, file: unknown) => void;
   __workbenchPickedFilesDone?: (id: string) => void;
+  __workbenchPickedFileBegin?: (id: string, name: string, type: string) => void;
+  __workbenchPickedFileChunk?: (id: string, base64: string) => void;
+  __workbenchPickedFileEnd?: (id: string) => void;
+  __workbenchPickedFileAbort?: (id: string) => void;
 };
 
 function installWindow(fake: FakeWindow) {
@@ -182,5 +186,56 @@ describe('原生选文件桥（App 内上传通路）', () => {
       updateUploadKeepAlive('t', 0, 1);
       stopUploadKeepAlive();
     }).not.toThrow();
+  });
+
+  it('新版分块回传：Begin/Chunk/End 拼回完整文件（大视频走的就是这条路）', async () => {
+    const fake: FakeWindow = {};
+    installWindow(fake);
+    const first = Buffer.from([1, 2, 3, 4, 5]);
+    const second = Buffer.from([6, 7, 8]);
+    fake.workbenchApp = {
+      pickFiles(_accept: string, _multiple: boolean, _max: number, requestId: string) {
+        setTimeout(() => {
+          fake.__workbenchPickedFileBegin?.(requestId, '视频.mp4', 'video/mp4');
+          fake.__workbenchPickedFileChunk?.(requestId, first.toString('base64'));
+          fake.__workbenchPickedFileChunk?.(requestId, second.toString('base64'));
+          fake.__workbenchPickedFileEnd?.(requestId);
+          fake.__workbenchPickedFilesDone?.(requestId);
+        }, 0);
+        return true;
+      },
+    };
+    const files = await pickFilesNatively(['.mp4'], true, 5)!;
+    expect(files).toHaveLength(1);
+    expect(files[0].name).toBe('视频.mp4');
+    expect(files[0].type).toBe('video/mp4');
+    expect(files[0].size).toBe(8);
+    expect(Array.from(new Uint8Array(await files[0].arrayBuffer()))).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    // 收尾时把全局回调清掉
+    expect(fake.__workbenchPickedFileBegin).toBeUndefined();
+    expect(fake.__workbenchPickedFileChunk).toBeUndefined();
+    expect(fake.__workbenchPickedFileAbort).toBeUndefined();
+  });
+
+  it('分块回传收到 Abort：半截文件被丢弃，后面完整的文件照常收下', async () => {
+    const fake: FakeWindow = {};
+    installWindow(fake);
+    fake.workbenchApp = {
+      pickFiles(_accept: string, _multiple: boolean, _max: number, requestId: string) {
+        setTimeout(() => {
+          fake.__workbenchPickedFileBegin?.(requestId, '超限.mp4', 'video/mp4');
+          fake.__workbenchPickedFileChunk?.(requestId, Buffer.from([9, 9, 9]).toString('base64'));
+          fake.__workbenchPickedFileAbort?.(requestId);
+          fake.__workbenchPickedFileBegin?.(requestId, '好的.mp4', 'video/mp4');
+          fake.__workbenchPickedFileChunk?.(requestId, Buffer.from([1, 2]).toString('base64'));
+          fake.__workbenchPickedFileEnd?.(requestId);
+          fake.__workbenchPickedFilesDone?.(requestId);
+        }, 0);
+        return true;
+      },
+    };
+    const files = await pickFilesNatively(['.mp4'], true, 5)!;
+    expect(files.map((file) => file.name)).toEqual(['好的.mp4']);
+    expect(files[0].size).toBe(2);
   });
 });

@@ -122,10 +122,11 @@ export function stopUploadKeepAlive(): void {
  * 部分 ROM 的 WebView 里 <input type=file> 的点击激活链整条失效（点了连系统选择器都不弹），
  * 只能由原生拉起系统选择器，再把文件字节以 base64 回传。
  *
- * 回传协议有两版，用户装的新旧 App 都可能遇到：
- *  - 新版（App 1.15+）：逐张调用 __workbenchPickedFile，最后 __workbenchPickedFilesDone 收尾；
- *    原生一次只把一张图的字节交给页面，选多张大图时两边内存都只占一张的量。
- *  - 旧版：一次性调用 __workbenchPickedFiles 回传整个数组。
+ * 回传协议有三版，用户装的新旧 App 都可能遇到：
+ *  - 新版（App 1.17+）：分块回传 __workbenchPickedFileBegin/Chunk/End（+ Abort 中止单个文件），
+ *    原生按 2MB 一块边读边发 —— 视频这类大文件里外内存都只占一块；
+ *  - App 1.15/1.16：逐张调用 __workbenchPickedFile，最后 __workbenchPickedFilesDone 收尾；
+ *  - 更旧：一次性调用 __workbenchPickedFiles 回传整个数组。
  * 返回 undefined 表示当前环境没有该能力或拉起失败，调用方应退回 <input type=file> 路径；
  * 用户取消选择时 Promise resolve 为空数组。
  */
@@ -146,13 +147,54 @@ export function pickFilesNatively(accept: string[], multiple: boolean, maxCount:
         __workbenchPickedFiles?: (id: string, files: PickedNativeFile[]) => void;
         __workbenchPickedFile?: (id: string, file: PickedNativeFile) => void;
         __workbenchPickedFilesDone?: (id: string) => void;
+        __workbenchPickedFileBegin?: (id: string, name: string, type: string) => void;
+        __workbenchPickedFileChunk?: (id: string, base64: string) => void;
+        __workbenchPickedFileEnd?: (id: string) => void;
+        __workbenchPickedFileAbort?: (id: string) => void;
       };
       const collected: File[] = [];
       const finish = () => {
         delete target.__workbenchPickedFiles;
         delete target.__workbenchPickedFile;
         delete target.__workbenchPickedFilesDone;
+        delete target.__workbenchPickedFileBegin;
+        delete target.__workbenchPickedFileChunk;
+        delete target.__workbenchPickedFileEnd;
+        delete target.__workbenchPickedFileAbort;
         resolve(collected.slice());
+      };
+      // 分块协议（1.17+）：与原生侧的能力探测对应。每个分块解码后立刻放进 Blob，
+      // 大文件的数据经浏览器 Blob 存储（可落盘）承载，渲染进程内存只占一块的量级。
+      let pendingParts: Blob[] | null = null;
+      let pendingName = '';
+      let pendingType = '';
+      target.__workbenchPickedFileBegin = (id, name, type) => {
+        if (id !== requestId) return;
+        pendingParts = [];
+        pendingName = name || '';
+        pendingType = type || '';
+      };
+      target.__workbenchPickedFileChunk = (id, base64) => {
+        if (id !== requestId || !pendingParts) return;
+        try {
+          const binary = atob(base64 || '');
+          const bytes = new Uint8Array(binary.length);
+          for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+          pendingParts.push(new Blob([bytes]));
+        } catch {
+          pendingParts = null;
+        }
+      };
+      target.__workbenchPickedFileEnd = (id) => {
+        if (id !== requestId || !pendingParts) return;
+        const parts = pendingParts;
+        pendingParts = null;
+        if (!parts.length) return;
+        collected.push(new File(parts, pendingName || `文件-${Date.now()}`, { type: pendingType || 'application/octet-stream' }));
+      };
+      target.__workbenchPickedFileAbort = (id) => {
+        if (id !== requestId) return;
+        pendingParts = null; // 半截文件直接丢弃，不算一张
       };
       // 与原生侧的能力探测对应：__workbenchPickedFile 存在 = 支持逐张回传。
       target.__workbenchPickedFile = (id, picked) => {

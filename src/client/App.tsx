@@ -59,6 +59,7 @@ import {
   uploadOrderDetailImage,
   updateProductImage,
   deleteProductImage,
+  deleteProductVideo,
   updateProductAttachmentCategory,
   deleteProductAttachment,
   updateProduct,
@@ -411,6 +412,19 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
           }
         }
       }
+      // 视频删除差异：草稿里保留的视频才是要留下的；和删除图片同理，后台上传期间跳过。
+      const draftVideoIds = new Set((draft.videos ?? []).filter((item) => !item.file && /^\d+$/.test(item.id)).map((item) => item.id));
+      const serverVideos = Array.isArray((saved as { videos?: Array<Record<string, unknown>> }).videos)
+        ? (saved as { videos: Array<Record<string, unknown>> }).videos
+        : [];
+      if (!skipDeletes) {
+        for (const video of serverVideos) {
+          const videoId = String(video.id ?? '');
+          if (/^\d+$/.test(videoId) && !draftVideoIds.has(videoId)) {
+            await deleteIfStillThere(() => deleteProductVideo(savedProductId, videoId));
+          }
+        }
+      }
       for (const attachment of draft.attachments.filter((item) => !item.file && /^\d+$/.test(item.id))) {
         const previous = serverAttachments.find((item) => String(item.id) === attachment.id) as { category?: string } | undefined;
         if (previous && previous.category !== attachment.category) {
@@ -462,6 +476,16 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
             category: attachment.category, note: '', fileName: attachment.name || attachment.file!.name,
           },
           file: attachment.file!,
+        });
+      }
+      for (const video of (draft.videos ?? []).filter((item) => item.file)) {
+        const taskId = nextTaskId('video');
+        batch.files.push({
+          meta: {
+            id: taskId, productId: savedProductId, productLabel, kind: 'video',
+            category: '', note: '', fileName: video.name || video.file!.name,
+          },
+          file: video.file!,
         });
       }
 

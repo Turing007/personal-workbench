@@ -16,7 +16,7 @@ import {
   sendFailure,
   sendSuccess,
 } from './api-response.js';
-import { contractFileOptions, imageFileOptions } from './multipart-limits.js';
+import { contractFileOptions, imageFileOptions, videoFileOptions } from './multipart-limits.js';
 import { PdfRenderer } from '../documents/pdf-renderer.js';
 import { ThumbnailService, isResizableImage } from '../files/thumbnail-service.js';
 import {
@@ -348,6 +348,17 @@ function parseImageNote(value: unknown, field = 'note'): string {
   return text;
 }
 
+function mapVideo(row: Record<string, unknown>) {
+  return {
+    id: Number(row.id),
+    relativePath: String(row.relativePath ?? row.relative_path ?? ''),
+    originalName: String(row.originalName ?? row.original_name ?? ''),
+    mimeType: String(row.mimeType ?? row.mime_type ?? ''),
+    size: Number(row.size ?? row.size_bytes ?? 0),
+    createdAt: String(row.createdAt ?? row.created_at ?? ''),
+  };
+}
+
 function mapAttachment(row: Record<string, unknown>) {
   const relativePath = String(row.relativePath ?? row.relative_path ?? '');
   return {
@@ -382,6 +393,7 @@ function mapProduct(row: Record<string, unknown> | undefined) {
     packaging: Array.isArray(row.packaging) ? row.packaging : [],
     purchaseQuotes: Array.isArray(row.purchaseQuotes) ? row.purchaseQuotes : [],
     images: Array.isArray(row.images) ? row.images : [],
+    videos: Array.isArray(row.videos) ? row.videos.map((item) => mapVideo(item as Record<string, unknown>)) : [],
     attachments: Array.isArray(row.attachments) ? row.attachments.map((item) => mapAttachment(item as Record<string, unknown>)) : [],
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
@@ -401,7 +413,7 @@ async function safeRoute<T>(
   } catch (error) {
     if (error instanceof ApiError) return sendFailure(reply, error);
     if (error instanceof FileStoreError) {
-        const statusCode = error.code === 'IMAGE_TOO_LARGE' || error.code === 'PRODUCT_ATTACHMENT_TOO_LARGE' ? 413 : error.code === 'UNSUPPORTED_IMAGE_TYPE' || error.code === 'UNSUPPORTED_PRODUCT_ATTACHMENT_TYPE' ? 415 : 400;
+        const statusCode = error.code === 'IMAGE_TOO_LARGE' || error.code === 'PRODUCT_ATTACHMENT_TOO_LARGE' || error.code === 'VIDEO_TOO_LARGE' ? 413 : error.code === 'UNSUPPORTED_IMAGE_TYPE' || error.code === 'UNSUPPORTED_PRODUCT_ATTACHMENT_TYPE' || error.code === 'UNSUPPORTED_VIDEO_TYPE' ? 415 : 400;
       return sendFailure(reply, new ApiError(statusCode, error.code, error.message, 'file'));
     }
     return sendFailure(reply, mapDatabaseError(error));
@@ -662,6 +674,37 @@ export async function registerProductRoutes(app: FastifyInstance, options: Produ
         await fileStore.deleteFile(relativePath);
         return sendSuccess(reply, null);
       }, reply),
+  );
+
+  app.post('/api/products/:id/videos', async (request: FastifyRequest<{ Params: { id: string } }>, reply) =>
+    safeRoute(async () => {
+      if (!fileStore) throw new ApiError(503, 'FILE_STORE_UNAVAILABLE', '附件存储尚未配置');
+      const id = getProductId(request);
+      if (!repositories.getProduct(id)) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
+      const file = await request.file(videoFileOptions);
+      if (!file) throw new ApiError(400, 'FILE_REQUIRED', '请选择产品视频', 'file');
+      const stored = await fileStore.saveFile(file.file, 'product-video', file.filename, file.mimetype);
+      try {
+        const video = repositories.addProductVideo(id, stored);
+        return sendSuccess(reply, video ? mapVideo(video as Record<string, unknown>) : null, 201);
+      } catch (error) {
+        await fileStore.deleteFile(stored.relativePath);
+        throw error;
+      }
+    }, reply),
+  );
+
+  app.delete('/api/products/:id/videos/:videoId', async (request: FastifyRequest<{ Params: { id: string; videoId: string } }>, reply) =>
+    safeRoute(async () => {
+      if (!fileStore) throw new ApiError(503, 'FILE_STORE_UNAVAILABLE', '附件存储尚未配置');
+      const productId = getProductId(request);
+      const videoId = parseId(request.params.videoId, 'videoId');
+      const relativePath = repositories.deleteProductVideo(productId, videoId);
+      if (relativePath === null) throw new ApiError(404, 'NOT_FOUND', '视频不存在');
+      assertDeletableImagePath(relativePath, 'product-videos');
+      await fileStore.deleteFile(relativePath);
+      return sendSuccess(reply, null);
+    }, reply),
   );
 
   app.get('/api/products/:id/attachments', async (request: FastifyRequest<{ Params: { id: string } }>, reply) =>

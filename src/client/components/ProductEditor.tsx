@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
-import { Download, ExternalLink, FilePlus2, Plus, Save, Trash2 } from 'lucide-react';
+import { Download, ExternalLink, FilePlus2, Play, Plus, Save, Trash2, Video } from 'lucide-react';
 import ImagePasteUpload, { type ImageAttachment } from './ImagePasteUpload';
+import VideoPlayerModal from './VideoPlayerModal';
 import { canPickFilesNatively, pickFilesNatively } from '../app-bridge';
 import { PRODUCT_IMAGE_CATEGORY_OPTIONS } from '../../shared/product-image-categories';
 import Modal from './Modal';
@@ -26,6 +27,8 @@ export interface ProductRecord extends CustomerProduct {
   colors: string[];
   batteryPlugs: string[];
   images: ImageAttachment[];
+  /** 产品视频：已保存的带 url；本次新选的带 file，保存后进后台上传队列。 */
+  videos?: ProductVideo[];
   accessories: string;
   remark: string;
   packaging: PackagingOption[];
@@ -47,6 +50,15 @@ export interface ProductAttachment {
   mimeType: string;
   size: number;
   createdAt?: string;
+  file?: File;
+}
+
+/** 产品视频：id 为服务端数字 id 或本地临时 id；新选的视频只有 file，保存后才上传。 */
+export interface ProductVideo {
+  id: string;
+  name: string;
+  size: number;
+  url: string;
   file?: File;
 }
 
@@ -82,7 +94,7 @@ function withFirstQuoteRow(record: ProductRecord): ProductRecord {
 }
 
 function blankProduct(): ProductRecord {
-  return { id: `product-${Date.now()}`, name: '', sku: '', specification: '', packCount: 1, parameters: '', packaging: [blankPackagingRow()], remark: '', category: '', purchasePrice: '', supplier: '', purchaseQuotes: [], colors: [], batteryPlugs: [], images: [], accessories: '', attachments: [] };
+  return { id: `product-${Date.now()}`, name: '', sku: '', specification: '', packCount: 1, parameters: '', packaging: [blankPackagingRow()], remark: '', category: '', purchasePrice: '', supplier: '', purchaseQuotes: [], colors: [], batteryPlugs: [], images: [], videos: [], accessories: '', attachments: [] };
 }
 
 const attachmentCategories: Array<{ value: ProductAttachmentCategory; label: string }> = [
@@ -92,13 +104,83 @@ const attachmentCategories: Array<{ value: ProductAttachmentCategory; label: str
   { value: 'other', label: '其他附件' },
 ];
 
-function formatFileSize(size: number) {
+export function formatFileSize(size: number) {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
 const ATTACHMENT_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.txt,.zip,.rar,.7z,.ai,.psd,.cdr,.dwg,.dxf';
+
+const VIDEO_ACCEPT = '.mp4,.mov,.m4v,.webm';
+/** 与服务端 MAX_VIDEO_SIZE 保持一致：单个视频不超过 200MB。 */
+const VIDEO_MAX_SIZE = 200 * 1024 * 1024;
+
+/** 产品视频区块：手机/电脑选视频，保存后进后台上传队列；已保存的可页内播放。 */
+function ProductVideoSection({ value, onChange }: { value: ProductVideo[]; onChange: (next: ProductVideo[]) => void }) {
+  const [message, setMessage] = useState('');
+  const [playing, setPlaying] = useState<ProductVideo>();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const addFiles = (files: File[]) => {
+    if (!files.length) return;
+    const accepted: ProductVideo[] = [];
+    const rejected: string[] = [];
+    for (const file of files) {
+      if (file.size > VIDEO_MAX_SIZE) {
+        rejected.push(file.name);
+        continue;
+      }
+      accepted.push({ id: `video-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: file.name, size: file.size, url: '', file });
+    }
+    if (rejected.length) setMessage(`「${rejected.join('、')}」超过 200MB，请先压缩或剪辑后再传`);
+    else setMessage('');
+    if (accepted.length) onChange([...value, ...accepted]);
+  };
+
+  const pickVideos = () => {
+    if (canPickFilesNatively()) {
+      const picked = pickFilesNatively(VIDEO_ACCEPT.split(','), true, 5);
+      if (picked) {
+        void picked.then(addFiles).catch(() => setMessage('视频读取失败，请重试'));
+        return;
+      }
+    }
+    inputRef.current?.click();
+  };
+
+  return <section className="section-box">
+    <div className="section-box-header"><span className="section-box-title">产品视频</span>
+      <button type="button" className="button button-secondary button-sm" onClick={pickVideos}><Video size={14} />添加视频</button>
+    </div>
+    {value.length ? <div className="product-video-list">{value.map((video) => (
+      <div className="product-video-row" key={video.id}>
+        <Video size={15} />
+        <span className="product-video-name" title={video.name}>{video.name}</span>
+        <span className="product-video-size">{formatFileSize(video.size)}</span>
+        {video.file
+          ? <span className="product-video-pending" title="保存后自动在后台上传">待上传</span>
+          : <button type="button" className="icon-button" title="播放视频" aria-label={`播放 ${video.name}`} onClick={() => setPlaying(video)}><Play size={14} /></button>}
+        <button type="button" className="icon-button danger" title="移除视频" aria-label={`移除 ${video.name}`} onClick={() => onChange(value.filter((item) => item.id !== video.id))}><Trash2 size={14} /></button>
+      </div>
+    ))}</div> : <div className="empty-state">暂无视频，可添加手机拍的产品实拍视频（单个不超过 200MB）。</div>}
+    {message && <div className="image-upload-message" role="status">{message}</div>}
+    <input
+      ref={inputRef}
+      type="file"
+      accept={VIDEO_ACCEPT}
+      multiple
+      hidden
+      aria-label="添加产品视频"
+      onChange={(event) => {
+        const files = Array.from(event.target.files ?? []);
+        event.target.value = '';
+        addFiles(files);
+      }}
+    />
+    <VideoPlayerModal open={Boolean(playing)} title={playing?.name} src={playing?.url} onClose={() => setPlaying(undefined)} />
+  </section>;
+}
 
 function ProductAttachments({ value, onChange }: { value: ProductAttachment[]; onChange: (next: ProductAttachment[]) => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -177,7 +259,7 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
   const categoryCandidates = orderCategoriesWithSuggestion(productCategories, categorySuggestion);
   return <Modal open={open} title={copyMode ? '复制产品（新建）' : editingDraft ? '编辑产品（草稿）' : editingExisting ? '编辑产品' : '添加产品'} onClose={onClose} width={900} footer={<><button type="button" className="button button-secondary" onClick={onClose}>取消</button>{!editingExisting || editingDraft ? <button type="button" className="button button-secondary" title="暂存当前内容，稍后继续编辑" disabled={saving} onClick={saveDraft}>存为草稿</button> : null}<button type="button" className="button button-primary" disabled={saving} onClick={saveActive}><Save size={14} />{saving ? '保存中...' : editingDraft ? '完成并保存' : '保存产品'}</button></>}>
     <div className="product-editor">
-      {copyMode && <div className="notice notice-accent">已复制产品资料和包装信息；图片、包装图片及附件需重新上传。</div>}
+      {copyMode && <div className="notice notice-accent">已复制产品资料和包装信息；图片、包装图片、附件与视频需重新上传。</div>}
       <div className={editingExisting ? 'form-grid product-editor-identity has-sku' : 'form-grid product-editor-identity'}>
         {editingExisting && <label className="label product-editor-sku">SKU<input className="input" value={draft.sku} readOnly placeholder="系统自动生成（VT-0000）" title="SKU由系统自动生成" /></label>}
         <label className="label">品名<input className="input" value={draft.name} onChange={(event) => set('name', event.target.value)} /></label>
@@ -206,6 +288,7 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
       </div>
       <PackagingTable collapsible value={draft.packaging} onChange={(packaging: PackagingOption[]) => set('packaging', packaging)} presets={packagingPresets} onManagePresets={onManagePresets} />
       <ImagePasteUpload label="产品图片与资料图" value={draft.images} onChange={(images) => set('images', images)} multiple showNotes sortable compact selectable categories={PRODUCT_IMAGE_CATEGORY_OPTIONS} />
+      <ProductVideoSection value={draft.videos ?? []} onChange={(videos) => set('videos', videos)} />
       <ProductAttachments value={draft.attachments ?? []} onChange={(attachments) => set('attachments', attachments)} />
     </div>
   </Modal>;

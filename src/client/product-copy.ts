@@ -14,6 +14,7 @@ export function cloneProductForNew(product: ProductRecord): ProductRecord {
     colors: [...product.colors],
     batteryPlugs: [...product.batteryPlugs],
     images: [],
+    videos: [],
     attachments: [],
     packaging: product.packaging.map((item) => ({
       ...item,

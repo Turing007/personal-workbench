@@ -1,10 +1,11 @@
-import { Check, Copy, Download, ExternalLink, FileText, Image, Package } from 'lucide-react';
+import { Check, Copy, Download, ExternalLink, FileText, Image, Package, Play, Video } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import Modal from './Modal';
 import PendingImageTile from './PendingImageTile';
 import ProductImagesModal from './ProductImagesModal';
-import type { ProductRecord } from './ProductEditor';
+import VideoPlayerModal from './VideoPlayerModal';
+import { formatFileSize, type ProductRecord, type ProductVideo } from './ProductEditor';
 import type { UploadFileSnapshot } from '../product-upload-queue';
 import { packagingDisplay } from '../packaging-display';
 import { groupPurchaseQuotesBySupplier, purchaseQuoteLabel } from '../../shared/product-purchase-quotes';
@@ -59,6 +60,7 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
   const [copied, setCopied] = useState(false);
   const [copiedPackagingId, setCopiedPackagingId] = useState<string>();
   const [packagingImages, setPackagingImages] = useState<{ name: string; images: ProductRecord['packaging'][number]['images'] }>();
+  const [playingVideo, setPlayingVideo] = useState<ProductVideo>();
   if (!product) return null;
 
   const parameters = product.parameters ?? '';
@@ -139,6 +141,16 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
               </div>
             ) : <span>暂无图片</span>}
           </DetailItem>
+          <DetailItem label="产品视频" fullWidth>
+            {product.videos?.length ? <div className="product-video-list">{product.videos.map((video) => (
+              <div className="product-video-row" key={video.id}>
+                <Video size={15} />
+                <span className="product-video-name" title={video.name}>{video.name}</span>
+                <span className="product-video-size">{formatFileSize(video.size)}</span>
+                <button type="button" className="icon-button" title="播放视频" aria-label={`播放 ${video.name}`} onClick={() => setPlayingVideo(video)}><Play size={14} /></button>
+              </div>
+            ))}</div> : <div className="product-detail-muted">暂无视频</div>}
+          </DetailItem>
           <DetailItem label="参数" fullWidth>
             <div className="product-detail-parameter-wrap">
               <div className={parameters ? 'product-detail-parameters' : 'product-detail-muted'}>{parameters || '暂无参数'}</div>
@@ -167,6 +179,7 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
         <div className="product-detail-hint"><Package size={14} />这里可以查看资料、停售或恢复在售；要改内容请用编辑按钮。</div>
       </div>
       <ProductImagesModal open={Boolean(packagingImages)} productName={packagingImages?.name ?? '包装'} images={packagingImages?.images ?? []} onClose={() => setPackagingImages(undefined)} />
+      <VideoPlayerModal open={Boolean(playingVideo)} title={playingVideo?.name} src={playingVideo?.url} onClose={() => setPlayingVideo(undefined)} />
     </Modal>
   );
 }

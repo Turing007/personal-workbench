@@ -3550,6 +3550,65 @@ select {
   font-size: 12px;
 }
 
+/* ===== 产品视频：区块列表 + 页内播放器 ===== */
+
+.product-video-list {
+  display: grid;
+  gap: 6px;
+}
+
+.product-video-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+
+.product-video-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-strong);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-video-size {
+  flex: none;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.product-video-pending {
+  flex: none;
+  color: var(--tone-accent-text);
+  font-size: 11px;
+}
+
+.video-player {
+  display: block;
+  width: 100%;
+  max-height: min(70vh, 560px);
+  border-radius: var(--radius-control);
+  background: #000;
+}
+
+.video-player-hint {
+  margin-top: 8px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.video-player-hint a {
+  color: var(--tone-accent-text);
+}
+
 .backup-alert {
   display: flex;
   align-items: center;

@@ -3,6 +3,7 @@ import {
   uploadProductAttachment,
   uploadProductImage,
   uploadProductPackagingImage,
+  uploadProductVideo,
 } from './api';
 import { createImageThumbUrl } from './preview-thumbs';
 import { compressImageForUpload } from './upload-image-compress';
@@ -32,7 +33,7 @@ export interface UploadTaskMeta {
   id: string;
   productId: string;
   productLabel: string;
-  kind: 'image' | 'packaging-image' | 'attachment';
+  kind: 'image' | 'packaging-image' | 'attachment' | 'video';
   category: string;
   note: string;
   packagingId?: string;
@@ -463,11 +464,11 @@ export class ProductUploadQueue {
     this.onBatchSettled?.();
   }
 
-  /** 上传用的文件：产品图先在手机端压到长边 2048（每张只压一次，重试/续传复用同一份）。 */
+  /** 上传用的文件：产品图（含包装图）先在手机端压到长边 2048（每张只压一次，重试/续传复用同一份）。 */
   private resolveUploadFile(item: QueueItem): Promise<File> {
     let pending = this.uploadFiles.get(item);
     if (!pending) {
-      if (item.meta.kind === 'image') {
+      if (item.meta.kind === 'image' || item.meta.kind === 'packaging-image') {
         item.progress = undefined; // 压缩阶段进度未知，界面画流动条
         this.publish();
         pending = compressImageForUpload(item.file);
@@ -494,10 +495,14 @@ export class ProductUploadQueue {
           return Number(uploaded.id);
         }
         if (meta.kind === 'packaging-image') {
-          if (meta.packagingId) await uploadProductPackagingImage(meta.productId, meta.packagingId, file);
+          if (meta.packagingId) await uploadProductPackagingImage(meta.productId, meta.packagingId, file, reportProgress);
           return null;
         }
-        await uploadProductAttachment(meta.productId, file, meta.category);
+        if (meta.kind === 'video') {
+          await uploadProductVideo(meta.productId, file, reportProgress);
+          return null;
+        }
+        await uploadProductAttachment(meta.productId, file, meta.category, reportProgress);
         return null;
       } catch (error) {
         if (attempt >= RETRY_DELAYS_MS.length) {

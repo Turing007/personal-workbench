@@ -248,6 +248,10 @@ export class DatabaseRepositories {
             ORDER BY pi.sort_order, pi.id
           ) ordered_pi), '[]') AS images_json
           ,COALESCE((SELECT json_group_array(json_object(
+            'id', pv.id, 'relativePath', pv.relative_path, 'originalName', pv.original_name,
+            'mimeType', pv.mime_type, 'size', pv.size_bytes, 'createdAt', pv.created_at
+          )) FROM product_videos pv WHERE pv.product_id = p.id ORDER BY pv.created_at, pv.id), '[]') AS videos_json
+          ,COALESCE((SELECT json_group_array(json_object(
             'id', pa.id, 'category', pa.category, 'relativePath', pa.relative_path,
             'originalName', pa.original_name, 'mimeType', pa.mime_type,
             'size', pa.size_bytes, 'createdAt', pa.created_at
@@ -263,6 +267,7 @@ export class DatabaseRepositories {
       packaging: JSON.parse(String(row.packaging_json)).map((item: PackagingInputLike) => mapPackagingRecord(item)),
       purchaseQuotes: mapStoredPurchaseQuotes(JSON.parse(String(row.purchase_quotes_json ?? '[]'))),
       images: JSON.parse(String(row.images_json)),
+      videos: JSON.parse(String(row.videos_json ?? '[]')),
       attachments: JSON.parse(String(row.attachments_json)),
     }));
   }
@@ -462,6 +467,7 @@ export class DatabaseRepositories {
       ...this.database.prepare('SELECT relative_path FROM product_images WHERE product_id = ?').all(productId),
       ...this.database.prepare(`SELECT ppi.relative_path FROM product_packaging_images ppi JOIN product_packaging pp ON pp.id = ppi.packaging_id WHERE pp.product_id = ?`).all(productId),
       ...this.database.prepare('SELECT relative_path FROM product_attachments WHERE product_id = ?').all(productId),
+      ...this.database.prepare('SELECT relative_path FROM product_videos WHERE product_id = ?').all(productId),
     ].map((row) => String((row as { relative_path?: unknown }).relative_path ?? '')).filter(Boolean);
     this.database.prepare('DELETE FROM products WHERE id = ?').run(productId);
     return paths;
@@ -488,6 +494,33 @@ export class DatabaseRepositories {
         .run(productId, image.relativePath, image.originalName, image.mimeType, image.size, productId, createdAt, category, note),
     );
     return this.database.prepare('SELECT * FROM product_images WHERE id = ?').get(imageId);
+  }
+
+  addProductVideo(
+    productId: number,
+    video: { relativePath: string; originalName: string; mimeType: string; size: number },
+  ) {
+    const createdAt = now();
+    const videoId = lastInsertId(
+      this.database
+        .prepare(
+          `INSERT INTO product_videos
+            (product_id, relative_path, original_name, mime_type, size_bytes, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(productId, video.relativePath, video.originalName, video.mimeType, video.size, createdAt),
+    );
+    return this.database.prepare('SELECT * FROM product_videos WHERE id = ?').get(videoId);
+  }
+
+  /** 删除一条产品视频并返回文件路径（不存在返回 null），文件由调用方落盘删除。 */
+  deleteProductVideo(productId: number, videoId: number): string | null {
+    const row = this.database
+      .prepare('SELECT relative_path FROM product_videos WHERE id = ? AND product_id = ?')
+      .get(videoId, productId) as { relative_path?: unknown } | undefined;
+    if (!row) return null;
+    this.database.prepare('DELETE FROM product_videos WHERE id = ?').run(videoId);
+    return String(row.relative_path ?? '');
   }
 
   updateProductImage(productId: number, imageId: number, patch: { category?: string; note?: string }): boolean {
