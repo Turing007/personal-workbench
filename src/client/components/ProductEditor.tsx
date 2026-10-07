@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ChangeEvent } from 'react';
+import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent } from 'react';
 import { Download, ExternalLink, FilePlus2, Play, Plus, Save, Trash2, Video } from 'lucide-react';
 import ImagePasteUpload, { type ImageAttachment } from './ImagePasteUpload';
 import VideoPlayerModal from './VideoPlayerModal';
 import { canPickFilesNatively, pickFilesNatively } from '../app-bridge';
+import { ATTACHMENT_ACCEPT, normalizeUploadAttachment, attachmentFilesFromClipboard, SUPPORTED_ATTACHMENT_HINT } from '../attachment-mime';
+import { useFileDrop } from '../use-file-drop';
 import { PRODUCT_IMAGE_CATEGORY_OPTIONS } from '../../shared/product-image-categories';
 import Modal from './Modal';
 import PackagingTable from './PackagingTable';
@@ -110,8 +112,6 @@ export function formatFileSize(size: number) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-const ATTACHMENT_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.txt,.zip,.rar,.7z,.ai,.psd,.cdr,.dwg,.dxf';
-
 const VIDEO_ACCEPT = '.mp4,.mov,.m4v,.webm';
 /** 与服务端 MAX_VIDEO_SIZE 保持一致：单个视频不超过 200MB。 */
 const VIDEO_MAX_SIZE = 200 * 1024 * 1024;
@@ -184,16 +184,29 @@ function ProductVideoSection({ value, onChange }: { value: ProductVideo[]; onCha
 
 function ProductAttachments({ value, onChange }: { value: ProductAttachment[]; onChange: (next: ProductAttachment[]) => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [message, setMessage] = useState('');
   const appendFiles = (files: File[]) => {
     if (!files.length) return;
-    onChange([...value, ...files.map((file) => ({ id: `attachment-${Date.now()}-${Math.random().toString(16).slice(2)}`, category: 'manual' as ProductAttachmentCategory, name: file.name, url: URL.createObjectURL(file), mimeType: file.type, size: file.size, file }))]);
+    // 按扩展名归一化 MIME：粘贴/拖来的文件常没有类型，不回写会让存下来的附件类型与内容不符。
+    const accepted = files.map(normalizeUploadAttachment).filter((file): file is File => Boolean(file));
+    if (accepted.length < files.length) setMessage(`${SUPPORTED_ATTACHMENT_HINT}；已忽略 ${files.length - accepted.length} 个不支持的文件`);
+    else setMessage('');
+    if (!accepted.length) return;
+    onChange([...value, ...accepted.map((file) => ({ id: `attachment-${Date.now()}-${Math.random().toString(16).slice(2)}`, category: 'manual' as ProductAttachmentCategory, name: file.name, url: URL.createObjectURL(file), mimeType: file.type, size: file.size, file }))]);
   };
   const addFiles = (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     event.target.value = '';
     appendFiles(files);
   };
-  return <section className="product-editor-attachments">
+  const onPaste = (event: ReactClipboardEvent<HTMLElement>) => {
+    const files = attachmentFilesFromClipboard(event.clipboardData);
+    if (!files.length) return; // 纯文本粘贴不拦截
+    event.preventDefault();
+    appendFiles(files);
+  };
+  const { dragging, handlers } = useFileDrop(appendFiles);
+  return <section className={`product-editor-attachments${dragging ? ' is-drop-target' : ''}`} onPaste={onPaste} tabIndex={0} {...handlers}>
     <div className="section-box-header"><span className="section-box-title">产品附件</span>
       {/* 原来是 <label> 包一个 hidden 的 file input：hidden 等于 display:none，
           在 Android WebView 里点这个按钮不会有任何反应（选图/选文件界面都不弹出）。
@@ -230,7 +243,8 @@ function ProductAttachments({ value, onChange }: { value: ProductAttachment[]; o
       </div>
     </div>
     {value.length ? <div className="product-editor-attachment-list">{value.map((attachment) => <div key={attachment.id} className="attachment-row"><div className="attachment-main"><div className="attachment-name" title={attachment.name}>{attachment.name}</div><span className="attachment-meta">{formatFileSize(attachment.size)}{attachment.createdAt ? ` · ${attachment.createdAt.replace('T', ' ').slice(0, 16)}` : ''}</span></div><select className="product-editor-attachment-category" aria-label={`${attachment.name}附件类型`} value={attachment.category} onChange={(event) => onChange(value.map((item) => item.id === attachment.id ? { ...item, category: event.target.value as ProductAttachmentCategory } : item))}>{attachmentCategories.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}</select>{attachment.url && !attachment.file && <span className="attachment-actions"><a href={attachment.url} target="_blank" rel="noreferrer" title="打开附件"><ExternalLink size={14} /></a><a href={attachment.url} download={attachment.name} title="下载附件"><Download size={14} /></a></span>}{attachment.file && <span className="attachment-pending" title="待保存">待上传</span>}<button type="button" className="icon-button danger" title="移除附件" onClick={() => onChange(value.filter((item) => item.id !== attachment.id))}><Trash2 size={14} /></button></div>)}</div> : <div className="empty-state">暂无附件，可添加说明书、包装设计图或标贴刀模。</div>}
-    <span className="label-hint">支持 PDF、Office、图片、压缩包及常见设计源文件，单个附件不超过 20MB。</span>
+    {message && <div className="image-upload-message" role="status" aria-live="polite">{message}</div>}
+    <span className="label-hint">支持 PDF、Office、图片、压缩包及常见设计源文件，单个附件不超过 20MB；也可直接 Ctrl+V 粘贴或把文件拖进来。</span>
   </section>;
 }
 

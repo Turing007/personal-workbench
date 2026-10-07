@@ -1,9 +1,11 @@
 import { Download, ExternalLink, FilePlus2, ImagePlus, Plus, Save, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import type { ChangeEvent } from 'react';
+import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent } from 'react';
 import type { CustomerProduct, CustomerProductAttachmentCategory, CustomerProductBatchItemInput, CustomerProductBatchSaveInput, CustomerProductPackaging, CustomerProductSaveInput } from '../../../shared/customers';
 import type { ProductRecord } from '../ProductEditor';
 import { CUSTOMER_PRODUCT_BATCH_LIMIT, parseBatchLines } from '../../customer-product-batch';
+import { ATTACHMENT_ACCEPT, attachmentFilesFromClipboard, normalizeUploadAttachment, SUPPORTED_ATTACHMENT_HINT } from '../../attachment-mime';
+import { useFileDrop } from '../../use-file-drop';
 import ImagePasteUpload, { type ImageAttachment } from '../ImagePasteUpload';
 import Modal from '../Modal';
 import PackagingTable from '../PackagingTable';
@@ -432,11 +434,15 @@ const attachmentCategoryOptions: Array<{ value: CustomerProductAttachmentCategor
 ];
 
 function CustomerProductAttachments({ value, onChange }: { value: CustomerProductAttachmentDraft[]; onChange: (next: CustomerProductAttachmentDraft[]) => void }) {
-  const addFiles = (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = '';
+  const [message, setMessage] = useState('');
+  const appendFiles = (files: File[]) => {
     if (!files.length) return;
-    onChange([...value, ...files.map((file) => ({
+    // 按扩展名归一化 MIME：粘贴来的文件常没有类型，不回写会让存下来的附件类型与内容不符。
+    const accepted = files.map(normalizeUploadAttachment).filter((file): file is File => Boolean(file));
+    if (accepted.length < files.length) setMessage(`${SUPPORTED_ATTACHMENT_HINT}；已忽略 ${files.length - accepted.length} 个不支持的文件`);
+    else setMessage('');
+    if (!accepted.length) return;
+    onChange([...value, ...accepted.map((file) => ({
       id: `attachment-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       name: file.name,
       url: URL.createObjectURL(file),
@@ -446,10 +452,23 @@ function CustomerProductAttachments({ value, onChange }: { value: CustomerProduc
       file,
     }))]);
   };
+  const addFiles = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    appendFiles(files);
+  };
+  const onPaste = (event: ReactClipboardEvent<HTMLElement>) => {
+    const files = attachmentFilesFromClipboard(event.clipboardData);
+    if (!files.length) return; // 纯文本粘贴不拦截
+    event.preventDefault();
+    appendFiles(files);
+  };
+  const { dragging, handlers } = useFileDrop(appendFiles);
 
-  return <section style={{ display: 'grid', gap: 8 }}>
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}><span style={{ fontSize: 12, fontWeight: 650, color: '#334155' }}>客户产品附件</span><label className="button button-secondary" style={{ minHeight: 28, cursor: 'pointer' }}><FilePlus2 size={14} />添加附件<input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.txt,.zip,.rar,.7z,.ai,.psd,.cdr,.dwg,.dxf" hidden onChange={addFiles} /></label></div>
+  return <section className={dragging ? 'attachment-drop-section is-drop-target' : 'attachment-drop-section'} style={{ display: 'grid', gap: 8 }} onPaste={onPaste} tabIndex={0} {...handlers}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}><span style={{ fontSize: 12, fontWeight: 650, color: '#334155' }}>客户产品附件</span><label className="button button-secondary" style={{ minHeight: 28, cursor: 'pointer' }}><FilePlus2 size={14} />添加附件<input type="file" multiple accept={ATTACHMENT_ACCEPT} hidden onChange={addFiles} /></label></div>
     {value.length ? <div style={{ display: 'grid', gap: 6 }}>{value.map((attachment) => <div key={String(attachment.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, padding: '7px 9px', border: '1px solid #e2e8f0', borderRadius: 6, background: '#fbfdff' }}><div style={{ minWidth: 0, flex: 1 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#334155', fontSize: 12 }} title={attachment.name}>{attachment.name}</div><span style={{ color: '#94a3b8', fontSize: 11 }}>{formatFileSize(attachment.size)}{attachment.createdAt ? ` · ${attachment.createdAt.replace('T', ' ').slice(0, 16)}` : ''}</span></div><select aria-label={`${attachment.name}附件类型`} value={attachment.category} onChange={(event) => onChange(value.map((item) => item.id === attachment.id ? { ...item, category: event.target.value as CustomerProductAttachmentCategory } : item))} style={{ border: '1px solid #dbe3ea', borderRadius: 4, padding: '5px 6px', color: '#475569', fontSize: 11 }}>{attachmentCategoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{attachment.url && !attachment.file && <><a href={attachment.url} target="_blank" rel="noreferrer" title="打开附件" style={{ color: '#0f766e' }}><ExternalLink size={14} /></a><a href={attachment.url} download={attachment.name} title="下载附件" style={{ color: '#475569' }}><Download size={14} /></a></>}{attachment.file && <span title="待保存" style={{ color: '#0f766e', fontSize: 11 }}>待上传</span>}<button type="button" className="icon-button danger" title="移除附件" onClick={() => onChange(value.filter((item) => item.id !== attachment.id))}><Trash2 size={14} /></button></div>)}</div> : <div style={{ padding: '10px 12px', border: '1px dashed #cbd5e1', borderRadius: 6, color: '#94a3b8', fontSize: 12 }}>暂无附件，可添加说明书、报价文件、包装资料或其他客户专用文件。</div>}
-    <span style={{ color: '#94a3b8', fontSize: 11 }}>支持 PDF、Office、图片、压缩包及常见设计源文件，单个附件不超过 20MB。</span>
+    {message && <span role="status" aria-live="polite" style={{ color: '#b45309', fontSize: 11 }}>{message}</span>}
+    <span style={{ color: '#94a3b8', fontSize: 11 }}>支持 PDF、Office、图片、压缩包及常见设计源文件，单个附件不超过 20MB；也可直接 Ctrl+V 粘贴或把文件拖进来。</span>
   </section>;
 }

@@ -1,9 +1,11 @@
 import { Download, ExternalLink, FileText, Plus, Trash2, UserRound } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import type { MouseEvent as ReactMouseEvent } from 'react';
+import type { ClipboardEvent as ReactClipboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { getNextOrderNumber, deleteOrderDetailImage } from '../api';
 import { canPickFilesNatively, pickFilesNatively } from '../app-bridge';
 import { CONTRACT_PICKER_ACCEPT, normalizeUploadContract, SUPPORTED_CONTRACT_HINT } from '../contract-mime';
+import { attachmentFilesFromClipboard } from '../attachment-mime';
+import { useFileDrop } from '../use-file-drop';
 import { calculateOrderBoxes } from '../../shared/order-calculations';
 import { calculateFreightCents, calculateOrderLineAmountCents, calculateOrderTotalCents } from '../../shared/order-prices';
 import { dateInputValue, dateOnlyValue } from '../../shared/date-input';
@@ -323,6 +325,14 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
       .then((files) => addContractFiles(files))
       .catch(() => setError('附件读取失败，请重新选择'));
   };
+  /** 粘贴订单附件：从剪贴板取文件后走与「选择附件」相同的类型归一化管线。 */
+  const onContractPaste = (event: ReactClipboardEvent<HTMLElement>) => {
+    const files = attachmentFilesFromClipboard(event.clipboardData);
+    if (!files.length) return; // 纯文本粘贴不拦截
+    event.preventDefault();
+    addContractFiles(files);
+  };
+  const { dragging: contractDragging, handlers: contractDropHandlers } = useFileDrop(addContractFiles);
   const removeContract = (contract: OrderContractDraft) => {
     if (contract.file && contract.url) {
       URL.revokeObjectURL(contract.url);
@@ -387,9 +397,9 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
 
       <div className="order-form-grid order-form-grid-attachments">
         <ImagePasteUpload value={draft.paymentProofs} onChange={(proofs) => update('paymentProofs', proofs as PaymentProofDraft[])} />
-        <section style={{ display: 'grid', gap: 6, padding: 8, border: '1px solid #e2e8f0', borderRadius: 6, background: '#fbfdff' }}>
+        <section onPaste={onContractPaste} tabIndex={0} className={contractDragging ? 'attachment-drop-section is-drop-target' : 'attachment-drop-section'} style={{ display: 'grid', gap: 6, padding: 8, border: '1px solid #e2e8f0', borderRadius: 6, background: '#fbfdff' }} {...contractDropHandlers}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}><label style={{ color: '#64748b', fontSize: 12, fontWeight: 600 }}>订单附件</label><label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid #cbd5e1', borderRadius: 5, padding: '6px 9px', color: '#0f766e', background: '#fff', cursor: 'pointer', fontSize: 12 }} onClick={openContractPicker}><Plus size={14} />选择附件<input ref={contractInputRef} type="file" multiple accept={contractAccept} aria-label="选择订单附件" onChange={(event) => { addContractFiles(Array.from(event.target.files ?? [])); event.target.value = ''; }} style={{ display: 'none' }} /></label></div>
-          <div style={{ display: 'grid', gap: 5 }}>{(draft.contracts ?? []).map((contract) => <div key={contract.id} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, padding: '6px 8px', border: '1px solid #edf0f2', borderRadius: 5, background: '#fff' }}>{isImageContract(contract) && contract.url ? <img src={contract.url} alt={contract.name} style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 4 }} /> : <FileText size={22} color="#64748b" />}<div style={{ minWidth: 0, flex: 1 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#334155', fontSize: 12 }}>{contract.name}</div><span style={{ color: '#94a3b8', fontSize: 11 }}>{formatFileSize(contract.size)}{contract.file ? ' · 待上传' : contract.createdAt ? ` · ${contract.createdAt.replace('T', ' ').slice(0, 16)}` : ''}</span></div><button type="button" title="移除附件" onClick={() => removeContract(contract)} style={{ display: 'inline-flex', border: 0, background: 'transparent', color: '#b91c1c', cursor: 'pointer' }}><Trash2 size={14} /></button></div>)}{customerProductAttachments.map((attachment) => <div key={`product-${attachment.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, padding: '6px 8px', border: '1px solid #b7e4df', borderRadius: 5, background: '#f7fffd' }}><FileText size={18} color="#0f766e" /><div style={{ minWidth: 0, flex: 1 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#334155', fontSize: 12 }}>{attachment.originalName}</div><span style={{ color: '#0f766e', fontSize: 11 }}>{customerAttachmentLabel(attachment.category)} · 保存订单后归档</span></div>{attachment.url && <a href={attachment.url} target="_blank" rel="noreferrer" title="打开客户产品附件" style={{ color: '#0f766e' }}><ExternalLink size={14} /></a>}<a href={attachment.url} download={attachment.originalName} title="下载客户产品附件" style={{ color: '#475569' }}><Download size={14} /></a></div>)}{!(draft.contracts ?? []).length && !customerProductAttachments.length && <span style={{ color: '#94a3b8', fontSize: 11 }}>暂无订单附件；客户产品附件会在保存订单时归档到订单附件。</span>}</div>
+          <div style={{ display: 'grid', gap: 5 }}>{(draft.contracts ?? []).map((contract) => <div key={contract.id} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, padding: '6px 8px', border: '1px solid #edf0f2', borderRadius: 5, background: '#fff' }}>{isImageContract(contract) && contract.url ? <img src={contract.url} alt={contract.name} style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 4 }} /> : <FileText size={22} color="#64748b" />}<div style={{ minWidth: 0, flex: 1 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#334155', fontSize: 12 }}>{contract.name}</div><span style={{ color: '#94a3b8', fontSize: 11 }}>{formatFileSize(contract.size)}{contract.file ? ' · 待上传' : contract.createdAt ? ` · ${contract.createdAt.replace('T', ' ').slice(0, 16)}` : ''}</span></div><button type="button" title="移除附件" onClick={() => removeContract(contract)} style={{ display: 'inline-flex', border: 0, background: 'transparent', color: '#b91c1c', cursor: 'pointer' }}><Trash2 size={14} /></button></div>)}{customerProductAttachments.map((attachment) => <div key={`product-${attachment.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, padding: '6px 8px', border: '1px solid #b7e4df', borderRadius: 5, background: '#f7fffd' }}><FileText size={18} color="#0f766e" /><div style={{ minWidth: 0, flex: 1 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#334155', fontSize: 12 }}>{attachment.originalName}</div><span style={{ color: '#0f766e', fontSize: 11 }}>{customerAttachmentLabel(attachment.category)} · 保存订单后归档</span></div>{attachment.url && <a href={attachment.url} target="_blank" rel="noreferrer" title="打开客户产品附件" style={{ color: '#0f766e' }}><ExternalLink size={14} /></a>}<a href={attachment.url} download={attachment.originalName} title="下载客户产品附件" style={{ color: '#475569' }}><Download size={14} /></a></div>)}{!(draft.contracts ?? []).length && !customerProductAttachments.length && <span style={{ color: '#94a3b8', fontSize: 11 }}>暂无订单附件；客户产品附件会在保存订单时归档到订单附件。也可直接 Ctrl+V 粘贴或把文件拖进来。</span>}</div>
         </section>
       </div>
       <label style={labelStyle}>订单备注<textarea rows={2} style={{ ...controlStyle, resize: 'vertical' }} value={draft.remark} onChange={(event) => update('remark', event.target.value)} placeholder="付款阶段、特殊要求等" /></label>

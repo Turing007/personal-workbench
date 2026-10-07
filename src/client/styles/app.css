@@ -5783,6 +5783,15 @@ select {
   gap: var(--space-3);
 }
 
+/* 拖文件到附件区上方时的高亮。三处附件区共用同一套规则。
+   只用 box-shadow 画光圈：订单表单与客户产品附件的底色/边框是内联样式，
+   会盖掉这里写的 background / border，只有 box-shadow 不受影响。 */
+.product-editor-attachments.is-drop-target,
+.attachment-drop-section.is-drop-target {
+  border-radius: 10px;
+  box-shadow: 0 0 0 2px var(--color-accent), inset 0 0 24px var(--color-accent-soft);
+}
+
 .product-editor-attachment-list {
   display: grid;
   gap: var(--space-2);
