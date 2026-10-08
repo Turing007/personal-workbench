@@ -100,6 +100,8 @@ function parseRequirementAttachments(value: unknown, field: string) {
       originalName: optionalText(item.originalName ?? item.original_name, `${prefix}.originalName`, '附件名称'),
       mimeType: optionalText(item.mimeType ?? item.mime_type, `${prefix}.mimeType`, '附件类型'),
       size: Math.max(0, Number(item.size ?? item.size_bytes ?? 0)),
+      // 必须保留来源客户产品：服务端靠它复用已归档的附件、并避免编辑时误删磁盘文件。
+      sourceCustomerProductId: optionalId(item.sourceCustomerProductId ?? item.source_customer_product_id, `${prefix}.sourceCustomerProductId`),
     };
   });
 }

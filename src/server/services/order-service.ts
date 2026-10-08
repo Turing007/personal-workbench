@@ -472,7 +472,11 @@ export class OrderService {
         : await this.copyCustomerProductAttachments(product.attachments, product.id);
       if (!isCreate) {
         const retained = new Set(productAttachments.map((attachment) => attachment.relativePath));
-        orderAttachments.splice(0, orderAttachments.length, ...orderAttachments.filter((attachment) => !attachment.sourceCustomerProductId || attachment.sourceCustomerProductId !== product.id || retained.has(attachment.relativePath)));
+        const kept = orderAttachments.filter((attachment) => !attachment.sourceCustomerProductId || attachment.sourceCustomerProductId !== product.id || retained.has(attachment.relativePath));
+        // 本次新复制的（该产品在订单里此前还没有附件，例如编辑订单时新加的行）必须带上；
+        // 之前只复制文件、不入列表，导致这类附件在编辑保存后消失。
+        const fresh = productAttachments.filter((attachment) => !orderAttachments.some((existing) => existing.relativePath === attachment.relativePath));
+        orderAttachments.splice(0, orderAttachments.length, ...kept, ...fresh);
       } else {
         orderAttachments.push(...productAttachments);
       }
