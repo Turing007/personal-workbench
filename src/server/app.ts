@@ -21,6 +21,7 @@ import { registerThumbnailRoutes } from './routes/thumbnails.js';
 import { ThumbnailService } from './files/thumbnail-service.js';
 import { registerCustomerProductRoutes } from './routes/customer-products.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerDiagnosticRoutes } from './routes/diagnostics.js';
 import { registerProductRoutes } from './routes/products.js';
 import { registerOrderRoutes, registerPaymentProofDeleteRoute } from './routes/orders.js';
 import { CustomerRepository } from './db/customer-repository.js';
@@ -157,6 +158,7 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   });
 
   await registerHealthRoutes(app);
+  await registerDiagnosticRoutes(app);
   await registerProductRoutes(app, { repositories, fileStore: options.fileStore, thumbnailService });
   const customerRepository = new CustomerRepository(options.database);
   const customerProductRepository = new CustomerProductRepository(options.database);

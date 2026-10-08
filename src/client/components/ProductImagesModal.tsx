@@ -4,7 +4,8 @@ import { createPortal } from 'react-dom';
 import Modal from './Modal';
 import PendingImageTile from './PendingImageTile';
 import type { UploadFileSnapshot } from '../product-upload-queue';
-import { canSaveImageNatively, registerImageSavedHandler, saveImageNatively } from '../app-bridge';
+import { canSaveImageNatively, registerImageSaveFailureHandler, registerImageSavedHandler } from '../app-bridge';
+import { reportImageSaveFailure, saveStageText, startSaveImageToAlbum } from '../image-save';
 import { thumbUrl } from '../image-urls';
 import { useIsNarrow } from '../use-is-narrow';
 import type { ImageAttachment } from './ImagePasteUpload';
@@ -125,25 +126,36 @@ export default function ProductImagesModal({ open, productName = '产品', image
   const saveQueueRef = useRef<ImageAttachment[]>([]);
   const saveTotalRef = useRef(0);
   const saveResultRef = useRef({ ok: 0, failed: 0 });
+  const saveFailureRef = useRef('');
   const albumBatchRef = useRef(false);
+
+  /** 记录最近一次失败环节：界面提示用，同时回报到服务端日志。 */
+  const noteSaveFailure = (stage: string | undefined, message = '') => {
+    if (!stage) return;
+    saveFailureRef.current = saveStageText(stage);
+    reportImageSaveFailure(stage, message);
+  };
 
   /** App 内保存：逐张交给原生写进相册，原生每存完一张回调一次。 */
   const sendNextToAlbum = () => {
     const next = saveQueueRef.current.shift();
     if (!next) {
       const { ok, failed } = saveResultRef.current;
+      const reason = saveFailureRef.current;
       albumBatchRef.current = false;
       setSavingToAlbum(false);
       setSavingProgress('');
-      setCopyMessage(failed ? `已保存 ${ok} 张，${failed} 张失败，请重试` : `已保存 ${ok} 张到手机相册`);
+      setCopyMessage(failed ? `已保存 ${ok} 张，${failed} 张失败${reason ? `：${reason}` : ''}，请重试` : `已保存 ${ok} 张到手机相册`);
       return;
     }
     setSavingProgress(`${saveResultRef.current.ok + saveResultRef.current.failed + 1}/${saveTotalRef.current}`);
-    // 桥接在调用瞬间消失（例如 App 被换成旧版本）时直接收尾，不能让按钮卡在「保存中」。
-    if (!saveImageNatively(next.url, next.name)) {
+    void startSaveImageToAlbum(next.url, next.name).then((result) => {
+      if (result.started) return; // 等原生回执再存下一张
+      // 没能启动（抓图失败 / 桥接消失）也要计数并继续，不能让按钮卡在「保存中」。
+      noteSaveFailure(result.stage, result.message);
       saveResultRef.current.failed += 1;
       sendNextToAlbum();
-    }
+    });
   };
 
   const saveSelectedToAlbum = () => {
@@ -151,6 +163,7 @@ export default function ProductImagesModal({ open, productName = '产品', image
     saveQueueRef.current = [...selectedImages];
     saveTotalRef.current = selectedImages.length;
     saveResultRef.current = { ok: 0, failed: 0 };
+    saveFailureRef.current = '';
     albumBatchRef.current = true;
     setCopyMessage('');
     setSavingToAlbum(true);
@@ -159,13 +172,21 @@ export default function ProductImagesModal({ open, productName = '产品', image
 
   useEffect(() => {
     if (!nativeSave) return undefined;
-    return registerImageSavedHandler((ok) => {
+    const unregisterSaved = registerImageSavedHandler((ok) => {
       // 长按图片保存走的是同一个回调，但没有排队中的批次，这里忽略即可。
       if (!albumBatchRef.current) return;
       if (ok) saveResultRef.current.ok += 1;
       else saveResultRef.current.failed += 1;
       sendNextToAlbum();
     });
+    const unregisterFailed = registerImageSaveFailureHandler((stage, message) => {
+      if (!albumBatchRef.current) return;
+      noteSaveFailure(stage, message);
+    });
+    return () => {
+      unregisterSaved();
+      unregisterFailed();
+    };
   }, [nativeSave]);
 
   useEffect(() => {

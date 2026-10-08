@@ -125,11 +125,62 @@ test.describe('手机端：触摸 + 局域网 http（非安全上下文）', () 
       await page.request.delete(`/api/products/${product.id}`);
     }
   });
-  test('App 内点「保存到相册」直接交给原生写相册，不再依赖长按', async ({ page, context }) => {
+  test('App 1.18+：网页抓图后交给原生写相册，不再让壳自己下载', async ({ page, context }) => {
     await forceInsecureContext(context);
     const client = await context.newCDPSession(page);
     await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
-    // 伪造成安卓壳：记下网页交给原生保存的地址，并按壳的真实行为回执保存结果。
+    // 伪造成 1.18 壳：记下网页交来的字节，并按壳的真实行为回执保存结果。
+    await context.addInitScript(() => {
+      const target = window as unknown as {
+        __nativeSaves: { base64: string; name?: string }[];
+        __nativeUrls: string[];
+        workbenchApp: unknown;
+      };
+      target.__nativeSaves = [];
+      target.__nativeUrls = [];
+      target.workbenchApp = {
+        getNetworks: () => '[]',
+        switchNetwork: () => {},
+        openAddressEditor: () => {},
+        setOverlayOpen: () => {},
+        saveImage: (url: string) => { target.__nativeUrls.push(url); },
+        saveImageData: (base64: string, name?: string) => {
+          target.__nativeSaves.push({ base64, name });
+          window.setTimeout(() => {
+            (window as unknown as { __workbenchImageSaved?: (ok: boolean) => void }).__workbenchImageSaved?.(true);
+          }, 0);
+        },
+      };
+    });
+
+    const stamp = Date.now();
+    const product = await seedProductWithImage(page, stamp);
+
+    try {
+      await openImagesModal(page, product.sku, true);
+
+      await expect(page.locator('.product-images-help')).toContainText('点「保存到相册」即可存进手机相册');
+      await page.locator('.product-images-save-button').click();
+
+      await expect(page.locator('.product-images-copy-message')).toHaveText('已保存 1 张到手机相册');
+      // 网页交给原生的必须是原图字节（1×1 PNG），不是缩略图、也不是空数据。
+      const saves = await page.evaluate(() => (window as unknown as { __nativeSaves: { base64: string; name?: string }[] }).__nativeSaves);
+      expect(saves).toHaveLength(1);
+      expect(Buffer.from(saves[0].base64, 'base64').equals(PNG_1X1)).toBe(true);
+      // 新通道生效后，壳自己下载的老通道不该再被调用。
+      const legacyUrls = await page.evaluate(() => (window as unknown as { __nativeUrls: string[] }).__nativeUrls);
+      expect(legacyUrls).toHaveLength(0);
+      // 有原生保存能力时不该再打开那个靠长按的全屏大图（WebView 里长按本来就是空操作）。
+      await expect(page.locator('.image-save-viewer')).toHaveCount(0);
+    } finally {
+      await page.request.delete(`/api/products/${product.id}`);
+    }
+  });
+
+  test('旧壳没有新通道时退回原生下载，地址升级为完整地址', async ({ page, context }) => {
+    await forceInsecureContext(context);
+    const client = await context.newCDPSession(page);
+    await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
     await context.addInitScript(() => {
       const target = window as unknown as { __nativeSaves: { url: string; name?: string }[]; workbenchApp: unknown };
       target.__nativeSaves = [];
@@ -152,18 +203,65 @@ test.describe('手机端：触摸 + 局域网 http（非安全上下文）', () 
 
     try {
       await openImagesModal(page, product.sku, true);
-
-      await expect(page.locator('.product-images-help')).toContainText('点「保存到相册」即可存进手机相册');
       await page.locator('.product-images-save-button').click();
-
       await expect(page.locator('.product-images-copy-message')).toHaveText('已保存 1 张到手机相册');
-      // 交给原生的必须是原图，不能把列表里的 240px 缩略图存进相册。
       const saves = await page.evaluate(() => (window as unknown as { __nativeSaves: { url: string }[] }).__nativeSaves);
       expect(saves).toHaveLength(1);
+      // 壳不再自己从当前页地址拼接，必须收到完整地址；且必须是原图而非 240px 缩略图。
+      expect(saves[0].url).toMatch(/^http/);
       expect(saves[0].url).toContain('/files/product-images/');
       expect(saves[0].url).not.toContain('/api/thumbs/');
-      // 有原生保存能力时不该再打开那个靠长按的全屏大图（WebView 里长按本来就是空操作）。
-      await expect(page.locator('.image-save-viewer')).toHaveCount(0);
+    } finally {
+      await page.request.delete(`/api/products/${product.id}`);
+    }
+  });
+
+  test('保存失败：失败环节显示在界面并回报到服务端诊断接口', async ({ page, context }) => {
+    await forceInsecureContext(context);
+    const client = await context.newCDPSession(page);
+    await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    await context.addInitScript(() => {
+      const target = window as unknown as { __saved: unknown[]; __legacy: unknown[]; workbenchApp: unknown };
+      target.__saved = [];
+      target.__legacy = [];
+      target.workbenchApp = {
+        getNetworks: () => '[]',
+        switchNetwork: () => {},
+        openAddressEditor: () => {},
+        setOverlayOpen: () => {},
+        // 真实 1.18 壳两个方法都在：能力判断仍看 saveImage，走哪条通道看 saveImageData。
+        saveImage: (url: string) => { target.__legacy.push(url); },
+        // 不自动回执：由用例模拟壳里写入失败时的两个回调。
+        saveImageData: () => { target.__saved.push(true); },
+      };
+    });
+    const diagnostics: unknown[] = [];
+    await page.route('**/api/client-diagnostics', async (route) => {
+      diagnostics.push(route.request().postDataJSON());
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, data: { received: true } }) });
+    });
+
+    const stamp = Date.now();
+    const product = await seedProductWithImage(page, stamp);
+
+    try {
+      await openImagesModal(page, product.sku, true);
+      await page.locator('.product-images-save-button').click();
+      // 等网页把图片抓完并交给壳之后再模拟壳的失败回执（原生也是先回报环节、再给保存回执）。
+      await expect.poll(() => page.evaluate(() => (window as unknown as { __saved: unknown[] }).__saved.length)).toBe(1);
+      await page.evaluate(() => {
+        const target = window as unknown as {
+          __workbenchSaveFailed?: (stage: string, message: string) => void;
+          __workbenchImageSaved?: (ok: boolean) => void;
+        };
+        target.__workbenchSaveFailed?.('write', 'IOException: boom');
+        target.__workbenchImageSaved?.(false);
+      });
+
+      await expect(page.locator('.product-images-copy-message')).toContainText('写入相册失败');
+      await expect.poll(() => diagnostics.length).toBe(1);
+      expect((diagnostics[0] as { stage?: string; kind?: string }).stage).toBe('write');
+      expect((diagnostics[0] as { kind?: string }).kind).toBe('image-save');
     } finally {
       await page.request.delete(`/api/products/${product.id}`);
     }

@@ -17,6 +17,11 @@ export interface WorkbenchAppBridge {
   /** 由原生把图片写进系统相册（1.8 之前的 App 没有该方法）。 */
   saveImage?(url: string, fileName?: string): void;
   /**
+   * 由网页端抓好的图片字节（base64）直接交给原生写进相册（1.18 之前的 App 没有该方法）。
+   * 个别机型上壳自己下载图片会静默失败，1.18 起改由网页负责抓图、壳只负责落盘。
+   */
+  saveImageData?(base64: string, fileName?: string): void;
+  /**
    * 由原生拉起系统选图/选文件（1.12 之前的 App 没有该方法）。
    * 返回 true 表示已拉起，结果经 window.__workbenchPickedFiles(requestId, files) 异步回传。
    */
@@ -66,6 +71,31 @@ export function saveImageNatively(url: string, fileName?: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** 把网页抓好的 base64 字节交给壳写相册（1.18+）；返回 false 表示壳还没有这个能力。 */
+export function saveImageDataNatively(base64: string, fileName?: string): boolean {
+  try {
+    const bridge = getAppBridge();
+    if (typeof bridge?.saveImageData !== 'function') return false;
+    bridge.saveImageData(base64, fileName);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 保存失败环节的回报：原生通过 window.__workbenchSaveFailed(stage, message) 通知网页（1.18+）。 */
+export type ImageSaveFailureHandler = (stage: string, message: string) => void;
+
+/** 注册保存失败回报，返回注销函数；旧版本 App 不会回报，注销可避免弹窗关掉后仍写状态。 */
+export function registerImageSaveFailureHandler(handler: ImageSaveFailureHandler): () => void {
+  if (typeof window === 'undefined') return () => {};
+  const target = window as unknown as { __workbenchSaveFailed?: ImageSaveFailureHandler };
+  target.__workbenchSaveFailed = handler;
+  return () => {
+    if (target.__workbenchSaveFailed === handler) delete target.__workbenchSaveFailed;
+  };
 }
 
 /** 注册原生保存结果回调，返回注销函数；旧版本 App 不会回调，注销可避免弹窗关掉后仍写状态。 */

@@ -289,6 +289,15 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   });
 }
 
+/** 客户端失败回报（如 App 内保存到相册失败）：写进服务端日志，线上排查不用再靠猜。 */
+export async function reportClientDiagnostic(input: { kind: string; stage: string; message: string }): Promise<void> {
+  await request('/api/client-diagnostics', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+}
+
 /**
  * XHR 版上传：只有 XMLHttpRequest 能在上传过程中拿到字节进度（fetch 没有），
  * 产品图库的逐张进度条靠它。错误映射与 request() 保持一致。

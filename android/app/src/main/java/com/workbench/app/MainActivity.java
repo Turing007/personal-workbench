@@ -25,6 +25,7 @@ import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.text.TextUtils;
 import android.util.Base64;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -123,6 +124,9 @@ public class MainActivity extends Activity {
     /** API 29 以下保存图片前要先申请存储权限，授权通过后接着保存这一张。 */
     private String pendingImageUrl;
     private String pendingImageName;
+    /** 同一流程的「网页已抓好字节」版本：授权通过后写这一份 base64。 */
+    private String pendingImageData;
+    private String pendingImageDataName;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -804,12 +808,24 @@ public class MainActivity extends Activity {
         }
 
         /**
-         * 网页「保存到相册」按钮：由原生把图片下载下来写进系统相册。
-         * 网页自己那条路（blob + a[download]）在 WebView 里会被静默忽略，只能走原生。
+         * 网页「保存到相册」的兜底通道：由原生把图片下载下来写进系统相册。
+         * 1.18 起新网页改走 saveImageData（壳自己下载在个别机型上会静默失败），
+         * 这条保留给长按保存与旧网页。
          */
         @JavascriptInterface
         public void saveImage(String url, String fileName) {
             runOnUiThread(() -> saveImageToGallery(url, fileName));
+        }
+
+        /**
+         * 网页「保存到相册」主通道（1.18+ 网页）：图片字节已由网页端抓取好，原生只负责写进相册。
+         * WebView 的网络栈已被证明可用，而壳自己的 HttpURLConnection 在个别机型上连请求都发不出去。
+         */
+        @JavascriptInterface
+        public void saveImageData(String base64, String fileName) {
+            final String data = base64 == null ? "" : base64;
+            final String name = fileName == null ? "" : fileName;
+            runOnUiThread(() -> saveImageBytesToGallery(data, name));
         }
 
         /**
@@ -1243,6 +1259,7 @@ public class MainActivity extends Activity {
     private void saveImageToGallery(String rawUrl, String rawName) {
         String url = absoluteImageUrl(rawUrl);
         if (url == null) {
+            reportSaveFailure("url", "empty image url");
             notifyImageSaved(false);
             return;
         }
@@ -1261,18 +1278,80 @@ public class MainActivity extends Activity {
             boolean saved = false;
             try {
                 byte[] data = downloadBytes(url);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    writeImageToMediaStore(fileName, data);
-                } else {
-                    writeImageToLegacyPictures(fileName, data);
+                try {
+                    writeImageData(fileName, data);
+                    saved = true;
+                } catch (Exception error) {
+                    reportSaveFailure("write", describe(error));
                 }
-                saved = true;
-            } catch (Exception ignored) {
-                // 具体原因对用户没有意义，统一提示重试即可。
+            } catch (Exception error) {
+                reportSaveFailure("download", describe(error));
             }
             boolean result = saved;
             mainHandler.post(() -> notifyImageSaved(result));
         });
+    }
+
+    /** 用网页抓好、经桥传回来的字节写相册（1.18+ 主通道；老系统仍需先拿存储权限）。 */
+    private void saveImageBytesToGallery(String base64, String rawName) {
+        if (TextUtils.isEmpty(base64)) {
+            reportSaveFailure("decode", "empty image data");
+            notifyImageSaved(false);
+            return;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            pendingImageData = base64;
+            pendingImageDataName = rawName;
+            requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, STORAGE_PERMISSION_REQUEST);
+            return;
+        }
+
+        Toast.makeText(this, R.string.save_image_started, Toast.LENGTH_SHORT).show();
+        executor.execute(() -> {
+            boolean saved = false;
+            try {
+                byte[] data = Base64.decode(base64, Base64.DEFAULT);
+                if (data.length == 0) throw new IOException("empty image data");
+                writeImageData(imageFileName("", rawName), data);
+                saved = true;
+            } catch (IllegalArgumentException error) {
+                reportSaveFailure("decode", describe(error));
+            } catch (Exception error) {
+                reportSaveFailure("write", describe(error));
+            }
+            boolean result = saved;
+            mainHandler.post(() -> notifyImageSaved(result));
+        });
+    }
+
+    /** 按系统版本把图片字节落进相册：10+ 走 MediaStore，更早直接写 Pictures 目录。 */
+    private void writeImageData(String fileName, byte[] data) throws IOException {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            writeImageToMediaStore(fileName, data);
+        } else {
+            writeImageToLegacyPictures(fileName, data);
+        }
+    }
+
+    /** 保存失败回报：留一条 logcat，并把失败环节与原因发给网页（界面提示 + 服务端日志）。 */
+    private void reportSaveFailure(String stage, String message) {
+        String detail = message == null ? "" : message;
+        Log.w("WorkbenchSave", stage + ": " + detail);
+        if (webView == null) return;
+        final String script = "window.__workbenchSaveFailed&&window.__workbenchSaveFailed("
+                + JSONObject.quote(stage) + "," + JSONObject.quote(detail) + ");";
+        mainHandler.post(() -> {
+            if (webView == null) return;
+            webView.evaluateJavascript(script, null);
+        });
+    }
+
+    /** 异常压成一行短文案：回报里不需要堆栈，类名 + 消息足够定位。 */
+    private static String describe(Exception error) {
+        String message = error.getMessage();
+        String text = error.getClass().getSimpleName() + (message == null ? "" : ": " + message);
+        return text.length() > 180 ? text.substring(0, 180) : text;
     }
 
     /** 保存结束：提示用户，并通知网页把按钮从「保存中」恢复过来。 */
@@ -1377,12 +1456,19 @@ public class MainActivity extends Activity {
         if (requestCode == STORAGE_PERMISSION_REQUEST) {
             String url = pendingImageUrl;
             String name = pendingImageName;
+            String data = pendingImageData;
+            String dataName = pendingImageDataName;
             pendingImageUrl = null;
             pendingImageName = null;
-            if (url != null && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                saveImageToGallery(url, name);
+            pendingImageData = null;
+            pendingImageDataName = null;
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                if (url != null) saveImageToGallery(url, name);
+                else if (data != null) saveImageBytesToGallery(data, dataName);
+                else notifyImageSaved(false);
             } else {
                 // 用户拒绝也要回执，否则网页那边会一直停在「保存中」。
+                reportSaveFailure("permission", "storage permission denied");
                 notifyImageSaved(false);
             }
             return;
