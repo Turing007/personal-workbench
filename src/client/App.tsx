@@ -7,6 +7,7 @@ import { startUploadKeepAlive, stopUploadKeepAlive, updateUploadKeepAlive } from
 import Sidebar from './components/Sidebar';
 import { navigationKeys, type NavigationKey } from './navigation';
 import { loadMobileTabs, saveMobileTabs } from './mobile-tabs';
+import { initNavigationHistory, pushPageKey, registerCloseLayer, setCurrentPageKey, unregisterCloseLayer } from './navigation-history';
 import MobileTabBar from './components/MobileTabBar';
 import Toast, { type ToastMessage } from './components/Toast';
 import type { CartonLabel } from './components/LabelEditorModal';
@@ -192,7 +193,8 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     saveMobileTabs(next);
   }, []);
 
-  const navigate = useCallback((next: NavigationKey) => {
+  /** 切入某个模块的公共动作；返回键落回上一级菜单时也走这里，只是不再压历史。 */
+  const applyNav = useCallback((next: NavigationKey) => {
     // The customer id is a one-time hand-off from quotation sync. Clear it
     // when leaving the customer product page so a later manual visit does
     // not unexpectedly jump back to the last synced customer.
@@ -208,6 +210,31 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     // 记住当前模块，浏览器刷新后仍停留在原页面。
     try { window.localStorage.setItem(ACTIVE_NAV_STORAGE_KEY, next); } catch { /* 忽略存储失败 */ }
   }, []);
+
+  const navigate = useCallback((next: NavigationKey) => {
+    applyNav(next);
+    // 压一格历史：手机返回键 / 浏览器后退能回到上一级菜单，而不是直接收起 App。
+    pushPageKey(next);
+  }, [applyNav]);
+
+  // 安卓壳的返回键 = 浏览器后退：先关弹窗与「更多」抽屉（各组件在 navigation-history
+  // 登记关闭层），再逐格回到上一级菜单；回到第一页后由壳负责收起 App。
+  useEffect(() => initNavigationHistory({
+    initialKey: initialActiveNav(),
+    onNavigate: (key) => {
+      if (!navigationKeys.includes(key as NavigationKey)) return;
+      applyNav(key as NavigationKey);
+      setCurrentPageKey(key);
+    },
+  }), [applyNav]);
+
+  // 「更多」抽屉打开时登记为一层：返回键先关抽屉，页面不动。
+  const mobileNavLayerId = useRef(Symbol('mobile-nav-layer'));
+  useEffect(() => {
+    if (!mobileNavOpen) return undefined;
+    registerCloseLayer(mobileNavLayerId.current, () => setMobileNavOpen(false));
+    return () => unregisterCloseLayer(mobileNavLayerId.current);
+  }, [mobileNavOpen]);
 
   const notify = useCallback((message: string, kind: ToastMessage['kind'] = 'info') => {
     // 同文案去重：并发请求同时失败时只弹一条，避免 toast 堆叠刷屏。

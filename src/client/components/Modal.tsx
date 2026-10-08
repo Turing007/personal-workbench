@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useEffect, useRef } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { notifyOverlayOpen } from '../app-bridge';
+import { registerCloseLayer, unregisterCloseLayer } from '../navigation-history';
 
 export interface ModalProps {
   open: boolean;
@@ -48,11 +49,16 @@ export default function Modal({ open, title, children, onClose, width = 760, foo
   const previousActiveElement = useRef<HTMLElement | null>(null);
   const modalId = useRef(Symbol('modal'));
   const titleId = useRef(`modal-title-${Math.random().toString(36).slice(2)}`);
+  // 返回键关弹窗时调用的是登记那一刻的闭包，用 ref 保证永远是最新的 onClose。
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return undefined;
     previousActiveElement.current = document.activeElement as HTMLElement | null;
     registerModal(modalId.current);
+    // 弹窗算「一级」：安卓返回键先关它，而不是直接退出当前页。
+    registerCloseLayer(modalId.current, () => onCloseRef.current());
     closeButtonRef.current?.focus();
 
     const panel = panelRef.current;
@@ -75,6 +81,7 @@ export default function Modal({ open, title, children, onClose, width = 760, foo
     return () => {
       panel?.removeEventListener('keydown', onPanelKeyDown);
       unregisterModal(modalId.current);
+      unregisterCloseLayer(modalId.current);
       previousActiveElement.current?.focus?.();
     };
   }, [layer, open]);

@@ -56,13 +56,15 @@ test.describe('订单对公/对私结算与开票状态', () => {
     await expect(formDialog.getByRole('combobox', { name: '结算方式' })).toHaveValue('personal');
     await formDialog.getByRole('button', { name: '取消' }).click();
 
-    // 订单页列表：对私显示无需开票，对公显示未申请
+    // 订单页列表：开票状态与结算方式都不再展示（收进详情与财务模块），列表保持紧凑
     const personalRow = page.locator('tbody tr', { hasText: personalOrder.orderNo });
-    await expect(personalRow).toContainText('无需开票');
-    await expect(personalRow).toContainText('对私');
+    await expect(personalRow).toContainText('未付款');
+    await expect(personalRow).not.toContainText('无需开票');
+    await expect(personalRow).not.toContainText('对私');
     const corporateRow = page.locator('tbody tr', { hasText: corporateOrder.orderNo });
-    await expect(corporateRow).toContainText('未申请');
-    await expect(corporateRow).toContainText('对公');
+    await expect(corporateRow).toContainText('未付款');
+    await expect(corporateRow).not.toContainText('未申请');
+    await expect(corporateRow).not.toContainText('对公');
 
     // 财务模块：对私发票列显示无需开票，详情隐藏新建开票申请
     await page.getByRole('button', { name: '财务', exact: true }).click();
