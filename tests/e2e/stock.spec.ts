@@ -80,7 +80,12 @@ test.describe('备货模块', () => {
       await myRow.getByRole('button', { name: '关联产品' }).click();
       const linkDialog = page.getByRole('dialog', { name: '关联系统产品' });
       await expect(linkDialog).toBeVisible();
-      await linkDialog.getByRole('textbox', { name: '搜索系统产品' }).fill(`E2E冲压脚${stamp}`);
+      // 搜索框一键清空：输入后出现小叉，点一下清空，再重新搜索
+      const searchBox = linkDialog.getByRole('textbox', { name: '搜索系统产品' });
+      await searchBox.fill('E2E');
+      await linkDialog.getByRole('button', { name: '清空搜索' }).click();
+      await expect(searchBox).toHaveValue('');
+      await searchBox.fill(`E2E冲压脚${stamp}`);
       await linkDialog.getByRole('button', { name: new RegExp(`E2E冲压脚${stamp}`) }).first().click();
       await linkDialog.getByRole('textbox', { name: '供应商产品名称' }).fill(`E2E报供名${stamp}`);
       await linkDialog.getByRole('button', { name: '保存关联' }).click();
