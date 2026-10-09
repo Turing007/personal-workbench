@@ -1,6 +1,11 @@
 import { expect, test } from '@playwright/test';
 import { ensureAuthenticated, injectSession } from './helpers/auth';
 
+const PNG_1X1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+  'base64',
+);
+
 let sessionCookie: string;
 
 test.beforeAll(async ({ request }) => {
@@ -85,6 +90,60 @@ test('图册模块：建图册 → 未登录打开链接可见 → 加品刷新�
     if (catalogId) await page.request.delete(`/api/catalogs/${catalogId}`);
     await page.request.delete(`/api/products/${productA.id}`);
     await page.request.delete(`/api/products/${productB.id}`);
+  }
+});
+
+test('客户页弹窗：大图与参数卡居中（手机竖排 / 桌面横排）', async ({ page, browser }) => {
+  const stamp = Date.now();
+  const product = await seedProduct(page, `E2E弹窗检查${stamp}`, stamp);
+  let catalogId: number | null = null;
+
+  try {
+    const uploaded = await page.request.post(`/api/products/${product.id}/images?category=product`, {
+      multipart: { file: { name: 'e2e-lightbox.png', mimeType: 'image/png', buffer: PNG_1X1 } },
+    });
+    expect(uploaded.ok()).toBe(true);
+    const created = await page.request.post('/api/catalogs', { data: { name: `E2E弹窗图册${stamp}`, productIds: [product.id] } });
+    const summary = (await created.json()).data as { id: number; token: string };
+    catalogId = summary.id;
+
+    const openLightbox = async (viewport: { width: number; height: number }) => {
+      const context = await browser.newContext({ viewport });
+      const guest = await context.newPage();
+      try {
+        await guest.goto(`/c/${summary.token}`);
+        await guest.locator('.card-image').first().click();
+        // 弹窗的居中布局全靠这个包裹层，缺了它大图与参数卡会全部贴左
+        await expect(guest.locator('.lightbox.is-open .lightbox-panel')).toBeVisible();
+        return await guest.evaluate(() => {
+          const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+          const image = rect('.lightbox-image');
+          const info = rect('.lightbox-info');
+          return {
+            viewportWidth: window.innerWidth,
+            imageCenter: (image.left + image.right) / 2,
+            infoCenter: (info.left + info.right) / 2,
+            imageLeft: image.left,
+            imageRight: image.right,
+            infoLeft: info.left,
+            infoRight: info.right,
+          };
+        });
+      } finally {
+        await context.close();
+      }
+    };
+
+    const mobile = await openLightbox({ width: 390, height: 844 });
+    expect(Math.abs(mobile.imageCenter - mobile.viewportWidth / 2)).toBeLessThanOrEqual(1);
+    expect(Math.abs(mobile.infoCenter - mobile.viewportWidth / 2)).toBeLessThanOrEqual(1);
+
+    const wide = await openLightbox({ width: 1280, height: 800 });
+    expect(wide.infoLeft).toBeGreaterThanOrEqual(wide.imageRight);
+    expect(Math.abs(wide.imageLeft - (wide.viewportWidth - wide.infoRight))).toBeLessThanOrEqual(1);
+  } finally {
+    if (catalogId) await page.request.delete(`/api/catalogs/${catalogId}`);
+    await page.request.delete(`/api/products/${product.id}`);
   }
 });
 

@@ -136,8 +136,9 @@ export function renderPublicCatalogPage(data: PublicCatalogPageData): string {
   .lightbox { position: fixed; inset: 0; z-index: 20; display: none; background: rgba(10,14,18,.88); padding: 16px; }
   .lightbox.is-open { display: block; }
   .lightbox-panel { height: 100%; display: flex; flex-direction: column; gap: 10px; align-items: center; overflow: auto; }
-  .lightbox-image { max-width: min(96vw, 760px); max-height: 46vh; object-fit: contain; background: #fff; border-radius: 8px; }
-  .lightbox-info { width: min(96vw, 760px); background: #fff; border-radius: 10px; padding: 12px 14px; display: grid; gap: 8px; }
+  /* 宽度用 100%（面板内容宽）而不是 96vw：96vw 没算 .lightbox 的左右内边距，会右边溢出、看着不居中。 */
+  .lightbox-image { max-width: min(100%, 760px); max-height: 46vh; object-fit: contain; background: #fff; border-radius: 8px; }
+  .lightbox-info { width: min(100%, 760px); background: #fff; border-radius: 10px; padding: 12px 14px; display: grid; gap: 8px; }
   .lightbox-info h3 { margin: 0; font-size: 15px; }
   .lightbox-info table { width: 100%; border-collapse: collapse; table-layout: fixed; }
   .lightbox-info tr + tr { border-top: 1px solid #f0f2f4; }
@@ -176,12 +177,14 @@ ${groups.length || newArrivals.length ? `<nav class="cat-nav" aria-label="产品
 <footer class="page-foot"><span>${footer}</span><a class="page-foot-btn" href="#top">↑ 回顶部</a></footer>
 </div>
 <div class="lightbox" id="lightbox">
-  <img class="lightbox-image" alt="">
-  <div class="lightbox-info">
-    <h3></h3>
-    <table></table>
-    <div class="lightbox-meta"></div>
-    <div class="lightbox-pack"></div>
+  <div class="lightbox-panel">
+    <img class="lightbox-image" alt="">
+    <div class="lightbox-info">
+      <h3></h3>
+      <table></table>
+      <div class="lightbox-meta"></div>
+      <div class="lightbox-pack"></div>
+    </div>
   </div>
   <button class="lightbox-close" type="button" aria-label="关闭">×</button>
 </div>
@@ -242,6 +245,7 @@ ${data.company.wechatQrRelativePath ? `<div class="qr-zoom" id="qr-zoom" hidden>
     });
 
     var box = document.getElementById('lightbox');
+    var panel = box.querySelector('.lightbox-panel');
     var image = box.querySelector('.lightbox-image');
     var title = box.querySelector('h3');
     var table = box.querySelector('table');
@@ -305,7 +309,7 @@ ${data.company.wechatQrRelativePath ? `<div class="qr-zoom" id="qr-zoom" hidden>
     document.addEventListener('click', function (event) {
       var trigger = event.target.closest('[data-detail]');
       if (trigger) { open(trigger); return; }
-      if (event.target === box || event.target.closest('.lightbox-close')) close();
+      if (event.target === box || event.target === panel || event.target.closest('.lightbox-close')) close();
     });
     document.addEventListener('keydown', function (event) {
       if (event.key !== 'Escape') return;
