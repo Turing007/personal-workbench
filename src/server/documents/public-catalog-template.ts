@@ -1,5 +1,5 @@
 import { escapeHtml } from './quotation-template.js';
-import { parseParameterRows, packagingDetailLines, type CatalogProduct } from './product-catalog-template.js';
+import { parseParameterRows, packagingDetailBlock, type CatalogProduct, type PackagingDetailBlock } from './product-catalog-template.js';
 import type { CompanySnapshot } from '../../shared/documents.js';
 
 /**
@@ -19,8 +19,8 @@ interface CardDetail {
   rows: Array<{ label: string; value: string }>;
   colors: string;
   plugs: string;
-  /** 每个包装一组、组内两行：名称+内盒 / 外箱+装箱数。 */
-  packaging: string[][];
+  /** 每个包装一组：名称单独成标签，明细行内盒 / 外箱+装箱数。 */
+  packaging: PackagingDetailBlock[];
 }
 
 function cardDetail(product: CatalogProduct): CardDetail {
@@ -29,7 +29,7 @@ function cardDetail(product: CatalogProduct): CardDetail {
     rows: parseParameterRows(product.parameters),
     colors: product.colors.filter(Boolean).join(' / '),
     plugs: product.batteryPlugs.filter(Boolean).join(' / '),
-    packaging: product.packaging.map((item) => packagingDetailLines(item)),
+    packaging: product.packaging.map((item) => packagingDetailBlock(item)),
   };
 }
 
@@ -153,6 +153,8 @@ export function renderPublicCatalogPage(data: PublicCatalogPageData): string {
   .lightbox-pack-label { color: #8b929a; font-size: 11px; }
   /* 同一包装的几行贴在一起，不同包装之间留 8px，避免糊成一片。 */
   .lightbox-pack-group { display: grid; gap: 2px; }
+  /* 包装名称用浅绿标签托底，和后面的明细文字区分开。 */
+  .lightbox-pack-name { display: inline-block; padding: 0 7px; margin-right: 6px; border-radius: 4px; background: #e7f3f1; color: #0f766e; font-weight: 600; }
   /* 每条包装占一行、整行不折行（字号收紧到 11px 让装箱数完整放下）；特别长时该行可横向滑动。 */
   .lightbox-pack-line { white-space: nowrap; overflow-x: auto; scrollbar-width: thin; }
   .lightbox-close { position: fixed; top: 12px; right: 12px; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.18); color: #fff; font-size: 22px; line-height: 1; cursor: pointer; }
@@ -296,10 +298,17 @@ ${data.company.wechatQrRelativePath ? `<div class="qr-zoom" id="qr-zoom" hidden>
       packaging.forEach(function (group) {
         var wrap = document.createElement('div');
         wrap.className = 'lightbox-pack-group';
-        group.forEach(function (line) {
+        var lines = group.lines.length ? group.lines : [''];
+        lines.forEach(function (line, index) {
           var div = document.createElement('div');
           div.className = 'lightbox-pack-line';
-          div.textContent = line;
+          if (index === 0) {
+            var chip = document.createElement('span');
+            chip.className = 'lightbox-pack-name';
+            chip.textContent = group.name;
+            div.appendChild(chip);
+          }
+          if (line) div.appendChild(document.createTextNode(line));
           wrap.appendChild(div);
         });
         pack.appendChild(wrap);

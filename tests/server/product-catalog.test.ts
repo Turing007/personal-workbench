@@ -10,7 +10,7 @@ import { DatabaseRepositories, type ProductInput } from '../../src/server/db/rep
 import { SettingsRepository } from '../../src/server/db/settings-repository';
 import { FileStore } from '../../src/server/files/file-store';
 import { registerProductRoutes } from '../../src/server/routes/products';
-import { packagingDetailLines, packagingLine, parseParameterRows, renderProductCatalogHtml } from '../../src/server/documents/product-catalog-template';
+import { packagingDetailBlock, packagingLine, parseParameterRows, renderProductCatalogHtml } from '../../src/server/documents/product-catalog-template';
 
 const directories: string[] = [];
 const apps: FastifyInstance[] = [];
@@ -97,12 +97,12 @@ describe('产品图册', () => {
     ).toBe('木箱｜内盒 30×22×10cm｜外箱 40×30×25 厘米');
   });
 
-  it('详情弹窗每个包装排两行：名称+内盒 / 外箱+装箱数', () => {
+  it('详情弹窗包装块：名称单独成标签，明细排两行', () => {
     expect(
-      packagingDetailLines({ name: '中性彩盒', innerSize: '10.5*10.5*7', innerWeight: 0.4, outerSize: '62*37*23', outerWeight: 12.5, packCount: 50 }),
-    ).toEqual(['中性彩盒｜内盒 10.5*10.5*7cm 0.4kg', '外箱 62*37*23cm 12.5kg｜装箱数 50']);
-    // 只有名称时仍占一行，不生成空行
-    expect(packagingDetailLines({ name: '木箱' })).toEqual(['木箱']);
+      packagingDetailBlock({ name: '中性彩盒', innerSize: '10.5*10.5*7', innerWeight: 0.4, outerSize: '62*37*23', outerWeight: 12.5, packCount: 50 }),
+    ).toEqual({ name: '中性彩盒', lines: ['内盒 10.5*10.5*7cm 0.4kg', '外箱 62*37*23cm 12.5kg｜装箱数 50'] });
+    // 只有名称时明细为空，页面只显示名称标签，不生成空行
+    expect(packagingDetailBlock({ name: '木箱' })).toEqual({ name: '木箱', lines: [] });
   });
 
   it('客户版图册不含供应商、价格与配件', async () => {

@@ -114,14 +114,21 @@ export function packagingLine(item: CatalogProduct['packaging'][number]): string
   return parts.join('｜');
 }
 
-/** 详情弹窗用：每个包装排两行（名称+内盒 / 外箱+装箱数），手机上不用横向滑动就能看全。 */
-export function packagingDetailLines(item: CatalogProduct['packaging'][number]): string[] {
+/** 详情弹窗的包装块：名称单独成标签，明细排两行（内盒 / 外箱+装箱数）。 */
+export interface PackagingDetailBlock {
+  name: string;
+  /** 明细行；没有任何明细时为空数组（只显示名称标签）。 */
+  lines: string[];
+}
+
+/** 详情弹窗用：名称与明细分开，名称渲染成标签更醒目；每行不折行，特长的行可横向滑动。 */
+export function packagingDetailBlock(item: CatalogProduct['packaging'][number]): PackagingDetailBlock {
   const name = item.name?.trim() || '包装';
   const inner = innerBoxText(item);
   const outer = outerBoxText(item);
-  const head = inner ? `${name}｜内盒 ${inner}` : name;
   const tail = [outer ? `外箱 ${outer}` : '', item.packCount ? `装箱数 ${item.packCount}` : ''].filter(Boolean).join('｜');
-  return tail ? [head, tail] : [head];
+  const lines = [inner ? `内盒 ${inner}` : '', tail].filter(Boolean);
+  return { name, lines };
 }
 
 function toCell(product: CatalogProduct, density: CatalogDensity): CatalogCell {
