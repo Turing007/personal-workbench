@@ -447,6 +447,11 @@ select {
 .modal-close:hover { color: var(--color-text); background: var(--color-grouped); transform: scale(1.04); }
 .modal-body { padding: 22px; }
 .modal-footer { display: flex; justify-content: flex-end; gap: 9px; padding: 16px 22px; border-top: 1px solid var(--color-divider); }
+/* 产品编辑器底部：「添加到产品图册」在左、按钮在右；只负责加入（保存时追加，已在册不重复）。 */
+.product-editor-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; width: 100%; }
+.product-editor-footer-actions { display: flex; gap: 9px; margin-left: auto; }
+.product-editor-catalog-add { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #3d434a; cursor: pointer; }
+.product-editor-catalog-select { border: 1px solid #dbe3ea; border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 12.5px; background: #fff; max-width: 180px; }
 
 @keyframes modal-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modal-scale-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }

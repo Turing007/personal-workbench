@@ -164,8 +164,9 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   await registerHealthRoutes(app);
   await registerDiagnosticRoutes(app);
   const settingsRepository = new SettingsRepository(options.database);
-  await registerProductRoutes(app, { repositories, fileStore: options.fileStore, thumbnailService, settingsRepository });
-  const catalogService = new CatalogService(new CatalogRepository(options.database), {
+  const catalogRepository = new CatalogRepository(options.database);
+  await registerProductRoutes(app, { repositories, fileStore: options.fileStore, thumbnailService, settingsRepository, catalogRepository });
+  const catalogService = new CatalogService(catalogRepository, {
     listProductRows: () => repositories.listProducts(),
     settingsRepository,
   });

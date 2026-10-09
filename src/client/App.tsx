@@ -376,10 +376,10 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
    * 保存产品：连点两次会并发跑两遍图片差异同步，互相删掉对方刚上传的图，
    * 所以第二次点击复用第一次的任务，不再重跑。
    */
-  const saveProductRecord = (draft: ProductRecord, mode: 'draft' | 'active') => {
+  const saveProductRecord = (draft: ProductRecord, mode: 'draft' | 'active', options?: { addToCatalogId?: number }) => {
     if (productSaveTask.current) return productSaveTask.current;
     setProductSaving(true);
-    const task = syncProductFiles(draft, mode).finally(() => {
+    const task = syncProductFiles(draft, mode, options).finally(() => {
       productSaveTask.current = null;
       setProductSaving(false);
     });
@@ -387,13 +387,18 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     return task;
   };
 
-  const syncProductFiles = async (draft: ProductRecord, mode: 'draft' | 'active') => {
+  const syncProductFiles = async (draft: ProductRecord, mode: 'draft' | 'active', options?: { addToCatalogId?: number }) => {
     try {
       const isExisting = /^\d+$/.test(draft.id);
       const previousProduct = products.find((item) => item.id === draft.id);
       // 停售产品编辑保存后仍是停售：只有「存为草稿」按钮能改成 draft，其余情况保留它当前的状态。
       const preservedStatus = previousProduct?.status === 'discontinued' ? 'discontinued' : 'active';
-      const payload: ProductRecord = { ...draft, status: mode === 'draft' ? 'draft' : preservedStatus };
+      // 「添加到产品图册」只随正式保存生效（草稿不进客户图册），服务端保存成功后追加进所选图册。
+      const payload: ProductRecord & { addToCatalogId?: number } = {
+        ...draft,
+        status: mode === 'draft' ? 'draft' : preservedStatus,
+        ...(options?.addToCatalogId ? { addToCatalogId: options.addToCatalogId } : {}),
+      };
       const saved = isExisting ? await updateProduct(draft.id, payload) : await saveProduct(payload);
       const savedProductId = String((saved as { id?: number }).id);
       // 图片与附件的删除差异必须以这次保存返回的服务端现状为准。列表里的快照可能已经过期

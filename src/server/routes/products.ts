@@ -28,6 +28,7 @@ import {
   type CatalogProduct,
 } from '../documents/product-catalog-template.js';
 import type { SettingsRepository } from '../db/settings-repository.js';
+import type { CatalogRepository } from '../db/catalog-repository.js';
 import {
   DEFAULT_PRODUCT_IMAGE_CATEGORY,
   MAX_PRODUCT_IMAGE_NOTE_LENGTH,
@@ -57,6 +58,27 @@ interface ProductRouteOptions {
   thumbnailService?: ThumbnailService;
   /** 图册封面要读公司资料（名称/电话/地址/Logo/微信二维码）。 */
   settingsRepository?: SettingsRepository;
+  /** 编辑器「添加到产品图册」：保存产品后把 id 追加进所选图册。 */
+  catalogRepository?: CatalogRepository;
+}
+
+/**
+ * 「保存时添加到产品图册」：目标图册由编辑器的图册下拉给出（addToCatalogId）。
+ * 只负责加入、不负责移出；已在册不重复加；图册不存在时忽略。
+ * 顺带加入失败不让保存报错——产品已经入库，报错会引导用户重试并产生重复产品。
+ */
+function appendProductToCatalog(catalogRepository: CatalogRepository | undefined, body: unknown, productId: number): void {
+  if (!catalogRepository || !Number.isSafeInteger(productId) || productId <= 0) return;
+  const catalogId = Number((body as { addToCatalogId?: unknown } | null | undefined)?.addToCatalogId);
+  if (!Number.isSafeInteger(catalogId) || catalogId <= 0) return;
+  if (!catalogRepository.get(catalogId)) return;
+  try {
+    const productIds = catalogRepository.listItemProductIds(catalogId);
+    if (productIds.includes(productId)) return;
+    catalogRepository.update(catalogId, { productIds: [...productIds, productId] });
+  } catch {
+    // 尽力而为：产品保存是主目的，图册可从选品编辑补加。
+  }
 }
 
 /** 小图转 data URL（图册封面用）：Logo 与二维码都按最长边缩放，避免把大图塞进 PDF。 */
@@ -541,6 +563,7 @@ export async function registerProductRoutes(app: FastifyInstance, options: Produ
     safeRoute(() => {
       const product = repositories.saveProduct(parseProductInput(request.body));
       if (!product) throw new ApiError(500, 'SAVE_FAILED', '产品保存失败');
+      appendProductToCatalog(options.catalogRepository, request.body, Number((product as { id?: number }).id));
       return sendSuccess(reply, mapProduct(product), 201);
     }, reply),
   );
@@ -551,6 +574,7 @@ export async function registerProductRoutes(app: FastifyInstance, options: Produ
       if (!repositories.getProduct(id)) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
       const product = repositories.saveProduct(parseProductInput(request.body), id);
       if (!product) throw new ApiError(500, 'SAVE_FAILED', '产品保存失败');
+      appendProductToCatalog(options.catalogRepository, request.body, Number((product as { id?: number }).id));
       return sendSuccess(reply, mapProduct(product));
     }, reply),
   );

@@ -27,7 +27,7 @@ type StatusFilter = 'all' | ProductStatus;
 export interface ProductsPageProps {
   products: ProductRecord[];
   loading?: boolean;
-  onSave: (product: ProductRecord, mode: 'draft' | 'active') => Promise<void> | void;
+  onSave: (product: ProductRecord, mode: 'draft' | 'active', options?: { addToCatalogId?: number }) => Promise<void> | void;
   /** 保存与图片/附件同步进行中：编辑器底部的保存按钮要禁用，避免连点重跑同一份差异。 */
   saving?: boolean;
   onDelete: (product: ProductRecord) => Promise<void> | void;
@@ -198,9 +198,9 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
   const openNew = () => { setEditing(undefined); setCopying(false); setEditorOpen(true); };
   const openEdit = (product: ProductRecord) => { setEditing(product); setCopying(false); setEditorOpen(true); };
   const openCopy = (product: ProductRecord) => { setEditing(cloneProductForNew(product)); setCopying(true); setEditorOpen(true); };
-  const save = async (product: ProductRecord, mode: 'draft' | 'active') => {
+  const save = async (product: ProductRecord, mode: 'draft' | 'active', options?: { addToCatalogId?: number }) => {
     try {
-      await onSave(product, mode);
+      await onSave(product, mode, options);
       setEditorOpen(false);
       setEditing(undefined);
       setCopying(false);

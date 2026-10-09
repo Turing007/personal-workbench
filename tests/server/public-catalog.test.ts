@@ -12,6 +12,7 @@ import { FileStore } from '../../src/server/files/file-store';
 import { CatalogService } from '../../src/server/services/catalog-service';
 import { registerCatalogRoutes } from '../../src/server/routes/catalogs';
 import { registerPublicCatalogRoutes } from '../../src/server/routes/public-catalog';
+import { registerProductRoutes } from '../../src/server/routes/products';
 
 const directories: string[] = [];
 const apps: FastifyInstance[] = [];
@@ -37,6 +38,8 @@ async function createFixture() {
   app.addHook('onClose', async () => database.close());
   await registerCatalogRoutes(app, { service });
   await registerPublicCatalogRoutes(app, { service, fileStore: new FileStore(join(directory, 'files')) });
+  // 「编辑器勾选添加到图册」走产品保存接口：这里同时挂上产品路由（与线上接线一致）。
+  await registerProductRoutes(app, { repositories, catalogRepository });
   apps.push(app);
   return { app, repositories, settingsRepository, catalogRepository, database };
 }
@@ -236,5 +239,45 @@ describe('产品图册（在线链接版）', () => {
     // 名字还会出现在 alt 与详情 JSON 里，所以按 <h3> 精确计数。
     expect(after.split('<h3>老款圆锯</h3>').length - 1).toBe(1);
     expect(after.split('<h3>新款锂电钻</h3>').length - 1).toBe(2);
+  });
+
+  it('编辑器「添加到产品图册」：保存产品时追加进所选图册，重复保存不重复加', async () => {
+    const { app, repositories, catalogRepository } = await createFixture();
+    const first = repositories.saveProduct(productInput('圆锯-7寸', 'VT-9101'));
+    const firstId = Number((first as { id?: number }).id);
+    const catalog = await createCatalog(app, '主推图册', [firstId]);
+
+    // 新建产品时带上 addToCatalogId：产品保存成功，并追加到图册末尾。
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/products',
+      payload: { ...productInput('新款锂电钻', 'VT-9201'), addToCatalogId: catalog.id },
+    });
+    expect(created.statusCode).toBe(201);
+    const createdId = Number(created.json().data.id);
+    expect(catalogRepository.listItemProductIds(catalog.id)).toEqual([firstId, createdId]);
+
+    // 再编辑一次仍带勾选：已在册不重复加。
+    const updated = await app.inject({
+      method: 'PUT',
+      url: `/api/products/${createdId}`,
+      payload: { ...productInput('新款锂电钻-改名', 'VT-9201'), addToCatalogId: catalog.id },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(catalogRepository.listItemProductIds(catalog.id)).toEqual([firstId, createdId]);
+  });
+
+  it('「添加到产品图册」的图册不存在时：产品照常保存成功，图册不动', async () => {
+    const { app, repositories, catalogRepository } = await createFixture();
+    const saved = repositories.saveProduct(productInput('圆锯-7寸', 'VT-9101'));
+    const catalog = await createCatalog(app, '主推图册', [Number((saved as { id?: number }).id)]);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/products',
+      payload: { ...productInput('新款锂电钻', 'VT-9201'), addToCatalogId: 424242 },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(catalogRepository.listItemProductIds(catalog.id)).toHaveLength(1);
   });
 });

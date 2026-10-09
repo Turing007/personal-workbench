@@ -147,6 +147,44 @@ test('客户页弹窗：大图与参数卡居中（手机竖排 / 桌面横排�
   }
 });
 
+test('编辑器勾选「添加到产品图册」→ 保存产品后自动进图册', async ({ page }) => {
+  const stamp = Date.now();
+  const productA = await seedProduct(page, `E2E勾选底${stamp}`, stamp);
+  let catalogId: number | null = null;
+  let productBId: number | null = null;
+
+  try {
+    const created = await page.request.post('/api/catalogs', { data: { name: `E2E勾选图册${stamp}`, productIds: [productA.id] } });
+    expect(created.ok()).toBe(true);
+    catalogId = ((await created.json()).data as { id: number }).id;
+
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+    await page.locator('.products-page .page-toolbar .button-primary').click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('textbox', { name: '品名' }).fill(`E2E勾选新品${stamp}`);
+    await dialog.getByRole('textbox', { name: '包装名称' }).first().fill('彩盒包装');
+
+    // 勾选并把目标图册指到本轮新建的这本（默认选列表第一条，可能被旧数据占着）。
+    await dialog.getByRole('checkbox', { name: '添加到产品图册' }).check();
+    await dialog.getByLabel('选择要加入的图册').selectOption(String(catalogId));
+    await dialog.getByRole('button', { name: '保存产品' }).click();
+    await expect(dialog).toBeHidden();
+
+    // 图册明细里能看到新加的产品；产品库也真的建出来了（清理用）。
+    const detail = (await (await page.request.get(`/api/catalogs/${catalogId}`)).json()).data as { productIds: number[] };
+    expect(detail.productIds).toHaveLength(2);
+    const all = (await (await page.request.get('/api/products?page=1&pageSize=500')).json()).data.items as Array<{ id: number; name: string }>;
+    productBId = all.find((item) => item.name === `E2E勾选新品${stamp}`)?.id ?? null;
+    expect(productBId).not.toBeNull();
+    expect(detail.productIds).toContain(productBId);
+  } finally {
+    if (catalogId) await page.request.delete(`/api/catalogs/${catalogId}`);
+    if (productBId) await page.request.delete(`/api/products/${productBId}`);
+    await page.request.delete(`/api/products/${productA.id}`);
+  }
+});
+
 test('产品库里的「产品图册」菜单跳到新模块', async ({ page }) => {
   await page.goto('/');
   await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();

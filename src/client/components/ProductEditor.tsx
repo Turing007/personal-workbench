@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent } from 'react';
+import { listCatalogs, type CatalogSummary } from '../api';
 import { Download, ExternalLink, FilePlus2, Play, Plus, Save, Trash2, Video } from 'lucide-react';
 import ImagePasteUpload, { type ImageAttachment } from './ImagePasteUpload';
 import VideoPlayerModal from './VideoPlayerModal';
@@ -83,7 +84,8 @@ export interface ProductEditorProps {
   /** 点「管理预设 ›」时跳到设置页维护，未传则不显示入口。 */
   onManagePresets?: () => void;
   onClose: () => void;
-  onSave: (product: ProductRecord, mode: 'draft' | 'active') => void;
+  /** options.addToCatalogId：「添加到产品图册」勾选后的目标图册，随保存请求带给服务端追加。 */
+  onSave: (product: ProductRecord, mode: 'draft' | 'active', options?: { addToCatalogId?: number }) => void;
 }
 
 const colorPresets = ['蓝', '红', '黄'];
@@ -252,12 +254,28 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
   const [draft, setDraft] = useState<ProductRecord>(() => withFirstQuoteRow(product ?? blankProduct()));
   const [customColor, setCustomColor] = useState('');
   const [customPlug, setCustomPlug] = useState('');
+  const [catalogs, setCatalogs] = useState<CatalogSummary[]>([]);
+  const [addToCatalog, setAddToCatalog] = useState(false);
+  const [catalogId, setCatalogId] = useState<number | null>(null);
   const showParameters = showParametersProp ?? Object.prototype.hasOwnProperty.call(draft, 'parameters');
   useEffect(() => {
     if (!open) return;
     setDraft(withFirstQuoteRow(product ?? blankProduct()));
     setCustomColor('');
     setCustomPlug('');
+    // 「添加到产品图册」每次打开都重置为未勾选（只负责加入、默认不产生副作用），
+    // 图册列表现取最新，默认选第一条（在用的主图册）。
+    setAddToCatalog(false);
+    setCatalogId(null);
+    let cancelled = false;
+    listCatalogs()
+      .then((items) => {
+        if (cancelled) return;
+        setCatalogs(items);
+        setCatalogId(items[0]?.id ?? null);
+      })
+      .catch(() => { if (!cancelled) setCatalogs([]); });
+    return () => { cancelled = true; };
   }, [open, product]);
   const set = <K extends keyof ProductRecord>(key: K, next: ProductRecord[K]) => setDraft((current) => ({ ...current, [key]: next }));
   const toggle = (key: 'colors' | 'batteryPlugs', item: string) => set(key, draft[key].includes(item) ? draft[key].filter((entry) => entry !== item) : [...draft[key], item]);
@@ -265,13 +283,29 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
   const editingExisting = Boolean(product && /^\d+$/.test(product.id));
   const editingDraft = editingExisting && product?.status === 'draft';
   const saveDraft = () => onSave({ ...draft, status: 'draft' }, 'draft');
-  const saveActive = () => onSave({ ...draft, status: 'active' }, 'active');
+  // 勾选框只对「保存产品」生效；存为草稿不进图册（草稿不进客户图册）。
+  const saveActive = () => onSave(
+    { ...draft, status: 'active' },
+    'active',
+    addToCatalog && catalogId ? { addToCatalogId: catalogId } : undefined,
+  );
   // 分类只做建议：按品名里出现的最长现有分类名判定，点「建议」才写入，绝不自动覆盖人工填的值。
   // 报价数组是采购价与供应商的唯一入口，默认档那一条会写回 products 的镜像列。
   const purchaseQuotes = draft.purchaseQuotes ?? [];
   const categorySuggestion = suggestProductCategory(draft.name, productCategories);
   const categoryCandidates = orderCategoriesWithSuggestion(productCategories, categorySuggestion);
-  return <Modal open={open} title={copyMode ? '复制产品（新建）' : editingDraft ? '编辑产品（草稿）' : editingExisting ? '编辑产品' : '添加产品'} onClose={onClose} width={900} footer={<><button type="button" className="button button-secondary" onClick={onClose}>取消</button>{!editingExisting || editingDraft ? <button type="button" className="button button-secondary" title="暂存当前内容，稍后继续编辑" disabled={saving} onClick={saveDraft}>存为草稿</button> : null}<button type="button" className="button button-primary" disabled={saving} onClick={saveActive}><Save size={14} />{saving ? '保存中...' : editingDraft ? '完成并保存' : '保存产品'}</button></>}>
+  return <Modal open={open} title={copyMode ? '复制产品（新建）' : editingDraft ? '编辑产品（草稿）' : editingExisting ? '编辑产品' : '添加产品'} onClose={onClose} width={900} footer={<div className="product-editor-footer">
+    {catalogs.length > 0 && <label className="product-editor-catalog-add" title="勾选后点「保存产品」，本产品会加入所选图册；已在图册中不会重复加，移出仍去图册模块操作">
+      <input type="checkbox" aria-label="添加到产品图册" checked={addToCatalog} disabled={saving} onChange={(event) => setAddToCatalog(event.target.checked)} />
+      <span>添加到产品图册</span>
+      <select className="product-editor-catalog-select" aria-label="选择要加入的图册" value={catalogId ?? ''} disabled={saving} onChange={(event) => setCatalogId(Number(event.target.value) || null)}>
+        {catalogs.map((catalog) => <option key={catalog.id} value={catalog.id}>{catalog.name}{catalog.enabled ? '' : '（已停用）'}</option>)}
+      </select>
+    </label>}
+    <div className="product-editor-footer-actions">
+      <button type="button" className="button button-secondary" onClick={onClose}>取消</button>{!editingExisting || editingDraft ? <button type="button" className="button button-secondary" title="暂存当前内容，稍后继续编辑" disabled={saving} onClick={saveDraft}>存为草稿</button> : null}<button type="button" className="button button-primary" disabled={saving} onClick={saveActive}><Save size={14} />{saving ? '保存中...' : editingDraft ? '完成并保存' : '保存产品'}</button>
+    </div>
+  </div>}>
     <div className="product-editor">
       {copyMode && <div className="notice notice-accent">已复制产品资料和包装信息；图片、包装图片、附件与视频需重新上传。</div>}
       <div className={editingExisting ? 'form-grid product-editor-identity has-sku' : 'form-grid product-editor-identity'}>
