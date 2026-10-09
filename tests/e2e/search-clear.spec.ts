@@ -22,6 +22,9 @@ test.describe('搜索框一键清空', () => {
 
     const input = page.locator('.products-page .search-control input');
     const count = page.locator('.products-page .toolbar-count');
+    // 等产品加载完再取总数：数据目录积累较多产品时，列表加载会晚于工具条渲染，
+    // 先取数会把加载中的「0 个产品」当成基准，清空后的断言必然对不上。
+    await expect(page.locator('.products-page .table-state')).toHaveCount(0);
     const total = await count.textContent();
 
     await input.fill('绝不可能匹配的关键词zzz');
