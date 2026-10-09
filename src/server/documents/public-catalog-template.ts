@@ -1,5 +1,5 @@
 import { escapeHtml } from './quotation-template.js';
-import { parseParameterRows, packagingLine, type CatalogProduct } from './product-catalog-template.js';
+import { parseParameterRows, packagingDetailLines, type CatalogProduct } from './product-catalog-template.js';
 import type { CompanySnapshot } from '../../shared/documents.js';
 
 /**
@@ -28,7 +28,7 @@ function cardDetail(product: CatalogProduct): CardDetail {
     rows: parseParameterRows(product.parameters),
     colors: product.colors.filter(Boolean).join(' / '),
     plugs: product.batteryPlugs.filter(Boolean).join(' / '),
-    packaging: product.packaging.map((item) => packagingLine(item)),
+    packaging: product.packaging.flatMap((item) => packagingDetailLines(item)),
   };
 }
 

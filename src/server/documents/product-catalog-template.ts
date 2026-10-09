@@ -95,15 +95,33 @@ function sizeWithUnit(size: string | undefined): string {
   return /[a-zA-Z\u4e00-\u9fff]/.test(text) ? text : `${text}cm`;
 }
 
+function innerBoxText(item: CatalogProduct['packaging'][number]): string {
+  return [sizeWithUnit(item.innerSize), item.innerWeight ? `${item.innerWeight}kg` : ''].filter(Boolean).join(' ');
+}
+
+function outerBoxText(item: CatalogProduct['packaging'][number]): string {
+  return [sizeWithUnit(item.outerSize), item.outerWeight ? `${item.outerWeight}kg` : ''].filter(Boolean).join(' ');
+}
+
 export function packagingLine(item: CatalogProduct['packaging'][number]): string {
   const name = item.name?.trim() || '包装';
-  const inner = [sizeWithUnit(item.innerSize), item.innerWeight ? `${item.innerWeight}kg` : ''].filter(Boolean).join(' ');
-  const outer = [sizeWithUnit(item.outerSize), item.outerWeight ? `${item.outerWeight}kg` : ''].filter(Boolean).join(' ');
+  const inner = innerBoxText(item);
+  const outer = outerBoxText(item);
   const parts = [name];
   if (inner) parts.push(`内盒 ${inner}`);
   if (outer) parts.push(`外箱 ${outer}`);
-  if (item.packCount) parts.push(`装箱 ${item.packCount}`);
+  if (item.packCount) parts.push(`装箱数 ${item.packCount}`);
   return parts.join('｜');
+}
+
+/** 详情弹窗用：每个包装排两行（名称+内盒 / 外箱+装箱数），手机上不用横向滑动就能看全。 */
+export function packagingDetailLines(item: CatalogProduct['packaging'][number]): string[] {
+  const name = item.name?.trim() || '包装';
+  const inner = innerBoxText(item);
+  const outer = outerBoxText(item);
+  const head = inner ? `${name}｜内盒 ${inner}` : name;
+  const tail = [outer ? `外箱 ${outer}` : '', item.packCount ? `装箱数 ${item.packCount}` : ''].filter(Boolean).join('｜');
+  return tail ? [head, tail] : [head];
 }
 
 function toCell(product: CatalogProduct, density: CatalogDensity): CatalogCell {
