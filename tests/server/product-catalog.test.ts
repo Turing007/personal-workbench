@@ -10,7 +10,7 @@ import { DatabaseRepositories, type ProductInput } from '../../src/server/db/rep
 import { SettingsRepository } from '../../src/server/db/settings-repository';
 import { FileStore } from '../../src/server/files/file-store';
 import { registerProductRoutes } from '../../src/server/routes/products';
-import { parseParameterRows, renderProductCatalogHtml } from '../../src/server/documents/product-catalog-template';
+import { packagingLine, parseParameterRows, renderProductCatalogHtml } from '../../src/server/documents/product-catalog-template';
 
 const directories: string[] = [];
 const apps: FastifyInstance[] = [];
@@ -86,6 +86,15 @@ describe('产品图册', () => {
       // 缩进的续行属于上一项，不能变成独立字段
       { label: '最大切割深度', value: '57mm（90°） 41mm（45°）' },
     ]);
+  });
+
+  it('包装尺寸裸数字补 cm，已带单位的保持原样', () => {
+    expect(
+      packagingLine({ name: '中性彩盒', innerSize: '10.5*10.5*7', innerWeight: 0.4, outerSize: '62*37*23', outerWeight: 12.5, packCount: 50 }),
+    ).toBe('中性彩盒｜内盒 10.5*10.5*7cm 0.4kg｜外箱 62*37*23cm 12.5kg｜装箱 50');
+    expect(
+      packagingLine({ name: '木箱', innerSize: '30×22×10cm', outerSize: '40×30×25 厘米' }),
+    ).toBe('木箱｜内盒 30×22×10cm｜外箱 40×30×25 厘米');
   });
 
   it('客户版图册不含供应商、价格与配件', async () => {

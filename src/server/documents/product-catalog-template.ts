@@ -88,10 +88,17 @@ export function pickCatalogImage(product: CatalogProduct): string | undefined {
   return (refined ?? product.images[0])?.relativePath;
 }
 
+/** 尺寸是自由文本、按输入原样存（实测线上 278 条全是裸数字）；裸数字补 cm，带字母/中文的视为已写单位。 */
+function sizeWithUnit(size: string | undefined): string {
+  const text = size?.trim() ?? '';
+  if (!text) return '';
+  return /[a-zA-Z\u4e00-\u9fff]/.test(text) ? text : `${text}cm`;
+}
+
 export function packagingLine(item: CatalogProduct['packaging'][number]): string {
   const name = item.name?.trim() || '包装';
-  const inner = [item.innerSize?.trim(), item.innerWeight ? `${item.innerWeight}kg` : ''].filter(Boolean).join(' ');
-  const outer = [item.outerSize?.trim(), item.outerWeight ? `${item.outerWeight}kg` : ''].filter(Boolean).join(' ');
+  const inner = [sizeWithUnit(item.innerSize), item.innerWeight ? `${item.innerWeight}kg` : ''].filter(Boolean).join(' ');
+  const outer = [sizeWithUnit(item.outerSize), item.outerWeight ? `${item.outerWeight}kg` : ''].filter(Boolean).join(' ');
   const parts = [name];
   if (inner) parts.push(`内盒 ${inner}`);
   if (outer) parts.push(`外箱 ${outer}`);
