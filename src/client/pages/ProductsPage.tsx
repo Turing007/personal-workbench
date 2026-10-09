@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { getPackagingPresets } from '../api';
 import type { PackagingPreset } from '../../shared/packaging-presets';
 import type { ProductStatus } from '../../shared/product-status';
-import { CATALOG_DENSITY_OPTIONS, DEFAULT_CATALOG_DENSITY, type CatalogDensity } from '../../shared/product-catalog';
 import Modal from '../components/Modal';
 import { initialProductsView, saveProductsView, type ProductsView } from '../products-view';
 import ProductEditor, { type ProductRecord } from '../components/ProductEditor';
@@ -35,8 +34,8 @@ export interface ProductsPageProps {
   /** 详情页里的停售 / 恢复在售。 */
   onUpdateSaleStatus?: (product: ProductRecord, next: 'active' | 'discontinued') => void;
   onExport: () => Promise<void> | void;
-  /** 图册导出：只交给父层 id 与密度，页面自己决定当前筛选结果。 */
-  onCatalog: (ids: number[], density: CatalogDensity) => Promise<void>;
+  /** 跳到「产品图册」模块选品生成（在线链接与 PDF 都在那里出）。 */
+  onOpenCatalog: () => void;
   onDownloadTemplate: () => Promise<void> | void;
   onImport: (file: File) => Promise<void> | void;
   onRefresh: () => Promise<void> | void;
@@ -84,7 +83,7 @@ function extraQuoteCount(product: ProductRecord) {
   return Math.max(0, (product.purchaseQuotes?.length ?? 0) - 1);
 }
 
-export default function ProductsPage({ products, loading, onSave, saving, onDelete, onUpdateSaleStatus, onExport, onCatalog, onDownloadTemplate, onImport, onRefresh, onManagePresets, uploadingProductIds, uploadFiles, onRetryUploadFile }: ProductsPageProps) {
+export default function ProductsPage({ products, loading, onSave, saving, onDelete, onUpdateSaleStatus, onExport, onOpenCatalog, onDownloadTemplate, onImport, onRefresh, onManagePresets, uploadingProductIds, uploadFiles, onRetryUploadFile }: ProductsPageProps) {
   const uploadingIds = new Set(uploadingProductIds ?? []);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -111,9 +110,6 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
   const [copiedPackagingId, setCopiedPackagingId] = useState<string>();
   const [expandedPackagingId, setExpandedPackagingId] = useState<string>();
   const [parametersProduct, setParametersProduct] = useState<ProductRecord>();
-  const [catalogOpen, setCatalogOpen] = useState(false);
-  const [catalogDensity, setCatalogDensity] = useState<CatalogDensity>(DEFAULT_CATALOG_DENSITY);
-  const [catalogBusy, setCatalogBusy] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
   const narrow = useIsNarrow();
   // 列表 / 大图两种浏览方式，默认大图；手动切过一次就记住。
@@ -217,18 +213,6 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
     try { await onRefresh(); } finally { setRefreshing(false); }
   };
 
-  // 图册导出的是「当前筛选结果」：先筛再导，省掉逐个勾选。失败时弹窗保持打开，父层已弹提示。
-  const generateCatalog = async () => {
-    if (!filtered.length) return;
-    setCatalogBusy(true);
-    try {
-      await onCatalog(filtered.map((product) => Number(product.id)), catalogDensity);
-      setCatalogOpen(false);
-    } finally {
-      setCatalogBusy(false);
-    }
-  };
-
   const copyPackaging = async (item: ProductRecord['packaging'][number]) => {
     const display = packagingDisplay(item);
     const text = [
@@ -268,7 +252,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
         title="导出产品库、下载 Excel 模板、导入 Excel"
         items={[
           { key: 'export', label: '导出产品库', icon: <Download size={15} />, onSelect: () => void onExport() },
-          { key: 'catalog', label: '导出产品图册', icon: <Images size={15} />, separated: true, onSelect: () => setCatalogOpen(true) },
+          { key: 'catalog', label: '产品图册', icon: <Images size={15} />, separated: true, onSelect: onOpenCatalog },
           { key: 'template', label: '下载导入模板', icon: <FileDown size={15} />, onSelect: () => void onDownloadTemplate() },
           { key: 'import', label: '导入 Excel', icon: <Upload size={15} />, separated: true, onSelect: () => importInputRef.current?.click() },
         ]}
@@ -371,26 +355,6 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
       {!loading && !filtered.length && <div className="table-state">暂无产品，点击“添加产品”开始维护。</div>}
     </section>
     <ProductEditor key={editing?.id ?? 'new'} open={editorOpen} saving={saving} product={editing} copyMode={copying} packagingPresets={packagingPresets} productCategories={categoryOptions.named} supplierOptions={quoteOptions.suppliers} variantOptions={quoteOptions.variants} onManagePresets={onManagePresets} onClose={() => { setEditorOpen(false); setEditing(undefined); setCopying(false); }} onSave={save} />
-    <Modal
-      open={catalogOpen}
-      title="导出产品图册"
-      width={420}
-      onClose={() => setCatalogOpen(false)}
-      footer={<>
-        <button className="button button-secondary" type="button" disabled={catalogBusy} onClick={() => setCatalogOpen(false)}>取消</button>
-        <button className="button button-primary" type="button" disabled={catalogBusy || !filtered.length} onClick={() => void generateCatalog()}>
-          {catalogBusy ? '排版中…' : `生成 ${filtered.length} 个产品的图册`}
-        </button>
-      </>}
-    >
-      <div className="field">
-        <span className="field-label">每页排几个产品</span>
-        <select className="toolbar-select" aria-label="图册每页产品数" value={catalogDensity} onChange={(event) => setCatalogDensity(event.target.value as CatalogDensity)}>
-          {CATALOG_DENSITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label} · {option.hint}</option>)}
-        </select>
-        <span className="field-hint">图册排主图、参数、颜色/插脚与包装尺寸；发给客户的版本不含供应商与价格。</span>
-      </div>
-    </Modal>
     <ProductParametersModal open={Boolean(parametersProduct)} productName={parametersProduct?.name} parameters={parametersProduct?.parameters} onClose={() => setParametersProduct(undefined)} />
     <ProductDetailModal open={Boolean(detailProduct)} product={detailProduct} showSensitive={showSensitive} pendingImages={detailProduct ? pendingImagesFor(detailProduct) : []} onClose={closeDetail} onOpenImages={(product) => { closeDetail(); setImagesProductId(String(product.id)); }} onUpdateSaleStatus={onUpdateSaleStatus} onDelete={onDelete} />
     <ProductImagesModal open={Boolean(imagesProduct)} productName={imagesProduct?.name} images={imagesProduct?.images ?? []} pendingImages={imagesProduct ? pendingImagesFor(imagesProduct) : []} onRetryUploadFile={onRetryUploadFile} onClose={closeImages} />

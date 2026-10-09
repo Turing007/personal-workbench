@@ -88,7 +88,7 @@ export function pickCatalogImage(product: CatalogProduct): string | undefined {
   return (refined ?? product.images[0])?.relativePath;
 }
 
-function packagingLine(item: CatalogProduct['packaging'][number]): string {
+export function packagingLine(item: CatalogProduct['packaging'][number]): string {
   const name = item.name?.trim() || '包装';
   const inner = [item.innerSize?.trim(), item.innerWeight ? `${item.innerWeight}kg` : ''].filter(Boolean).join(' ');
   const outer = [item.outerSize?.trim(), item.outerWeight ? `${item.outerWeight}kg` : ''].filter(Boolean).join(' ');
@@ -183,12 +183,40 @@ export interface CatalogRenderOptions {
   density: CatalogDensity;
   /** productId -> 内联 data URL；无图的缺项允许为 undefined。 */
   imageDataUrls: Map<number, string | undefined>;
+  /** 封面（公司信息）：给了就排一页封面；封面不计入页码。 */
+  cover?: CatalogCover;
+}
+
+/** 图册封面：缺哪项都不排空标签，全空时由调用方直接不传 cover。 */
+export interface CatalogCover {
+  companyName: string;
+  phone: string;
+  address: string;
+  logoDataUrl?: string;
+  qrDataUrl?: string;
 }
 
 const CATALOG_HEADING = '产品图册';
 
+function renderCover(cover: CatalogCover): string {
+  const contactLines = [
+    cover.phone ? `<div class="cover-line"><span>电话</span>${escapeHtml(cover.phone)}</div>` : '',
+    cover.address ? `<div class="cover-line"><span>地址</span>${escapeHtml(cover.address)}</div>` : '',
+  ].join('');
+  return `<section class="page cover">
+    <div class="cover-head">
+      ${cover.logoDataUrl ? `<img class="cover-logo" src="${escapeHtml(cover.logoDataUrl)}" alt="">` : ''}
+      ${cover.companyName ? `<h1 class="cover-name">${escapeHtml(cover.companyName)}</h1>` : ''}
+    </div>
+    <div class="cover-divider"></div>
+    ${contactLines ? `<div class="cover-contact">${contactLines}</div>` : ''}
+    ${cover.qrDataUrl ? `<div class="cover-qr"><img src="${escapeHtml(cover.qrDataUrl)}" alt="微信二维码"><div class="cover-qr-hint">扫码加微信</div></div>` : ''}
+    <div class="cover-foot">${CATALOG_HEADING} · ${new Date().getFullYear()}</div>
+  </section>`;
+}
+
 export function renderProductCatalogHtml(products: CatalogProduct[], options: CatalogRenderOptions): string {
-  const { density, imageDataUrls } = options;
+  const { density, imageDataUrls, cover } = options;
   // 跨分类导出时按分类分节，每节重新起页，客户翻起来像一本目录。
   const groups = new Map<string, CatalogProduct[]>();
   for (const product of products) {
@@ -205,6 +233,8 @@ export function renderProductCatalogHtml(products: CatalogProduct[], options: Ca
     index += 1;
     return renderPage(sheet, { imageDataUrls, group: entry.group, index: index - 1, total: totalPages, density });
   }).join('')).join('');
+  // 封面排在最前；页码口径不受影响（产品页仍从「第 1 / N 页」起算）。
+  const coverHtml = cover ? renderCover(cover) : '';
 
   return `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
@@ -215,6 +245,17 @@ export function renderProductCatalogHtml(products: CatalogProduct[], options: Ca
   body { margin: 0; color: #15181c; font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; }
   .page { break-after: page; height: 268mm; display: flex; flex-direction: column; }
   .page:last-child { break-after: auto; }
+  /* 封面：居中经典款。封面自身不计页码（页码只交给产品页）。 */
+  .cover { align-items: center; text-align: center; padding-top: 42mm; }
+  .cover-logo { max-width: 70mm; max-height: 30mm; object-fit: contain; }
+  .cover-name { margin: 12mm 0 0; font-size: 26pt; font-weight: 700; letter-spacing: 2pt; }
+  .cover-divider { width: 88mm; border-top: 0.6pt solid #1f2933; margin: 14mm 0 10mm; }
+  .cover-contact { display: grid; gap: 4mm; font-size: 11pt; color: #2b3138; }
+  .cover-line span { color: #8b929a; margin-right: 3mm; }
+  .cover-qr { margin-top: 18mm; display: grid; justify-items: center; gap: 2.5mm; }
+  .cover-qr img { width: 30mm; height: 30mm; object-fit: contain; }
+  .cover-qr-hint { font-size: 9pt; color: #8b929a; letter-spacing: 1pt; }
+  .cover-foot { margin-top: auto; padding-bottom: 4mm; font-size: 10pt; color: #61676e; letter-spacing: 1.5pt; }
   .page-head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 0.5pt solid #1f2933; padding-bottom: 1.6mm; }
   .page-head span:first-child { font-size: 12pt; font-weight: 700; letter-spacing: 0.4pt; }
   .page-head span:last-child { font-size: 7.5pt; color: #6b7280; }
@@ -238,7 +279,7 @@ export function renderProductCatalogHtml(products: CatalogProduct[], options: Ca
   .cell-meta span { color: #8b929a; margin-right: 1mm; }
   .cell-pack { margin-top: auto; padding-top: 1.2mm; border-top: 0.4pt dashed #dfe3e7; font-size: 6.6pt; line-height: 1.45; color: #4a5058; word-break: break-word; }
 </style></head>
-<body>${body}</body></html>`;
+<body>${coverHtml}${body}</body></html>`;
 }
 
 export function catalogThumbnailSize(density: CatalogDensity): 480 | 960 {

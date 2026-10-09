@@ -7,9 +7,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase } from '../../src/server/db/connection';
 import { migrateDatabase } from '../../src/server/db/migrate';
 import { DatabaseRepositories, type ProductInput } from '../../src/server/db/repositories';
+import { SettingsRepository } from '../../src/server/db/settings-repository';
 import { FileStore } from '../../src/server/files/file-store';
 import { registerProductRoutes } from '../../src/server/routes/products';
-import { parseParameterRows } from '../../src/server/documents/product-catalog-template';
+import { parseParameterRows, renderProductCatalogHtml } from '../../src/server/documents/product-catalog-template';
 
 const directories: string[] = [];
 const apps: FastifyInstance[] = [];
@@ -25,6 +26,7 @@ async function createFixture() {
   const database = openDatabase(join(directory, 'workbench.sqlite'));
   migrateDatabase(database);
   const repositories = new DatabaseRepositories(database);
+  const settingsRepository = new SettingsRepository(database);
   const app = Fastify();
   app.addHook('onClose', async () => database.close());
   await app.register(multipart, { limits: { files: 1, fileSize: 10 * 1024 * 1024 } });
@@ -33,6 +35,7 @@ async function createFixture() {
   await registerProductRoutes(app, {
     repositories,
     fileStore: new FileStore(join(directory, 'files')),
+    settingsRepository,
     pdfRenderer: {
       render: async (html: string) => {
         rendered.push(html);
@@ -41,7 +44,7 @@ async function createFixture() {
     },
   });
   apps.push(app);
-  return { app, repositories, rendered };
+  return { app, repositories, rendered, settingsRepository };
 }
 
 function productInput(name: string, sku: string, overrides: Partial<ProductInput> = {}): ProductInput {
@@ -140,5 +143,47 @@ describe('产品图册', () => {
     expect(empty.statusCode).toBe(400);
     const missing = await app.inject({ method: 'POST', url: '/api/products/catalog', payload: { ids: [424242] } });
     expect(missing.statusCode).toBe(404);
+  });
+
+  it('默认带封面：公司名/电话/地址进封面，封面不计页码；缺二维码时不排二维码块', async () => {
+    const { app, repositories, rendered, settingsRepository } = await createFixture();
+    settingsRepository.saveCompanyProfile({ name: '维高工具', phone: '13800000000', address: '深圳市宝安区' });
+    const saved = repositories.saveProduct(productInput('圆锯-7寸', 'VT-9101'));
+    const response = await app.inject({ method: 'POST', url: '/api/products/catalog', payload: { ids: [Number((saved as { id?: number }).id)] } });
+    expect(response.statusCode).toBe(200);
+    const html = rendered[0];
+    expect(html).toContain('<section class="page cover">');
+    expect(html).toContain('维高工具');
+    expect(html).toContain('13800000000');
+    expect(html).toContain('深圳市宝安区');
+    // 没传二维码图片：不出现二维码块，也不出现空标签。
+    expect(html).not.toContain('<div class="cover-qr">');
+    // 封面不计页码：产品页仍是「第 1 / 1 页」。
+    expect(html).toContain('第 1 / 1 页');
+  });
+
+  it('cover: false 或公司资料全空时不排封面', async () => {
+    const { app, repositories, rendered } = await createFixture();
+    const saved = repositories.saveProduct(productInput('圆锯-7寸', 'VT-9101'));
+    const id = Number((saved as { id?: number }).id);
+    await app.inject({ method: 'POST', url: '/api/products/catalog', payload: { ids: [id], cover: false } });
+    expect(rendered[0]).not.toContain('<section class="page cover">');
+    // 公司资料没填过：默认也不硬排一页空封面。
+    await app.inject({ method: 'POST', url: '/api/products/catalog', payload: { ids: [id] } });
+    expect(rendered[1]).not.toContain('<section class="page cover">');
+  });
+
+  it('封面模板：有二维码时排「扫码加微信」，缺的字段不排空行', () => {
+    const product = {
+      id: 1, name: '圆锯', sku: 'VT-1', category: '圆锯', parameters: '', colors: [], batteryPlugs: [], packaging: [], images: [],
+    };
+    const html = renderProductCatalogHtml([product], {
+      density: 'standard' as const,
+      imageDataUrls: new Map(),
+      cover: { companyName: '维高工具', phone: '', address: '深圳', qrDataUrl: 'data:image/jpeg;base64,QUJD' },
+    });
+    expect(html).toContain('扫码加微信');
+    expect(html).toContain('data:image/jpeg;base64,QUJD');
+    expect(html).not.toContain('<span>电话</span>');
   });
 });

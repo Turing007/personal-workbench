@@ -170,6 +170,19 @@ export async function registerSettingsRoutes(app: FastifyInstance, options: Sett
   app.delete('/api/settings/company-profile/logo', async (_request, reply) =>
     safeRoute(async () => sendSuccess(reply, await options.service.deleteCompanyLogo()), reply),
   );
+
+  app.post('/api/settings/company-profile/wechat-qr', async (request, reply) =>
+    safeRoute(async () => {
+      const file = await request.file(imageFileOptions);
+      if (!file) throw new ApiError(400, 'FILE_REQUIRED', '请选择微信二维码图片', 'file');
+      const profile = await options.service.replaceCompanyQr(file.file, file.filename, file.mimetype);
+      return sendSuccess(reply, profile, 201);
+    }, reply),
+  );
+
+  app.delete('/api/settings/company-profile/wechat-qr', async (_request, reply) =>
+    safeRoute(async () => sendSuccess(reply, await options.service.deleteCompanyQr()), reply),
+  );
 }
 
 export const settingsRoutes = registerSettingsRoutes;

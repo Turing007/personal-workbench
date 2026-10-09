@@ -49,7 +49,7 @@ describe('settings repository', () => {
 
     expect(settings.getCompanyProfile()).toEqual(EMPTY_COMPANY_PROFILE);
     expect(settings.saveCompanyProfile({ name: ' 示例公司 ', phone: ' 13800000000 ', defaultIssuer: '高先生' })).toEqual({
-      name: '示例公司', logoRelativePath: null, phone: '13800000000', address: '', defaultIssuer: '高先生',
+      name: '示例公司', logoRelativePath: null, phone: '13800000000', address: '', defaultIssuer: '高先生', wechatQrRelativePath: null,
     });
     expect(settings.getCompanyProfile().defaultIssuer).toBe('高先生');
     database.close();

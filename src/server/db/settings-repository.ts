@@ -43,6 +43,7 @@ export const EMPTY_COMPANY_PROFILE: CompanySnapshot = {
   phone: '',
   address: '',
   defaultIssuer: '',
+  wechatQrRelativePath: null,
 };
 
 function normalizeProfile(value: Partial<CompanySnapshot> | null | undefined): CompanySnapshot {
@@ -52,6 +53,7 @@ function normalizeProfile(value: Partial<CompanySnapshot> | null | undefined): C
     phone: String(value?.phone ?? '').trim(),
     address: String(value?.address ?? '').trim(),
     defaultIssuer: String(value?.defaultIssuer ?? '').trim(),
+    wechatQrRelativePath: value?.wechatQrRelativePath ? String(value.wechatQrRelativePath) : null,
   };
 }
 

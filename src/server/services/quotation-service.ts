@@ -238,6 +238,9 @@ function normalizeCompanySnapshot(value: Partial<CompanySnapshot> | undefined, f
     phone: normalizeText(value?.phone ?? fallback.phone),
     address: normalizeText(value?.address ?? fallback.address),
     defaultIssuer: normalizeText(value?.defaultIssuer ?? fallback.defaultIssuer),
+    wechatQrRelativePath: value?.wechatQrRelativePath === undefined
+      ? (fallback.wechatQrRelativePath ?? null)
+      : (value.wechatQrRelativePath ? normalizeText(value.wechatQrRelativePath) : null),
   };
 }
 

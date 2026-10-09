@@ -4,7 +4,7 @@ import { migratePackagingColumns } from './packaging.js';
 import { sortByImageLeadNumber } from '../../shared/product-image-order.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 26;
+const CURRENT_SCHEMA_VERSION = 27;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -1109,6 +1109,32 @@ function migrateVersionTwentySix(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '26', now);
 }
 
+/** 产品图册（在线链接版）：一本图册 = 名称 + 随机 token + 有序选品；停用即链接失效。 */
+function migrateVersionTwentySeven(database: DatabaseSync, now: string): void {
+  database.exec(
+    `CREATE TABLE IF NOT EXISTS catalogs (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       token TEXT NOT NULL UNIQUE,
+       name TEXT NOT NULL,
+       enabled INTEGER NOT NULL DEFAULT 1,
+       view_count INTEGER NOT NULL DEFAULT 0,
+       last_viewed_at TEXT,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL
+     )`,
+  );
+  database.exec(
+    `CREATE TABLE IF NOT EXISTS catalog_items (
+       catalog_id INTEGER NOT NULL REFERENCES catalogs(id) ON DELETE CASCADE,
+       product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+       sort_order INTEGER NOT NULL,
+       PRIMARY KEY (catalog_id, product_id)
+     )`,
+  );
+  database.exec('CREATE INDEX IF NOT EXISTS idx_catalog_items_order ON catalog_items (catalog_id, sort_order)');
+  upsertSetting(database, 'schema_version', '27', now);
+}
+
 function migrateVersionTwentyFive(database: DatabaseSync, now: string): void {
   const done = database
     .prepare("SELECT value FROM settings WHERE key = 'product_images_ordered_by_filename_v25'")
@@ -1188,6 +1214,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionTwentyFour(transactionDatabase, now);
     migrateVersionTwentyFive(transactionDatabase, now);
     migrateVersionTwentySix(transactionDatabase, now);
+    migrateVersionTwentySeven(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

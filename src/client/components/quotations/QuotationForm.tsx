@@ -218,7 +218,7 @@ export function createEmptyQuotationDraft(companySnapshot?: CompanySnapshot): Qu
     subtotal: '0.00',
     tax: '0.00',
     total: '0.00',
-    companySnapshot: companySnapshot ?? { name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '' },
+    companySnapshot: companySnapshot ?? { name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '', wechatQrRelativePath: null },
     displayConfig: {
       showLogo: true,
       showCompanyPhone: true,

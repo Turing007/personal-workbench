@@ -15,6 +15,10 @@ import { DocumentAssetManager } from './documents/document-assets.js';
 import { QuotationRepository } from './db/quotation-repository.js';
 import { SalesDocumentRepository } from './db/sales-document-repository.js';
 import { SettingsRepository } from './db/settings-repository.js';
+import { CatalogRepository } from './db/catalog-repository.js';
+import { CatalogService } from './services/catalog-service.js';
+import { registerCatalogRoutes } from './routes/catalogs.js';
+import { registerPublicCatalogRoutes } from './routes/public-catalog.js';
 import { ApiError, sendFailure } from './routes/api-response.js';
 import { AUTH_PUBLIC_PATHS, registerAuthRoutes } from './routes/auth.js';
 import { registerThumbnailRoutes } from './routes/thumbnails.js';
@@ -159,7 +163,14 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
 
   await registerHealthRoutes(app);
   await registerDiagnosticRoutes(app);
-  await registerProductRoutes(app, { repositories, fileStore: options.fileStore, thumbnailService });
+  const settingsRepository = new SettingsRepository(options.database);
+  await registerProductRoutes(app, { repositories, fileStore: options.fileStore, thumbnailService, settingsRepository });
+  const catalogService = new CatalogService(new CatalogRepository(options.database), {
+    listProductRows: () => repositories.listProducts(),
+    settingsRepository,
+  });
+  await registerCatalogRoutes(app, { service: catalogService });
+  await registerPublicCatalogRoutes(app, { service: catalogService, thumbnailService, fileStore: options.fileStore });
   const customerRepository = new CustomerRepository(options.database);
   const customerProductRepository = new CustomerProductRepository(options.database);
   await registerCustomerProductRoutes(app, {
@@ -173,7 +184,6 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   await registerCustomerRoutes(app, {
     service: new CustomerService(customerRepository),
   });
-  const settingsRepository = new SettingsRepository(options.database);
   const orderOptions = {
     repositories,
     customerRepository,

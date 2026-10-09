@@ -42,6 +42,7 @@ export class SettingsService {
       ...current,
       ...input,
       logoRelativePath: current.logoRelativePath,
+      wechatQrRelativePath: current.wechatQrRelativePath,
     });
   }
 
@@ -99,8 +100,52 @@ export class SettingsService {
     return profile;
   }
 
+  /** 微信二维码：图册封面用；上传/删除与 Logo 同一套机制。 */
+  async replaceCompanyQr(
+    stream: Readable,
+    originalName: string,
+    mimeType: string,
+  ): Promise<CompanySnapshot> {
+    if (!this.fileStore) throw new Error('附件存储尚未配置');
+
+    const current = this.settings.getCompanyProfile();
+    const stored = await this.fileStore.saveImage(stream, 'company-qr', originalName, mimeType);
+    let saved = false;
+    try {
+      const profile = this.settings.saveCompanyProfile({
+        ...current,
+        wechatQrRelativePath: stored.relativePath,
+      });
+      saved = true;
+
+      if (current.wechatQrRelativePath) {
+        await this.deleteCompanyQrFile(current.wechatQrRelativePath);
+      }
+      return profile;
+    } finally {
+      if (!saved) await this.fileStore.deleteFile(stored.relativePath);
+    }
+  }
+
+  async deleteCompanyQr(): Promise<CompanySnapshot> {
+    const current = this.settings.getCompanyProfile();
+    const profile = this.settings.saveCompanyProfile({
+      ...current,
+      wechatQrRelativePath: null,
+    });
+    if (current.wechatQrRelativePath) {
+      await this.deleteCompanyQrFile(current.wechatQrRelativePath);
+    }
+    return profile;
+  }
+
   private async deleteCompanyLogoFile(relativePath: string): Promise<void> {
     if (!relativePath.startsWith('company-logos/')) return;
+    await this.fileStore?.deleteFile(relativePath);
+  }
+
+  private async deleteCompanyQrFile(relativePath: string): Promise<void> {
+    if (!relativePath.startsWith('company-qrs/')) return;
     await this.fileStore?.deleteFile(relativePath);
   }
 }

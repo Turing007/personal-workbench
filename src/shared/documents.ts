@@ -10,6 +10,8 @@ export interface CompanySnapshot {
   phone: string;
   address: string;
   defaultIssuer: string;
+  /** 微信二维码图片（图册封面用）；未上传为 null。 */
+  wechatQrRelativePath: string | null;
 }
 
 export type QuotationColumnKey =

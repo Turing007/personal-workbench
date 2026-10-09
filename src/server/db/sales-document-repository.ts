@@ -126,6 +126,7 @@ const DEFAULT_COMPANY: CompanySnapshot = {
   phone: '',
   address: '',
   defaultIssuer: '',
+  wechatQrRelativePath: null,
 };
 
 const DEFAULT_DISPLAY: SalesDocumentDisplayConfig = {

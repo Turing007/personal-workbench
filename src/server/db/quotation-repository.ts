@@ -237,7 +237,7 @@ export class QuotationRepository {
         ? null
         : rowValue(row, 'customer_products_synced_at'),
       companySnapshot: parseJson<CompanySnapshot>(row.company_snapshot_json, {
-        name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '',
+        name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '', wechatQrRelativePath: null,
       }),
       displayConfig: parseJson<QuotationDisplayConfig>(row.display_config_json, {
         showLogo: false,

@@ -61,6 +61,7 @@ describe('company profile routes', () => {
       phone: '',
       address: '',
       defaultIssuer: '',
+      wechatQrRelativePath: null,
     });
 
     const saved = await app.inject({
@@ -82,6 +83,7 @@ describe('company profile routes', () => {
       phone: '13800000000',
       address: '深圳市',
       defaultIssuer: '高先生',
+      wechatQrRelativePath: null,
     });
   });
 

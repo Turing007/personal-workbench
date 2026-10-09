@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { mapAttachment, mapProduct, mapVideo, toCatalogProduct } from '../services/product-record-mapper.js';
 import * as XLSX from 'xlsx';
 import sharp from 'sharp';
 import type { DatabaseRepositories, PackagingInput, ProductImportInput, ProductInput } from '../db/repositories.js';
@@ -23,8 +24,10 @@ import {
   catalogThumbnailSize,
   pickCatalogImage,
   renderProductCatalogHtml,
+  type CatalogCover,
   type CatalogProduct,
 } from '../documents/product-catalog-template.js';
+import type { SettingsRepository } from '../db/settings-repository.js';
 import {
   DEFAULT_PRODUCT_IMAGE_CATEGORY,
   MAX_PRODUCT_IMAGE_NOTE_LENGTH,
@@ -53,6 +56,25 @@ interface ProductRouteOptions {
   fileStore?: FileStore;
   pdfRenderer?: Pick<PdfRenderer, 'render'>;
   thumbnailService?: ThumbnailService;
+  /** 图册封面要读公司资料（名称/电话/地址/Logo/微信二维码）。 */
+  settingsRepository?: SettingsRepository;
+}
+
+/** 小图转 data URL（图册封面用）：Logo 与二维码都按最长边缩放，避免把大图塞进 PDF。 */
+async function imageFileToDataUrl(fileStore: FileStore | undefined, relativePath: string | null | undefined, maxEdge: number): Promise<string | undefined> {
+  if (!fileStore || !relativePath) return undefined;
+  try {
+    const buffer = await fileStore.readFile(relativePath);
+    const jpeg = await sharp(buffer)
+      .resize({ width: maxEdge, height: maxEdge, fit: 'inside', withoutEnlargement: true })
+      .flatten({ background: '#ffffff' })
+      .jpeg({ quality: 90, mozjpeg: true })
+      .toBuffer();
+    return `data:image/jpeg;base64,${jpeg.toString('base64')}`;
+  } catch {
+    // 读不出就当作没传：封面缺这一项照常排。
+    return undefined;
+  }
 }
 
 interface ImageParams {
@@ -348,58 +370,6 @@ function parseImageNote(value: unknown, field = 'note'): string {
   return text;
 }
 
-function mapVideo(row: Record<string, unknown>) {
-  return {
-    id: Number(row.id),
-    relativePath: String(row.relativePath ?? row.relative_path ?? ''),
-    originalName: String(row.originalName ?? row.original_name ?? ''),
-    mimeType: String(row.mimeType ?? row.mime_type ?? ''),
-    size: Number(row.size ?? row.size_bytes ?? 0),
-    createdAt: String(row.createdAt ?? row.created_at ?? ''),
-  };
-}
-
-function mapAttachment(row: Record<string, unknown>) {
-  const relativePath = String(row.relativePath ?? row.relative_path ?? '');
-  return {
-    id: Number(row.id),
-    productId: Number(row.productId ?? row.product_id ?? 0),
-    category: String(row.category ?? 'other'),
-    relativePath,
-    originalName: String(row.originalName ?? row.original_name ?? ''),
-    mimeType: String(row.mimeType ?? row.mime_type ?? ''),
-    size: Number(row.size ?? row.size_bytes ?? 0),
-    createdAt: String(row.createdAt ?? row.created_at ?? ''),
-    url: `/files/${relativePath}`,
-  };
-}
-
-function mapProduct(row: Record<string, unknown> | undefined) {
-  if (!row) return undefined;
-  return {
-    id: Number(row.id),
-    name: String(row.name),
-    sku: String(row.sku),
-    specification: String(row.specification),
-    parameters: String(row.parameters ?? ''),
-    category: String(row.category),
-    purchasePrice: row.purchase_price === null ? null : Number(row.purchase_price),
-    supplier: String(row.supplier),
-    colors: Array.isArray(row.colors) ? row.colors : [],
-    batteryPlugs: Array.isArray(row.batteryPlugs) ? row.batteryPlugs : [],
-    accessories: String(row.accessories),
-    remark: String(row.remark),
-    status: String(row.status ?? 'active'),
-    packaging: Array.isArray(row.packaging) ? row.packaging : [],
-    purchaseQuotes: Array.isArray(row.purchaseQuotes) ? row.purchaseQuotes : [],
-    images: Array.isArray(row.images) ? row.images : [],
-    videos: Array.isArray(row.videos) ? row.videos.map((item) => mapVideo(item as Record<string, unknown>)) : [],
-    attachments: Array.isArray(row.attachments) ? row.attachments.map((item) => mapAttachment(item as Record<string, unknown>)) : [],
-    createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at),
-  };
-}
-
 function getProductId(request: FastifyRequest<{ Params: { id: string } }>): number {
   return parseId(request.params.id);
 }
@@ -502,24 +472,7 @@ export async function registerProductRoutes(app: FastifyInstance, options: Produ
       const products: CatalogProduct[] = ids.map((id) => {
         const product = byId.get(id);
         if (!product) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
-        return {
-          id: product.id,
-          name: product.name,
-          sku: product.sku,
-          category: product.category,
-          parameters: product.parameters,
-          colors: product.colors,
-          batteryPlugs: product.batteryPlugs,
-          packaging: product.packaging.map((item) => ({
-            name: item.name,
-            innerSize: item.innerSize,
-            innerWeight: item.innerWeight,
-            outerSize: item.outerSize,
-            outerWeight: item.outerWeight,
-            packCount: item.packCount,
-          })),
-          images: product.images.map((image) => ({ relativePath: image.relativePath, category: image.category })),
-        };
+        return toCatalogProduct(product);
       });
 
       const imageDataUrls = new Map<number, string | undefined>();
@@ -545,7 +498,20 @@ export async function registerProductRoutes(app: FastifyInstance, options: Produ
         }
       }
 
-      const pdf = await pdfRenderer.render(renderProductCatalogHtml(products, { density, imageDataUrls }));
+      // 封面（默认带，body.cover === false 时不出）：公司名/电话/地址/Logo/微信二维码来自公司资料；全空则不排封面页。
+      let cover: CatalogCover | undefined;
+      if (body.cover !== false && options.settingsRepository) {
+        const profile = options.settingsRepository.getCompanyProfile();
+        const [logoDataUrl, qrDataUrl] = await Promise.all([
+          imageFileToDataUrl(options.fileStore, profile.logoRelativePath, 600),
+          imageFileToDataUrl(options.fileStore, profile.wechatQrRelativePath, 600),
+        ]);
+        if (profile.name || profile.phone || profile.address || logoDataUrl || qrDataUrl) {
+          cover = { companyName: profile.name, phone: profile.phone, address: profile.address, logoDataUrl, qrDataUrl };
+        }
+      }
+
+      const pdf = await pdfRenderer.render(renderProductCatalogHtml(products, { density, imageDataUrls, cover }));
       return reply
         .header('Content-Type', 'application/pdf')
         .header('Content-Disposition', `attachment; filename="product-catalog.pdf"; filename*=UTF-8''${encodeURIComponent('产品图册.pdf')}`)

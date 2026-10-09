@@ -26,7 +26,7 @@ import { DEFAULT_MOBILE_TABS, MOBILE_TAB_LIMIT, isDefaultMobileTabs, loadMobileT
 import { useIsNarrow } from '../use-is-narrow';
 import PackagingPresetsSection from '../components/settings/PackagingPresetsSection';
 
-const EMPTY_PROFILE: CompanySnapshot = { name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '' };
+const EMPTY_PROFILE: CompanySnapshot = { name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '', wechatQrRelativePath: null };
 
 interface ApiEnvelope<T> { ok?: boolean; data?: T; error?: { message?: string }; }
 
@@ -50,6 +50,12 @@ const defaultCompanyApi = {
     return settingsRequest<CompanySnapshot>('/api/settings/company-profile/logo', { method: 'POST', body: form });
   },
   deleteLogo: () => settingsRequest<CompanySnapshot>('/api/settings/company-profile/logo', { method: 'DELETE' }),
+  uploadQr: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return settingsRequest<CompanySnapshot>('/api/settings/company-profile/wechat-qr', { method: 'POST', body: form });
+  },
+  deleteQr: () => settingsRequest<CompanySnapshot>('/api/settings/company-profile/wechat-qr', { method: 'DELETE' }),
 };
 
 const defaultTemplateApi = {
@@ -93,6 +99,8 @@ export interface SettingsPageProps {
   saveCompanyProfile?: (profile: CompanySnapshot) => Promise<CompanySnapshot>;
   uploadCompanyLogo?: (file: File) => Promise<CompanySnapshot>;
   deleteCompanyLogo?: () => Promise<CompanySnapshot>;
+  uploadCompanyQr?: (file: File) => Promise<CompanySnapshot>;
+  deleteCompanyQr?: () => Promise<CompanySnapshot>;
   onProfileChanged?: (profile: CompanySnapshot) => void;
   currentUser?: AuthUser | null;
   /** 当前设备的底部导航配置（仅手机端可改）；未传入时组件内部自读本机存储。 */
@@ -109,6 +117,8 @@ export default function SettingsPage({
   saveCompanyProfile = defaultCompanyApi.save,
   uploadCompanyLogo = defaultCompanyApi.uploadLogo,
   deleteCompanyLogo = defaultCompanyApi.deleteLogo,
+  uploadCompanyQr = defaultCompanyApi.uploadQr,
+  deleteCompanyQr = defaultCompanyApi.deleteQr,
   onProfileChanged,
   currentUser,
   mobileTabs,
@@ -218,6 +228,36 @@ export default function SettingsPage({
       setBusy(false);
     }
   };
+  const uploadQr = async (file: File) => {
+    setBusy(true);
+    setMessage('');
+    try {
+      const next = await uploadCompanyQr(file);
+      setProfile(next);
+      onProfileChanged?.(next);
+      await refreshProfile();
+      showMessage('微信二维码已更新', 'success');
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : '微信二维码上传失败', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const removeQr = async () => {
+    setBusy(true);
+    setMessage('');
+    try {
+      const next = await deleteCompanyQr();
+      setProfile(next);
+      onProfileChanged?.(next);
+      await refreshProfile();
+      showMessage('微信二维码已删除', 'success');
+    } catch (error) {
+      showMessage(error instanceof Error ? error.message : '微信二维码删除失败', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const showTemplateMessage = (text: string, type: 'success' | 'error') => { setTemplateMessage(text); setTemplateMessageType(type); };
 
@@ -302,6 +342,12 @@ export default function SettingsPage({
         <div className="settings-logo-column">
           <div className="settings-logo-preview">{profile.logoRelativePath ? <img src={`/files/${profile.logoRelativePath}`} alt="公司 Logo" /> : <ImageOff size={24} color="var(--tone-text-faint)" />}</div>
           <div className="settings-logo-actions"><label className="button button-secondary" title="上传公司 Logo"><Upload size={14} /><span>上传</span><input disabled={busy} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadLogo(file); event.target.value = ''; }} hidden /></label>{profile.logoRelativePath && <button className="icon-button danger" type="button" title="删除公司 Logo" disabled={busy} onClick={() => { if (window.confirm('确定删除当前公司 Logo 吗？')) void removeLogo(); }}><Trash2 size={14} /></button>}</div>
+          <span style={{ fontSize: 11, color: 'var(--tone-text-faint)' }}>公司 Logo</span>
+        </div>
+        <div className="settings-logo-column">
+          <div className="settings-logo-preview">{profile.wechatQrRelativePath ? <img src={`/files/${profile.wechatQrRelativePath}`} alt="微信二维码" /> : <ImageOff size={24} color="var(--tone-text-faint)" />}</div>
+          <div className="settings-logo-actions"><label className="button button-secondary" title="上传微信二维码"><Upload size={14} /><span>上传</span><input disabled={busy} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadQr(file); event.target.value = ''; }} hidden /></label>{profile.wechatQrRelativePath && <button className="icon-button danger" type="button" title="删除微信二维码" disabled={busy} onClick={() => { if (window.confirm('确定删除当前微信二维码吗？')) void removeQr(); }}><Trash2 size={14} /></button>}</div>
+          <span style={{ fontSize: 11, color: 'var(--tone-text-faint)' }}>微信二维码（图册封面用）</span>
         </div>
         <div className="form-grid form-grid-2 settings-profile-fields">
           <label className="label">公司名称<input className="input" disabled={loading || busy} value={profile.name} onChange={(event) => setField('name', event.target.value)} /></label>

@@ -171,7 +171,7 @@ test('工具条：导出/下载模板/导入收进「导入导出」二级菜单
   await expect(menu).toBeVisible();
   await expect(menu.locator('.toolbar-menu-item')).toHaveCount(4);
   await expect(menu.locator('.toolbar-menu-item', { hasText: '下载导入模板' })).toHaveCount(1);
-  await expect(menu.locator('.toolbar-menu-item', { hasText: '导出产品图册' })).toHaveCount(1);
+  await expect(menu.locator('.toolbar-menu-item', { hasText: '产品图册' })).toHaveCount(1);
   await expect(menuButton).toHaveAttribute('aria-expanded', 'true');
 
   // 点菜单外区域收起

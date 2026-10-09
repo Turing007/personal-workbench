@@ -97,7 +97,7 @@ function lineFreightCents(item: DocumentItemDraft): { boxes: number; freightPerB
 }
 
 export function createEmptySalesDocumentDraft(company?: CompanySnapshot): SalesDocumentDraft {
-  const companySnapshot = company ?? { name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '' };
+  const companySnapshot = company ?? { name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '', wechatQrRelativePath: null };
   return {
     number: '',
     documentStatus: 'draft',

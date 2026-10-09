@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   Boxes,
   ClipboardList,
   FileSpreadsheet,
@@ -11,7 +12,7 @@ import {
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 
-export type NavigationKey = 'orders' | 'stock' | 'finance' | 'quotations' | 'sales-documents' | 'products' | 'customer-products' | 'shipping' | 'settings';
+export type NavigationKey = 'orders' | 'stock' | 'finance' | 'quotations' | 'sales-documents' | 'products' | 'product-catalog' | 'customer-products' | 'shipping' | 'settings';
 
 export interface NavigationItem {
   key: NavigationKey;
@@ -30,6 +31,7 @@ export const navigationItems: NavigationItem[] = [
   { key: 'shipping', label: '发货', shortLabel: '发货', icon: PackageCheck },
   { key: 'finance', label: '财务', shortLabel: '财务', icon: WalletCards },
   { key: 'products', label: '产品库', shortLabel: '产品', icon: Boxes },
+  { key: 'product-catalog', label: '产品图册', shortLabel: '图册', icon: BookOpen },
   { key: 'customer-products', label: '客户', shortLabel: '客户', icon: ShoppingBag },
   { key: 'settings', label: '设置', shortLabel: '设置', icon: Settings },
 ];

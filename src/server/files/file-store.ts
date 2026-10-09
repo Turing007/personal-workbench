@@ -24,6 +24,7 @@ export type FileKind =
   | 'customer-product'
   | 'payment'
   | 'company-logo'
+  | 'company-qr'
   | 'quotation-asset'
   | 'sales-asset'
   | 'sales-receipt'
@@ -41,6 +42,7 @@ export type PublicFileDirectory =
   | 'customer-product-images'
   | 'payment-proofs'
   | 'company-logos'
+  | 'company-qrs'
   | 'quotation-assets'
   | 'sales-document-assets'
   | 'sales-receipt-proofs'
@@ -122,6 +124,7 @@ const directoryByKind: Record<FileKind, PublicFileDirectory> = {
   'customer-product': 'customer-product-images',
   payment: 'payment-proofs',
   'company-logo': 'company-logos',
+  'company-qr': 'company-qrs',
   'quotation-asset': 'quotation-assets',
   'sales-asset': 'sales-document-assets',
   'sales-receipt': 'sales-receipt-proofs',

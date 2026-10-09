@@ -572,12 +572,49 @@ export function getProduct(id: string) {
 }
 export function exportProducts() { return requestBlob('/api/products/export'); }
 export function downloadProductImportTemplate() { return requestBlob('/api/products/import-template'); }
-/** 产品图册 PDF：只传 id，字段由服务端按库里的最新资料取，客户版不带供应商与价格。 */
-export function generateProductCatalog(ids: number[], density: CatalogDensity) {
+/** 产品图册 PDF：只传 id，字段由服务端按库里的最新资料取，客户版不带供应商与价格。cover 默认带封面。 */
+export function generateProductCatalog(ids: number[], density: CatalogDensity, cover = true) {
   return requestBlob('/api/products/catalog', {
     method: 'POST',
-    body: JSON.stringify({ ids, density }),
+    body: JSON.stringify({ ids, density, cover }),
   }, PRODUCT_CATALOG_TIMEOUT_MS);
+}
+
+/** 产品图册（在线链接版）：一本图册 = 名称 + 随机链接 + 有序选品。 */
+export interface CatalogSummary {
+  id: number;
+  token: string;
+  name: string;
+  enabled: boolean;
+  viewCount: number;
+  lastViewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  itemCount: number;
+}
+
+export interface CatalogDetail extends CatalogSummary {
+  productIds: number[];
+}
+
+export function listCatalogs(): Promise<CatalogSummary[]> {
+  return request<{ items: CatalogSummary[] }>('/api/catalogs').then((result) => result.items);
+}
+
+export function getCatalog(id: number): Promise<CatalogDetail> {
+  return request<CatalogDetail>(`/api/catalogs/${id}`);
+}
+
+export function createCatalog(input: { name: string; productIds: number[] }): Promise<CatalogSummary> {
+  return request<CatalogSummary>('/api/catalogs', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function updateCatalog(id: number, input: { name?: string; enabled?: boolean; productIds?: number[] }): Promise<CatalogSummary> {
+  return request<CatalogSummary>(`/api/catalogs/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+}
+
+export function deleteCatalog(id: number): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(`/api/catalogs/${id}`, { method: 'DELETE' });
 }
 export async function importProducts(file: File) {
   const form = new FormData();
