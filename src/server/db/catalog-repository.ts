@@ -79,7 +79,7 @@ export class CatalogRepository {
         .prepare('UPDATE catalogs SET name = ?, enabled = ?, updated_at = ? WHERE id = ?')
         .run(name, enabled ? 1 : 0, now, id);
       if (changes.productIds !== undefined) {
-        // 保留仍在册产品的「加入时间」，只有这次新加的才是新品；整表重建不会把老品洗成新品。
+        // 保留仍在册产品的「加入时间」：整表重建不会把老品洗成新品；是否算「新品」由服务层按起算日判定。
         const existing = database
           .prepare('SELECT product_id, created_at FROM catalog_items WHERE catalog_id = ?')
           .all(id) as Array<{ product_id: number; created_at: string | null }>;

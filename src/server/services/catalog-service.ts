@@ -21,11 +21,12 @@ export interface PublicCatalog {
   catalog: { id: number; name: string; token: string };
   company: CompanySnapshot;
   groups: Array<{ category: string; products: CatalogProduct[] }>;
-  /** 最近 30 天加入图册的新品（新加的排前）；空数组时页面不排「新品」分区。 */
+  /** 从起算日（2026-10-10 北京时间）之后加入图册的新品（新加的排前）；空数组时页面不排「新品」分区。 */
   newArrivals: CatalogProduct[];
 }
 
-const NEW_ARRIVAL_WINDOW_DAYS = 30;
+/** 新品起算：2026-10-10 起「新加入图册」的才算新品；建册时的批量存量不算，之后不设到期。 */
+const NEW_ARRIVAL_START_AT = Date.parse('2026-10-10T00:00:00+08:00');
 
 interface CatalogServiceOptions {
   /** 产品全量行（仓储原样），在服务内统一走 mapProduct 口径。 */
@@ -96,9 +97,8 @@ export class CatalogService {
       const product = byId.get(item.productId);
       return product ? [{ product: toCatalogProduct(product), addedAt: item.addedAt }] : [];
     });
-    const cutoff = Date.now() - NEW_ARRIVAL_WINDOW_DAYS * 24 * 60 * 60 * 1000;
     const newArrivals = resolved
-      .filter((entry) => entry.addedAt != null && Date.parse(entry.addedAt) >= cutoff)
+      .filter((entry) => entry.addedAt != null && Date.parse(entry.addedAt) >= NEW_ARRIVAL_START_AT)
       .sort((a, b) => Date.parse(b.addedAt ?? '') - Date.parse(a.addedAt ?? ''))
       .map((entry) => entry.product);
     return {

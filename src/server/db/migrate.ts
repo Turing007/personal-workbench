@@ -1135,7 +1135,7 @@ function migrateVersionTwentySeven(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '27', now);
 }
 
-/** 图册选品的「加入时间」：在线图册的「新品」分区靠它判断最近 30 天新加了什么。 */
+/** 图册选品的「加入时间」：在线图册的「新品」分区靠它判断哪些是起算日之后新加的。 */
 function migrateVersionTwentyEight(database: DatabaseSync, now: string): void {
   const columns = database.prepare('PRAGMA table_info(catalog_items)').all() as Array<{ name: string }>;
   if (!columns.some((column) => column.name === 'created_at')) {

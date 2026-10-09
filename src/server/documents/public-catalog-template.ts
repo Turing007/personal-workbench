@@ -10,7 +10,7 @@ export interface PublicCatalogPageData {
   catalog: { name: string; token: string };
   company: CompanySnapshot;
   groups: Array<{ category: string; products: CatalogProduct[] }>;
-  /** 最近 30 天加入图册的新品；空数组时页面不排「新品」分区。 */
+  /** 起算日之后加入图册的新品；空数组时页面不排「新品」分区。 */
   newArrivals: CatalogProduct[];
 }
 
@@ -19,7 +19,8 @@ interface CardDetail {
   rows: Array<{ label: string; value: string }>;
   colors: string;
   plugs: string;
-  packaging: string[];
+  /** 每个包装一组、组内两行：名称+内盒 / 外箱+装箱数。 */
+  packaging: string[][];
 }
 
 function cardDetail(product: CatalogProduct): CardDetail {
@@ -28,24 +29,25 @@ function cardDetail(product: CatalogProduct): CardDetail {
     rows: parseParameterRows(product.parameters),
     colors: product.colors.filter(Boolean).join(' / '),
     plugs: product.batteryPlugs.filter(Boolean).join(' / '),
-    packaging: product.packaging.flatMap((item) => packagingDetailLines(item)),
+    packaging: product.packaging.map((item) => packagingDetailLines(item)),
   };
 }
 
-/** 封面：左 Logo / 中 公司名+电话+地址 / 右 二维码，一条横带，尽量少占屏幕。 */
+/** 封面描述语（固定营销文案）。 */
+const COVER_TAGLINE = '500+款锂电工具，外贸跨境一站式解决。';
+
+/** 封面：左 Logo / 中 公司名+一句描述 / 右 二维码，一条横带，尽量少占屏幕。 */
 function renderCover(data: PublicCatalogPageData): string {
   const { company, catalog } = data;
   const token = catalog.token;
   const name = company.name.trim() || catalog.name;
-  const contact = [company.phone, company.address].map((part) => part.trim()).filter(Boolean);
-  const hasMiddle = Boolean(company.name.trim() || contact.length);
   return `<header class="cover" id="top">
     ${company.logoRelativePath ? `<div class="cover-logo"><img src="/c/${token}/logo" alt=""></div>` : ''}
     <div class="cover-main">
-      ${hasMiddle ? `<h1>${escapeHtml(name)}</h1>` : ''}
-      ${contact.map((line) => `<p>${escapeHtml(line)}</p>`).join('')}
+      <h1>${escapeHtml(name)}</h1>
+      <p>${escapeHtml(COVER_TAGLINE)}</p>
     </div>
-    ${company.wechatQrRelativePath ? `<div class="cover-qr" title="点击放大二维码"><img src="/c/${token}/qr" alt="微信二维码"><span>扫码加微信</span></div>` : ''}
+    ${company.wechatQrRelativePath ? `<div class="cover-qr" title="点击放大二维码"><img src="/c/${token}/qr" alt="微信二维码"><span>扫码加微信</span><span class="cover-qr-zoom">点击放大</span></div>` : ''}
   </header>
   <div class="catalog-caption">${escapeHtml(catalog.name)}<span>点产品卡片看大图与详细参数</span></div>`;
 }
@@ -69,11 +71,11 @@ export function renderPublicCatalogPage(data: PublicCatalogPageData): string {
   const { groups, newArrivals } = data;
   const newIds = new Set(newArrivals.map((product) => product.id));
   const categoryOptions = [
-    newArrivals.length ? '<option value="new-arrivals">新品（最近 30 天）</option>' : '',
+    newArrivals.length ? '<option value="new-arrivals">新品</option>' : '',
     ...groups.map((group, index) => `<option value="cat-${index}">${escapeHtml(group.category)}（${group.products.length}）</option>`),
   ].join('');
   const newSection = newArrivals.length ? `<section class="cat" id="new-arrivals">
-    <h2>新品<span>最近 30 天 · ${newArrivals.length} 款</span></h2>
+    <h2>新品<span>${newArrivals.length} 款</span></h2>
     <div class="grid">${newArrivals.map((product) => renderCard(product, token, true)).join('')}</div>
   </section>` : '';
   const sections = groups.map((group, index) => `<section class="cat" id="cat-${index}">
@@ -93,7 +95,7 @@ export function renderPublicCatalogPage(data: PublicCatalogPageData): string {
   * { box-sizing: border-box; }
   body { margin: 0; background: #f4f6f7; color: #15181c; font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
   .wrap { max-width: 1080px; margin: 0 auto; background: #fff; min-height: 100vh; padding-bottom: 84px; padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
-  /* 封面横带：左 Logo / 中 公司名+电话+地址 / 右 二维码，尽量少占屏 */
+  /* 封面横带：左 Logo / 中 公司名+描述语 / 右 二维码，尽量少占屏 */
   .cover { display: flex; align-items: center; gap: 12px; padding: 12px 14px 10px; }
   .cover-logo { width: 52px; height: 52px; flex: none; display: grid; place-items: center; overflow: hidden; }
   .cover-logo img { width: 100%; height: 100%; object-fit: contain; }
@@ -103,6 +105,7 @@ export function renderPublicCatalogPage(data: PublicCatalogPageData): string {
   .cover-qr { flex: none; display: grid; justify-items: center; gap: 3px; cursor: zoom-in; }
   .cover-qr img { width: 54px; height: 54px; object-fit: contain; border: 1px solid #e3e6ea; border-radius: 6px; }
   .cover-qr span { font-size: 10px; color: #8b929a; }
+  .cover-qr .cover-qr-zoom { color: #2f6f6a; font-weight: 600; }
   .catalog-caption { padding: 0 16px 10px; font-size: 12px; color: #2f6f6a; font-weight: 600; letter-spacing: 1px; }
   .catalog-caption span { margin-left: 10px; color: #8b929a; font-weight: 400; letter-spacing: 0; }
   /* 分类导航：吸顶横滑；新品排第一 */
@@ -146,8 +149,10 @@ export function renderPublicCatalogPage(data: PublicCatalogPageData): string {
   .lightbox-info td { font-size: 12px; padding: 4px 0; vertical-align: top; word-break: break-word; line-height: 1.5; }
   .lightbox-meta { display: grid; gap: 3px; font-size: 12px; color: #3d434a; }
   .lightbox-meta span { color: #8b929a; margin-right: 6px; }
-  .lightbox-pack { border-top: 1px dashed #e3e6ea; padding-top: 7px; font-size: 11px; color: #61676e; display: grid; gap: 3px; }
+  .lightbox-pack { border-top: 1px dashed #e3e6ea; padding-top: 7px; font-size: 11px; color: #61676e; display: grid; gap: 8px; }
   .lightbox-pack-label { color: #8b929a; font-size: 11px; }
+  /* 同一包装的几行贴在一起，不同包装之间留 8px，避免糊成一片。 */
+  .lightbox-pack-group { display: grid; gap: 2px; }
   /* 每条包装占一行、整行不折行（字号收紧到 11px 让装箱数完整放下）；特别长时该行可横向滑动。 */
   .lightbox-pack-line { white-space: nowrap; overflow-x: auto; scrollbar-width: thin; }
   .lightbox-close { position: fixed; top: 12px; right: 12px; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.18); color: #fff; font-size: 22px; line-height: 1; cursor: pointer; }
@@ -288,11 +293,16 @@ ${data.company.wechatQrRelativePath ? `<div class="qr-zoom" id="qr-zoom" hidden>
         packLabel.textContent = '包装';
         pack.appendChild(packLabel);
       }
-      packaging.forEach(function (line) {
-        var div = document.createElement('div');
-        div.className = 'lightbox-pack-line';
-        div.textContent = line;
-        pack.appendChild(div);
+      packaging.forEach(function (group) {
+        var wrap = document.createElement('div');
+        wrap.className = 'lightbox-pack-group';
+        group.forEach(function (line) {
+          var div = document.createElement('div');
+          div.className = 'lightbox-pack-line';
+          div.textContent = line;
+          wrap.appendChild(div);
+        });
+        pack.appendChild(wrap);
       });
       box.classList.add('is-open');
     }

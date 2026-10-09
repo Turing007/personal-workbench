@@ -96,7 +96,7 @@ describe('产品图册（在线链接版）', () => {
 
   it('公开页：不需要登录即可看到产品与公司信息；供应商/价格/备注一律不出现', async () => {
     const { app, repositories, settingsRepository } = await createFixture();
-    settingsRepository.saveCompanyProfile({ name: '维高工具', phone: '13800000000', address: '深圳市宝安区' });
+    settingsRepository.saveCompanyProfile({ name: '维高工具', phone: '13800000000', address: '深圳市宝安区', wechatQrRelativePath: 'company-qrs/qr.png' });
     const saved = repositories.saveProduct(productInput('圆锯-7寸', 'VT-9101'));
     // 服务端会把 SKU 按自有规则重新编号：按回填的真实 SKU 断言。
     const savedSku = String((saved as { sku?: unknown }).sku ?? '');
@@ -113,6 +113,11 @@ describe('产品图册（在线链接版）', () => {
     expect(html).toContain('中性彩盒');
     expect(html).toContain('维高工具');
     expect(html).toContain('13800000000');
+    // 封面：固定描述语 + 二维码下的「点击放大」提示；电话与地址不再出现在封面上（电话仍在底部吸条）。
+    expect(html).toContain('500+款锂电工具，外贸跨境一站式解决。');
+    expect(html).toContain('扫码加微信');
+    expect(html).toContain('点击放大');
+    expect(html).not.toContain('深圳市宝安区');
     for (const secret of ['东莞某某五金厂', '128.5', '锯片40齿', '内部备注', '3.2']) {
       expect(html).not.toContain(secret);
     }
@@ -202,14 +207,14 @@ describe('产品图册（在线链接版）', () => {
     expect((await app.inject({ method: 'DELETE', url: `/api/catalogs/${catalog.id}` })).statusCode).toBe(404);
   });
 
-  it('新品分区：老条目不算新品；重新保存保留加入时间，同一链接里新品排前', async () => {
+  it('新品分区：起算日前的老条目不算新品；重新保存保留加入时间，同一链接里新品排前', async () => {
     const { app, repositories, database } = await createFixture();
     const oldProduct = repositories.saveProduct(productInput('老款圆锯', 'VT-9101'));
     const freshProduct = repositories.saveProduct(productInput('新款锂电钻', 'VT-9201'));
     const oldId = Number((oldProduct as { id?: number }).id);
     const freshId = Number((freshProduct as { id?: number }).id);
     const catalog = await createCatalog(app, '主推图册', [oldId]);
-    // 把老条目回拨到一年前：它不该算新品。
+    // 把老条目回拨到起算日（2026-10-10）之前：它不该算新品。
     database.prepare("UPDATE catalog_items SET created_at = '2025-01-01T00:00:00.000Z'").run();
 
     const before = (await app.inject({ method: 'GET', url: `/c/${catalog.token}` })).body;
@@ -222,6 +227,8 @@ describe('产品图册（在线链接版）', () => {
       url: `/api/catalogs/${catalog.id}`,
       payload: { productIds: [oldId, freshId] },
     });
+    // 起算日之前（含建册当天的批量存量）都不算新品，把这条新加的拨到起算日之后。
+    database.prepare("UPDATE catalog_items SET created_at = '2026-10-10T02:00:00.000Z' WHERE product_id = ?").run(freshId);
     const after = (await app.inject({ method: 'GET', url: `/c/${catalog.token}` })).body;
     expect(after).toContain('id="new-arrivals"');
     expect(after).toContain('>新品<');
