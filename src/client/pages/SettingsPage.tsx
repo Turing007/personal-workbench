@@ -350,9 +350,9 @@ export default function SettingsPage({
           <span style={{ fontSize: 11, color: 'var(--tone-text-faint)' }}>微信二维码（图册封面用）</span>
         </div>
         <div className="form-grid form-grid-2 settings-profile-fields">
-          <label className="label">公司名称<input className="input" disabled={loading || busy} value={profile.name} onChange={(event) => setField('name', event.target.value)} /></label>
+          <label className="label" style={{ gridColumn: '1 / -1' }}>公司名称<input className="input" disabled={loading || busy} value={profile.name} onChange={(event) => setField('name', event.target.value)} /></label>
           <label className="label">联系电话<input className="input" disabled={loading || busy} value={profile.phone} onChange={(event) => setField('phone', event.target.value)} /></label>
-          <label className="label">公司地址<input className="input" disabled={loading || busy} value={profile.address} onChange={(event) => setField('address', event.target.value)} /></label>
+          <label className="label" style={{ gridColumn: '1 / -1' }}>公司地址<input className="input" disabled={loading || busy} value={profile.address} onChange={(event) => setField('address', event.target.value)} /></label>
           <label className="label">默认开单人<input className="input" disabled={loading || busy} value={profile.defaultIssuer} onChange={(event) => setField('defaultIssuer', event.target.value)} /></label>
           <div className="settings-profile-actions"><span role="status" className={message ? `notice notice-${messageType}` : undefined} style={{ marginRight: 'auto', color: messageType === 'error' ? 'var(--tone-danger-text)' : 'var(--tone-accent-text)', fontSize: 12 }}>{message}</span><button className="button button-primary" type="button" disabled={loading || busy} onClick={() => void saveProfile()}><Save size={15} />{busy ? '处理中...' : '保存公司资料'}</button></div>
         </div>

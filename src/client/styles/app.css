@@ -1756,8 +1756,10 @@ select {
    注意这些栅格定义必须留在 CSS 里（不要写成行内 style）：
    行内 grid-template-columns 的优先级高于媒体查询，会把窄屏的收窄规则全部盖掉。 */
 .settings-profile-layout {
+  /* 左侧 Logo 与微信二维码各占一列，资料表单拿剩余宽度。
+     少一条轨道时表单会被挤到下一行只剩 132px 宽，名称/地址全被截断。 */
   display: grid;
-  grid-template-columns: 132px minmax(0, 1fr);
+  grid-template-columns: 132px 132px minmax(0, 1fr);
   gap: 16px;
   align-items: start;
   min-width: 0;
