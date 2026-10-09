@@ -9,8 +9,6 @@ import { compareProductByName } from '../product-sort';
 import { normalizeProductStatus, type ProductStatus } from '../../shared/product-status';
 import type { ProductRecord } from '../components/ProductEditor';
 
-/** 一本图册最多多少个产品（与服务端一致）。 */
-const MAX_CATALOG_ITEMS = 200;
 const CATEGORY_UNCATEGORIZED = '__uncategorized__';
 
 const STATUS_LABELS: Record<ProductStatus, string> = { active: '在售', draft: '草稿', discontinued: '停售' };
@@ -168,7 +166,6 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
     const trimmed = name.trim();
     if (!trimmed) { onNotify('请填写图册名称', 'error'); return; }
     if (!selectedIds.size) { onNotify('请至少选择一个产品', 'error'); return; }
-    if (selectedIds.size > MAX_CATALOG_ITEMS) { onNotify(`一本图册最多 ${MAX_CATALOG_ITEMS} 个产品`, 'error'); return; }
     setBusy(true);
     try {
       const productIds = [...selectedIds].map(Number);
@@ -309,7 +306,7 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 13 }}>
           <input type="checkbox" checked={exportCover} onChange={(event) => setExportCover(event.target.checked)} />带封面（公司名 / 联系方式 / 微信二维码）
         </label>
-        <span className="field-hint">图册排主图、参数、颜色/插脚与包装尺寸；发给客户的版本不含供应商与价格。</span>
+        <span className="field-hint">图册排主图、参数、颜色/插脚与包装尺寸；发给客户的版本不含供应商与价格。数量多时排版会久一些，请耐心等下载。</span>
       </div>
     </Modal>
   </div>;

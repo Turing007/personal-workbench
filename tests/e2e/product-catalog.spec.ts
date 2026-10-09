@@ -59,7 +59,8 @@ test('图册模块：建图册 → 未登录打开链接可见 → 加品刷新�
     const anonymous = await browser.newContext();
     const guest = await anonymous.newPage();
     await guest.goto(publicUrl);
-    await expect(guest.getByText(`E2E图册甲${stamp}`)).toBeVisible();
+    // 新品分区与分类分区都会出现产品名：取第一处可见即可。
+    await expect(guest.getByText(`E2E图册甲${stamp}`).first()).toBeVisible();
     await expect(guest.getByText(`E2E图册乙${stamp}`)).toHaveCount(0);
 
     // 选品编辑：把乙加进去；同一链接刷新即见（不用换链接、不用重发）
@@ -69,7 +70,7 @@ test('图册模块：建图册 → 未登录打开链接可见 → 加品刷新�
     await page.getByRole('button', { name: '保存（2 个产品）' }).click();
     await expect(card).toContainText('2 个产品');
     await guest.reload();
-    await expect(guest.getByText(`E2E图册乙${stamp}`)).toBeVisible();
+    await expect(guest.getByText(`E2E图册乙${stamp}`).first()).toBeVisible();
 
     // 停用：链接立即失效；再启用恢复
     await card.getByRole('button', { name: '停用' }).click();

@@ -38,7 +38,7 @@ async function createFixture() {
   await registerCatalogRoutes(app, { service });
   await registerPublicCatalogRoutes(app, { service, fileStore: new FileStore(join(directory, 'files')) });
   apps.push(app);
-  return { app, repositories, settingsRepository, catalogRepository };
+  return { app, repositories, settingsRepository, catalogRepository, database };
 }
 
 function productInput(name: string, sku: string, overrides: Partial<ProductInput> = {}): ProductInput {
@@ -177,6 +177,21 @@ describe('产品图册（在线链接版）', () => {
     expect((await app.inject({ method: 'GET', url: '/c/AAAAAAAAAAAAAAAAAAAAAAAA/img/1' })).statusCode).toBe(404);
   });
 
+  it('在线图册不设数量上限：超过 200 个产品也能建、能看', async () => {
+    const { app, repositories } = await createFixture();
+    const ids: number[] = [];
+    for (let index = 0; index < 205; index += 1) {
+      const saved = repositories.saveProduct(productInput(`批量产品 ${index}`, `VT-9${String(index).padStart(3, '0')}`));
+      ids.push(Number((saved as { id?: number }).id));
+    }
+    const catalog = await createCatalog(app, '全量图册', ids);
+    const list = (await app.inject({ method: 'GET', url: '/api/catalogs' })).json().data.items;
+    expect(list[0].itemCount).toBe(205);
+    const page = await app.inject({ method: 'GET', url: `/c/${catalog.token}` });
+    expect(page.statusCode).toBe(200);
+    expect((page.body.split('<h3>').length - 1)).toBeGreaterThanOrEqual(205);
+  });
+
   it('删除图册后列表清空、链接失效', async () => {
     const { app, repositories } = await createFixture();
     const saved = repositories.saveProduct(productInput('圆锯-7寸', 'VT-9101'));
@@ -185,5 +200,34 @@ describe('产品图册（在线链接版）', () => {
     expect((await app.inject({ method: 'GET', url: '/api/catalogs' })).json().data.items).toHaveLength(0);
     expect((await app.inject({ method: 'GET', url: `/c/${catalog.token}` })).statusCode).toBe(404);
     expect((await app.inject({ method: 'DELETE', url: `/api/catalogs/${catalog.id}` })).statusCode).toBe(404);
+  });
+
+  it('新品分区：老条目不算新品；重新保存保留加入时间，同一链接里新品排前', async () => {
+    const { app, repositories, database } = await createFixture();
+    const oldProduct = repositories.saveProduct(productInput('老款圆锯', 'VT-9101'));
+    const freshProduct = repositories.saveProduct(productInput('新款锂电钻', 'VT-9201'));
+    const oldId = Number((oldProduct as { id?: number }).id);
+    const freshId = Number((freshProduct as { id?: number }).id);
+    const catalog = await createCatalog(app, '主推图册', [oldId]);
+    // 把老条目回拨到一年前：它不该算新品。
+    database.prepare("UPDATE catalog_items SET created_at = '2025-01-01T00:00:00.000Z'").run();
+
+    const before = (await app.inject({ method: 'GET', url: `/c/${catalog.token}` })).body;
+    expect(before).not.toContain('id="new-arrivals"');
+    expect(before).not.toContain('>新品<');
+
+    // 重新保存：老品保留旧加入时间，新品按本次加入时间进「新品」。
+    await app.inject({
+      method: 'PUT',
+      url: `/api/catalogs/${catalog.id}`,
+      payload: { productIds: [oldId, freshId] },
+    });
+    const after = (await app.inject({ method: 'GET', url: `/c/${catalog.token}` })).body;
+    expect(after).toContain('id="new-arrivals"');
+    expect(after).toContain('>新品<');
+    // 新品分区 + 分类分区：老款只在分类里出现一次，新款出现两次（新品 + 分类）。
+    // 名字还会出现在 alt 与详情 JSON 里，所以按 <h3> 精确计数。
+    expect(after.split('<h3>老款圆锯</h3>').length - 1).toBe(1);
+    expect(after.split('<h3>新款锂电钻</h3>').length - 1).toBe(2);
   });
 });

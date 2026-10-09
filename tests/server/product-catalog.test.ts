@@ -145,6 +145,17 @@ describe('产品图册', () => {
     expect(missing.statusCode).toBe(404);
   });
 
+  it('PDF 导出不设数量上限：205 个产品也能一次排版', async () => {
+    const { app, repositories } = await createFixture();
+    const ids: number[] = [];
+    for (let index = 0; index < 205; index += 1) {
+      const saved = repositories.saveProduct(productInput(`批量产品 ${index}`, `VT-8${String(index).padStart(3, '0')}`));
+      ids.push(Number((saved as { id?: number }).id));
+    }
+    const response = await app.inject({ method: 'POST', url: '/api/products/catalog', payload: { ids, cover: false } });
+    expect(response.statusCode).toBe(200);
+  });
+
   it('默认带封面：公司名/电话/地址进封面，封面不计页码；缺二维码时不排二维码块', async () => {
     const { app, repositories, rendered, settingsRepository } = await createFixture();
     settingsRepository.saveCompanyProfile({ name: '维高工具', phone: '13800000000', address: '深圳市宝安区' });

@@ -6,7 +6,6 @@ import type { CatalogRepository, CatalogSummaryRecord } from '../db/catalog-repo
 import type { SettingsRepository } from '../db/settings-repository.js';
 import { mapProduct, toCatalogProduct, type MappedProduct } from './product-record-mapper.js';
 
-export const MAX_CATALOG_ITEMS = 200;
 const MAX_NAME_LENGTH = 40;
 /** 公开链接的 token：URL 安全字符，长度足够长不可猜。 */
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
@@ -22,7 +21,11 @@ export interface PublicCatalog {
   catalog: { id: number; name: string; token: string };
   company: CompanySnapshot;
   groups: Array<{ category: string; products: CatalogProduct[] }>;
+  /** 最近 30 天加入图册的新品（新加的排前）；空数组时页面不排「新品」分区。 */
+  newArrivals: CatalogProduct[];
 }
+
+const NEW_ARRIVAL_WINDOW_DAYS = 30;
 
 interface CatalogServiceOptions {
   /** 产品全量行（仓储原样），在服务内统一走 mapProduct 口径。 */
@@ -88,10 +91,21 @@ export class CatalogService {
     const catalog = this.repository.getByToken(token);
     if (!catalog || !catalog.enabled) return undefined;
     this.repository.recordView(catalog.id);
+    const byId = new Map(this.mappedProducts().map((product) => [product.id, product] as const));
+    const resolved = this.repository.listItems(catalog.id).flatMap((item) => {
+      const product = byId.get(item.productId);
+      return product ? [{ product: toCatalogProduct(product), addedAt: item.addedAt }] : [];
+    });
+    const cutoff = Date.now() - NEW_ARRIVAL_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+    const newArrivals = resolved
+      .filter((entry) => entry.addedAt != null && Date.parse(entry.addedAt) >= cutoff)
+      .sort((a, b) => Date.parse(b.addedAt ?? '') - Date.parse(a.addedAt ?? ''))
+      .map((entry) => entry.product);
     return {
       catalog: { id: catalog.id, name: catalog.name, token },
       company: this.options.settingsRepository.getCompanyProfile(),
-      groups: groupByCategory(this.productsFor(catalog.id)),
+      groups: groupByCategory(resolved.map((entry) => entry.product)),
+      newArrivals,
     };
   }
 
@@ -122,15 +136,6 @@ export class CatalogService {
     return catalog;
   }
 
-  private productsFor(catalogId: number): CatalogProduct[] {
-    const ids = this.repository.listItemProductIds(catalogId);
-    const byId = new Map(this.mappedProducts().map((product) => [product.id, product] as const));
-    return ids.flatMap((id) => {
-      const product = byId.get(id);
-      return product ? [toCatalogProduct(product)] : [];
-    });
-  }
-
   private mappedProducts(): MappedProduct[] {
     return this.options.listProductRows().flatMap((row) => {
       const product = mapProduct(row);
@@ -151,9 +156,7 @@ export class CatalogService {
     if (!Array.isArray(value) || !value.length) {
       throw new CatalogServiceError('CATALOG_EMPTY', '请至少选择一个产品');
     }
-    if (value.length > MAX_CATALOG_ITEMS) {
-      throw new CatalogServiceError('CATALOG_TOO_LARGE', `一本图册最多 ${MAX_CATALOG_ITEMS} 个产品`);
-    }
+    // 在线图册不设数量上限：整库四百多款也能一本全放；PDF 导出另有单次容量保护。
     const ids = value.map((item) => Number(item));
     if (ids.some((id) => !Number.isSafeInteger(id) || id <= 0)) {
       throw new CatalogServiceError('CATALOG_PRODUCT_INVALID', '产品编号不正确');

@@ -38,8 +38,7 @@ import { DEFAULT_CATALOG_DENSITY, isCatalogDensity } from '../../shared/product-
 
 const DEFAULT_COLORS = ['蓝', '红', '黄'];
 const DEFAULT_BATTERY_PLUGS = ['牧田', '德伟', '米沃奇'];
-/** 一次图册渲染要内联上百张缩略图，再多就该让用户分批导出而不是把服务压死。 */
-const MAX_CATALOG_PRODUCTS = 200;
+/** 缩略图分批处理的并发数：整本图册一次内联所有主图，分批读避免峰值内存过高。 */
 const CATALOG_IMAGE_CONCURRENCY = 6;
 const PRODUCT_ATTACHMENT_CATEGORIES = new Set(['manual', 'packaging-design', 'label-dieline', 'other']);
 
@@ -459,9 +458,6 @@ export async function registerProductRoutes(app: FastifyInstance, options: Produ
       const density = isCatalogDensity(body.density) ? body.density : DEFAULT_CATALOG_DENSITY;
       if (!Array.isArray(body.ids) || !body.ids.length) {
         throw new ApiError(400, 'VALIDATION_ERROR', '请选择要生成图册的产品', 'ids');
-      }
-      if (body.ids.length > MAX_CATALOG_PRODUCTS) {
-        throw new ApiError(400, 'VALIDATION_ERROR', `一次最多生成 ${MAX_CATALOG_PRODUCTS} 个产品的图册`, 'ids');
       }
       const ids = body.ids.map((value) => parseId(String(value), 'ids'));
       // 一次全量查询建索引，避免逐 id 命中数据库；输出顺序跟随请求里的 ids，与页面列表一致。

@@ -4,7 +4,7 @@ import { migratePackagingColumns } from './packaging.js';
 import { sortByImageLeadNumber } from '../../shared/product-image-order.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 27;
+const CURRENT_SCHEMA_VERSION = 28;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -1135,6 +1135,21 @@ function migrateVersionTwentySeven(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '27', now);
 }
 
+/** 图册选品的「加入时间」：在线图册的「新品」分区靠它判断最近 30 天新加了什么。 */
+function migrateVersionTwentyEight(database: DatabaseSync, now: string): void {
+  const columns = database.prepare('PRAGMA table_info(catalog_items)').all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === 'created_at')) {
+    database.exec('ALTER TABLE catalog_items ADD COLUMN created_at TEXT');
+  }
+  // 存量条目按所属图册的创建时间回填：老图册不会整本被当成新品。
+  database.exec(
+    `UPDATE catalog_items SET created_at = COALESCE(
+       (SELECT c.created_at FROM catalogs c WHERE c.id = catalog_items.catalog_id), '${now}'
+     ) WHERE created_at IS NULL`,
+  );
+  upsertSetting(database, 'schema_version', '28', now);
+}
+
 function migrateVersionTwentyFive(database: DatabaseSync, now: string): void {
   const done = database
     .prepare("SELECT value FROM settings WHERE key = 'product_images_ordered_by_filename_v25'")
@@ -1215,6 +1230,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionTwentyFive(transactionDatabase, now);
     migrateVersionTwentySix(transactionDatabase, now);
     migrateVersionTwentySeven(transactionDatabase, now);
+    migrateVersionTwentyEight(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

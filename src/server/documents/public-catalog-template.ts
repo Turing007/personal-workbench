@@ -10,59 +10,78 @@ export interface PublicCatalogPageData {
   catalog: { name: string; token: string };
   company: CompanySnapshot;
   groups: Array<{ category: string; products: CatalogProduct[] }>;
+  /** 最近 30 天加入图册的新品；空数组时页面不排「新品」分区。 */
+  newArrivals: CatalogProduct[];
 }
 
+interface CardDetail {
+  name: string;
+  rows: Array<{ label: string; value: string }>;
+  colors: string;
+  plugs: string;
+  packaging: string[];
+}
+
+function cardDetail(product: CatalogProduct): CardDetail {
+  return {
+    name: product.name,
+    rows: parseParameterRows(product.parameters),
+    colors: product.colors.filter(Boolean).join(' / '),
+    plugs: product.batteryPlugs.filter(Boolean).join(' / '),
+    packaging: product.packaging.map((item) => packagingLine(item)),
+  };
+}
+
+/** 封面：左 Logo / 中 公司名+电话+地址 / 右 二维码，一条横带，尽量少占屏幕。 */
 function renderCover(data: PublicCatalogPageData): string {
   const { company, catalog } = data;
   const token = catalog.token;
   const name = company.name.trim() || catalog.name;
-  const contact = [
-    company.phone ? `<div><span>电话</span>${escapeHtml(company.phone)}</div>` : '',
-    company.address ? `<div><span>地址</span>${escapeHtml(company.address)}</div>` : '',
-  ].join('');
+  const contact = [company.phone, company.address].map((part) => part.trim()).filter(Boolean);
+  const hasMiddle = Boolean(company.name.trim() || contact.length);
   return `<header class="cover" id="top">
-    ${company.logoRelativePath ? `<img class="cover-logo" src="/c/${token}/logo" alt="">` : ''}
-    <h1 class="cover-name">${escapeHtml(name)}</h1>
-    ${contact ? `<div class="cover-contact">${contact}</div>` : ''}
-    ${company.wechatQrRelativePath ? `<div class="cover-qr"><img src="/c/${token}/qr" alt="微信二维码"><span>扫码加微信</span></div>` : ''}
-    <div class="cover-caption">${escapeHtml(catalog.name)}</div>
-  </header>`;
+    ${company.logoRelativePath ? `<div class="cover-logo"><img src="/c/${token}/logo" alt=""></div>` : ''}
+    <div class="cover-main">
+      ${hasMiddle ? `<h1>${escapeHtml(name)}</h1>` : ''}
+      ${contact.map((line) => `<p>${escapeHtml(line)}</p>`).join('')}
+    </div>
+    ${company.wechatQrRelativePath ? `<div class="cover-qr" title="点击放大二维码"><img src="/c/${token}/qr" alt="微信二维码"><span>扫码加微信</span></div>` : ''}
+  </header>
+  <div class="catalog-caption">${escapeHtml(catalog.name)}<span>点产品卡片看大图与详细参数</span></div>`;
 }
 
-function renderCard(product: CatalogProduct, token: string): string {
-  const rows = parseParameterRows(product.parameters);
-  const meta = [
-    product.colors.filter(Boolean).length ? `<div><span>颜色</span>${escapeHtml(product.colors.filter(Boolean).join(' / '))}</div>` : '',
-    product.batteryPlugs.filter(Boolean).length ? `<div><span>插脚</span>${escapeHtml(product.batteryPlugs.filter(Boolean).join(' / '))}</div>` : '',
-  ].join('');
-  const packaging = product.packaging.length
-    ? `<div class="card-pack">${product.packaging.map((item) => `<div>${escapeHtml(packagingLine(item))}</div>`).join('')}</div>`
-    : '';
+function renderCard(product: CatalogProduct, token: string, isNew = false): string {
   const image = `/c/${token}/img/${product.id}`;
-  return `<article class="card">
-    <button class="card-image" type="button" data-large="${image}?size=960" aria-label="查看大图">
+  const detail = escapeHtml(JSON.stringify(cardDetail(product)));
+  // 卡片只展示名称与 SKU；全部参数、颜色插脚与包装都在点开的大图层里看。
+  return `<article class="card" data-large="${image}?size=960" data-detail="${detail}" data-search="${escapeHtml(`${product.name} ${product.sku ?? ''}`.toLowerCase())}" title="点开看大图与详细参数">
+    ${isNew ? '<span class="card-badge">新品</span>' : ''}
+    <div class="card-image">
       <img src="${image}" alt="${escapeHtml(product.name)}" loading="lazy" decoding="async">
-    </button>
+    </div>
     <h3>${escapeHtml(product.name)}</h3>
     ${product.sku ? `<div class="card-sku">${escapeHtml(product.sku)}</div>` : ''}
-    ${rows.length ? `<table>${rows.map((row) => row.label
-      ? `<tr><th>${escapeHtml(row.label)}</th><td>${escapeHtml(row.value)}</td></tr>`
-      : `<tr><td colspan="2">${escapeHtml(row.value)}</td></tr>`).join('')}</table>` : ''}
-    ${meta ? `<div class="card-meta">${meta}</div>` : ''}
-    ${packaging}
   </article>`;
 }
 
 export function renderPublicCatalogPage(data: PublicCatalogPageData): string {
   const token = data.catalog.token;
-  const groups = data.groups;
-  const nav = groups.map((group, index) => `<a href="#cat-${index}">${escapeHtml(group.category)}</a>`).join('');
+  const { groups, newArrivals } = data;
+  const newIds = new Set(newArrivals.map((product) => product.id));
+  const categoryOptions = [
+    newArrivals.length ? '<option value="new-arrivals">新品（最近 30 天）</option>' : '',
+    ...groups.map((group, index) => `<option value="cat-${index}">${escapeHtml(group.category)}（${group.products.length}）</option>`),
+  ].join('');
+  const newSection = newArrivals.length ? `<section class="cat" id="new-arrivals">
+    <h2>新品<span>最近 30 天 · ${newArrivals.length} 款</span></h2>
+    <div class="grid">${newArrivals.map((product) => renderCard(product, token, true)).join('')}</div>
+  </section>` : '';
   const sections = groups.map((group, index) => `<section class="cat" id="cat-${index}">
     <h2>${escapeHtml(group.category)}<span>${group.products.length} 款</span></h2>
-    <div class="grid">${group.products.map((product) => renderCard(product, token)).join('')}</div>
+    <div class="grid">${group.products.map((product) => renderCard(product, token, newIds.has(product.id))).join('')}</div>
   </section>`).join('');
   const footerName = data.company.name.trim() || data.catalog.name;
-  const footer = [escapeHtml(footerName), data.company.phone ? escapeHtml(data.company.phone) : ''].filter(Boolean).join(' · ');
+  const footer = [escapeHtml(footerName), data.company.phone ? escapeHtml(data.company.phone.trim()) : ''].filter(Boolean).join(' · ');
 
   return `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
@@ -73,67 +92,224 @@ export function renderPublicCatalogPage(data: PublicCatalogPageData): string {
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
   body { margin: 0; background: #f4f6f7; color: #15181c; font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
-  .wrap { max-width: 1080px; margin: 0 auto; background: #fff; min-height: 100vh; padding-bottom: 64px; }
-  /* 封面区：客户打开第一眼看到公司信息 */
-  .cover { display: grid; justify-items: center; text-align: center; padding: 36px 20px 28px; gap: 14px; }
-  .cover-logo { max-width: 180px; max-height: 72px; object-fit: contain; }
-  .cover-name { margin: 0; font-size: 26px; letter-spacing: 2px; }
-  .cover-contact { display: grid; gap: 6px; font-size: 14px; color: #3d434a; }
-  .cover-contact span { color: #8b929a; margin-right: 8px; }
-  .cover-qr { display: grid; justify-items: center; gap: 6px; margin-top: 6px; }
-  .cover-qr img { width: 132px; height: 132px; object-fit: contain; border: 1px solid #e3e6ea; border-radius: 8px; }
-  .cover-qr span { font-size: 12px; color: #8b929a; letter-spacing: 1px; }
-  .cover-caption { margin-top: 4px; font-size: 13px; color: #2f6f6a; font-weight: 600; letter-spacing: 1px; }
-  /* 分类导航：吸顶横滑 */
-  .cat-nav { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; overflow-x: auto; padding: 10px 16px; background: rgba(255,255,255,.96); border-bottom: 1px solid #e8ebee; backdrop-filter: blur(6px); }
-  .cat-nav a { flex: none; padding: 6px 14px; border-radius: 999px; background: #f1f4f6; color: #3d434a; font-size: 13px; text-decoration: none; }
-  .cat-nav a:active { background: #e2e8ea; }
-  .cat { padding: 18px 16px 6px; }
+  .wrap { max-width: 1080px; margin: 0 auto; background: #fff; min-height: 100vh; padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+  /* 封面横带：左 Logo / 中 公司名+电话+地址 / 右 二维码，尽量少占屏 */
+  .cover { display: flex; align-items: center; gap: 12px; padding: 12px 14px 10px; }
+  .cover-logo { width: 52px; height: 52px; flex: none; display: grid; place-items: center; overflow: hidden; }
+  .cover-logo img { width: 100%; height: 100%; object-fit: contain; }
+  .cover-main { flex: 1; min-width: 0; }
+  .cover-main h1 { margin: 0; font-size: 18px; letter-spacing: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cover-main p { margin: 3px 0 0; font-size: 12px; color: #3d434a; overflow-wrap: anywhere; }
+  .cover-qr { flex: none; display: grid; justify-items: center; gap: 3px; cursor: zoom-in; }
+  .cover-qr img { width: 54px; height: 54px; object-fit: contain; border: 1px solid #e3e6ea; border-radius: 6px; }
+  .cover-qr span { font-size: 10px; color: #8b929a; }
+  .catalog-caption { padding: 0 16px 10px; font-size: 12px; color: #2f6f6a; font-weight: 600; letter-spacing: 1px; }
+  .catalog-caption span { margin-left: 10px; color: #8b929a; font-weight: 400; letter-spacing: 0; }
+  /* 分类导航：吸顶横滑；新品排第一 */
+  .cat-nav { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; padding: 9px 16px; background: rgba(255,255,255,.96); border-bottom: 1px solid #e8ebee; backdrop-filter: blur(6px); }
+  .cat-search { flex: 1; min-width: 0; border: 1px solid #dbe3ea; border-radius: 999px; padding: 7px 14px; font: inherit; font-size: 13px; background: #f7f9fa; }
+  .cat-search:focus { outline: none; border-color: #2f6f6a; background: #fff; }
+  .cat-select { flex: none; max-width: 46%; border: 1px solid #dbe3ea; border-radius: 999px; padding: 7px 10px; font: inherit; font-size: 13px; color: #3d434a; background: #f7f9fa; }
+  .cat-clear { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid #dbe3ea; border-radius: 50%; background: #fff; color: #61676e; font-size: 18px; line-height: 1; cursor: pointer; }
+  .search-empty { padding: 36px 16px; text-align: center; color: #8b929a; font-size: 13px; }
+  [hidden] { display: none !important; }
+  .cat { padding: 16px 16px 4px; }
   .cat h2 { margin: 0 0 12px; font-size: 17px; }
   .cat h2 span { margin-left: 8px; font-size: 12px; color: #8b929a; font-weight: 400; }
+  #new-arrivals h2 { color: #0f766e; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
-  .card { border: 1px solid #e3e6ea; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; background: #fff; }
-  .card-image { padding: 0; border: 0; background: #f7f9fa; border-radius: 8px; cursor: zoom-in; aspect-ratio: 1 / 1; overflow: hidden; }
+  .card { position: relative; border: 1px solid #e3e6ea; border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; background: #fff; cursor: zoom-in; }
+  .card-badge { position: absolute; top: 16px; left: 16px; z-index: 2; padding: 2px 8px; border-radius: 999px; background: #0f766e; color: #fff; font-size: 11px; font-weight: 600; letter-spacing: 1px; box-shadow: 0 1px 4px rgba(15,23,42,.18); }
+  .card-image { background: #f7f9fa; border-radius: 8px; aspect-ratio: 1 / 1; overflow: hidden; }
   .card-image img { width: 100%; height: 100%; object-fit: contain; display: block; }
   .card h3 { margin: 4px 0 0; font-size: 14px; line-height: 1.35; }
   .card-sku { font-size: 12px; color: #2f6f6a; font-weight: 600; }
-  .card table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  .card tr + tr { border-top: 1px solid #f0f2f4; }
-  .card th { width: 42%; text-align: left; font-weight: 400; color: #8b929a; font-size: 11.5px; padding: 3px 6px 3px 0; vertical-align: top; }
-  .card td { font-size: 11.5px; padding: 3px 0; vertical-align: top; word-break: break-word; line-height: 1.45; }
-  .card-meta { display: grid; gap: 2px; font-size: 11.5px; color: #3d434a; }
-  .card-meta span { color: #8b929a; margin-right: 6px; }
-  .card-pack { border-top: 1px dashed #e3e6ea; padding-top: 6px; font-size: 11px; color: #61676e; display: grid; gap: 2px; }
   .empty { padding: 48px 16px; text-align: center; color: #8b929a; }
-  .page-foot { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; gap: 16px; padding: 10px 16px; background: rgba(255,255,255,.96); border-top: 1px solid #e8ebee; font-size: 12.5px; color: #61676e; backdrop-filter: blur(6px); }
-  .page-foot a { color: #2f6f6a; text-decoration: none; }
-  /* 点图看大图 */
-  .lightbox { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; background: rgba(10,14,18,.88); padding: 20px; }
-  .lightbox.is-open { display: flex; }
-  .lightbox img { max-width: min(96vw, 900px); max-height: 88vh; object-fit: contain; background: #fff; border-radius: 6px; }
-  .lightbox button { position: absolute; top: 14px; right: 14px; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.16); color: #fff; font-size: 22px; line-height: 1; cursor: pointer; }
+  /* 底部固定条：给足自身高度与安全区留白，滑到页尾也不会盖住最后一行产品。 */
+  .page-foot { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 14px calc(8px + env(safe-area-inset-bottom, 0px)); background: rgba(255,255,255,.97); border-top: 1px solid #e8ebee; font-size: 12.5px; color: #61676e; backdrop-filter: blur(6px); }
+  .page-foot span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .page-foot-btn { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 7px 16px; border-radius: 999px; background: #0f766e; color: #fff; font-size: 12.5px; font-weight: 600; text-decoration: none; box-shadow: 0 2px 8px rgba(15,118,110,.35); }
+  .page-foot-btn:active { opacity: .88; }
+  /* 点开：大图 + 全部参数 */
+  .lightbox { position: fixed; inset: 0; z-index: 20; display: none; background: rgba(10,14,18,.88); padding: 16px; }
+  .lightbox.is-open { display: block; }
+  .lightbox-panel { height: 100%; display: flex; flex-direction: column; gap: 10px; align-items: center; overflow: auto; }
+  .lightbox-image { max-width: min(96vw, 760px); max-height: 46vh; object-fit: contain; background: #fff; border-radius: 8px; }
+  .lightbox-info { width: min(96vw, 760px); background: #fff; border-radius: 10px; padding: 12px 14px; display: grid; gap: 8px; }
+  .lightbox-info h3 { margin: 0; font-size: 15px; }
+  .lightbox-info table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .lightbox-info tr + tr { border-top: 1px solid #f0f2f4; }
+  .lightbox-info th { width: 40%; text-align: left; font-weight: 400; color: #8b929a; font-size: 12px; padding: 4px 8px 4px 0; vertical-align: top; }
+  .lightbox-info td { font-size: 12px; padding: 4px 0; vertical-align: top; word-break: break-word; line-height: 1.5; }
+  .lightbox-meta { display: grid; gap: 3px; font-size: 12px; color: #3d434a; }
+  .lightbox-meta span { color: #8b929a; margin-right: 6px; }
+  .lightbox-pack { border-top: 1px dashed #e3e6ea; padding-top: 7px; font-size: 11px; color: #61676e; display: grid; gap: 3px; }
+  .lightbox-pack-label { color: #8b929a; font-size: 11px; }
+  /* 每条包装占一行、整行不折行（字号收紧到 11px 让装箱数完整放下）；特别长时该行可横向滑动。 */
+  .lightbox-pack-line { white-space: nowrap; overflow-x: auto; scrollbar-width: thin; }
+  .lightbox-close { position: fixed; top: 12px; right: 12px; width: 40px; height: 40px; border-radius: 50%; border: 0; background: rgba(255,255,255,.18); color: #fff; font-size: 22px; line-height: 1; cursor: pointer; }
+  /* 二维码放大层：手机不方便扫 54px 的小图，点开后放到接近全屏宽 */
+  .qr-zoom { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; align-content: center; gap: 14px; background: rgba(10,14,18,.92); padding: 24px; cursor: zoom-out; }
+  .qr-zoom img { width: min(78vw, 420px); background: #fff; padding: 12px; border-radius: 12px; }
+  .qr-zoom span { color: #fff; font-size: 13px; letter-spacing: 1px; opacity: .85; }
   @media (min-width: 720px) {
     .grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
-    .cover { padding-top: 56px; }
+    .cover { padding: 18px 20px 12px; }
+    .cover-logo { width: 64px; height: 64px; }
+    .cover-main h1 { font-size: 20px; }
+    .lightbox-panel { flex-direction: row; justify-content: center; align-items: flex-start; }
+    .lightbox-image { max-width: 52vw; max-height: 82vh; flex: none; }
+    .lightbox-info { width: 360px; flex: none; }
   }
 </style></head>
 <body><div class="wrap">
 ${renderCover(data)}
-${groups.length ? `<nav class="cat-nav" aria-label="产品分类">${nav}</nav>${sections}` : '<div class="empty">图册正在整理中，请稍后再来。</div>'}
-<footer class="page-foot"><span>${footer}</span><a href="#top">回顶部</a></footer>
+${groups.length || newArrivals.length ? `<nav class="cat-nav" aria-label="产品分类">
+    <input class="cat-search" id="cat-search" type="search" placeholder="搜索产品名称 / SKU" aria-label="搜索产品" autocomplete="off">
+    <select class="cat-select" id="cat-select" aria-label="按类目筛选"><option value="">全部类目</option>${categoryOptions}</select>
+    <button class="cat-clear" id="cat-clear" type="button" aria-label="清空类目筛选" title="显示全部产品" hidden>×</button>
+  </nav>
+  <div class="search-empty" id="search-empty" hidden>没有匹配的产品</div>
+  ${newSection}${sections}` : '<div class="empty">图册正在整理中，请稍后再来。</div>'}
+<footer class="page-foot"><span>${footer}</span><a class="page-foot-btn" href="#top">↑ 回顶部</a></footer>
 </div>
-<div class="lightbox" id="lightbox"><img alt=""><button type="button" aria-label="关闭">×</button></div>
+<div class="lightbox" id="lightbox">
+  <img class="lightbox-image" alt="">
+  <div class="lightbox-info">
+    <h3></h3>
+    <table></table>
+    <div class="lightbox-meta"></div>
+    <div class="lightbox-pack"></div>
+  </div>
+  <button class="lightbox-close" type="button" aria-label="关闭">×</button>
+</div>
+${data.company.wechatQrRelativePath ? `<div class="qr-zoom" id="qr-zoom" hidden><img src="/c/${data.catalog.token}/qr" alt="微信二维码"><span>扫码加微信 · 点击任意处关闭</span></div>` : ''}
 <script>
   (function () {
-    var box = document.getElementById('lightbox');
-    var img = box.querySelector('img');
-    function close() { box.classList.remove('is-open'); img.removeAttribute('src'); }
-    document.addEventListener('click', function (event) {
-      var trigger = event.target.closest('.card-image');
-      if (trigger) { img.src = trigger.getAttribute('data-large'); box.classList.add('is-open'); return; }
-      if (event.target === box || event.target.closest('.lightbox button')) close();
+    // 公司名只占一行：超宽自动缩字号（下限 11px、同时去掉字距）；极端超长时才用省略号收尾。
+    var coverName = document.querySelector('.cover-main h1');
+    function fitCoverName() {
+      if (!coverName) return;
+      coverName.style.fontSize = '';
+      coverName.style.letterSpacing = '0';
+      var size = parseFloat(getComputedStyle(coverName).fontSize) || 18;
+      while (coverName.scrollWidth > coverName.clientWidth + 1 && size > 11) {
+        size -= 0.5;
+        coverName.style.fontSize = size + 'px';
+      }
+    }
+    fitCoverName();
+    window.addEventListener('resize', fitCoverName);
+
+    // 搜索（名称/SKU）+ 类目筛选：选中类目只显示该类产品，小叉清掉恢复全部。
+    var searchInput = document.getElementById('cat-search');
+    var searchEmpty = document.getElementById('search-empty');
+    var catSelect = document.getElementById('cat-select');
+    var catClear = document.getElementById('cat-clear');
+    var activeCategory = '';
+    function applyFilters() {
+      var needle = (searchInput.value || '').trim().toLowerCase();
+      var anyVisible = false;
+      Array.prototype.forEach.call(document.querySelectorAll('.cat'), function (section) {
+        var categoryMatch = !activeCategory || section.id === activeCategory;
+        var visible = 0;
+        Array.prototype.forEach.call(section.querySelectorAll('.card'), function (card) {
+          var match = categoryMatch && (!needle || (card.getAttribute('data-search') || '').indexOf(needle) !== -1);
+          card.hidden = !match;
+          if (match) visible += 1;
+        });
+        section.hidden = visible === 0;
+        if (visible > 0) anyVisible = true;
+      });
+      searchEmpty.hidden = anyVisible || (!needle && !activeCategory);
+      catClear.hidden = !activeCategory;
+    }
+    searchInput.addEventListener('input', applyFilters);
+    catSelect.addEventListener('change', function (event) {
+      activeCategory = event.target.value;
+      applyFilters();
+      if (activeCategory) {
+        var target = document.getElementById(activeCategory);
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     });
-    document.addEventListener('keydown', function (event) { if (event.key === 'Escape') close(); });
+    catClear.addEventListener('click', function () {
+      activeCategory = '';
+      catSelect.value = '';
+      applyFilters();
+    });
+
+    var box = document.getElementById('lightbox');
+    var image = box.querySelector('.lightbox-image');
+    var title = box.querySelector('h3');
+    var table = box.querySelector('table');
+    var meta = box.querySelector('.lightbox-meta');
+    var pack = box.querySelector('.lightbox-pack');
+
+    function row(label, value) {
+      var tr = document.createElement('tr');
+      if (label) {
+        var th = document.createElement('th'); th.textContent = label; tr.appendChild(th);
+      }
+      var td = document.createElement('td');
+      if (!label) td.colSpan = 2;
+      td.textContent = value;
+      tr.appendChild(td);
+      return tr;
+    }
+    function metaLine(label, value) {
+      var div = document.createElement('div');
+      var span = document.createElement('span'); span.textContent = label;
+      div.appendChild(span);
+      div.appendChild(document.createTextNode(value));
+      return div;
+    }
+    function open(trigger) {
+      var detail = {};
+      try { detail = JSON.parse(trigger.getAttribute('data-detail') || '{}'); } catch (error) { detail = {}; }
+      image.src = trigger.getAttribute('data-large');
+      title.textContent = detail.name || '';
+      table.textContent = '';
+      (detail.rows || []).forEach(function (item) { table.appendChild(row(item.label, item.value)); });
+      meta.textContent = '';
+      if (detail.colors) meta.appendChild(metaLine('颜色', detail.colors));
+      if (detail.plugs) meta.appendChild(metaLine('插脚', detail.plugs));
+      pack.textContent = '';
+      var packaging = detail.packaging || [];
+      if (packaging.length) {
+        var packLabel = document.createElement('div');
+        packLabel.className = 'lightbox-pack-label';
+        packLabel.textContent = '包装';
+        pack.appendChild(packLabel);
+      }
+      packaging.forEach(function (line) {
+        var div = document.createElement('div');
+        div.className = 'lightbox-pack-line';
+        div.textContent = line;
+        pack.appendChild(div);
+      });
+      box.classList.add('is-open');
+    }
+    function close() { box.classList.remove('is-open'); image.removeAttribute('src'); }
+
+    // 二维码点击放大：手机不方便直接扫 54px 的小图，点开接近全屏宽。
+    var qrZoom = document.getElementById('qr-zoom');
+    var coverQr = document.querySelector('.cover-qr');
+    if (qrZoom && coverQr) {
+      coverQr.addEventListener('click', function () { qrZoom.hidden = false; });
+      qrZoom.addEventListener('click', function () { qrZoom.hidden = true; });
+    }
+
+    document.addEventListener('click', function (event) {
+      var trigger = event.target.closest('[data-detail]');
+      if (trigger) { open(trigger); return; }
+      if (event.target === box || event.target.closest('.lightbox-close')) close();
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key !== 'Escape') return;
+      close();
+      if (qrZoom) qrZoom.hidden = true;
+    });
   })();
 </script>
 </body></html>`;

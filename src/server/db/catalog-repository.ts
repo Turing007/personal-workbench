@@ -62,8 +62,8 @@ export class CatalogRepository {
         .prepare('INSERT INTO catalogs (token, name, enabled, view_count, created_at, updated_at) VALUES (?, ?, 1, 0, ?, ?)')
         .run(input.token, input.name, now, now);
       const id = Number(result.lastInsertRowid);
-      const insertItem = database.prepare('INSERT OR IGNORE INTO catalog_items (catalog_id, product_id, sort_order) VALUES (?, ?, ?)');
-      input.productIds.forEach((productId, index) => insertItem.run(id, productId, index));
+      const insertItem = database.prepare('INSERT OR IGNORE INTO catalog_items (catalog_id, product_id, sort_order, created_at) VALUES (?, ?, ?, ?)');
+      input.productIds.forEach((productId, index) => insertItem.run(id, productId, index, now));
       return id;
     });
   }
@@ -79,9 +79,14 @@ export class CatalogRepository {
         .prepare('UPDATE catalogs SET name = ?, enabled = ?, updated_at = ? WHERE id = ?')
         .run(name, enabled ? 1 : 0, now, id);
       if (changes.productIds !== undefined) {
+        // 保留仍在册产品的「加入时间」，只有这次新加的才是新品；整表重建不会把老品洗成新品。
+        const existing = database
+          .prepare('SELECT product_id, created_at FROM catalog_items WHERE catalog_id = ?')
+          .all(id) as Array<{ product_id: number; created_at: string | null }>;
+        const addedAt = new Map(existing.map((row) => [Number(row.product_id), row.created_at ?? now]));
         database.prepare('DELETE FROM catalog_items WHERE catalog_id = ?').run(id);
-        const insertItem = database.prepare('INSERT OR IGNORE INTO catalog_items (catalog_id, product_id, sort_order) VALUES (?, ?, ?)');
-        changes.productIds.forEach((productId, index) => insertItem.run(id, productId, index));
+        const insertItem = database.prepare('INSERT OR IGNORE INTO catalog_items (catalog_id, product_id, sort_order, created_at) VALUES (?, ?, ?, ?)');
+        changes.productIds.forEach((productId, index) => insertItem.run(id, productId, index, addedAt.get(productId) ?? now));
       }
     });
   }
@@ -95,6 +100,14 @@ export class CatalogRepository {
       .prepare('SELECT product_id FROM catalog_items WHERE catalog_id = ? ORDER BY sort_order, product_id')
       .all(id) as Array<{ product_id: number }>;
     return rows.map((row) => Number(row.product_id));
+  }
+
+  /** 选品明细（含加入时间），在线图册的「新品」分区按它判断。 */
+  listItems(id: number): Array<{ productId: number; addedAt: string | null }> {
+    const rows = this.database
+      .prepare('SELECT product_id, created_at FROM catalog_items WHERE catalog_id = ? ORDER BY sort_order, product_id')
+      .all(id) as Array<{ product_id: number; created_at: string | null }>;
+    return rows.map((row) => ({ productId: Number(row.product_id), addedAt: row.created_at == null ? null : String(row.created_at) }));
   }
 
   recordView(id: number): void {
