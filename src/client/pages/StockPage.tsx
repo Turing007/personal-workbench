@@ -9,6 +9,7 @@ import {
 import { errorText } from '../components/finance/finance-format';
 import { copyText } from '../copy-text';
 import Modal from '../components/Modal';
+import SystemProductOptionRow from '../components/SystemProductOptionRow';
 import type { ProductRecord } from '../components/ProductEditor';
 import {
   formatStockItemLine,
@@ -308,10 +309,9 @@ function LinkSystemProductModal({ target, systemProducts, onClose, onLinked, onN
             setSupplierName(item.name || supplierName);
           }}
           disabled={busy}
-          style={{ display: 'block', width: '100%', padding: '9px 10px', border: 0, borderBottom: '1px solid #edf0f2', color: '#334155', background: Number(item.id) === selectedId ? '#f0fdfa' : '#fff', cursor: 'pointer', textAlign: 'left', fontSize: 12 }}
+          style={{ display: 'block', width: '100%', padding: '8px 10px', border: 0, borderBottom: '1px solid #edf0f2', color: '#334155', background: Number(item.id) === selectedId ? '#f0fdfa' : '#fff', cursor: 'pointer', textAlign: 'left' }}
         >
-          <strong>{item.name || '未命名产品'}</strong>
-          <span style={{ color: '#64748b' }}>{[item.specification, item.sku, item.supplier].filter(Boolean).length ? ` · ${[item.specification, item.sku, item.supplier].filter(Boolean).join(' · ')}` : ''}</span>
+          <SystemProductOptionRow product={item} />
         </button>)}
         {!filtered.length && <div style={{ padding: 12, color: '#94a3b8', textAlign: 'center', fontSize: 12 }}>没有匹配的系统产品</div>}
       </div>

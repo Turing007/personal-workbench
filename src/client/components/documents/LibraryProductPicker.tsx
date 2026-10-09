@@ -1,6 +1,7 @@
 import { Check, Image as ImageIcon, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { thumbUrl } from '../../image-urls';
+import { formatPurchasePrice } from '../SystemProductOptionRow';
 
 export interface LibraryProductImage {
   id: number | string;
@@ -16,6 +17,9 @@ export interface LibraryProductOption {
   specification: string;
   parameters?: string;
   images: LibraryProductImage[];
+  /** 供应商与采购价：接口原样带回，用于在列表里判断是哪款（数字或字符串都可能）。 */
+  supplier?: string;
+  purchasePrice?: string | number | null;
 }
 
 export interface LibraryProductSelection {
@@ -97,9 +101,10 @@ export default function LibraryProductPicker({ onSelect, selectedProductId, load
       {products.map((product) => {
         const selectedImageId = selectedImages[product.id] ?? product.images[0]?.id;
         const selectedImage = product.images.find((image) => image.id === selectedImageId) ?? product.images[0];
+        const priceText = formatPurchasePrice(product.purchasePrice);
         return <div key={product.id} style={{ display: 'grid', gridTemplateColumns: '58px minmax(0,1fr) auto', gap: 9, alignItems: 'center', padding: 8, borderBottom: '1px solid #edf0f2', background: selectedProductId === product.id ? '#f0fdfa' : '#fff' }}>
           <div style={{ width: 58, height: 48, display: 'grid', placeItems: 'center', overflow: 'hidden', border: '1px solid #e2e8f0', borderRadius: 5, background: '#f8fafc' }}>{selectedImage ? <img src={imageUrl(selectedImage)} alt={selectedImage.originalName ?? product.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <ImageIcon size={18} color="#94a3b8" />}</div>
-          <div style={{ minWidth: 0 }}><strong style={{ display: 'block', fontSize: 12, color: '#17212b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.name}</strong><span style={{ display: 'block', marginTop: 3, fontSize: 11, color: '#64748b' }}>{product.sku || '无 SKU'} · {product.specification || '无规格'}</span>{product.images.length > 1 && <div style={{ display: 'flex', gap: 4, marginTop: 5 }}>{product.images.map((image) => <button key={image.id} type="button" title={`选择图片：${image.originalName ?? image.id}`} onClick={() => setSelectedImages((current) => ({ ...current, [product.id]: image.id }))} style={{ width: 28, height: 24, padding: 1, border: `1px solid ${selectedImageId === image.id ? '#0f766e' : '#cbd5e1'}`, borderRadius: 4, background: '#fff', cursor: 'pointer' }}><img src={imageUrl(image)} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /></button>)}</div>}</div>
+          <div style={{ minWidth: 0 }}><strong style={{ display: 'block', fontSize: 12, color: '#17212b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.name}</strong><span style={{ display: 'block', marginTop: 3, fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.sku || '无 SKU'} · {product.specification || '无规格'}{product.supplier?.trim() ? ` · ${product.supplier.trim()}` : ''}{priceText && <> · <span style={{ color: '#0f766e', fontWeight: 600 }}>{priceText}</span></>}</span>{product.images.length > 1 && <div style={{ display: 'flex', gap: 4, marginTop: 5 }}>{product.images.map((image) => <button key={image.id} type="button" title={`选择图片：${image.originalName ?? image.id}`} onClick={() => setSelectedImages((current) => ({ ...current, [product.id]: image.id }))} style={{ width: 28, height: 24, padding: 1, border: `1px solid ${selectedImageId === image.id ? '#0f766e' : '#cbd5e1'}`, borderRadius: 4, background: '#fff', cursor: 'pointer' }}><img src={imageUrl(image)} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /></button>)}</div>}</div>
           <button disabled={disabled} type="button" title="选择产品" onClick={() => chooseProduct(product)} style={{ width: 32, height: 32, display: 'grid', placeItems: 'center', border: `1px solid ${selectedProductId === product.id ? '#0f766e' : '#cbd5e1'}`, borderRadius: 5, color: selectedProductId === product.id ? '#0f766e' : '#64748b', background: '#fff', cursor: disabled ? 'not-allowed' : 'pointer' }}><Check size={15} /></button>
         </div>;
       })}

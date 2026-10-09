@@ -8,6 +8,7 @@ import { ATTACHMENT_ACCEPT, attachmentFilesFromClipboard, normalizeUploadAttachm
 import { useFileDrop } from '../../use-file-drop';
 import ImagePasteUpload, { type ImageAttachment } from '../ImagePasteUpload';
 import Modal from '../Modal';
+import SystemProductOptionRow from '../SystemProductOptionRow';
 import PackagingTable from '../PackagingTable';
 
 export interface CustomerProductEditorModalProps {
@@ -125,7 +126,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
   const filteredSystemProducts = useMemo(() => {
     const needle = systemProductQuery.trim().toLowerCase();
     if (!needle) return selectableSystemProducts;
-    return selectableSystemProducts.filter((item) => [item.name, item.specification, item.sku, String(item.id)].join(' ').toLowerCase().includes(needle));
+    return selectableSystemProducts.filter((item) => [item.name, item.specification, item.sku, item.supplier, String(item.id)].join(' ').toLowerCase().includes(needle));
   }, [systemProductQuery, selectableSystemProducts]);
 
   const systemProductLabel = (item: ProductRecord) => [item.name, item.specification, item.sku].filter(Boolean).join(' · ');
@@ -330,7 +331,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
           {systemProductId != null && <button type="button" onClick={() => chooseSystemProduct('')} disabled={busy} title="改为临时添加" style={{ position: 'absolute', right: 6, top: 5, height: 24, border: 0, color: '#64748b', background: 'transparent', cursor: 'pointer', fontSize: 11 }}>清除</button>}
           {systemProductPickerOpen && <div id="customer-product-system-picker" role="listbox" style={{ position: 'absolute', zIndex: 20, top: 'calc(100% + 4px)', left: 0, right: 0, maxHeight: 220, overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: 5, background: '#fff', boxShadow: '0 8px 20px rgba(15, 23, 42, .12)' }}>
             <button type="button" role="option" aria-selected={systemProductId == null} onClick={() => chooseSystemProduct('')} disabled={busy} style={{ display: 'block', width: '100%', padding: '9px 10px', border: 0, borderBottom: '1px solid #edf0f2', color: '#64748b', background: '#fff', cursor: 'pointer', textAlign: 'left', fontSize: 12 }}>临时添加，不关联系统产品</button>
-            {filteredSystemProducts.map((item) => <button key={item.id} type="button" role="option" aria-selected={Number(item.id) === systemProductId} onClick={() => chooseSystemProduct(String(item.id))} disabled={busy} style={{ display: 'block', width: '100%', padding: '9px 10px', border: 0, borderBottom: '1px solid #edf0f2', color: '#334155', background: Number(item.id) === systemProductId ? '#f0fdfa' : '#fff', cursor: 'pointer', textAlign: 'left', fontSize: 12 }}><strong>{item.name || '未命名产品'}</strong>{(item.specification || item.sku) && <span style={{ color: '#64748b' }}> · {[item.specification, item.sku].filter(Boolean).join(' · ')}</span>}</button>)}
+            {filteredSystemProducts.map((item) => <button key={item.id} type="button" role="option" aria-selected={Number(item.id) === systemProductId} onClick={() => chooseSystemProduct(String(item.id))} disabled={busy} style={{ display: 'block', width: '100%', padding: '8px 10px', border: 0, borderBottom: '1px solid #edf0f2', color: '#334155', background: Number(item.id) === systemProductId ? '#f0fdfa' : '#fff', cursor: 'pointer', textAlign: 'left' }}><SystemProductOptionRow product={item} /></button>)}
             {!filteredSystemProducts.length && <div style={{ padding: 12, color: '#94a3b8', textAlign: 'center', fontSize: 12 }}>没有匹配的系统产品</div>}
           </div>}
         </div>
