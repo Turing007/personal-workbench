@@ -92,7 +92,7 @@ export function renderPublicCatalogPage(data: PublicCatalogPageData): string {
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
   body { margin: 0; background: #f4f6f7; color: #15181c; font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
-  .wrap { max-width: 1080px; margin: 0 auto; background: #fff; min-height: 100vh; padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+  .wrap { max-width: 1080px; margin: 0 auto; background: #fff; min-height: 100vh; padding-bottom: 84px; padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
   /* 封面横带：左 Logo / 中 公司名+电话+地址 / 右 二维码，尽量少占屏 */
   .cover { display: flex; align-items: center; gap: 12px; padding: 12px 14px 10px; }
   .cover-logo { width: 52px; height: 52px; flex: none; display: grid; place-items: center; overflow: hidden; }
@@ -125,8 +125,10 @@ export function renderPublicCatalogPage(data: PublicCatalogPageData): string {
   .card h3 { margin: 4px 0 0; font-size: 14px; line-height: 1.35; }
   .card-sku { font-size: 12px; color: #2f6f6a; font-weight: 600; }
   .empty { padding: 48px 16px; text-align: center; color: #8b929a; }
-  /* 底部固定条：给足自身高度与安全区留白，滑到页尾也不会盖住最后一行产品。 */
-  .page-foot { position: fixed; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 14px calc(8px + env(safe-area-inset-bottom, 0px)); background: rgba(255,255,255,.97); border-top: 1px solid #e8ebee; font-size: 12.5px; color: #61676e; backdrop-filter: blur(6px); }
+  /* 底部固定条：新品角标（.card-badge）是带 z-index 的定位元素，滚动经过时会浮在普通流上方——
+     底栏必须显式抬到更高层级才能压住它们；不透明底色保证任何内容不透出。安全区 + .wrap 底部留白，页尾不遮内容。
+     层级：角标 2 < 吸顶导航 5 < 底栏 10 < 大图层 20 < 二维码放大 30。 */
+  .page-foot { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 14px; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); background: #fff; border-top: 1px solid #e8ebee; font-size: 12.5px; color: #61676e; }
   .page-foot span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .page-foot-btn { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 7px 16px; border-radius: 999px; background: #0f766e; color: #fff; font-size: 12.5px; font-weight: 600; text-decoration: none; box-shadow: 0 2px 8px rgba(15,118,110,.35); }
   .page-foot-btn:active { opacity: .88; }
