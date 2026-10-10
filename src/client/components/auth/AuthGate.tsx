@@ -9,8 +9,12 @@ import {
   logout as logoutRequest,
   type AuthUser,
 } from '../../api';
+import { SITE_FILINGS, beianFooterItems } from '../../../shared/site-filings';
 
 type AuthGateState = 'loading' | 'setup' | 'login' | 'ready';
+
+/** 登录页（域名首页）底部的备案号行；号码未配置时不渲染。 */
+const beianItems = beianFooterItems(SITE_FILINGS);
 
 export interface AuthGateRenderProps {
   user: AuthUser;
@@ -221,6 +225,13 @@ function AuthForm({ mode, error, submitting, onSubmit }: AuthFormProps) {
           {submitting ? '请稍候…' : isSetup ? '创建管理员并进入' : '登录'}
         </button>
       </form>
+      {beianItems.length > 0 && (
+        <footer className="auth-filings">
+          {beianItems.map((item) => item.href
+            ? <a key={item.text} href={item.href} target="_blank" rel="noreferrer">{item.text}</a>
+            : <span key={item.text}>{item.text}</span>)}
+        </footer>
+      )}
     </div>
   );
 }

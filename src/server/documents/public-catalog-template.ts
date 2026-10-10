@@ -1,6 +1,7 @@
 import { escapeHtml } from './quotation-template.js';
 import { parseParameterRows, packagingDetailBlock, type CatalogProduct, type PackagingDetailBlock } from './product-catalog-template.js';
 import type { CompanySnapshot } from '../../shared/documents.js';
+import { SITE_FILINGS, beianFooterItems } from '../../shared/site-filings.js';
 
 /**
  * 在线图册（客户打开的样子）：独立轻量页，不加载工作台登录包。
@@ -84,6 +85,10 @@ export function renderPublicCatalogPage(data: PublicCatalogPageData): string {
   </section>`).join('');
   const footerName = data.company.name.trim() || data.catalog.name;
   const footer = [escapeHtml(footerName), data.company.phone ? escapeHtml(data.company.phone.trim()) : ''].filter(Boolean).join(' · ');
+  // 页尾备案号：公安备案通过后 30 日内须悬挂；号码未配置时不渲染。
+  const filingsHtml = beianFooterItems(SITE_FILINGS).map((item) => item.href
+    ? `<a href="${escapeHtml(item.href)}" target="_blank" rel="noreferrer">${escapeHtml(item.text)}</a>`
+    : `<span>${escapeHtml(item.text)}</span>`).join('');
 
   return `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
@@ -135,6 +140,9 @@ export function renderPublicCatalogPage(data: PublicCatalogPageData): string {
   .page-foot span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .page-foot-btn { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 7px 16px; border-radius: 999px; background: #0f766e; color: #fff; font-size: 12.5px; font-weight: 600; text-decoration: none; box-shadow: 0 2px 8px rgba(15,118,110,.35); }
   .page-foot-btn:active { opacity: .88; }
+  /* 页尾备案号行：公安备案号通过后 30 日内须悬挂；小字居中，压在固定底栏上方的留白里。 */
+  .site-filings { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 14px; padding: 6px 16px 12px; font-size: 11px; color: #9aa1a8; }
+  .site-filings a { color: inherit; text-decoration: none; }
   /* 点开：大图 + 全部参数 */
   .lightbox { position: fixed; inset: 0; z-index: 20; display: none; background: rgba(10,14,18,.88); padding: 16px; }
   .lightbox.is-open { display: block; }
@@ -181,6 +189,7 @@ ${groups.length || newArrivals.length ? `<nav class="cat-nav" aria-label="产品
   </nav>
   <div class="search-empty" id="search-empty" hidden>没有匹配的产品</div>
   ${newSection}${sections}` : '<div class="empty">图册正在整理中，请稍后再来。</div>'}
+${filingsHtml ? `<div class="site-filings">${filingsHtml}</div>` : ''}
 <footer class="page-foot"><span>${footer}</span><a class="page-foot-btn" href="#top">↑ 回顶部</a></footer>
 </div>
 <div class="lightbox" id="lightbox">
