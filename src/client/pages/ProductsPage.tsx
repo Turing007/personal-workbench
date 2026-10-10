@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Download, Edit3, Eye, EyeOff, FileDown, Image as ImageIcon, Images, List, Plus, RefreshCw, Upload } from 'lucide-react';
+import { Calculator, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Download, Edit3, Eye, EyeOff, FileDown, Image as ImageIcon, Images, List, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getPackagingPresets } from '../api';
 import type { PackagingPreset } from '../../shared/packaging-presets';
@@ -10,6 +10,7 @@ import ToolbarMenu from '../components/ToolbarMenu';
 import { compareProductByName } from '../product-sort';
 import { PAGE_SIZES, clampPage, pageWindow, readStoredPageSize, rememberPageSize, slicePage, totalPages } from '../pagination';
 import ProductDetailModal from '../components/ProductDetailModal';
+import PriceCalculatorModal from '../components/PriceCalculatorModal';
 import ProductImagesModal from '../components/ProductImagesModal';
 import PendingImageTile from '../components/PendingImageTile';
 import SearchInput from '../components/SearchInput';
@@ -195,6 +196,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
   const rangeEnd = Math.min(filtered.length, currentPage * pageSize);
   const changePageSize = (next: number) => { setPageSize(next); rememberPageSize(next); setPage(1); };
 
+  const [calculatorProduct, setCalculatorProduct] = useState<ProductRecord>();
   const openNew = () => { setEditing(undefined); setCopying(false); setEditorOpen(true); };
   const openEdit = (product: ProductRecord) => { setEditing(product); setCopying(false); setEditorOpen(true); };
   const openCopy = (product: ProductRecord) => { setEditing(cloneProductForNew(product)); setCopying(true); setEditorOpen(true); };
@@ -283,6 +285,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
             </span>
           </button>
           <div className="row-actions product-gallery-actions">
+            <button className="icon-button price-calc-entry" type="button" title="售价计算" aria-label={`${product.name || product.sku} 售价计算`} onClick={() => setCalculatorProduct(product)}><Calculator size={14} /></button>
             <button className="icon-button" type="button" title={product.status === 'draft' ? '继续编辑草稿' : '编辑产品'} onClick={() => openEdit(product)}><Edit3 size={14} /></button>
             <button className="icon-button" type="button" title="复制产品为新建产品" onClick={() => openCopy(product)}><Copy size={14} /></button>
             
@@ -308,7 +311,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
             {product.packaging.length > 1 && <button className="product-packaging-expand" type="button" onClick={() => setExpandedPackagingId((current) => current === product.id ? undefined : product.id)}>{expandedPackagingId === product.id ? <><ChevronUp size={13} />收起</> : <><ChevronDown size={13} />... 还有 {product.packaging.length - 1} 个包装</>}</button>}
           </> : <span>—</span>}</div></td>
           <td className="product-remark-cell">{product.remark || '—'}</td>{showSensitive && <><td>{product.supplier || '—'}</td><td>{purchasePriceLabel(product.purchasePrice)}{extraQuoteCount(product) > 0 && <span className="price-tier-count" title={`还有 ${extraQuoteCount(product)} 档报价`}>+{extraQuoteCount(product)}</span>}</td></>}
-          <td><div className="row-actions"><button className="icon-button" title={product.status === 'draft' ? '继续编辑草稿' : '编辑产品'} type="button" onClick={() => openEdit(product)}><Edit3 size={14} /></button><button className="icon-button" title="复制产品为新建产品" type="button" onClick={() => openCopy(product)}><Copy size={14} /></button></div></td>
+          <td><div className="row-actions"><button className="icon-button price-calc-entry" title="售价计算" type="button" aria-label={`${product.name || product.sku} 售价计算`} onClick={() => setCalculatorProduct(product)}><Calculator size={14} /></button><button className="icon-button" title={product.status === 'draft' ? '继续编辑草稿' : '编辑产品'} type="button" onClick={() => openEdit(product)}><Edit3 size={14} /></button><button className="icon-button" title="复制产品为新建产品" type="button" onClick={() => openCopy(product)}><Copy size={14} /></button></div></td>
         </tr>)}</tbody></table></div>}
       {view === 'list' && <div className="products-card-list">
         {visible.map((product) => <article key={product.id} className="product-card">
@@ -329,6 +332,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
             return <div className="product-card-packaging-line" key={item.id}><strong>{display.name}</strong><span>内盒 {display.innerSize} / 外箱 {display.outerSize}</span></div>;
           })}{product.packaging.length > 1 && <span className="product-card-packaging-more">… 共 {product.packaging.length} 个包装</span>}</div>}
           <div className="row-actions">
+            <button className="icon-button price-calc-entry" title="售价计算" type="button" aria-label={`${product.name || product.sku} 售价计算`} onClick={() => setCalculatorProduct(product)}><Calculator size={14} /></button>
             <button className="icon-button" title={product.status === 'draft' ? '继续编辑草稿' : '编辑产品'} type="button" onClick={() => openEdit(product)}><Edit3 size={14} /></button>
             <button className="icon-button" title="复制产品为新建产品" type="button" onClick={() => openCopy(product)}><Copy size={14} /></button>
             
@@ -356,7 +360,8 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
     </section>
     <ProductEditor key={editing?.id ?? 'new'} open={editorOpen} saving={saving} product={editing} copyMode={copying} packagingPresets={packagingPresets} productCategories={categoryOptions.named} supplierOptions={quoteOptions.suppliers} variantOptions={quoteOptions.variants} onManagePresets={onManagePresets} onClose={() => { setEditorOpen(false); setEditing(undefined); setCopying(false); }} onSave={save} />
     <ProductParametersModal open={Boolean(parametersProduct)} productName={parametersProduct?.name} parameters={parametersProduct?.parameters} onClose={() => setParametersProduct(undefined)} />
-    <ProductDetailModal open={Boolean(detailProduct)} product={detailProduct} showSensitive={showSensitive} pendingImages={detailProduct ? pendingImagesFor(detailProduct) : []} onClose={closeDetail} onOpenImages={(product) => { closeDetail(); setImagesProductId(String(product.id)); }} onUpdateSaleStatus={onUpdateSaleStatus} onDelete={onDelete} />
+    <ProductDetailModal open={Boolean(detailProduct)} product={detailProduct} showSensitive={showSensitive} pendingImages={detailProduct ? pendingImagesFor(detailProduct) : []} onClose={closeDetail} onOpenImages={(product) => { closeDetail(); setImagesProductId(String(product.id)); }} onOpenCalculator={(product) => { closeDetail(); setCalculatorProduct(product); }} onUpdateSaleStatus={onUpdateSaleStatus} onDelete={onDelete} />
+    <PriceCalculatorModal open={Boolean(calculatorProduct)} product={calculatorProduct} onClose={() => setCalculatorProduct(undefined)} />
     <ProductImagesModal open={Boolean(imagesProduct)} productName={imagesProduct?.name} images={imagesProduct?.images ?? []} pendingImages={imagesProduct ? pendingImagesFor(imagesProduct) : []} onRetryUploadFile={onRetryUploadFile} onClose={closeImages} />
   </div>;
 }

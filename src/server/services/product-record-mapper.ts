@@ -44,6 +44,8 @@ export function mapProduct(row: Record<string, unknown> | undefined) {
     colors: Array.isArray(row.colors) ? row.colors : [],
     batteryPlugs: Array.isArray(row.batteryPlugs) ? row.batteryPlugs : [],
     accessories: String(row.accessories),
+    /** 产品专有的「配件与价格」（售价计算器用）；客户版口径会剥掉，见 toCatalogProduct。 */
+    accessoryPrices: Array.isArray(row.accessoryPrices) ? row.accessoryPrices : [],
     remark: String(row.remark),
     status: String(row.status ?? 'active'),
     packaging: Array.isArray(row.packaging) ? row.packaging : [],

@@ -5,6 +5,7 @@ import {
   type PackagingPreset,
   type PackagingSourceRow,
 } from '../../shared/packaging-presets.js';
+import type { AccessoryPrice } from '../../shared/accessory-prices.js';
 import { EMPTY_COMPANY_PROFILE, SettingsRepository } from '../db/settings-repository.js';
 import { FileStore } from '../files/file-store.js';
 import type { ContractTemplate } from '../../shared/contract.js';
@@ -25,6 +26,15 @@ export class SettingsService {
 
   savePackagingPresets(value: unknown): PackagingPreset[] {
     return this.settings.savePackagingPresets(value);
+  }
+
+  /** 全店共用的「配件与价格」清单（售价计算器取数）。 */
+  getAccessoryPrices(): AccessoryPrice[] {
+    return this.settings.readAccessoryPrices();
+  }
+
+  saveAccessoryPrices(value: unknown): AccessoryPrice[] {
+    return this.settings.saveAccessoryPrices(value);
   }
 
   /** 按现有产品包装记录重算并覆盖，供设置页「从产品库重新统计」使用。 */

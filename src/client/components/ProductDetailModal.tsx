@@ -1,4 +1,4 @@
-import { Check, Copy, Download, ExternalLink, FileText, Image, Package, Play, Video } from 'lucide-react';
+import { Calculator, Check, Copy, Download, ExternalLink, FileText, Image, Package, Play, Video } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import Modal from './Modal';
@@ -27,6 +27,8 @@ export interface ProductDetailModalProps {
   pendingImages?: UploadFileSnapshot[];
   onClose: () => void;
   onOpenImages: (product: ProductRecord) => void;
+  /** 售价计算入口（看详情时顺手算）；未传则不显示按钮。 */
+  onOpenCalculator?: (product: ProductRecord) => void;
   /** 停售 / 恢复在售；未传则不显示按钮。 */
   onUpdateSaleStatus?: (product: ProductRecord, next: 'active' | 'discontinued') => void;
   /** 删除产品入口从列表挪到了这里，属于不可逆操作，未传则不显示。 */
@@ -56,7 +58,7 @@ function DetailItem({ label, children, fullWidth = false }: { label: string; chi
   );
 }
 
-export default function ProductDetailModal({ open, product, showSensitive = false, pendingImages = [], onClose, onOpenImages, onUpdateSaleStatus, onDelete }: ProductDetailModalProps) {
+export default function ProductDetailModal({ open, product, showSensitive = false, pendingImages = [], onClose, onOpenImages, onOpenCalculator, onUpdateSaleStatus, onDelete }: ProductDetailModalProps) {
   const [copied, setCopied] = useState(false);
   const [copiedPackagingId, setCopiedPackagingId] = useState<string>();
   const [packagingImages, setPackagingImages] = useState<{ name: string; images: ProductRecord['packaging'][number]['images'] }>();
@@ -86,6 +88,7 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
   // 停售与删除只放在详情弹窗里：列表点开的概率高，误操作的机会也多。
   const detailTitle = product.name || product.sku || '未命名产品';
   const footer = <>
+    {onOpenCalculator && <button className="button button-secondary" type="button" title="算这款产品的成本与建议售价" onClick={() => onOpenCalculator(product)}><Calculator size={14} />售价计算</button>}
     {product.status === 'discontinued'
       ? onUpdateSaleStatus && <button className="button button-primary" type="button" onClick={() => { onUpdateSaleStatus(product, 'active'); onClose(); }}>恢复在售</button>
       : onUpdateSaleStatus && product.status !== 'draft' && <button className="button button-secondary" type="button" title="停售后不再出现在新建报价与销售开单的产品选择里" onClick={() => { if (window.confirm(`确定把「${detailTitle}」标为停售吗？资料与图片都保留，随时可以恢复在售。`)) { onUpdateSaleStatus(product, 'discontinued'); onClose(); } }}>停售</button>}

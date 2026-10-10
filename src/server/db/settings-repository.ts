@@ -5,6 +5,10 @@ import {
   type PackagingPreset,
 } from '../../shared/packaging-presets.js';
 import {
+  normalizeAccessoryPrices,
+  type AccessoryPrice,
+} from '../../shared/accessory-prices.js';
+import {
   cloneDefaultContractTemplate,
   normalizeContractTemplate,
   type ContractTemplate,
@@ -15,6 +19,7 @@ const CONTRACT_TEMPLATE_KEY = 'contract_template';
 const AUTO_BACKUP_SETTINGS_KEY = 'auto_backup_settings';
 const TUNNEL_URL_KEY = 'tunnel_url';
 const PACKAGING_PRESETS_KEY = 'packaging_presets';
+const ACCESSORY_PRICES_KEY = 'accessory_prices';
 
 export interface AutoBackupSettingsRecord {
   /** 自定义备份目录；空字符串 = 默认目录（数据目录/backups）。 */
@@ -161,6 +166,28 @@ export class SettingsRepository {
       )
       .run(PACKAGING_PRESETS_KEY, JSON.stringify(presets), new Date().toISOString());
     return presets;
+  }
+
+  /** 全店共用的「配件与价格」清单（售价计算器取数）；不做自动播种，空就是空。 */
+  readAccessoryPrices(): AccessoryPrice[] {
+    const row = this.database.prepare('SELECT value FROM settings WHERE key = ?').get(ACCESSORY_PRICES_KEY) as { value?: string } | undefined;
+    if (!row?.value) return [];
+    try {
+      return normalizeAccessoryPrices(JSON.parse(row.value));
+    } catch {
+      return [];
+    }
+  }
+
+  saveAccessoryPrices(value: unknown): AccessoryPrice[] {
+    const items = normalizeAccessoryPrices(value);
+    this.database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(ACCESSORY_PRICES_KEY, JSON.stringify(items), new Date().toISOString());
+    return items;
   }
 }
 

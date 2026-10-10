@@ -3,6 +3,8 @@ import type { WorkbenchEnvironment } from '../shared/environment';
 import { calculateOrderAmountCents } from '../shared/order-prices';
 import { normalizeProductImageCategory } from '../shared/product-image-categories';
 import type { CatalogDensity } from '../shared/product-catalog';
+import type { AccessoryPrice } from '../shared/accessory-prices';
+import type { PricePlanItemInput } from '../shared/price-calculator';
 import { normalizeProductStatus } from '../shared/product-status';
 import { mapStoredPurchaseQuotes, type ProductPurchaseQuote } from '../shared/product-purchase-quotes';
 import type { PackagingPreset } from '../shared/packaging-presets';
@@ -178,6 +180,7 @@ export interface ProductApiRecord {
   batteryPlugs?: string[];
   packaging?: Array<Record<string, unknown>>;
   purchaseQuotes?: unknown[];
+  accessoryPrices?: unknown[];
   remark?: string;
   accessories?: string;
   images?: Array<Record<string, unknown>>;
@@ -457,7 +460,11 @@ export function mapProductRecord(row: ProductApiRecord): ProductRecord {
   const rawImages = row.images ?? (row as ProductApiRecord & { images_json?: Array<Record<string, unknown>> }).images_json ?? [];
   const packaging = (row.packaging ?? []).map((item) => asPackaging(item));
   const rawAttachments = row.attachments ?? [];
-  return { ...mapProduct(row), category: row.category ?? '', purchasePrice: purchasePrice == null ? '' : String(purchasePrice), supplier: row.supplier ?? '', parameters: typeof row.parameters === 'string' ? row.parameters : '', status: normalizeProductStatus(row.status), colors: row.colors ?? [], batteryPlugs: row.batteryPlugs ?? [], images: rawImages.map((image) => ({ id: String(image.id ?? image.relativePath ?? image.relative_path), name: String(image.originalName ?? image.original_name ?? '产品图片'), url: `/files/${String(image.relativePath ?? image.relative_path ?? '')}`, category: normalizeProductImageCategory(image.category), note: String(image.note ?? '') })), videos: (row.videos ?? []).map((raw) => { const item = raw as Record<string, unknown>; const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id ?? relativePath), name: String(item.originalName ?? item.original_name ?? '产品视频'), size: Number(item.size ?? item.size_bytes ?? 0), url: `/files/${relativePath}` }; }), attachments: rawAttachments.map((raw) => { const item = raw as Record<string, unknown>; const category = String(item.category ?? 'other'); const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id), category: (['manual', 'packaging-design', 'label-dieline', 'other'].includes(category) ? category : 'other') as ProductAttachmentCategory, name: String(item.originalName ?? item.original_name ?? '产品附件'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mimeType ?? item.mime_type ?? ''), size: Number(item.size ?? item.size_bytes ?? 0), createdAt: String(item.createdAt ?? item.created_at ?? '') }; }), accessories: row.accessories ?? '', remark: row.remark ?? '', purchaseQuotes: mapStoredPurchaseQuotes(row.purchaseQuotes),
+  const accessoryPrices = (Array.isArray(row.accessoryPrices) ? row.accessoryPrices : []).map((raw) => {
+    const item = raw as Record<string, unknown>;
+    return { id: String(item.id ?? ''), name: String(item.name ?? ''), price: String(item.price ?? '') };
+  });
+  return { ...mapProduct(row), category: row.category ?? '', purchasePrice: purchasePrice == null ? '' : String(purchasePrice), supplier: row.supplier ?? '', parameters: typeof row.parameters === 'string' ? row.parameters : '', status: normalizeProductStatus(row.status), colors: row.colors ?? [], batteryPlugs: row.batteryPlugs ?? [], images: rawImages.map((image) => ({ id: String(image.id ?? image.relativePath ?? image.relative_path), name: String(image.originalName ?? image.original_name ?? '产品图片'), url: `/files/${String(image.relativePath ?? image.relative_path ?? '')}`, category: normalizeProductImageCategory(image.category), note: String(image.note ?? '') })), videos: (row.videos ?? []).map((raw) => { const item = raw as Record<string, unknown>; const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id ?? relativePath), name: String(item.originalName ?? item.original_name ?? '产品视频'), size: Number(item.size ?? item.size_bytes ?? 0), url: `/files/${relativePath}` }; }), attachments: rawAttachments.map((raw) => { const item = raw as Record<string, unknown>; const category = String(item.category ?? 'other'); const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id), category: (['manual', 'packaging-design', 'label-dieline', 'other'].includes(category) ? category : 'other') as ProductAttachmentCategory, name: String(item.originalName ?? item.original_name ?? '产品附件'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mimeType ?? item.mime_type ?? ''), size: Number(item.size ?? item.size_bytes ?? 0), createdAt: String(item.createdAt ?? item.created_at ?? '') }; }), accessories: row.accessories ?? '', accessoryPrices, remark: row.remark ?? '', purchaseQuotes: mapStoredPurchaseQuotes(row.purchaseQuotes),
     packaging: packaging.length ? packaging : [asPackaging(undefined)], createdAt: String(row.createdAt ?? row.created_at ?? ''), updatedAt: String(row.updatedAt ?? row.updated_at ?? '') };
 }
 
@@ -800,10 +807,44 @@ function packagingToInput(row: PackagingOption) {
   const imageIds = (row.images ?? []).filter((image) => !image.file && /^\d+$/.test(image.id)).map((image) => Number(image.id));
   return { id, imageIds, name: row.name.trim(), innerSize: row.innerSize.trim(), innerWeight: Math.max(0, Number(row.innerWeight || 0)), outerSize: row.outerSize.trim(), outerWeight: Math.max(0, Number(row.outerWeight || 0)), packCount: Math.max(1, Math.trunc(row.packSize)), purchasePrice: row.purchasePrice.trim() ? Math.max(0, Number(row.purchasePrice)) : null, outerLength, outerWidth, outerHeight };
 }
-export function productToInput(product: ProductRecord & { addToCatalogId?: number }) { return { name: product.name.trim(), sku: product.sku.trim(), specification: product.specification.trim(), parameters: product.parameters ?? '', category: product.category, purchasePrice: Number(product.purchasePrice || 0), supplier: product.supplier, colors: product.colors, batteryPlugs: product.batteryPlugs, accessories: product.accessories, remark: product.remark, status: normalizeProductStatus(product.status), purchaseQuotes: product.purchaseQuotes, packaging: product.packaging.map(packagingToInput), ...(product.addToCatalogId ? { addToCatalogId: product.addToCatalogId } : {}) }; }
+export function productToInput(product: ProductRecord & { addToCatalogId?: number }) { return { name: product.name.trim(), sku: product.sku.trim(), specification: product.specification.trim(), parameters: product.parameters ?? '', category: product.category, purchasePrice: Number(product.purchasePrice || 0), supplier: product.supplier, colors: product.colors, batteryPlugs: product.batteryPlugs, accessories: product.accessories, accessoryPrices: (product.accessoryPrices ?? []).map((item) => ({ id: item.id, name: item.name.trim(), price: Number(item.price) || 0 })), remark: product.remark, status: normalizeProductStatus(product.status), purchaseQuotes: product.purchaseQuotes, packaging: product.packaging.map(packagingToInput), ...(product.addToCatalogId ? { addToCatalogId: product.addToCatalogId } : {}) }; }
 export function saveProduct(product: ProductRecord) { return request<ProductApiRecord>('/api/products', { method: 'POST', body: JSON.stringify(productToInput(product)) }); }
 export function updateProduct(id: string, product: ProductRecord) { return request<ProductApiRecord>(`/api/products/${id}`, { method: 'PUT', body: JSON.stringify(productToInput(product)) }); }
 export function deleteProduct(id: string) { return request(`/api/products/${id}`, { method: 'DELETE' }); }
+
+/** 全店共用的「配件与价格」清单（售价计算器取数；设置页维护）。 */
+export function getAccessoryPrices(): Promise<AccessoryPrice[]> {
+  return request<{ items: AccessoryPrice[] }>('/api/settings/accessory-prices').then((result) => result.items);
+}
+
+export function saveAccessoryPrices(items: AccessoryPrice[]): Promise<AccessoryPrice[]> {
+  return request<{ items: AccessoryPrice[] }>('/api/settings/accessory-prices', { method: 'PUT', body: JSON.stringify({ items }) }).then((result) => result.items);
+}
+
+/** 算价方案：每次保存新增一条历史，列表按时间倒序。 */
+export interface PricePlanRecord {
+  id: number;
+  productId: number;
+  name: string;
+  markupPercent: number;
+  totalCost: number;
+  salePrice: number;
+  targetPrice: number | null;
+  createdAt: string;
+  items: Array<{ id: number; name: string; qty: number; unitPrice: number; amount: number }>;
+}
+
+export function listPricePlans(productId: string): Promise<PricePlanRecord[]> {
+  return request<{ items: PricePlanRecord[] }>(`/api/products/${productId}/price-plans`).then((result) => result.items);
+}
+
+export function savePricePlan(productId: string, input: { name: string; markupPercent: number; targetPrice: number | null; items: PricePlanItemInput[] }): Promise<PricePlanRecord> {
+  return request<PricePlanRecord>(`/api/products/${productId}/price-plans`, { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function deletePricePlan(productId: string, planId: number) {
+  return request<{ deleted: boolean }>(`/api/products/${productId}/price-plans/${planId}`, { method: 'DELETE' });
+}
 /** 在售 ↔ 停售。只切状态，产品资料与更新时间都不动。 */
 export function setProductStatus(id: string, status: 'active' | 'discontinued') {
   return request<ProductApiRecord>(`/api/products/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) });

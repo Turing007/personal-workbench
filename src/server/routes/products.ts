@@ -29,6 +29,14 @@ import {
 } from '../documents/product-catalog-template.js';
 import type { SettingsRepository } from '../db/settings-repository.js';
 import type { CatalogRepository } from '../db/catalog-repository.js';
+import type { PricePlanRepository } from '../db/price-plan-repository.js';
+import {
+  normalizePricePlanItems,
+  planSalePrice,
+  planTotalCost,
+  pricePlanAmount,
+  pricePlanMarkup,
+} from '../../shared/price-calculator.js';
 import {
   DEFAULT_PRODUCT_IMAGE_CATEGORY,
   MAX_PRODUCT_IMAGE_NOTE_LENGTH,
@@ -60,6 +68,8 @@ interface ProductRouteOptions {
   settingsRepository?: SettingsRepository;
   /** 编辑器「添加到产品图册」：保存产品后把 id 追加进所选图册。 */
   catalogRepository?: CatalogRepository;
+  /** 售价计算器的算价方案仓储。 */
+  pricePlanRepository?: PricePlanRepository;
 }
 
 /**
@@ -323,6 +333,8 @@ function parseProductInput(value: unknown): ProductInput {
     status,
     // 报价数组：没带就是不动（Excel 导入路径），带了就整表覆盖。
     purchaseQuotes: Array.isArray(body.purchaseQuotes) ? body.purchaseQuotes : undefined,
+    // 配件与价格同理：没带保持原样，带了整体覆盖（空数组=清空）。
+    accessoryPrices: Array.isArray(body.accessoryPrices) ? body.accessoryPrices : undefined,
     packaging: parsePackaging(body.packaging),
   };
 }
@@ -586,6 +598,59 @@ export async function registerProductRoutes(app: FastifyInstance, options: Produ
       const paths = repositories.deleteProduct(id);
       if (fileStore) await Promise.all(paths.map((path) => fileStore.deleteFile(path)));
       return sendSuccess(reply, null);
+    }, reply),
+  );
+
+  /** 售价计算器的算价方案：列表按保存时间倒序；保存每次新增一条，不覆盖历史。 */
+  const requirePricePlanRepository = (): PricePlanRepository => {
+    const repository = options.pricePlanRepository;
+    if (!repository) throw new ApiError(503, 'PRICE_PLAN_UNAVAILABLE', '算价方案存储尚未配置');
+    return repository;
+  };
+
+  app.get('/api/products/:id/price-plans', async (request: FastifyRequest<{ Params: { id: string } }>, reply) =>
+    safeRoute(() => {
+      const id = getProductId(request);
+      if (!repositories.getProduct(id)) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
+      return sendSuccess(reply, { items: requirePricePlanRepository().listForProduct(id) });
+    }, reply),
+  );
+
+  app.post('/api/products/:id/price-plans', async (request: FastifyRequest<{ Params: { id: string } }>, reply) =>
+    safeRoute(() => {
+      const id = getProductId(request);
+      if (!repositories.getProduct(id)) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
+      const body = asRecord(request.body);
+      // 合计与售价由服务端按明细重算，不信任客户端提交的结果值。
+      const items = normalizePricePlanItems(body.items);
+      if (!items.length) throw new ApiError(400, 'VALIDATION_ERROR', '至少需要一行成本明细', 'items');
+      const markupPercent = pricePlanMarkup(body.markupPercent);
+      const totalCost = planTotalCost(items);
+      const salePrice = planSalePrice(totalCost, markupPercent);
+      const targetPrice = body.targetPrice == null || body.targetPrice === ''
+        ? null
+        : pricePlanAmount(body.targetPrice);
+      const plan = requirePricePlanRepository().create({
+        productId: id,
+        name: typeof body.name === 'string' ? body.name.trim().slice(0, 40) : '',
+        markupPercent,
+        totalCost,
+        salePrice,
+        targetPrice,
+        items,
+        createdAt: new Date().toISOString(),
+      });
+      return sendSuccess(reply, plan, 201);
+    }, reply),
+  );
+
+  app.delete('/api/products/:id/price-plans/:planId', async (request: FastifyRequest<{ Params: { id: string; planId: string } }>, reply) =>
+    safeRoute(() => {
+      const id = getProductId(request);
+      if (!repositories.getProduct(id)) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
+      const planId = parseId(request.params.planId, 'planId');
+      if (!requirePricePlanRepository().delete(planId, id)) throw new ApiError(404, 'NOT_FOUND', '方案不存在');
+      return sendSuccess(reply, { deleted: true });
     }, reply),
   );
 

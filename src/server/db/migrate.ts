@@ -4,7 +4,7 @@ import { migratePackagingColumns } from './packaging.js';
 import { sortByImageLeadNumber } from '../../shared/product-image-order.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 28;
+const CURRENT_SCHEMA_VERSION = 29;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS products (
   colors_json TEXT NOT NULL DEFAULT '[]',
   battery_plugs_json TEXT NOT NULL DEFAULT '[]',
   accessories TEXT NOT NULL DEFAULT '',
+  accessory_prices TEXT NOT NULL DEFAULT '[]',
   remark TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'active',
   created_at TEXT NOT NULL,
@@ -1135,6 +1136,40 @@ function migrateVersionTwentySeven(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '27', now);
 }
 
+/** 售价计算器：产品「配件与价格」（JSON 列，同颜色/插脚存法）+ 算价方案两张表。 */
+function migrateVersionTwentyNine(database: DatabaseSync, now: string): void {
+  const columns = database.prepare('PRAGMA table_info(products)').all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === 'accessory_prices')) {
+    database.exec("ALTER TABLE products ADD COLUMN accessory_prices TEXT NOT NULL DEFAULT '[]'");
+  }
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS product_price_plans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      name TEXT NOT NULL DEFAULT '',
+      markup_percent REAL NOT NULL DEFAULT 0,
+      total_cost REAL NOT NULL DEFAULT 0,
+      sale_price REAL NOT NULL DEFAULT 0,
+      target_price REAL,
+      created_at TEXT NOT NULL
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_product_price_plans_product ON product_price_plans (product_id, created_at, id)');
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS product_price_plan_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      plan_id INTEGER NOT NULL REFERENCES product_price_plans(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      qty REAL NOT NULL DEFAULT 1,
+      unit_price REAL NOT NULL DEFAULT 0,
+      amount REAL NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+  database.exec('CREATE INDEX IF NOT EXISTS idx_product_price_plan_items_plan ON product_price_plan_items (plan_id, sort_order, id)');
+  upsertSetting(database, 'schema_version', '29', now);
+}
+
 /** 图册选品的「加入时间」：在线图册的「新品」分区靠它判断哪些是起算日之后新加的。 */
 function migrateVersionTwentyEight(database: DatabaseSync, now: string): void {
   const columns = database.prepare('PRAGMA table_info(catalog_items)').all() as Array<{ name: string }>;
@@ -1231,6 +1266,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionTwentySix(transactionDatabase, now);
     migrateVersionTwentySeven(transactionDatabase, now);
     migrateVersionTwentyEight(transactionDatabase, now);
+    migrateVersionTwentyNine(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

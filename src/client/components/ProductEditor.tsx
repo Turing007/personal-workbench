@@ -33,6 +33,8 @@ export interface ProductRecord extends CustomerProduct {
   /** 产品视频：已保存的带 url；本次新选的带 file，保存后进后台上传队列。 */
   videos?: ProductVideo[];
   accessories: string;
+  /** 产品专有的「配件与价格」（名称+单价，售价计算器取数）；价格用字符串装输入框原值。 */
+  accessoryPrices?: Array<{ id: string; name: string; price: string }>;
   remark: string;
   packaging: PackagingOption[];
   /** 多档采购报价；默认档决定列表价格与客户产品成本价。 */
@@ -98,7 +100,7 @@ function withFirstQuoteRow(record: ProductRecord): ProductRecord {
 }
 
 function blankProduct(): ProductRecord {
-  return { id: `product-${Date.now()}`, name: '', sku: '', specification: '', packCount: 1, parameters: '', packaging: [blankPackagingRow()], remark: '', category: '', purchasePrice: '', supplier: '', purchaseQuotes: [], colors: [], batteryPlugs: [], images: [], videos: [], accessories: '', attachments: [] };
+  return { id: `product-${Date.now()}`, name: '', sku: '', specification: '', packCount: 1, parameters: '', packaging: [blankPackagingRow()], remark: '', category: '', purchasePrice: '', supplier: '', purchaseQuotes: [], colors: [], batteryPlugs: [], images: [], videos: [], accessories: '', accessoryPrices: [], attachments: [] };
 }
 
 const attachmentCategories: Array<{ value: ProductAttachmentCategory; label: string }> = [
@@ -181,6 +183,30 @@ function ProductVideoSection({ value, onChange }: { value: ProductVideo[]; onCha
       }}
     />
     <VideoPlayerModal open={Boolean(playing)} title={playing?.name} src={playing?.url} onClose={() => setPlaying(undefined)} />
+  </section>;
+}
+
+/** 产品专有的「配件与价格」：售价计算器里选到即自动带出名称与单价。 */
+function AccessoryPricesEditor({ value, onChange }: { value: NonNullable<ProductRecord['accessoryPrices']>; onChange: (next: NonNullable<ProductRecord['accessoryPrices']>) => void }) {
+  const update = (id: string, patch: Partial<{ name: string; price: string }>) => {
+    onChange(value.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  };
+  return <section className="section-box">
+    <div className="section-box-header"><span className="section-box-title">配件与价格</span>
+      <button
+        type="button"
+        className="button button-secondary button-sm"
+        onClick={() => onChange([...value, { id: `acc-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: '', price: '' }])}
+      ><Plus size={14} />添加配件价格</button>
+    </div>
+    <span className="label-hint">记名称和单价（元），电池、充电器也写这里；售价计算器里选到即自动带价。空名的行保存时会丢弃。</span>
+    {value.length ? <div className="accessory-price-list">{value.map((item, index) => (
+      <div className="accessory-price-row" key={item.id || index}>
+        <input className="input" aria-label={`配件${index + 1}名称`} value={item.name} placeholder="如：21V 2.0Ah 电池" onChange={(event) => update(item.id, { name: event.target.value })} />
+        <input className="input" type="number" min={0} step="0.01" aria-label={`配件${index + 1}价格`} value={item.price} placeholder="元" onChange={(event) => update(item.id, { price: event.target.value })} />
+        <button className="icon-button danger" type="button" title="移除这条配件价格" aria-label={`移除第 ${index + 1} 条配件价格`} onClick={() => onChange(value.filter((entry) => entry.id !== item.id))}><Trash2 size={14} /></button>
+      </div>
+    ))}</div> : <div className="empty-state">暂无配件价格。</div>}
   </section>;
 }
 
@@ -335,6 +361,7 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
         <label className="label">备注<textarea className="textarea" rows={6} value={draft.remark ?? ''} onChange={(event) => set('remark', event.target.value)} /></label>
       </div>
       <PackagingTable collapsible value={draft.packaging} onChange={(packaging: PackagingOption[]) => set('packaging', packaging)} presets={packagingPresets} onManagePresets={onManagePresets} />
+      <AccessoryPricesEditor value={draft.accessoryPrices ?? []} onChange={(accessoryPrices) => set('accessoryPrices', accessoryPrices)} />
       <ImagePasteUpload label="产品图片与资料图" value={draft.images} onChange={(images) => set('images', images)} multiple showNotes sortable compact selectable categories={PRODUCT_IMAGE_CATEGORY_OPTIONS} />
       <ProductVideoSection value={draft.videos ?? []} onChange={(videos) => set('videos', videos)} />
       <ProductAttachments value={draft.attachments ?? []} onChange={(attachments) => set('attachments', attachments)} />

@@ -3,6 +3,7 @@ import { networkInterfaces } from 'node:os';
 import { FileStoreError } from '../files/file-store.js';
 import { normalizeContractTemplate } from '../../shared/contract.js';
 import { PACKAGING_PRESET_LIMIT } from '../../shared/packaging-presets.js';
+import { ACCESSORY_PRICE_LIST_LIMIT } from '../../shared/accessory-prices.js';
 import { config } from '../config.js';
 import type { CompanyProfileInput, SettingsService } from '../services/settings-service.js';
 import {
@@ -156,6 +157,21 @@ export async function registerSettingsRoutes(app: FastifyInstance, options: Sett
 
   app.post('/api/settings/packaging-presets/reseed', async (_request, reply) =>
     safeRoute(() => sendSuccess(reply, { items: options.service.reseedPackagingPresets() }), reply),
+  );
+
+  app.get('/api/settings/accessory-prices', async (_request, reply) =>
+    safeRoute(() => sendSuccess(reply, { items: options.service.getAccessoryPrices() }), reply),
+  );
+
+  app.put('/api/settings/accessory-prices', async (request, reply) =>
+    safeRoute(() => {
+      const body = asRecord(request.body);
+      if (!Array.isArray(body.items)) throw new ApiError(400, 'VALIDATION_ERROR', '配件价格数据格式不正确', 'items');
+      if (body.items.length > ACCESSORY_PRICE_LIST_LIMIT) {
+        throw new ApiError(400, 'ACCESSORY_LIMIT', `配件价格最多 ${ACCESSORY_PRICE_LIST_LIMIT} 条，请先删除再添加`, 'items');
+      }
+      return sendSuccess(reply, { items: options.service.saveAccessoryPrices(body.items) });
+    }, reply),
   );
 
   app.post('/api/settings/company-profile/logo', async (request, reply) =>

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { withTransaction } from './connection.js';
 import { mapPackagingRecord, normalizePackagingItem, type PackagingInputLike } from './packaging.js';
+import { normalizeAccessoryPrices } from '../../shared/accessory-prices.js';
 import { OrderNumberService } from '../services/order-number-service.js';
 import { autoPack, type PackedBox } from '../../shared/packing.js';
 import { calculateOutstandingCents, deriveFinancePaymentStatus } from '../../shared/finance.js';
@@ -43,6 +44,8 @@ export interface ProductInput {
   status?: ProductStatus;
   /** 多档采购报价；传了就整表覆盖，没传（如 Excel 导入）保持原样。 */
   purchaseQuotes?: unknown[];
+  /** 产品专有的「配件与价格」（售价计算器取数）；传了就整体覆盖，没传保持原样。 */
+  accessoryPrices?: unknown[];
   packaging?: PackagingInput[];
 }
 
@@ -264,6 +267,7 @@ export class DatabaseRepositories {
       ...row,
       colors: JSON.parse(String(row.colors_json)),
       batteryPlugs: JSON.parse(String(row.battery_plugs_json)),
+      accessoryPrices: normalizeAccessoryPrices(JSON.parse(String(row.accessory_prices ?? '[]'))),
       packaging: JSON.parse(String(row.packaging_json)).map((item: PackagingInputLike) => mapPackagingRecord(item)),
       purchaseQuotes: mapStoredPurchaseQuotes(JSON.parse(String(row.purchase_quotes_json ?? '[]'))),
       images: JSON.parse(String(row.images_json)),
@@ -291,6 +295,8 @@ export class DatabaseRepositories {
     // 报价数组是唯一事实：给了就用默认档的供应商与价格回写镜像列，没给（Excel 导入等老路径）沿用手上的值。
     const quotesProvided = Array.isArray(input.purchaseQuotes);
     const quotes = quotesProvided ? normalizePurchaseQuotes(input.purchaseQuotes) : [];
+    const accessoryPricesProvided = Array.isArray(input.accessoryPrices);
+    const accessoryPrices = accessoryPricesProvided ? normalizeAccessoryPrices(input.accessoryPrices) : [];
     const mirror = quotesProvided ? purchaseQuoteMirror(quotes) : { supplier: input.supplier ?? '', purchasePrice: input.purchasePrice == null ? '' : String(input.purchasePrice) };
     const mirrorPrice = mirror.purchasePrice.trim() === '' ? null : Number(mirror.purchasePrice);
     const mirrorSupplier = mirror.supplier;
@@ -308,7 +314,8 @@ export class DatabaseRepositories {
         database
           .prepare(
             `UPDATE products SET name = ?, specification = ?, category = ?, purchase_price = ?,
-              parameters = ?, supplier = ?, colors_json = ?, battery_plugs_json = ?, accessories = ?, remark = ?, status = ?, updated_at = ?
+              parameters = ?, supplier = ?, colors_json = ?, battery_plugs_json = ?, accessories = ?, remark = ?, status = ?,
+              accessory_prices = COALESCE(?, accessory_prices), updated_at = ?
              WHERE id = ?`,
           )
           .run(
@@ -323,6 +330,7 @@ export class DatabaseRepositories {
             input.accessories ?? '',
             input.remark ?? '',
             input.status ?? 'active',
+            accessoryPricesProvided ? json(accessoryPrices) : null,
             timestamp,
             id,
           );
@@ -333,8 +341,8 @@ export class DatabaseRepositories {
           database
             .prepare(
               `INSERT INTO products
-                (name, sku, specification, parameters, category, purchase_price, supplier, colors_json, battery_plugs_json, accessories, remark, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                (name, sku, specification, parameters, category, purchase_price, supplier, colors_json, battery_plugs_json, accessories, accessory_prices, remark, status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
             .run(
               input.name.trim(),
@@ -347,6 +355,7 @@ export class DatabaseRepositories {
               json(input.colors),
               json(input.batteryPlugs),
               input.accessories ?? '',
+              json(accessoryPrices),
               input.remark ?? '',
               input.status ?? 'active',
               timestamp,

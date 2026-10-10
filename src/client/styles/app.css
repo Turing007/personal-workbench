@@ -4842,6 +4842,63 @@ select {
 .auth-filings a { color: inherit; text-decoration: none; }
 .auth-filings a:hover { color: var(--color-text-secondary); }
 
+/* 售价计算入口：产品卡片/行/详情里的计算器小图标，用品牌色让它更醒目。 */
+.price-calc-entry { color: var(--color-accent); }
+
+/* 产品编辑器与设置页：配件与价格（名称+单价）小表格。 */
+.accessory-price-list { display: grid; gap: 6px; }
+.accessory-price-row { display: grid; grid-template-columns: minmax(0, 1fr) 130px 32px; gap: 8px; align-items: center; }
+
+/* 售价计算弹窗：左计算器 / 右方案列表，手机端上下堆叠。 */
+.price-calc { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 18px; }
+.price-calc-left { display: grid; gap: 6px; align-content: start; }
+.price-calc-head, .price-calc-row { display: grid; grid-template-columns: minmax(0, 1fr) 72px 100px 84px 32px; gap: 8px; align-items: center; }
+.price-calc-head { font-size: 12px; color: var(--color-text-muted); padding: 0 2px; }
+.price-calc-name { display: flex; gap: 4px; align-items: center; }
+.price-calc-name .input { min-width: 0; }
+.price-calc-amount { font-size: 13px; text-align: right; }
+.price-calc-row-block { display: grid; gap: 4px; }
+.price-calc-picker { display: grid; gap: 4px; padding: 8px 10px; border: 1px dashed var(--color-border-subtle); border-radius: 8px; background: #f7f9fa; }
+.price-calc-picker-label { font-size: 11px; color: var(--color-text-muted); margin-top: 2px; }
+.price-calc-picker-item { display: flex; justify-content: space-between; gap: 10px; text-align: left; background: #fff; border: 1px solid var(--color-border-subtle); border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.price-calc-picker-item:hover { border-color: var(--color-accent); }
+.price-calc-picker-item em { font-style: normal; color: #2f6f6a; font-weight: 600; white-space: nowrap; }
+.price-calc-picker-empty { font-size: 12px; color: var(--color-text-muted); }
+.price-calc-add { justify-self: start; margin-top: 2px; }
+.price-calc-summary { margin-top: 8px; border-top: 1px solid var(--color-divider); padding-top: 10px; display: grid; gap: 6px; font-size: 13px; }
+.price-calc-summary-line { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.price-calc-markup { width: 64px; display: inline-block; vertical-align: middle; }
+.price-calc-target { width: 110px; display: inline-block; vertical-align: middle; }
+.price-calc-save { margin-top: 10px; display: flex; gap: 8px; }
+.price-calc-save .input { flex: 1; }
+.price-calc-message { margin: 0; font-size: 12px; color: #0f766e; }
+.price-calc-right { border-left: 1px solid var(--color-divider); padding-left: 16px; display: grid; gap: 8px; align-content: start; }
+.price-calc-plans-head { font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+.price-calc-plans-head em { font-style: normal; font-size: 11px; color: var(--color-text-muted); }
+.price-calc-plans { display: grid; gap: 6px; }
+.price-calc-plan { display: flex; justify-content: space-between; gap: 8px; align-items: center; border: 1px solid var(--color-border-subtle); border-radius: 8px; padding: 7px 9px; }
+.price-calc-plan-main { display: grid; gap: 2px; min-width: 0; }
+.price-calc-plan-main strong { font-size: 13px; }
+.price-calc-plan-main span { font-size: 11.5px; color: var(--color-text-muted); }
+.price-calc-plan-actions { display: flex; gap: 4px; align-items: center; flex: none; }
+@media (max-width: 860px) {
+  .price-calc { grid-template-columns: 1fr; }
+  .price-calc-right { border-left: 0; padding-left: 0; border-top: 1px solid var(--color-divider); padding-top: 12px; }
+  .price-calc-head { display: none; }
+  /* 名称占整行，数量/单价/金额排第二行：窄屏也能看清名称与数字。 */
+  .price-calc-row {
+    grid-template-columns: 70px minmax(0, 1fr) auto 30px;
+    grid-template-areas: 'name name name del' 'qty unit amount del';
+    gap: 6px 8px;
+  }
+  .price-calc-name { grid-area: name; }
+  .price-calc-row > input:nth-child(2) { grid-area: qty; }
+  .price-calc-row > input:nth-child(3) { grid-area: unit; }
+  .price-calc-amount { grid-area: amount; }
+  .price-calc-row > button { grid-area: del; }
+  .accessory-price-row { grid-template-columns: minmax(0, 1fr) 110px 32px; }
+}
+
 /* ===== 侧栏账号区 ===== */
 .sidebar-user {
   display: flex;
