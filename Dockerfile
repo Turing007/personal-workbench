@@ -24,6 +24,18 @@ ENV NODE_ENV=production \
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
+# PDF 导出（产品图册 / 报价单 / 销售单 / 购销合同）全部由 Playwright 渲染，镜像必须自带浏览器。
+# 几个必须踩的点：
+#  1) playwright 包不再随 npm 安装自动下载浏览器，必须显式 install；
+#  2) 运行时镜像里没有 .bin/playwright，只能直接 node 调 cli.js；
+#  3) --with-deps 顺带补齐 Chromium 依赖的系统库（slim 基座没有）；
+#  4) apt 默认的 deb.debian.org 从北京实测只有 ~17KB/s、阿里云公网镜像当天也只有 ~25KB/s，
+#     换清华 TUNA（实测 ~76MB/s，且公网可达，不像 mirrors.cloud.aliyuncs.com 只限 ECS 内网）；
+#  5) 中文字体单独装：图册与单据模板全是中文，缺字体 Chromium 渲染出来是方块。
+RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
+  && node node_modules/playwright/cli.js install --with-deps chromium \
+  && apt-get install -y --no-install-recommends fonts-noto-cjk \
+  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/dist ./dist
 VOLUME /data
 EXPOSE 52341
