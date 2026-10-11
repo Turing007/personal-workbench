@@ -79,9 +79,6 @@ export interface ProductEditorProps {
   saving?: boolean;
   /** 现有产品的分类，作为分类输入框的候选（仍可自由填写新分类）。 */
   productCategories?: string[];
-  /** 库里已用过的供应商与报价名目，作为采购报价表格的候选。 */
-  supplierOptions?: string[];
-  variantOptions?: string[];
   /** 点「管理预设 ›」时跳到设置页维护，未传则不显示入口。 */
   onManagePresets?: () => void;
   onClose: () => void;
@@ -249,13 +246,22 @@ function CategoryAccessoryPricesEditor({ category }: { category: string }) {
     </div>
     {key ? <>
       {loading && <div className="table-state">正在加载...</div>}
-      {!loading && !!items.length && <div className="accessory-price-list">{items.map((item, index) => (
-        <div className="accessory-price-row" key={item.id || index}>
-          <input className="input" aria-label={`类目配件${index + 1}名称`} value={item.name} placeholder="如：9 件套筒" onChange={(event) => update(item.id, { name: event.target.value })} />
-          <input className="input" type="number" min={0} step="0.01" aria-label={`类目配件${index + 1}价格`} value={item.price} placeholder="元" onChange={(event) => update(item.id, { price: Number(event.target.value) || 0 })} />
-          <button className="icon-button danger" type="button" title="移除这条配件价格" aria-label={`移除第 ${index + 1} 条类目配件`} onClick={() => { setItems((current) => current.filter((entry) => entry.id !== item.id)); setDirty(true); }}><Trash2 size={14} /></button>
-        </div>
-      ))}</div>}
+      {!loading && !!items.length && <div className="packaging-table-shell">
+        <table className="packaging-table accessory-prices-table">
+          <thead><tr>{['名称', '价格', ''].map((title, index) => <th key={index}>{title}</th>)}</tr></thead>
+          <tbody>{items.map((item, index) => <tr key={item.id || index}>
+            <td className="packaging-table-col-size">
+              <input className="input packaging-table-input" aria-label={`类目配件${index + 1}名称`} value={item.name} placeholder="如：9 件套筒" onChange={(event) => update(item.id, { name: event.target.value })} />
+            </td>
+            <td className="packaging-table-col-price">
+              <input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label={`类目配件${index + 1}价格`} value={item.price} placeholder="元" onChange={(event) => update(item.id, { price: Number(event.target.value) || 0 })} />
+            </td>
+            <td className="packaging-table-col-actions">
+              <button className="icon-button danger" type="button" title="移除这条配件价格" aria-label={`移除第 ${index + 1} 条类目配件`} onClick={() => { setItems((current) => current.filter((entry) => entry.id !== item.id)); setDirty(true); }}><Trash2 size={14} /></button>
+            </td>
+          </tr>)}</tbody>
+        </table>
+      </div>}
       {!loading && !items.length && <div className="empty-state">「{key}」还没有配件价格，点右上角「添加」。</div>}
       {!loading && <div className="packaging-preset-form-footer">
         <span className={dirty ? 'packaging-preset-dirty' : 'packaging-preset-saved'} role="status">{dirty ? '有未保存的修改' : `${items.length} 条`}</span>
@@ -333,7 +339,7 @@ function ProductAttachments({ value, onChange }: { value: ProductAttachment[]; o
   </section>;
 }
 
-export default function ProductEditor({ open, product, copyMode = false, showParameters: showParametersProp, packagingPresets, saving = false, productCategories = [], supplierOptions = [], variantOptions = [], onManagePresets, onClose, onSave }: ProductEditorProps) {
+export default function ProductEditor({ open, product, copyMode = false, showParameters: showParametersProp, packagingPresets, saving = false, productCategories = [], onManagePresets, onClose, onSave }: ProductEditorProps) {
   const [draft, setDraft] = useState<ProductRecord>(() => withFirstQuoteRow(product ?? blankProduct()));
   const [customColor, setCustomColor] = useState('');
   const [customPlug, setCustomPlug] = useState('');
@@ -413,7 +419,7 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
       </div>
       {/* 采购报价与配件价格并排：左报价、右配件价格。 */}
       <div className="product-editor-quote-row">
-        <PurchaseQuotesTable value={purchaseQuotes} onChange={(next) => set('purchaseQuotes', next)} supplierOptions={supplierOptions} variantOptions={variantOptions} />
+        <PurchaseQuotesTable value={purchaseQuotes} onChange={(next) => set('purchaseQuotes', next)} />
         <CategoryAccessoryPricesEditor category={draft.category ?? ''} />
       </div>
       <div className="form-grid product-editor-text-fields">

@@ -153,23 +153,6 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
     const named = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([category]) => category);
     return { named, hasUncategorized: uncategorized > 0 };
   }, [products]);
-  // 采购报价的候选：库里用过的供应商与名目，按出现次数排。
-  const quoteOptions = useMemo(() => {
-    const suppliers = new Map<string, number>();
-    const variants = new Map<string, number>();
-    const bump = (map: Map<string, number>, key: string) => {
-      if (key) map.set(key, (map.get(key) ?? 0) + 1);
-    };
-    for (const product of products) {
-      bump(suppliers, product.supplier?.trim() ?? '');
-      for (const quote of product.purchaseQuotes ?? []) {
-        bump(suppliers, quote.supplier);
-        bump(variants, quote.variant);
-      }
-    }
-    const rank = (map: Map<string, number>) => [...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name]) => name);
-    return { suppliers: rank(suppliers), variants: rank(variants) };
-  }, [products]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return products
@@ -358,7 +341,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
       {loading && <div className="table-state">正在加载产品...</div>}
       {!loading && !filtered.length && <div className="table-state">暂无产品，点击“添加产品”开始维护。</div>}
     </section>
-    <ProductEditor key={editing?.id ?? 'new'} open={editorOpen} saving={saving} product={editing} copyMode={copying} packagingPresets={packagingPresets} productCategories={categoryOptions.named} supplierOptions={quoteOptions.suppliers} variantOptions={quoteOptions.variants} onManagePresets={onManagePresets} onClose={() => { setEditorOpen(false); setEditing(undefined); setCopying(false); }} onSave={save} />
+    <ProductEditor key={editing?.id ?? 'new'} open={editorOpen} saving={saving} product={editing} copyMode={copying} packagingPresets={packagingPresets} productCategories={categoryOptions.named} onManagePresets={onManagePresets} onClose={() => { setEditorOpen(false); setEditing(undefined); setCopying(false); }} onSave={save} />
     <ProductParametersModal open={Boolean(parametersProduct)} productName={parametersProduct?.name} parameters={parametersProduct?.parameters} onClose={() => setParametersProduct(undefined)} />
     <ProductDetailModal open={Boolean(detailProduct)} product={detailProduct} showSensitive={showSensitive} pendingImages={detailProduct ? pendingImagesFor(detailProduct) : []} onClose={closeDetail} onOpenImages={(product) => { closeDetail(); setImagesProductId(String(product.id)); }} onOpenCalculator={(product) => { closeDetail(); setCalculatorProduct(product); }} onUpdateSaleStatus={onUpdateSaleStatus} onDelete={onDelete} />
     <PriceCalculatorModal open={Boolean(calculatorProduct)} product={calculatorProduct} onClose={() => setCalculatorProduct(undefined)} />

@@ -47,20 +47,22 @@ test('编辑器：采购报价在品名下面，多档可增可改且默认档�
   // 包装表不再折叠：打开编辑器就能直接填。
   await expect(editor.locator('.packaging-table-section:not(.purchase-quotes-section) .packaging-table-shell')).toBeVisible();
 
-  // 打开编辑器就自带一行空报价，而且它天然是默认档：不用再先点「添加报价」。
+  // 打开编辑器就自带一行空报价，而且它天然是默认档（供应商输入框高亮）：不用再先点「添加报价」。
   await expect(quotesTable(page).locator('tbody tr')).toHaveCount(1);
-  await expect(editor.locator('button.purchase-quote-default').first()).toHaveAttribute('aria-pressed', 'true');
-  await editor.locator('input[aria-label="报价供应商"]').first().fill('德艺堡');
+  const supplierInputs = editor.locator('input[aria-label="报价供应商"]');
+  await expect(supplierInputs.first()).toHaveClass(/is-default-quote/);
+  await supplierInputs.first().fill('德艺堡');
   await editor.locator('input[aria-label="报价名目"]').first().fill('有刷款');
   await editor.locator('input[aria-label="报价采购价"]').first().fill('120');
 
-  // 加第二档并设为默认。
+  // 加第二档；点它的供应商输入框 = 设为默认，高亮切换过去。
   await addQuote(page).click();
-  await editor.locator('input[aria-label="报价供应商"]').nth(1).fill('良景');
+  await supplierInputs.nth(1).fill('良景');
   await editor.locator('input[aria-label="报价名目"]').nth(1).fill('无刷款');
   await editor.locator('input[aria-label="报价采购价"]').nth(1).fill('140');
-  await editor.locator('button.purchase-quote-default').nth(1).click();
-  await expect(editor.locator('button.purchase-quote-default').first()).toHaveAttribute('aria-pressed', 'false');
+  await supplierInputs.nth(1).click();
+  await expect(supplierInputs.nth(1)).toHaveClass(/is-default-quote/);
+  await expect(supplierInputs.first()).not.toHaveClass(/is-default-quote/);
 
   await editor.getByRole('button', { name: '保存产品' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -71,12 +73,13 @@ test('编辑器：采购报价在品名下面，多档可增可改且默认档�
   await expect(card.locator('.product-gallery-price')).toContainText('¥140');
   await expect(card.locator('.price-tier-count')).toHaveText('+1');
 
-  // 重开编辑器：两档都在，默认档排在第一行。
+  // 重开编辑器：两档都在，默认档排在第一行（高亮在供应商输入框上）。
   await card.locator('button[title="编辑产品"]').click();
   await expect(quotesTable(page).locator('tbody tr')).toHaveCount(2);
-  await expect(editor.locator('button.purchase-quote-default').first()).toHaveAttribute('aria-pressed', 'true');
-  await expect(editor.locator('input[aria-label="报价供应商"]').first()).toHaveValue('良景');
-  await expect(editor.locator('button.purchase-quote-default').nth(1)).toHaveAttribute('aria-pressed', 'false');
+  const reopenedSuppliers = editor.locator('input[aria-label="报价供应商"]');
+  await expect(reopenedSuppliers.first()).toHaveValue('良景');
+  await expect(reopenedSuppliers.first()).toHaveClass(/is-default-quote/);
+  await expect(reopenedSuppliers.nth(1)).not.toHaveClass(/is-default-quote/);
 
   // 列表接口回读：默认档已经写进镜像列（客户产品成本价与列表价格都取它）。
   const listed = JSON.parse(await (await page.request.get(`/api/products?q=${encodeURIComponent(NAME)}`)).text()) as {
@@ -158,7 +161,7 @@ test('只带采购价不带报价数组的写入会自动补一条默认档', as
 test.describe('手机端', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 });
 
-  test('两档报价压成一行：「设为默认」与删除都在屏幕内，报价表不需要横向滑动', async ({ page }) => {
+  test('两档报价压成一行：供应商高亮与删除都在屏幕内，报价表不需要横向滑动', async ({ page }) => {
     const created = await page.request.post('/api/products', {
       data: {
         name: `${NAME}窄屏`,
@@ -200,17 +203,17 @@ test.describe('手机端', () => {
           tallestRow: Math.max(...rows.map((row) => Math.round(row.getBoundingClientRect().height))),
           inputFont: getComputedStyle(node.querySelector('input') as HTMLElement).fontSize,
           // 上下两行的同列必须落在同一个 x 上，否则就是用户说的「错位」。
-          columnX: [0, 1, 2, 3, 4].map((index) => new Set(rows.map((row) => Math.round(row.children[index].getBoundingClientRect().x))).size),
+          columnX: [0, 1, 2, 3].map((index) => new Set(rows.map((row) => Math.round(row.children[index].getBoundingClientRect().x))).size),
           cells: cells.length,
         };
       });
       expect(geometry.overflow).toBeLessThanOrEqual(0);
       expect(geometry.maxRight).toBeLessThanOrEqual(geometry.viewport);
-      expect(geometry.cells).toBe(10);
+      expect(geometry.cells).toBe(8);
       expect(geometry.distinctTops).toBe(2);
       expect(geometry.wrappedRows).toBe(0);
       expect(geometry.tallestRow).toBeLessThanOrEqual(56);
-      expect(geometry.columnX).toEqual([1, 1, 1, 1, 1]);
+      expect(geometry.columnX).toEqual([1, 1, 1, 1]);
       // 窄屏报价表输入框走 13px（配套 viewport 的 maximum-scale=1 才不会触发 iOS 聚焦放大）。
       expect(geometry.inputFont).toBe('13px');
     } finally {
