@@ -38,14 +38,14 @@ test('编辑器：采购报价在品名下面，多档可增可改且默认档�
       identity: top('.product-editor-identity'),
       quotes: top('.purchase-quotes-section'),
       texts: top('.product-editor-text-fields'),
-      packaging: top('.packaging-table-section:not(.purchase-quotes-section)'),
+      packaging: top('.packaging-modes-section'),
     };
   });
   expect(tops.quotes).toBeGreaterThan(tops.identity);
   expect(tops.texts).toBeGreaterThan(tops.quotes);
   expect(tops.packaging).toBeGreaterThan(tops.texts);
   // 包装表不再折叠：打开编辑器就能直接填。
-  await expect(editor.locator('.packaging-table-section:not(.purchase-quotes-section) .packaging-table-shell')).toBeVisible();
+  await expect(editor.locator('.packaging-modes-section .packaging-table-shell')).toBeVisible();
 
   // 打开编辑器就自带一行空报价，而且它天然是默认档（供应商输入框高亮）：不用再先点「添加报价」。
   await expect(quotesTable(page).locator('tbody tr')).toHaveCount(1);
@@ -63,6 +63,32 @@ test('编辑器：采购报价在品名下面，多档可增可改且默认档�
   await supplierInputs.nth(1).click();
   await expect(supplierInputs.nth(1)).toHaveClass(/is-default-quote/);
   await expect(supplierInputs.first()).not.toHaveClass(/is-default-quote/);
+
+  // 桌面宽度下半宽列里三列必须一屏放下：报价表卡片不能出现横向滚动；
+  // 「名目 / 款式」拿到剩余宽度（比供应商列宽），末列（删除）右缘不超出卡片。
+  const quotesGeometry = await quotesSection(page).locator('.packaging-table-shell').evaluate((shell) => {
+    const cells = Array.from((shell.querySelector('tbody tr') as HTMLElement).children).map((cell) => cell.getBoundingClientRect());
+    return {
+      overflow: shell.scrollWidth - shell.clientWidth,
+      columnCount: cells.length,
+      supplierWidth: cells[0].width,
+      nameWidth: cells[1].width,
+      lastRight: cells[cells.length - 1].right,
+      shellRight: shell.getBoundingClientRect().right,
+    };
+  });
+  expect(quotesGeometry.overflow).toBeLessThanOrEqual(0);
+  expect(quotesGeometry.columnCount).toBe(4);
+  expect(quotesGeometry.nameWidth).toBeGreaterThan(quotesGeometry.supplierWidth);
+  expect(quotesGeometry.lastRight).toBeLessThanOrEqual(quotesGeometry.shellRight + 1);
+
+  // 配件价格与左侧采购报价同款风格：两边都没有灰底方块（底色一致）。
+  const sectionBackgrounds = await editor.evaluate((node) => {
+    const row = node.querySelector('.product-editor-quote-row') as HTMLElement;
+    return Array.from(row.children).map((child) => getComputedStyle(child as HTMLElement).backgroundColor);
+  });
+  expect(sectionBackgrounds).toHaveLength(2);
+  expect(sectionBackgrounds[0]).toBe(sectionBackgrounds[1]);
 
   await editor.getByRole('button', { name: '保存产品' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);

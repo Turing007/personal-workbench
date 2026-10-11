@@ -30,7 +30,7 @@ export default function PackagingTable({ value, onChange, compact = false, showP
   const imagesRow = value.find((row) => row.id === imagesRowId);
   const shownPresets = presetsExpanded ? presets : presets.slice(0, PRESET_COLLAPSE_AT);
   return (
-    <div className="packaging-table-section">
+    <div className="packaging-table-section packaging-modes-section">
       <div className="section-box-header">
         <span className="section-box-title">包装方式</span>
         <button type="button" className="link-button packaging-table-add" onClick={add}><Plus size={14} />添加包装</button>

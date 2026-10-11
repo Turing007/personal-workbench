@@ -232,12 +232,14 @@ function CategoryAccessoryPricesEditor({ category }: { category: string }) {
     }
   };
 
-  return <section className="section-box">
+  // 与左侧采购报价同款：共用 packaging-table-section（无灰底无边框），并排时两边视觉一致。
+  return <section className="packaging-table-section accessory-prices-section">
     <div className="section-box-header"><span className="section-box-title">配件价格</span>
       {!!key && <button
         type="button"
-        className="button button-secondary button-sm"
+        className="link-button packaging-table-add"
         disabled={busy || loading}
+        title="添加一条配件价格"
         onClick={() => {
           setItems((current) => [...current, { id: `acc-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: '', price: 0 }]);
           setDirty(true);

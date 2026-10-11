@@ -53,7 +53,7 @@ test('桌面端：只有预设条折叠，包装表格打开就能直接填', as
   try {
     const dialog = await openEditor(page, product.sku, false, false);
     await expect(dialog.locator('.packaging-preset')).toHaveCount(0);
-    await expect(dialog.locator('.packaging-table-section:not(.purchase-quotes-section) .packaging-table-shell')).toBeVisible();
+    await expect(dialog.locator('.packaging-modes-section .packaging-table-shell')).toBeVisible();
     await dialog.locator('input[aria-label="包装名称"]').fill('不用展开也能填');
     await expect(dialog.locator('input[aria-label="包装名称"]')).toHaveValue('不用展开也能填');
 

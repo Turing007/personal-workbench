@@ -4219,12 +4219,26 @@ select {
   font-weight: var(--weight-semibold);
 }
 
-/* 去掉「默认档」列后，空间让给「名目 / 款式」；供应商列收窄。 */
+/* 半宽列里三列必须一屏放下（供应商 / 名目 / 采购价 + 删除）：先撤销包装表的 840px 最小宽度，
+   再用固定布局——「名目 / 款式」设 auto 吃剩余宽度，其余三列定宽，内容再长也不会撑出横向滚动。 */
+.purchase-quotes-table {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+/* 供应商列收窄，把空间让给「名目 / 款式」。 */
 .purchase-quotes-table th:nth-child(1),
 .purchase-quotes-table td:nth-child(1) { width: 92px; }
 
+/* 名目列不写死宽度：固定布局下分到除定宽列以外的全部宽度。 */
 .purchase-quotes-table th:nth-child(2),
-.purchase-quotes-table td:nth-child(2) { width: 190px; }
+.purchase-quotes-table td:nth-child(2) { width: auto; }
+
+.purchase-quotes-table th:nth-child(3),
+.purchase-quotes-table td:nth-child(3) { width: 100px; }
+
+.purchase-quotes-table th:nth-child(4),
+.purchase-quotes-table td:nth-child(4) { width: 40px; }
 
 /* 配件价格：与采购报价同款表格风格（同一套 packaging-table 样式）；三列窄表不横滑。 */
 .accessory-prices-table { min-width: 0; }
@@ -4238,7 +4252,7 @@ select {
   line-height: 1.5;
 }
 
-/* 报价表沿用包装表的 840px 最小宽度，窄屏时压成一行；「默认档」列已并入供应商高亮，共四列：
+/* 窄屏时报价表压成一行；「默认档」列已并入供应商高亮，共四列：
    供应商与价格定宽、「名目 / 款式」吃掉剩余空间、末列删除。
    输入框这里破例降到 13px（全局 iOS 底线是 16px），配套 viewport 的 maximum-scale=1 关掉聚焦自动放大，
    否则手指一点输入框整页就糊上来。选择器要压过那条 !important 全局规则，所以堆了三个 :not。 */
