@@ -236,7 +236,7 @@ function CategoryAccessoryPricesEditor({ category }: { category: string }) {
   };
 
   return <section className="section-box">
-    <div className="section-box-header"><span className="section-box-title">配件与价格{key ? ` · ${key}（同类目共用）` : ''}</span>
+    <div className="section-box-header"><span className="section-box-title">配件价格</span>
       {!!key && <button
         type="button"
         className="button button-secondary button-sm"
@@ -245,11 +245,10 @@ function CategoryAccessoryPricesEditor({ category }: { category: string }) {
           setItems((current) => [...current, { id: `acc-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: '', price: 0 }]);
           setDirty(true);
         }}
-      ><Plus size={14} />添加配件价格</button>}
+      ><Plus size={14} />添加</button>}
     </div>
     {key ? <>
-      <span className="label-hint">本类目专属配件（钻头、锯片这类），「{key}」下的所有产品在售价计算器里都能选到并自动带价；空名行保存时会丢弃。</span>
-      {loading && <div className="table-state">正在加载类目配件...</div>}
+      {loading && <div className="table-state">正在加载...</div>}
       {!loading && !!items.length && <div className="accessory-price-list">{items.map((item, index) => (
         <div className="accessory-price-row" key={item.id || index}>
           <input className="input" aria-label={`类目配件${index + 1}名称`} value={item.name} placeholder="如：9 件套筒" onChange={(event) => update(item.id, { name: event.target.value })} />
@@ -257,14 +256,14 @@ function CategoryAccessoryPricesEditor({ category }: { category: string }) {
           <button className="icon-button danger" type="button" title="移除这条配件价格" aria-label={`移除第 ${index + 1} 条类目配件`} onClick={() => { setItems((current) => current.filter((entry) => entry.id !== item.id)); setDirty(true); }}><Trash2 size={14} /></button>
         </div>
       ))}</div>}
-      {!loading && !items.length && <div className="empty-state">「{key}」还没有类目配件，点右上角添加。</div>}
+      {!loading && !items.length && <div className="empty-state">「{key}」还没有配件价格，点右上角「添加」。</div>}
       {!loading && <div className="packaging-preset-form-footer">
         <span className={dirty ? 'packaging-preset-dirty' : 'packaging-preset-saved'} role="status">{dirty ? '有未保存的修改' : `${items.length} 条`}</span>
         {/* 次要样式：弹窗里唯一的绿色主按钮留给「保存产品」，避免两个主操作混淆。 */}
         <button className="button button-secondary" type="button" disabled={busy || !dirty} onClick={() => void save()}>{busy ? '保存中...' : '保存类目配件'}</button>
       </div>}
       {!!message && <p role="status" style={{ margin: 0, fontSize: 12, color: messageKind === 'error' ? 'var(--tone-danger-text)' : '#0f766e' }}>{message}</p>}
-    </> : <span className="label-hint">先在上方填写「产品分类」，保存后即可维护该类目的配件与价格（同类目所有产品共用）。</span>}
+    </> : <span className="label-hint">先在上方填写「产品分类」，保存后即可按类目维护配件价格（同类目所有产品共用）。</span>}
   </section>;
 }
 
@@ -412,14 +411,16 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
           <div className="product-editor-chips">{plugPresets.concat(draft.batteryPlugs.filter((item) => !plugPresets.includes(item))).map((plug) => <button type="button" key={plug} className={`chip${draft.batteryPlugs.includes(plug) ? ' is-selected' : ''}`} onClick={() => toggle('batteryPlugs', plug)}>{plug}</button>)}<span className="chip-custom"><input className="chip-input" aria-label="自定义插脚" value={customPlug} onChange={(event) => setCustomPlug(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addCustom('batteryPlugs', customPlug, setCustomPlug); }} placeholder="自定义" /><button type="button" className="chip-add" title="添加自定义插脚" onClick={() => addCustom('batteryPlugs', customPlug, setCustomPlug)}><Plus size={14} /></button></span></div>
         </div>
       </div>
-      <PurchaseQuotesTable value={purchaseQuotes} onChange={(next) => set('purchaseQuotes', next)} supplierOptions={supplierOptions} variantOptions={variantOptions} />
+      {/* 采购报价与配件价格并排：左报价、右配件价格。 */}
+      <div className="product-editor-quote-row">
+        <PurchaseQuotesTable value={purchaseQuotes} onChange={(next) => set('purchaseQuotes', next)} supplierOptions={supplierOptions} variantOptions={variantOptions} />
+        <CategoryAccessoryPricesEditor category={draft.category ?? ''} />
+      </div>
       <div className="form-grid product-editor-text-fields">
         {showParameters && <label className="label">产品参数<textarea className="textarea" rows={6} value={draft.parameters ?? ''} onChange={(event) => set('parameters', event.target.value)} placeholder={'例如：扭矩：35N·m\n转速：0-1500rpm\n额定电压：12V'} /></label>}
-        <label className="label">配件<textarea className="textarea" rows={6} value={draft.accessories} onChange={(event) => set('accessories', event.target.value)} /></label>
         <label className="label">备注<textarea className="textarea" rows={6} value={draft.remark ?? ''} onChange={(event) => set('remark', event.target.value)} /></label>
       </div>
       <PackagingTable collapsible value={draft.packaging} onChange={(packaging: PackagingOption[]) => set('packaging', packaging)} presets={packagingPresets} onManagePresets={onManagePresets} />
-      <CategoryAccessoryPricesEditor category={draft.category ?? ''} />
       <ImagePasteUpload label="产品图片与资料图" value={draft.images} onChange={(images) => set('images', images)} multiple showNotes sortable compact selectable categories={PRODUCT_IMAGE_CATEGORY_OPTIONS} />
       <ProductVideoSection value={draft.videos ?? []} onChange={(videos) => set('videos', videos)} />
       <ProductAttachments value={draft.attachments ?? []} onChange={(attachments) => set('attachments', attachments)} />

@@ -3278,8 +3278,14 @@ select {
 
 /* 参数 / 配件 / 备注：一行三列竖排，只留输入框上方的小字标签。 */
 .product-editor-text-fields {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
+}
+
+/* 采购报价与配件价格并排：左报价、右配件价格；手机上上下排列。 */
+.product-editor-quote-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 860px) {
+  .product-editor-quote-row { grid-template-columns: 1fr; }
 }
 
 .product-editor-text-fields .textarea {
