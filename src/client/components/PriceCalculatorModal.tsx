@@ -3,14 +3,16 @@ import { ChevronDown, Plus, Save, Trash2 } from 'lucide-react';
 import Modal from './Modal';
 import {
   deletePricePlan,
-  getAccessoryPrices,
+  getBatteryPriceMatrix,
   getCategoryAccessoryPrices,
+  getChargerPrices,
   listPricePlans,
   savePricePlan,
   type PricePlanRecord,
 } from '../api';
 import type { ProductRecord } from './ProductEditor';
 import type { AccessoryPrice } from '../../shared/accessory-prices';
+import { batteryMatrixOptions, type BatteryPriceMatrix } from '../../shared/battery-prices';
 import {
   planItemAmount,
   planMargin,
@@ -88,7 +90,8 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const [targetPrice, setTargetPrice] = useState('');
   const [planName, setPlanName] = useState('');
   const [plans, setPlans] = useState<PricePlanRecord[]>([]);
-  const [globalAccessories, setGlobalAccessories] = useState<AccessoryPrice[]>([]);
+  const [batteryMatrix, setBatteryMatrix] = useState<BatteryPriceMatrix | null>(null);
+  const [chargerPrices, setChargerPrices] = useState<AccessoryPrice[]>([]);
   const [categoryAccessories, setCategoryAccessories] = useState<AccessoryPrice[]>([]);
   const [pickerRow, setPickerRow] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -104,9 +107,10 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     setPickerRow(null);
     setMessage('');
     setPlans([]);
-    setGlobalAccessories([]);
+    setBatteryMatrix(null);
+    setChargerPrices([]);
     setCategoryAccessories([]);
-    // 打开时载入：本产品最近一份方案（回显上次算的）+ 全局配件 + 本类目配件。
+    // 打开时载入：本产品最近一份方案（回显上次算的）+ 电池矩阵 + 充电器价格 + 本类目配件。
     if (/^\d+$/.test(product.id)) {
       listPricePlans(product.id)
         .then((items) => {
@@ -122,8 +126,11 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
         })
         .catch(() => { if (!cancelled) setMessage('算价方案加载失败'); });
     }
-    getAccessoryPrices()
-      .then((items) => { if (!cancelled) setGlobalAccessories(items); })
+    getBatteryPriceMatrix()
+      .then((matrix) => { if (!cancelled) setBatteryMatrix(matrix); })
+      .catch(() => {});
+    getChargerPrices()
+      .then((items) => { if (!cancelled) setChargerPrices(items); })
       .catch(() => {});
     const category = (product.category ?? '').trim();
     if (category) {
@@ -201,6 +208,27 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
 
   const packagingOptions = product.packaging.filter((item) => item.name.trim());
   const productCategory = (product.category ?? '').trim();
+  const batteryOptions = batteryMatrix ? batteryMatrixOptions(batteryMatrix) : [];
+  const chargerOptions = chargerPrices.filter((item) => item.name.trim());
+
+  /**
+   * 每行只出和它相关的来源：包装行只出包装方式、电池行只出电池价、充电器行只出充电器价，
+   * 其余行出本类目配件；产品成本/运费这类不需要选的没有下拉。
+   */
+  const rowOptions = (name: string): Array<{ key: string; name: string; price: string; priceText: string; source: string }> => {
+    const text = name.trim();
+    if (!text || text.includes('成本') || text.includes('运费')) return [];
+    if (text.includes('包装') || packagingOptions.some((item) => text.includes(item.name.trim()))) {
+      return packagingOptions.map((item) => ({ key: `pack-${item.id}`, name: item.name.trim(), price: item.purchasePrice, priceText: item.purchasePrice.trim() ? `¥${item.purchasePrice}` : '未填采购价', source: '包装方式' }));
+    }
+    if (text.includes('电池')) {
+      return batteryOptions.map((item) => ({ key: `battery-${item.id}`, name: item.name, price: String(item.price), priceText: `¥${item.price.toFixed(2)}`, source: '电池价格' }));
+    }
+    if (text.includes('充电')) {
+      return chargerOptions.map((item) => ({ key: `charger-${item.id}`, name: item.name, price: String(item.price), priceText: `¥${item.price.toFixed(2)}`, source: '充电器价格' }));
+    }
+    return categoryAccessories.map((item) => ({ key: `category-${item.id}`, name: item.name, price: String(item.price), priceText: `¥${item.price.toFixed(2)}`, source: `本类目配件${productCategory ? `（${productCategory}）` : ''}` }));
+  };
 
   return <Modal open={open} title={`售价计算 · ${product.name || product.sku || '产品'}`} onClose={onClose} width={980}>
     <div className="price-calc">
@@ -208,53 +236,34 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
         <div className="price-calc-head"><span>成本明细</span><span>数量</span><span>单价</span><span>金额</span><span /></div>
         {rows.map((row, index) => {
           const item = rowToItem(row);
+          const options = rowOptions(row.name);
+          const pickerOpen = pickerRow === row.key && options.length > 0;
           return <div className="price-calc-row-block" key={row.key}>
             <div className="price-calc-row">
               <div className="price-calc-name">
                 <input className="input" aria-label={`成本${index + 1}名称`} value={row.name} placeholder="成本项名称" onChange={(event) => updateRow(row.key, { name: event.target.value })} />
-                <button
+                {options.length > 0 && <button
                   className="icon-button"
                   type="button"
-                  title="从包装方式 / 配件价格选择并自动带价"
-                  aria-label={`为第 ${index + 1} 行选择包装或配件`}
-                  aria-expanded={pickerRow === row.key}
+                  title={`从${options[0].source}选择并自动带价`}
+                  aria-label={`为第 ${index + 1} 行选择${options[0].source}`}
+                  aria-expanded={pickerOpen}
                   onClick={() => setPickerRow((current) => (current === row.key ? null : row.key))}
-                ><ChevronDown size={14} /></button>
+                ><ChevronDown size={14} /></button>}
               </div>
               <input className="input" type="number" min={0} aria-label={`成本${index + 1}数量`} value={row.qty} onChange={(event) => updateRow(row.key, { qty: event.target.value })} />
               <input className="input" type="number" min={0} step="0.01" aria-label={`成本${index + 1}单价`} value={row.unitPrice} placeholder="元" onChange={(event) => updateRow(row.key, { unitPrice: event.target.value })} />
               <span className="price-calc-amount">{formatMoney(item.amount)}</span>
               <button className="icon-button danger" type="button" title="删除这一行" aria-label={`删除第 ${index + 1} 行成本`} onClick={() => setRows((current) => current.filter((entry) => entry.key !== row.key))}><Trash2 size={14} /></button>
             </div>
-            {pickerRow === row.key && <div className="price-calc-picker">
-              {packagingOptions.length > 0 && <>
-                <span className="price-calc-picker-label">包装方式</span>
-                {packagingOptions.map((option) => <button
-                  key={`pack-${option.id}`}
-                  className="price-calc-picker-item"
-                  type="button"
-                  onClick={() => pickIntoRow(row.key, option.name.trim(), option.purchasePrice)}
-                >{option.name.trim()}<em>{option.purchasePrice.trim() ? `¥${option.purchasePrice}` : '未填采购价'}</em></button>)}
-              </>}
-              {categoryAccessories.length > 0 && <>
-                <span className="price-calc-picker-label">本类目配件（{productCategory}）</span>
-                {categoryAccessories.map((option) => <button
-                  key={`category-${option.id}`}
-                  className="price-calc-picker-item"
-                  type="button"
-                  onClick={() => pickIntoRow(row.key, option.name, String(option.price))}
-                >{option.name}<em>本类目 · ¥{option.price.toFixed(2)}</em></button>)}
-              </>}
-              {globalAccessories.length > 0 && <>
-                <span className="price-calc-picker-label">全局配件（所有产品通用）</span>
-                {globalAccessories.map((option) => <button
-                  key={`global-${option.id}`}
-                  className="price-calc-picker-item"
-                  type="button"
-                  onClick={() => pickIntoRow(row.key, option.name, String(option.price))}
-                >{option.name}<em>全局 · ¥{option.price.toFixed(2)}</em></button>)}
-              </>}
-              {!packagingOptions.length && !categoryAccessories.length && !globalAccessories.length && <span className="price-calc-picker-empty">还没有可选的包装与配件价格：产品里填「包装采购价」，编辑器里维护「类目配件」，设置页维护「全局配件」。</span>}
+            {pickerOpen && <div className="price-calc-picker">
+              <span className="price-calc-picker-label">{options[0].source}</span>
+              {options.map((option) => <button
+                key={option.key}
+                className="price-calc-picker-item"
+                type="button"
+                onClick={() => pickIntoRow(row.key, option.name, option.price)}
+              >{option.name}<em>{option.priceText}</em></button>)}
             </div>}
           </div>;
         })}

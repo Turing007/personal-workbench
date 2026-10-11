@@ -3,9 +3,10 @@ import { withTransaction } from './connection.js';
 import { migratePackagingColumns } from './packaging.js';
 import { sortByImageLeadNumber } from '../../shared/product-image-order.js';
 import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesText } from '../../shared/accessory-prices.js';
+import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 30;
+const CURRENT_SCHEMA_VERSION = 31;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -1157,6 +1158,40 @@ export function buildCategoryAccessorySeed(database: DatabaseSync): Record<strin
   return map;
 }
 
+/**
+ * 电池/充电器价格独立成模块：从旧的「全局配件」清单一次性播种——
+ * 「5 节 1300」这类电池条目进矩阵，名字带「充电」的进充电器清单；旧键原样保留。
+ */
+function migrateVersionThirtyOne(database: DatabaseSync, now: string): void {
+  const legacyRow = database.prepare("SELECT value FROM settings WHERE key = 'accessory_prices'").get() as { value?: string } | undefined;
+  let legacy: ReturnType<typeof normalizeAccessoryPrices> = [];
+  try {
+    legacy = legacyRow?.value ? normalizeAccessoryPrices(JSON.parse(legacyRow.value)) : [];
+  } catch {
+    legacy = [];
+  }
+  const batteryRow = database.prepare("SELECT value FROM settings WHERE key = 'battery_price_matrix'").get();
+  if (batteryRow === undefined) {
+    database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run('battery_price_matrix', JSON.stringify(buildBatteryMatrixSeed(legacy)), now);
+  }
+  const chargerRow = database.prepare("SELECT value FROM settings WHERE key = 'charger_prices'").get();
+  if (chargerRow === undefined) {
+    const chargers = legacy.filter((item) => item.name.includes('充电'));
+    database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run('charger_prices', JSON.stringify(chargers), now);
+  }
+  upsertSetting(database, 'schema_version', '31', now);
+}
+
 /** 配件两层化：全局清单存设置不动；类目配件首次（键不存在）时从旧配件文本播种。 */
 function migrateVersionThirty(database: DatabaseSync, now: string): void {
   const existing = database.prepare("SELECT value FROM settings WHERE key = 'category_accessory_prices'").get();
@@ -1304,6 +1339,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionTwentyEight(transactionDatabase, now);
     migrateVersionTwentyNine(transactionDatabase, now);
     migrateVersionThirty(transactionDatabase, now);
+    migrateVersionThirtyOne(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

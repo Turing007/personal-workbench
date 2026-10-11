@@ -144,16 +144,25 @@ describe('售价计算器：产品「配件与价格」', () => {
     expect(cleared.json().data.accessoryPrices).toEqual([]);
   });
 
-  it('全局配件清单：保存与读取走 settings，空名丢弃', async () => {
+  it('电池矩阵与充电器价格：迁移后自带默认矩阵，保存阅读一致', async () => {
     const { settingsRepository } = await createFixture();
-    expect(settingsRepository.readAccessoryPrices()).toEqual([]);
-    const saved = settingsRepository.saveAccessoryPrices([
-      { name: '21V 2.0Ah 电池', price: 8.5 },
-      { name: '', price: 3 },
+    // v31 迁移已在首次建库时写入默认矩阵（1300/1500/2000 × 5/10/15/20，价格留空）。
+    expect(settingsRepository.readBatteryPriceMatrix()).toEqual({
+      capacities: [1300, 1500, 2000],
+      packCounts: [5, 10, 15, 20],
+      prices: [new Array(4).fill(0), new Array(4).fill(0), new Array(4).fill(0)],
+    });
+    const matrix = settingsRepository.saveBatteryPriceMatrix({ capacities: [1300], packCounts: [5, 10], prices: [[11.5, 0]] });
+    expect(matrix.prices).toEqual([[11.5, 0]]);
+    expect(settingsRepository.readBatteryPriceMatrix()).toEqual(matrix);
+
+    expect(settingsRepository.readChargerPrices()).toEqual([]);
+    const chargers = settingsRepository.saveChargerPrices([
       { name: '1.5A 充电器', price: 6 },
+      { name: '', price: 3 },
     ]);
-    expect(saved).toHaveLength(2);
-    expect(settingsRepository.readAccessoryPrices().map((item) => item.name)).toEqual(['21V 2.0Ah 电池', '1.5A 充电器']);
+    expect(chargers).toHaveLength(1);
+    expect(settingsRepository.readChargerPrices().map((item) => item.name)).toEqual(['1.5A 充电器']);
   });
 
   it('类目配件表：按分类分开存取，互不覆盖', async () => {

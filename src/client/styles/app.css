@@ -4852,6 +4852,17 @@ select {
 .product-detail-accessory-lines { display: grid; gap: 3px; font-size: 12.5px; }
 .product-detail-accessory-lines span { line-height: 1.5; }
 
+/* 设置页：电池价格矩阵（行=容量、列=节数）。 */
+.accessory-module-title { margin: 16px 0 8px; font-size: 14px; }
+.battery-matrix { display: grid; gap: 6px; align-items: center; }
+.battery-matrix-corner { font-size: 12px; color: var(--color-text-muted); }
+.battery-matrix-headcol { display: grid; gap: 4px; justify-items: center; font-size: 12px; color: var(--color-text-muted); }
+.battery-matrix-col-edit { display: flex; align-items: center; gap: 2px; }
+.battery-matrix-col-edit .input { width: 56px; padding: 4px 6px; }
+.battery-matrix-rowhead { display: flex; align-items: center; gap: 3px; font-size: 12px; color: var(--color-text-muted); }
+.battery-matrix-rowhead .input { width: 76px; padding: 4px 6px; }
+.battery-matrix .input { font-size: 12.5px; }
+
 /* 售价计算弹窗：左计算器 / 右方案列表，手机端上下堆叠。 */
 .price-calc { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 18px; }
 .price-calc-left { display: grid; gap: 6px; align-content: start; }

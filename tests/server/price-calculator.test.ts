@@ -9,6 +9,7 @@ import {
   round2,
 } from '../../src/shared/price-calculator';
 import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesText } from '../../src/shared/accessory-prices';
+import { batteryMatrixOptions, buildBatteryMatrixSeed, normalizeBatteryMatrix } from '../../src/shared/battery-prices';
 
 describe('售价计算（纯函数）', () => {
   it('行金额 = 数量 × 单价，合计到分，售价按加价率折算', () => {
@@ -63,6 +64,27 @@ describe('配件与价格清洗', () => {
     ]);
     const many = Array.from({ length: 100 }, (_, index) => ({ name: `配件${index}`, price: index }));
     expect(normalizeAccessoryPrices(many)).toHaveLength(80);
+  });
+
+  it('电池矩阵播种：默认模板打底，旧条目「5 节 1300」按行列填入价格', () => {
+    const matrix = buildBatteryMatrixSeed([
+      { name: '5 节 1300', price: 11 },
+      { name: '15 节 2000', price: 42 },
+      { name: '随便写的', price: 3 },
+    ]);
+    expect(matrix.capacities).toEqual([1300, 1500, 2000]);
+    expect(matrix.packCounts).toEqual([5, 10, 15, 20]);
+    expect(matrix.prices[matrix.capacities.indexOf(1300)][matrix.packCounts.indexOf(5)]).toBe(11);
+    expect(matrix.prices[matrix.capacities.indexOf(2000)][matrix.packCounts.indexOf(15)]).toBe(42);
+  });
+
+  it('电池矩阵清洗与选项：非法行列剔除、价格保留两位、只出已定价单元格', () => {
+    expect(
+      normalizeBatteryMatrix({ capacities: [1300, -1, 1300, 'x'], packCounts: [5, 0], prices: [[9.999]] }),
+    ).toEqual({ capacities: [1300], packCounts: [5], prices: [[10]] });
+    expect(
+      batteryMatrixOptions({ capacities: [1300], packCounts: [5, 10], prices: [[11, 0]] }),
+    ).toEqual([{ id: 'cell-0-0', name: '5 节 1300 电池', price: 11 }]);
   });
 
   it('旧配件文本按行拆分：行尾「6元」「0.03/根」作价格，其余作名称', () => {

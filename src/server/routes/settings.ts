@@ -159,18 +159,32 @@ export async function registerSettingsRoutes(app: FastifyInstance, options: Sett
     safeRoute(() => sendSuccess(reply, { items: options.service.reseedPackagingPresets() }), reply),
   );
 
-  app.get('/api/settings/accessory-prices', async (_request, reply) =>
-    safeRoute(() => sendSuccess(reply, { items: options.service.getAccessoryPrices() }), reply),
+  app.get('/api/settings/battery-price-matrix', async (_request, reply) =>
+    safeRoute(() => sendSuccess(reply, options.service.getBatteryPriceMatrix()), reply),
   );
 
-  app.put('/api/settings/accessory-prices', async (request, reply) =>
+  app.put('/api/settings/battery-price-matrix', async (request, reply) =>
     safeRoute(() => {
       const body = asRecord(request.body);
-      if (!Array.isArray(body.items)) throw new ApiError(400, 'VALIDATION_ERROR', '配件价格数据格式不正确', 'items');
-      if (body.items.length > ACCESSORY_PRICE_LIST_LIMIT) {
-        throw new ApiError(400, 'ACCESSORY_LIMIT', `配件价格最多 ${ACCESSORY_PRICE_LIST_LIMIT} 条，请先删除再添加`, 'items');
+      if (!Array.isArray(body.capacities) || !Array.isArray(body.packCounts) || !Array.isArray(body.prices)) {
+        throw new ApiError(400, 'VALIDATION_ERROR', '电池价格矩阵数据格式不正确');
       }
-      return sendSuccess(reply, { items: options.service.saveAccessoryPrices(body.items) });
+      return sendSuccess(reply, options.service.saveBatteryPriceMatrix(body));
+    }, reply),
+  );
+
+  app.get('/api/settings/charger-prices', async (_request, reply) =>
+    safeRoute(() => sendSuccess(reply, { items: options.service.getChargerPrices() }), reply),
+  );
+
+  app.put('/api/settings/charger-prices', async (request, reply) =>
+    safeRoute(() => {
+      const body = asRecord(request.body);
+      if (!Array.isArray(body.items)) throw new ApiError(400, 'VALIDATION_ERROR', '充电器价格数据格式不正确', 'items');
+      if (body.items.length > ACCESSORY_PRICE_LIST_LIMIT) {
+        throw new ApiError(400, 'ACCESSORY_LIMIT', `充电器价格最多 ${ACCESSORY_PRICE_LIST_LIMIT} 条，请先删除再添加`, 'items');
+      }
+      return sendSuccess(reply, { items: options.service.saveChargerPrices(body.items) });
     }, reply),
   );
 

@@ -6,6 +6,7 @@ import {
   type PackagingSourceRow,
 } from '../../shared/packaging-presets.js';
 import type { AccessoryPrice } from '../../shared/accessory-prices.js';
+import { BATTERY_MATRIX_DEFAULTS, type BatteryPriceMatrix } from '../../shared/battery-prices.js';
 import { EMPTY_COMPANY_PROFILE, SettingsRepository } from '../db/settings-repository.js';
 import { FileStore } from '../files/file-store.js';
 import type { ContractTemplate } from '../../shared/contract.js';
@@ -28,13 +29,22 @@ export class SettingsService {
     return this.settings.savePackagingPresets(value);
   }
 
-  /** 全局配件（电池、充电器等所有产品通用；售价计算器取数）。 */
-  getAccessoryPrices(): AccessoryPrice[] {
-    return this.settings.readAccessoryPrices();
+  /** 电池价格矩阵（行=单节容量、列=节数）；从未维护过时给默认模板。 */
+  getBatteryPriceMatrix(): BatteryPriceMatrix {
+    return this.settings.readBatteryPriceMatrix() ?? BATTERY_MATRIX_DEFAULTS;
   }
 
-  saveAccessoryPrices(value: unknown): AccessoryPrice[] {
-    return this.settings.saveAccessoryPrices(value);
+  saveBatteryPriceMatrix(value: unknown): BatteryPriceMatrix {
+    return this.settings.saveBatteryPriceMatrix(value);
+  }
+
+  /** 充电器价格清单（名称 + 单价）。 */
+  getChargerPrices(): AccessoryPrice[] {
+    return this.settings.readChargerPrices();
+  }
+
+  saveChargerPrices(value: unknown): AccessoryPrice[] {
+    return this.settings.saveChargerPrices(value);
   }
 
   /** 类目配件：按产品分类共享（如电锤的钻头，同类目所有产品可用）。 */

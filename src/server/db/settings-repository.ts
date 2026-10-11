@@ -9,6 +9,10 @@ import {
   type AccessoryPrice,
 } from '../../shared/accessory-prices.js';
 import {
+  normalizeBatteryMatrix,
+  type BatteryPriceMatrix,
+} from '../../shared/battery-prices.js';
+import {
   cloneDefaultContractTemplate,
   normalizeContractTemplate,
   type ContractTemplate,
@@ -19,7 +23,8 @@ const CONTRACT_TEMPLATE_KEY = 'contract_template';
 const AUTO_BACKUP_SETTINGS_KEY = 'auto_backup_settings';
 const TUNNEL_URL_KEY = 'tunnel_url';
 const PACKAGING_PRESETS_KEY = 'packaging_presets';
-const ACCESSORY_PRICES_KEY = 'accessory_prices';
+const BATTERY_PRICE_MATRIX_KEY = 'battery_price_matrix';
+const CHARGER_PRICES_KEY = 'charger_prices';
 const CATEGORY_ACCESSORY_PRICES_KEY = 'category_accessory_prices';
 
 export interface AutoBackupSettingsRecord {
@@ -169,9 +174,31 @@ export class SettingsRepository {
     return presets;
   }
 
-  /** 全店共用的「配件与价格」清单（售价计算器取数）；不做自动播种，空就是空。 */
-  readAccessoryPrices(): AccessoryPrice[] {
-    const row = this.database.prepare('SELECT value FROM settings WHERE key = ?').get(ACCESSORY_PRICES_KEY) as { value?: string } | undefined;
+  /** 电池价格矩阵（行=容量、列=节数）；null = 从未写入过，由服务层给默认模板。 */
+  readBatteryPriceMatrix(): BatteryPriceMatrix | null {
+    const row = this.database.prepare('SELECT value FROM settings WHERE key = ?').get(BATTERY_PRICE_MATRIX_KEY) as { value?: string } | undefined;
+    if (!row?.value) return null;
+    try {
+      return normalizeBatteryMatrix(JSON.parse(row.value));
+    } catch {
+      return null;
+    }
+  }
+
+  saveBatteryPriceMatrix(value: unknown): BatteryPriceMatrix {
+    const matrix = normalizeBatteryMatrix(value);
+    this.database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(BATTERY_PRICE_MATRIX_KEY, JSON.stringify(matrix), new Date().toISOString());
+    return matrix;
+  }
+
+  /** 充电器价格清单（名称 + 单价）。 */
+  readChargerPrices(): AccessoryPrice[] {
+    const row = this.database.prepare('SELECT value FROM settings WHERE key = ?').get(CHARGER_PRICES_KEY) as { value?: string } | undefined;
     if (!row?.value) return [];
     try {
       return normalizeAccessoryPrices(JSON.parse(row.value));
@@ -180,14 +207,14 @@ export class SettingsRepository {
     }
   }
 
-  saveAccessoryPrices(value: unknown): AccessoryPrice[] {
+  saveChargerPrices(value: unknown): AccessoryPrice[] {
     const items = normalizeAccessoryPrices(value);
     this.database
       .prepare(
         `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
       )
-      .run(ACCESSORY_PRICES_KEY, JSON.stringify(items), new Date().toISOString());
+      .run(CHARGER_PRICES_KEY, JSON.stringify(items), new Date().toISOString());
     return items;
   }
 

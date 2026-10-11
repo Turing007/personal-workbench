@@ -1,85 +1,192 @@
 import { Calculator, Plus, Save, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { getAccessoryPrices, saveAccessoryPrices } from '../../api';
+import { Fragment, useEffect, useState } from 'react';
+import { getBatteryPriceMatrix, getChargerPrices, saveBatteryPriceMatrix, saveChargerPrices } from '../../api';
 import { ACCESSORY_PRICE_LIST_LIMIT, type AccessoryPrice } from '../../../shared/accessory-prices';
+import { BATTERY_MATRIX_MAX_DIM, type BatteryPriceMatrix } from '../../../shared/battery-prices';
 
 function errorMessage(error: unknown, fallback: string) {
   return (error as { message?: string } | undefined)?.message ?? fallback;
 }
 
-/** 全局配件（电池、充电器等所有产品通用）：列表式维护；售价计算器里选到即自动带价。 */
-export default function AccessoryPricesSection() {
-  const [items, setItems] = useState<AccessoryPrice[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [dirty, setDirty] = useState(false);
-  const [message, setMessage] = useState('');
-  const [messageKind, setMessageKind] = useState<'success' | 'error'>('success');
+const EMPTY_MATRIX: BatteryPriceMatrix = { capacities: [], packCounts: [], prices: [] };
 
-  const show = (text: string, kind: 'success' | 'error' = 'success') => {
-    setMessage(text);
-    setMessageKind(kind);
-  };
+/** 电池/充电器价格：售价计算器里按行名自动匹配——电池行只出电池价、充电器行只出充电器价。 */
+export default function AccessoryPricesSection() {
+  const [matrix, setMatrix] = useState<BatteryPriceMatrix>(EMPTY_MATRIX);
+  const [matrixDirty, setMatrixDirty] = useState(false);
+  const [matrixBusy, setMatrixBusy] = useState(false);
+  const [matrixMessage, setMatrixMessage] = useState('');
+  const [matrixMessageKind, setMatrixMessageKind] = useState<'success' | 'error'>('success');
+
+  const [chargers, setChargers] = useState<AccessoryPrice[]>([]);
+  const [chargerDirty, setChargerDirty] = useState(false);
+  const [chargerBusy, setChargerBusy] = useState(false);
+  const [chargerMessage, setChargerMessage] = useState('');
+  const [chargerMessageKind, setChargerMessageKind] = useState<'success' | 'error'>('success');
+
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    getAccessoryPrices()
-      .then((list) => { if (!cancelled) { setItems(list); setLoading(false); } })
+    Promise.all([getBatteryPriceMatrix(), getChargerPrices()])
+      .then(([matrixItems, chargerItems]) => {
+        if (cancelled) return;
+        setMatrix(matrixItems);
+        setChargers(chargerItems);
+        setLoading(false);
+      })
       .catch((error) => {
         if (cancelled) return;
-        setItems([]);
         setLoading(false);
-        show(errorMessage(error, '配件价格加载失败'), 'error');
+        setMatrixMessageKind('error');
+        setMatrixMessage(errorMessage(error, '电池/充电器价格加载失败'));
       });
     return () => { cancelled = true; };
   }, []);
 
-  const update = (index: number, patch: Partial<AccessoryPrice>) => {
-    setItems((current) => current.map((item, position) => (position === index ? { ...item, ...patch } : item)));
-    setDirty(true);
+  const updateCell = (rowIndex: number, colIndex: number, value: string) => {
+    setMatrix((current) => ({
+      ...current,
+      prices: current.prices.map((row, r) => (r === rowIndex ? row.map((cell, c) => (c === colIndex ? Number(value) || 0 : cell)) : row)),
+    }));
+    setMatrixDirty(true);
   };
-  const remove = (index: number) => {
-    setItems((current) => current.filter((_, position) => position !== index));
-    setDirty(true);
+  const updateCapacity = (rowIndex: number, value: string) => {
+    const parsed = Math.trunc(Number(value)) || 0;
+    setMatrix((current) => ({ ...current, capacities: current.capacities.map((item, index) => (index === rowIndex ? parsed : item)) }));
+    setMatrixDirty(true);
   };
-  const add = () => {
-    setItems((current) => [...current, { id: `accessory-${Date.now()}`, name: '', price: 0 }]);
-    setDirty(true);
+  const updatePackCount = (colIndex: number, value: string) => {
+    const parsed = Math.trunc(Number(value)) || 0;
+    setMatrix((current) => ({ ...current, packCounts: current.packCounts.map((item, index) => (index === colIndex ? parsed : item)) }));
+    setMatrixDirty(true);
+  };
+  const addCapacityRow = () => {
+    setMatrix((current) => ({ ...current, capacities: [...current.capacities, 0], prices: [...current.prices, new Array(current.packCounts.length).fill(0)] }));
+    setMatrixDirty(true);
+  };
+  const addPackCountColumn = () => {
+    setMatrix((current) => ({ ...current, packCounts: [...current.packCounts, 0], prices: current.prices.map((row) => [...row, 0]) }));
+    setMatrixDirty(true);
+  };
+  const removeCapacityRow = (rowIndex: number) => {
+    setMatrix((current) => ({ ...current, capacities: current.capacities.filter((_item, index) => index !== rowIndex), prices: current.prices.filter((_row, index) => index !== rowIndex) }));
+    setMatrixDirty(true);
+  };
+  const removePackCountColumn = (colIndex: number) => {
+    setMatrix((current) => ({ ...current, packCounts: current.packCounts.filter((_item, index) => index !== colIndex), prices: current.prices.map((row) => row.filter((_cell, index) => index !== colIndex)) }));
+    setMatrixDirty(true);
   };
 
-  const save = async () => {
-    setBusy(true);
+  const saveMatrix = async () => {
+    setMatrixBusy(true);
     try {
-      // 以服务端清洗后的结果为准：空名行会被丢弃、价格会归一到 ≥0 的两位小数。
-      setItems(await saveAccessoryPrices(items));
-      setDirty(false);
-      show('配件价格已保存，售价计算器立即可选');
+      setMatrix(await saveBatteryPriceMatrix(matrix));
+      setMatrixDirty(false);
+      setMatrixMessageKind('success');
+      setMatrixMessage('电池价格已保存，售价计算器立即可用');
     } catch (error) {
-      show(errorMessage(error, '配件价格保存失败'), 'error');
+      setMatrixMessageKind('error');
+      setMatrixMessage(errorMessage(error, '电池价格保存失败'));
     } finally {
-      setBusy(false);
+      setMatrixBusy(false);
     }
   };
 
-  const atLimit = items.length >= ACCESSORY_PRICE_LIST_LIMIT;
+  const updateCharger = (index: number, patch: Partial<AccessoryPrice>) => {
+    setChargers((current) => current.map((item, position) => (position === index ? { ...item, ...patch } : item)));
+    setChargerDirty(true);
+  };
+  const removeCharger = (index: number) => {
+    setChargers((current) => current.filter((_item, position) => position !== index));
+    setChargerDirty(true);
+  };
+  const addCharger = () => {
+    setChargers((current) => [...current, { id: `charger-${Date.now()}`, name: '', price: 0 }]);
+    setChargerDirty(true);
+  };
+  const saveChargers = async () => {
+    setChargerBusy(true);
+    try {
+      setChargers(await saveChargerPrices(chargers));
+      setChargerDirty(false);
+      setChargerMessageKind('success');
+      setChargerMessage('充电器价格已保存，售价计算器立即可用');
+    } catch (error) {
+      setChargerMessageKind('error');
+      setChargerMessage(errorMessage(error, '充电器价格保存失败'));
+    } finally {
+      setChargerBusy(false);
+    }
+  };
+
+  const matrixAtLimit = matrix.capacities.length >= BATTERY_MATRIX_MAX_DIM || matrix.packCounts.length >= BATTERY_MATRIX_MAX_DIM;
+  const chargerAtLimit = chargers.length >= ACCESSORY_PRICE_LIST_LIMIT;
 
   return <div className="settings-section card">
-    <div className="settings-heading"><Calculator size={18} /><strong>全局配件与价格</strong></div>
-    <p>电池、充电器这类<b>所有产品通用</b>的配件放这里，列表式维护：售价计算器里点每行的「选」即可按名称挑出、自动带价（标「全局」）。某类产品专属的件（如电锤的钻头）在产品的「类目配件」里维护。清单存服务端，手机和电脑看到的是同一份。</p>
-    {loading && <div className="table-state">正在加载配件价格...</div>}
-    {!loading && !!items.length && <div className="accessory-price-list">
-      {items.map((item, index) => <div className="accessory-price-row" key={item.id || index}>
-        <input className="input" aria-label={`配件${index + 1}名称`} value={item.name} disabled={busy} placeholder="如：21V 2.0Ah 电池" onChange={(event) => update(index, { name: event.target.value })} />
-        <input className="input" type="number" min={0} step="0.01" aria-label={`配件${index + 1}价格`} value={item.price} disabled={busy} placeholder="元" onChange={(event) => update(index, { price: Number(event.target.value) || 0 })} />
-        <button className="icon-button danger" type="button" title="删除这条价格" aria-label={`删除第 ${index + 1} 条配件价格`} disabled={busy} onClick={() => remove(index)}><Trash2 size={14} /></button>
-      </div>)}
-    </div>}
-    {!loading && !items.length && <div className="empty-state">还没有全局配件，点「添加一行」开始维护（如：21V 2.0Ah 电池 8.5 元）。</div>}
-    <div className="packaging-preset-form-footer">
-      <button className="button button-secondary" type="button" disabled={busy || atLimit} title={atLimit ? `最多 ${ACCESSORY_PRICE_LIST_LIMIT} 条` : undefined} onClick={add}><Plus size={14} />添加一行</button>
-      <span className={dirty ? 'packaging-preset-dirty' : 'packaging-preset-saved'} role="status">{dirty ? '有未保存的修改' : `${items.length} / ${ACCESSORY_PRICE_LIST_LIMIT} 条`}</span>
-      <button className="button button-primary" type="button" disabled={busy || loading || !dirty} onClick={() => void save()}><Save size={14} />{busy ? '保存中...' : '保存配件价格'}</button>
-    </div>
-    {!!message && <p role="status" className={`notice notice-${messageKind}`} style={{ color: messageKind === 'error' ? 'var(--tone-danger-text)' : 'var(--tone-accent-text)', fontSize: 12 }}>{message}</p>}
+    <div className="settings-heading"><Calculator size={18} /><strong>电池与充电器价格</strong></div>
+    <p>售价计算器里按行名自动匹配：<b>电池行只出电池价、充电器行只出充电器价</b>；其它专属配件（钻头、锯片等）按产品类目在产品编辑器里维护。</p>
+
+    <h3 className="accessory-module-title">电池价格（行 = 单节容量，列 = 节数，格子 = 单价）</h3>
+    {loading && <div className="table-state">正在加载...</div>}
+    {!loading && <>
+      <div className="battery-matrix" style={{ gridTemplateColumns: `132px repeat(${matrix.packCounts.length}, minmax(78px, 1fr)) 30px` }}>
+        <span className="battery-matrix-corner">容量 \ 节数</span>
+        {matrix.packCounts.map((packCount, colIndex) => <div className="battery-matrix-headcol" key={`col-${colIndex}`}>
+          <span className="battery-matrix-col-edit">
+            <input className="input" type="number" min={1} aria-label={`第 ${colIndex + 1} 节数列数`} value={packCount || ''} placeholder="节数" disabled={matrixBusy} onChange={(event) => updatePackCount(colIndex, event.target.value)} />
+            <span>节</span>
+          </span>
+          <button className="icon-button danger" type="button" title="删除这一节数列" aria-label={`删除第 ${colIndex + 1} 节数列`} disabled={matrixBusy} onClick={() => removePackCountColumn(colIndex)}><Trash2 size={13} /></button>
+        </div>)}
+        <span />
+        {matrix.capacities.map((capacity, rowIndex) => <Fragment key={`row-${rowIndex}`}>
+          <span className="battery-matrix-rowhead">
+            <input className="input" type="number" min={1} aria-label={`第 ${rowIndex + 1} 容量行 mAh`} value={capacity || ''} placeholder="容量" disabled={matrixBusy} onChange={(event) => updateCapacity(rowIndex, event.target.value)} />
+            <span>mAh</span>
+          </span>
+          {matrix.packCounts.map((_packCount, colIndex) => <input
+            key={`cell-${rowIndex}-${colIndex}`}
+            className="input"
+            type="number"
+            min={0}
+            step="0.01"
+            aria-label={`${capacity || `容量行 ${rowIndex + 1}`} ${matrix.packCounts[colIndex] || ''} 节的单价`}
+            value={matrix.prices[rowIndex]?.[colIndex] || ''}
+            placeholder="元"
+            disabled={matrixBusy}
+            onChange={(event) => updateCell(rowIndex, colIndex, event.target.value)}
+          />)}
+          <button className="icon-button danger" type="button" title="删除这一容量行" aria-label={`删除第 ${rowIndex + 1} 容量行`} disabled={matrixBusy} onClick={() => removeCapacityRow(rowIndex)}><Trash2 size={13} /></button>
+        </Fragment>)}
+      </div>
+      {!matrix.capacities.length && !matrix.packCounts.length && <div className="empty-state">矩阵还是空的：先「添加容量行」和「添加节数列」，再逐格填单价。</div>}
+      <div className="packaging-preset-form-footer">
+        <button className="button button-secondary" type="button" disabled={matrixBusy || matrixAtLimit} title={matrixAtLimit ? `行列各最多 ${BATTERY_MATRIX_MAX_DIM} 个` : undefined} onClick={addCapacityRow}><Plus size={14} />添加容量行</button>
+        <button className="button button-secondary" type="button" disabled={matrixBusy || matrixAtLimit} title={matrixAtLimit ? `行列各最多 ${BATTERY_MATRIX_MAX_DIM} 个` : undefined} onClick={addPackCountColumn}><Plus size={14} />添加节数列</button>
+        <span className={matrixDirty ? 'packaging-preset-dirty' : 'packaging-preset-saved'} role="status">{matrixDirty ? '有未保存的修改' : ''}</span>
+        <button className="button button-primary" type="button" disabled={matrixBusy || !matrixDirty} onClick={() => void saveMatrix()}><Save size={14} />{matrixBusy ? '保存中...' : '保存电池价格'}</button>
+      </div>
+      {!!matrixMessage && <p role="status" className="notice" style={{ color: matrixMessageKind === 'error' ? 'var(--tone-danger-text)' : 'var(--tone-accent-text)', fontSize: 12 }}>{matrixMessage}</p>}
+    </>}
+
+    <h3 className="accessory-module-title">充电器价格（名称 + 单价）</h3>
+    {loading && <div className="table-state">正在加载...</div>}
+    {!loading && <>
+      {!!chargers.length && <div className="accessory-price-list">
+        {chargers.map((item, index) => <div className="accessory-price-row" key={item.id || index}>
+          <input className="input" aria-label={`充电器${index + 1}名称`} value={item.name} disabled={chargerBusy} placeholder="如：1.5A 充电器" onChange={(event) => updateCharger(index, { name: event.target.value })} />
+          <input className="input" type="number" min={0} step="0.01" aria-label={`充电器${index + 1}价格`} value={item.price} disabled={chargerBusy} placeholder="元" onChange={(event) => updateCharger(index, { price: Number(event.target.value) || 0 })} />
+          <button className="icon-button danger" type="button" title="删除这条价格" aria-label={`删除第 ${index + 1} 条充电器价格`} disabled={chargerBusy} onClick={() => removeCharger(index)}><Trash2 size={14} /></button>
+        </div>)}
+      </div>}
+      {!chargers.length && <div className="empty-state">还没有充电器价格，点「添加一行」开始（如：1.5A 充电器 6 元）。</div>}
+      <div className="packaging-preset-form-footer">
+        <button className="button button-secondary" type="button" disabled={chargerBusy || chargerAtLimit} title={chargerAtLimit ? `最多 ${ACCESSORY_PRICE_LIST_LIMIT} 条` : undefined} onClick={addCharger}><Plus size={14} />添加一行</button>
+        <span className={chargerDirty ? 'packaging-preset-dirty' : 'packaging-preset-saved'} role="status">{chargerDirty ? '有未保存的修改' : `${chargers.length} / ${ACCESSORY_PRICE_LIST_LIMIT} 条`}</span>
+        <button className="button button-primary" type="button" disabled={chargerBusy || !chargerDirty} onClick={() => void saveChargers()}><Save size={14} />{chargerBusy ? '保存中...' : '保存充电器价格'}</button>
+      </div>
+      {!!chargerMessage && <p role="status" className="notice" style={{ color: chargerMessageKind === 'error' ? 'var(--tone-danger-text)' : 'var(--tone-accent-text)', fontSize: 12 }}>{chargerMessage}</p>}
+    </>}
   </div>;
 }

@@ -4,6 +4,7 @@ import { calculateOrderAmountCents } from '../shared/order-prices';
 import { normalizeProductImageCategory } from '../shared/product-image-categories';
 import type { CatalogDensity } from '../shared/product-catalog';
 import type { AccessoryPrice } from '../shared/accessory-prices';
+import type { BatteryPriceMatrix } from '../shared/battery-prices';
 import type { PricePlanItemInput } from '../shared/price-calculator';
 import { normalizeProductStatus } from '../shared/product-status';
 import { mapStoredPurchaseQuotes, type ProductPurchaseQuote } from '../shared/product-purchase-quotes';
@@ -808,13 +809,22 @@ export function saveProduct(product: ProductRecord) { return request<ProductApiR
 export function updateProduct(id: string, product: ProductRecord) { return request<ProductApiRecord>(`/api/products/${id}`, { method: 'PUT', body: JSON.stringify(productToInput(product)) }); }
 export function deleteProduct(id: string) { return request(`/api/products/${id}`, { method: 'DELETE' }); }
 
-/** 全店共用的「配件与价格」清单（售价计算器取数；设置页维护）。 */
-export function getAccessoryPrices(): Promise<AccessoryPrice[]> {
-  return request<{ items: AccessoryPrice[] }>('/api/settings/accessory-prices').then((result) => result.items);
+/** 电池价格矩阵（设置页维护；行=容量、列=节数）。 */
+export function getBatteryPriceMatrix(): Promise<BatteryPriceMatrix> {
+  return request<BatteryPriceMatrix>('/api/settings/battery-price-matrix');
 }
 
-export function saveAccessoryPrices(items: AccessoryPrice[]): Promise<AccessoryPrice[]> {
-  return request<{ items: AccessoryPrice[] }>('/api/settings/accessory-prices', { method: 'PUT', body: JSON.stringify({ items }) }).then((result) => result.items);
+export function saveBatteryPriceMatrix(matrix: BatteryPriceMatrix): Promise<BatteryPriceMatrix> {
+  return request<BatteryPriceMatrix>('/api/settings/battery-price-matrix', { method: 'PUT', body: JSON.stringify(matrix) });
+}
+
+/** 充电器价格清单（设置页维护；名称 + 单价）。 */
+export function getChargerPrices(): Promise<AccessoryPrice[]> {
+  return request<{ items: AccessoryPrice[] }>('/api/settings/charger-prices').then((result) => result.items);
+}
+
+export function saveChargerPrices(items: AccessoryPrice[]): Promise<AccessoryPrice[]> {
+  return request<{ items: AccessoryPrice[] }>('/api/settings/charger-prices', { method: 'PUT', body: JSON.stringify({ items }) }).then((result) => result.items);
 }
 
 /** 类目配件：按产品分类共享（如电锤的钻头，同类目所有产品可用）。 */
