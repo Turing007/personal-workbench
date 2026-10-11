@@ -4848,6 +4848,9 @@ select {
 /* 产品编辑器与设置页：配件与价格（名称+单价）小表格。 */
 .accessory-price-list { display: grid; gap: 6px; }
 .accessory-price-row { display: grid; grid-template-columns: minmax(0, 1fr) 130px 32px; gap: 8px; align-items: center; }
+/* 详情弹窗「配件」行：本类目配件清单，每行 名称 价格。 */
+.product-detail-accessory-lines { display: grid; gap: 3px; font-size: 12.5px; }
+.product-detail-accessory-lines span { line-height: 1.5; }
 
 /* 售价计算弹窗：左计算器 / 右方案列表，手机端上下堆叠。 */
 .price-calc { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 18px; }

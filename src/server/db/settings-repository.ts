@@ -20,6 +20,7 @@ const AUTO_BACKUP_SETTINGS_KEY = 'auto_backup_settings';
 const TUNNEL_URL_KEY = 'tunnel_url';
 const PACKAGING_PRESETS_KEY = 'packaging_presets';
 const ACCESSORY_PRICES_KEY = 'accessory_prices';
+const CATEGORY_ACCESSORY_PRICES_KEY = 'category_accessory_prices';
 
 export interface AutoBackupSettingsRecord {
   /** 自定义备份目录；空字符串 = 默认目录（数据目录/backups）。 */
@@ -188,6 +189,43 @@ export class SettingsRepository {
       )
       .run(ACCESSORY_PRICES_KEY, JSON.stringify(items), new Date().toISOString());
     return items;
+  }
+
+  /** 类目配件（按产品分类共享，如电锤的钻头）：整份映射读出。 */
+  readCategoryAccessoryPrices(): Record<string, AccessoryPrice[]> {
+    const row = this.database.prepare('SELECT value FROM settings WHERE key = ?').get(CATEGORY_ACCESSORY_PRICES_KEY) as { value?: string } | undefined;
+    if (!row?.value) return {};
+    try {
+      const parsed = JSON.parse(row.value) as Record<string, unknown>;
+      const result: Record<string, AccessoryPrice[]> = {};
+      for (const [category, items] of Object.entries(parsed ?? {})) {
+        const name = category.trim();
+        if (name) result[name] = normalizeAccessoryPrices(items);
+      }
+      return result;
+    } catch {
+      return {};
+    }
+  }
+
+  readCategoryAccessoryPricesFor(category: string): AccessoryPrice[] {
+    const key = category.trim();
+    if (!key) return [];
+    return this.readCategoryAccessoryPrices()[key] ?? [];
+  }
+
+  saveCategoryAccessoryPrices(category: string, value: unknown): AccessoryPrice[] {
+    const key = category.trim();
+    if (!key) return [];
+    const all = this.readCategoryAccessoryPrices();
+    all[key] = normalizeAccessoryPrices(value);
+    this.database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(CATEGORY_ACCESSORY_PRICES_KEY, JSON.stringify(all), new Date().toISOString());
+    return all[key];
   }
 }
 

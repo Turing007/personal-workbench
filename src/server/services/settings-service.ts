@@ -28,13 +28,22 @@ export class SettingsService {
     return this.settings.savePackagingPresets(value);
   }
 
-  /** 全店共用的「配件与价格」清单（售价计算器取数）。 */
+  /** 全局配件（电池、充电器等所有产品通用；售价计算器取数）。 */
   getAccessoryPrices(): AccessoryPrice[] {
     return this.settings.readAccessoryPrices();
   }
 
   saveAccessoryPrices(value: unknown): AccessoryPrice[] {
     return this.settings.saveAccessoryPrices(value);
+  }
+
+  /** 类目配件：按产品分类共享（如电锤的钻头，同类目所有产品可用）。 */
+  getCategoryAccessoryPrices(category: string): AccessoryPrice[] {
+    return this.settings.readCategoryAccessoryPricesFor(category);
+  }
+
+  saveCategoryAccessoryPrices(category: string, value: unknown): AccessoryPrice[] {
+    return this.settings.saveCategoryAccessoryPrices(category, value);
   }
 
   /** 按现有产品包装记录重算并覆盖，供设置页「从产品库重新统计」使用。 */

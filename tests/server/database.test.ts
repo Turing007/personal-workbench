@@ -5,7 +5,7 @@ import { Readable } from 'node:stream';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase, withTransaction } from '../../src/server/db/connection';
-import { migrateDatabase } from '../../src/server/db/migrate';
+import { buildCategoryAccessorySeed, migrateDatabase } from '../../src/server/db/migrate';
 import { FileStore } from '../../src/server/files/file-store';
 
 const allTemporaryDirectories: string[] = [];
@@ -215,7 +215,7 @@ describe('SQLite database foundation', () => {
     const database = new DatabaseSync(':memory:');
     migrateDatabase(database);
 
-    expect(getSetting(database, 'schema_version')).toBe('29');
+    expect(getSetting(database, 'schema_version')).toBe('30');
     expect(getSetting(database, 'customer_products_v6_initialized')).toBe('1');
     expect(getColumnNames(database, 'customers')).toEqual(expect.arrayContaining([
       'id',
@@ -300,7 +300,7 @@ describe('SQLite database foundation', () => {
     expect(database.prepare('SELECT COUNT(*) AS count FROM orders').get()?.count).toBe(1);
     expect(database.prepare('SELECT status, label_printed_at FROM orders WHERE id = ?').get(orderId)).toMatchObject({ status: 'pending_stock' });
     expect(getSetting(database, 'customer_products_v6_initialized')).toBe('1');
-    expect(getSetting(database, 'schema_version')).toBe('29');
+    expect(getSetting(database, 'schema_version')).toBe('30');
     expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     expect(database
       .prepare('PRAGMA foreign_key_list(order_items)')
@@ -372,7 +372,7 @@ describe('SQLite database foundation', () => {
     migrateDatabase(database);
 
     expect(database.prepare('SELECT COUNT(*) AS count FROM customer_products').get()?.count).toBe(1);
-    expect(getSetting(database, 'schema_version')).toBe('29');
+    expect(getSetting(database, 'schema_version')).toBe('30');
     expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     database.close();
   });
@@ -457,18 +457,18 @@ describe('SQLite database foundation', () => {
         updated_at TEXT NOT NULL
       );
       INSERT INTO settings (key, value, updated_at)
-      VALUES ('schema_version', ' 30 ', '2026-08-11');
+      VALUES ('schema_version', ' 31 ', '2026-08-11');
     `);
     const schemaBefore = database
       .prepare("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")
       .all();
 
-    expect(() => migrateDatabase(database)).toThrow('Unsupported database schema version 30; this application supports up to version 29');
+    expect(() => migrateDatabase(database)).toThrow('Unsupported database schema version 31; this application supports up to version 30');
 
     expect(database
       .prepare("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")
       .all()).toEqual(schemaBefore);
-    expect(getSetting(database, 'schema_version')).toBe(' 30 ');
+    expect(getSetting(database, 'schema_version')).toBe(' 31 ');
     expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'products'").get()).toBeUndefined();
     database.close();
   });
@@ -603,7 +603,7 @@ describe('SQLite database foundation', () => {
 
     expect(database.prepare('PRAGMA foreign_keys').get()?.foreign_keys).toBe(1);
     expect(database.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe('wal');
-    expect(database.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()?.value).toBe('29');
+    expect(database.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()?.value).toBe('30');
     expect(getColumnNames(database, 'product_packaging')).toEqual(expect.arrayContaining([
       'inner_size',
       'inner_weight',
@@ -622,7 +622,7 @@ describe('SQLite database foundation', () => {
     expect(productDefault.parameters).toBe('');
 
     migrateDatabase(database);
-    expect(database.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()?.value).toBe('29');
+    expect(database.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()?.value).toBe('30');
 
     const indexNames = database
       .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY name")
@@ -879,7 +879,7 @@ describe('SQLite database foundation', () => {
     migrateDatabase(database);
 
     expect(getColumnNames(database, 'product_images').slice(-2)).toEqual(['category', 'note']);
-    expect(getSetting(database, 'schema_version')).toBe('29');
+    expect(getSetting(database, 'schema_version')).toBe('30');
 
     database.prepare("INSERT INTO products (name, created_at, updated_at) VALUES ('临时代理产品', '2026-01-01', '2026-01-01')").run();
     database
@@ -955,5 +955,41 @@ describe('attachment file store', () => {
       expect(() => store.resolvePublicPath(unsafePath)).toThrow();
       await expect(store.deleteFile(unsafePath)).rejects.toThrow();
     }
+  });
+});
+
+describe('v30：配件两层化迁移', () => {
+  it('旧配件文本按行拆进类目配件表：行尾价格、同名去重、跨产品合并', async () => {
+    const directory = await makeTemporaryDirectory();
+    const database = openDatabase(join(directory, 'workbench.sqlite'));
+    migrateDatabase(database);
+
+    const insert = database.prepare(
+      'INSERT INTO products (name, sku, category, accessories, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    );
+    insert.run('电锤A', 'VT-A', '电锤', '9 件套筒 6元\n钻头 3元', 't', 't');
+    insert.run('电锤B', 'VT-B', '电锤', '钻头 3元\n锯片 4.5元', 't', 't');
+    insert.run('无分类产品', 'VT-C', '', '只留原字段 1元', 't', 't');
+
+    const seed = buildCategoryAccessorySeed(database);
+    expect(Object.keys(seed)).toEqual(['电锤']);
+    expect(seed['电锤'].map((item) => `${item.name}:${item.price}`)).toEqual(['9 件套筒:6', '钻头:3', '锯片:4.5']);
+    // 原文保留在产品里，不做任何删除。
+    expect(database.prepare('SELECT accessories FROM products WHERE sku = ?').get('VT-A')).toEqual({ accessories: '9 件套筒 6元\n钻头 3元' });
+    database.close();
+  });
+
+  it('播种只在首次（键不存在）执行：首启后再插产品不会回灌进列表', async () => {
+    const directory = await makeTemporaryDirectory();
+    const database = openDatabase(join(directory, 'workbench.sqlite'));
+    migrateDatabase(database);
+    // 首次迁移已把键写成空表（当时还没有产品）。
+    expect(database.prepare("SELECT value FROM settings WHERE key = 'category_accessory_prices'").get()).toEqual({ value: '{}' });
+    database
+      .prepare('INSERT INTO products (name, sku, category, accessories, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('后加产品', 'VT-D', '电锤', '钻头 3元', 't', 't');
+    migrateDatabase(database);
+    expect(database.prepare("SELECT value FROM settings WHERE key = 'category_accessory_prices'").get()).toEqual({ value: '{}' });
+    database.close();
   });
 });

@@ -7,7 +7,7 @@ function errorMessage(error: unknown, fallback: string) {
   return (error as { message?: string } | undefined)?.message ?? fallback;
 }
 
-/** 全店共用的「配件与价格」：售价计算器里选到即自动带价；产品里还能各加专属件。 */
+/** 全局配件（电池、充电器等所有产品通用）：列表式维护；售价计算器里选到即自动带价。 */
 export default function AccessoryPricesSection() {
   const [items, setItems] = useState<AccessoryPrice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,8 +64,8 @@ export default function AccessoryPricesSection() {
   const atLimit = items.length >= ACCESSORY_PRICE_LIST_LIMIT;
 
   return <div className="settings-section card">
-    <div className="settings-heading"><Calculator size={18} /><strong>配件与价格</strong></div>
-    <p>全店共用一份：售价计算器里点每行的「选」即可按名称挑出、自动带价（电池、充电器、常用配件放这里最省事）。产品编辑器里还能给单个产品加专属件。这里的清单存服务端，手机和电脑看到的是同一份。</p>
+    <div className="settings-heading"><Calculator size={18} /><strong>全局配件与价格</strong></div>
+    <p>电池、充电器这类<b>所有产品通用</b>的配件放这里，列表式维护：售价计算器里点每行的「选」即可按名称挑出、自动带价（标「全局」）。某类产品专属的件（如电锤的钻头）在产品的「类目配件」里维护。清单存服务端，手机和电脑看到的是同一份。</p>
     {loading && <div className="table-state">正在加载配件价格...</div>}
     {!loading && !!items.length && <div className="accessory-price-list">
       {items.map((item, index) => <div className="accessory-price-row" key={item.id || index}>
@@ -74,7 +74,7 @@ export default function AccessoryPricesSection() {
         <button className="icon-button danger" type="button" title="删除这条价格" aria-label={`删除第 ${index + 1} 条配件价格`} disabled={busy} onClick={() => remove(index)}><Trash2 size={14} /></button>
       </div>)}
     </div>}
-    {!loading && !items.length && <div className="empty-state">还没有配件价格，点「添加一行」开始维护（如：21V 2.0Ah 电池 8.5 元）。</div>}
+    {!loading && !items.length && <div className="empty-state">还没有全局配件，点「添加一行」开始维护（如：21V 2.0Ah 电池 8.5 元）。</div>}
     <div className="packaging-preset-form-footer">
       <button className="button button-secondary" type="button" disabled={busy || atLimit} title={atLimit ? `最多 ${ACCESSORY_PRICE_LIST_LIMIT} 条` : undefined} onClick={add}><Plus size={14} />添加一行</button>
       <span className={dirty ? 'packaging-preset-dirty' : 'packaging-preset-saved'} role="status">{dirty ? '有未保存的修改' : `${items.length} / ${ACCESSORY_PRICE_LIST_LIMIT} 条`}</span>

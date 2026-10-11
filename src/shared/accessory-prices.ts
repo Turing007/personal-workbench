@@ -11,7 +11,7 @@ export interface AccessoryPrice {
 }
 
 export const ACCESSORY_PRICE_LIST_LIMIT = 80;
-export const ACCESSORY_PRICE_NAME_LIMIT = 40;
+export const ACCESSORY_PRICE_NAME_LIMIT = 60;
 
 export function accessoryPriceValue(value: unknown): number {
   const parsed = Number(value);
@@ -37,5 +37,40 @@ export function normalizeAccessoryPrices(value: unknown): AccessoryPrice[] {
     const item = normalizeAccessoryPrice(entry, `acc-${index}`);
     if (item) result.push(item);
   });
+  return result;
+}
+
+/**
+ * 旧「配件」文本框的按行拆分（一次性迁移用，不参与日常读写）：
+ * 行尾的「6元」或「0.03/根」当作价格，其余作名称；没有行尾价格的按 0 保留名称。
+ */
+export function parseLegacyAccessoriesText(text: string): AccessoryPrice[] {
+  const result: AccessoryPrice[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const matched = line.match(/^(.*?)[\s:：]*([0-9]+(?:\.[0-9]+)?)\s*元\s*$/)
+      ?? line.match(/^(.*?)[\s:：]*([0-9]+(?:\.[0-9]+)?)\s*\/\s*\S+\s*$/);
+    const name = (matched ? matched[1] : line).trim();
+    if (!name) continue;
+    result.push({ id: '', name: name.slice(0, ACCESSORY_PRICE_NAME_LIMIT), price: matched ? accessoryPriceValue(matched[2]) : 0 });
+  }
+  return result;
+}
+
+/** 同名合并（迁移跨产品去重）：保留先出现的条目，价格为空且新值有价时补上价格。 */
+export function mergeAccessoryPrices(base: AccessoryPrice[], incoming: AccessoryPrice[]): AccessoryPrice[] {
+  const result = base.map((item) => ({ ...item }));
+  const byName = new Map(result.map((item) => [item.name, item]));
+  for (const item of incoming) {
+    const existing = byName.get(item.name);
+    if (!existing) {
+      const copy = { ...item };
+      result.push(copy);
+      byName.set(copy.name, copy);
+      continue;
+    }
+    if (existing.price <= 0 && item.price > 0) existing.price = item.price;
+  }
   return result;
 }

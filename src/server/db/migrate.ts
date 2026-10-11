@@ -2,9 +2,10 @@ import type { DatabaseSync } from 'node:sqlite';
 import { withTransaction } from './connection.js';
 import { migratePackagingColumns } from './packaging.js';
 import { sortByImageLeadNumber } from '../../shared/product-image-order.js';
+import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesText } from '../../shared/accessory-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 29;
+const CURRENT_SCHEMA_VERSION = 30;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -1136,6 +1137,41 @@ function migrateVersionTwentySeven(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '27', now);
 }
 
+/**
+ * 旧「配件」文本框按行拆进各分类的类目配件表（原文保留不动）。
+ * 供 v30 一次性播种与测试使用：同名跨产品去重、保留先出现的条目。
+ */
+export function buildCategoryAccessorySeed(database: DatabaseSync): Record<string, ReturnType<typeof parseLegacyAccessoriesText>> {
+  const rows = database
+    .prepare("SELECT category, accessories FROM products WHERE length(trim(accessories)) > 0 AND length(trim(category)) > 0")
+    .all() as Array<{ category: string; accessories: string }>;
+  const map: Record<string, ReturnType<typeof parseLegacyAccessoriesText>> = {};
+  for (const row of rows) {
+    const category = String(row.category).trim().slice(0, 40);
+    if (!category) continue;
+    const parsed = parseLegacyAccessoriesText(String(row.accessories ?? ''));
+    if (!parsed.length) continue;
+    map[category] = mergeAccessoryPrices(map[category] ?? [], parsed);
+  }
+  for (const [category, items] of Object.entries(map)) map[category] = normalizeAccessoryPrices(items);
+  return map;
+}
+
+/** 配件两层化：全局清单存设置不动；类目配件首次（键不存在）时从旧配件文本播种。 */
+function migrateVersionThirty(database: DatabaseSync, now: string): void {
+  const existing = database.prepare("SELECT value FROM settings WHERE key = 'category_accessory_prices'").get();
+  if (existing === undefined) {
+    const seed = buildCategoryAccessorySeed(database);
+    database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run('category_accessory_prices', JSON.stringify(seed), now);
+  }
+  upsertSetting(database, 'schema_version', '30', now);
+}
+
 /** 售价计算器：产品「配件与价格」（JSON 列，同颜色/插脚存法）+ 算价方案两张表。 */
 function migrateVersionTwentyNine(database: DatabaseSync, now: string): void {
   const columns = database.prepare('PRAGMA table_info(products)').all() as Array<{ name: string }>;
@@ -1267,6 +1303,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionTwentySeven(transactionDatabase, now);
     migrateVersionTwentyEight(transactionDatabase, now);
     migrateVersionTwentyNine(transactionDatabase, now);
+    migrateVersionThirty(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

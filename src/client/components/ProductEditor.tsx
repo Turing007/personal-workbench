@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent } from 'react';
-import { listCatalogs, type CatalogSummary } from '../api';
+import { getCategoryAccessoryPrices, listCatalogs, saveCategoryAccessoryPrices, type CatalogSummary } from '../api';
+import type { AccessoryPrice } from '../../shared/accessory-prices';
 import { Download, ExternalLink, FilePlus2, Play, Plus, Save, Trash2, Video } from 'lucide-react';
 import ImagePasteUpload, { type ImageAttachment } from './ImagePasteUpload';
 import VideoPlayerModal from './VideoPlayerModal';
@@ -33,8 +34,6 @@ export interface ProductRecord extends CustomerProduct {
   /** 产品视频：已保存的带 url；本次新选的带 file，保存后进后台上传队列。 */
   videos?: ProductVideo[];
   accessories: string;
-  /** 产品专有的「配件与价格」（名称+单价，售价计算器取数）；价格用字符串装输入框原值。 */
-  accessoryPrices?: Array<{ id: string; name: string; price: string }>;
   remark: string;
   packaging: PackagingOption[];
   /** 多档采购报价；默认档决定列表价格与客户产品成本价。 */
@@ -100,7 +99,7 @@ function withFirstQuoteRow(record: ProductRecord): ProductRecord {
 }
 
 function blankProduct(): ProductRecord {
-  return { id: `product-${Date.now()}`, name: '', sku: '', specification: '', packCount: 1, parameters: '', packaging: [blankPackagingRow()], remark: '', category: '', purchasePrice: '', supplier: '', purchaseQuotes: [], colors: [], batteryPlugs: [], images: [], videos: [], accessories: '', accessoryPrices: [], attachments: [] };
+  return { id: `product-${Date.now()}`, name: '', sku: '', specification: '', packCount: 1, parameters: '', packaging: [blankPackagingRow()], remark: '', category: '', purchasePrice: '', supplier: '', purchaseQuotes: [], colors: [], batteryPlugs: [], images: [], videos: [], accessories: '', attachments: [] };
 }
 
 const attachmentCategories: Array<{ value: ProductAttachmentCategory; label: string }> = [
@@ -186,27 +185,86 @@ function ProductVideoSection({ value, onChange }: { value: ProductVideo[]; onCha
   </section>;
 }
 
-/** 产品专有的「配件与价格」：售价计算器里选到即自动带出名称与单价。 */
-function AccessoryPricesEditor({ value, onChange }: { value: NonNullable<ProductRecord['accessoryPrices']>; onChange: (next: NonNullable<ProductRecord['accessoryPrices']>) => void }) {
-  const update = (id: string, patch: Partial<{ name: string; price: string }>) => {
-    onChange(value.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+/**
+ * 类目配件：按产品分类共享（电锤的钻头，同类目所有产品都能用）。
+ * 编辑器里维护的是本产品所属分类的表，改动对同类目全部产品即时生效；
+ * 电池、充电器这类所有产品通用的件放设置页的「全局配件」。
+ */
+function CategoryAccessoryPricesEditor({ category }: { category: string }) {
+  const key = category.trim();
+  const [items, setItems] = useState<AccessoryPrice[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [message, setMessage] = useState('');
+  const [messageKind, setMessageKind] = useState<'success' | 'error'>('success');
+
+  useEffect(() => {
+    if (!key) {
+      setItems([]);
+      setDirty(false);
+      setMessage('');
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    getCategoryAccessoryPrices(key)
+      .then((list) => { if (!cancelled) { setItems(list); setDirty(false); setMessage(''); } })
+      .catch(() => { if (!cancelled) { setItems([]); setMessageKind('error'); setMessage('类目配件加载失败'); } })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [key]);
+
+  const update = (id: string, patch: Partial<Pick<AccessoryPrice, 'name' | 'price'>>) => {
+    setItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+    setDirty(true);
   };
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      setItems(await saveCategoryAccessoryPrices(key, items));
+      setDirty(false);
+      setMessageKind('success');
+      setMessage(`已保存「${key}」类目配件，同类目所有产品立即可选`);
+    } catch (error) {
+      setMessageKind('error');
+      setMessage((error as { message?: string })?.message ?? '类目配件保存失败');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return <section className="section-box">
-    <div className="section-box-header"><span className="section-box-title">配件与价格</span>
-      <button
+    <div className="section-box-header"><span className="section-box-title">配件与价格{key ? ` · ${key}（同类目共用）` : ''}</span>
+      {!!key && <button
         type="button"
         className="button button-secondary button-sm"
-        onClick={() => onChange([...value, { id: `acc-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: '', price: '' }])}
-      ><Plus size={14} />添加配件价格</button>
+        disabled={busy || loading}
+        onClick={() => {
+          setItems((current) => [...current, { id: `acc-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: '', price: 0 }]);
+          setDirty(true);
+        }}
+      ><Plus size={14} />添加配件价格</button>}
     </div>
-    <span className="label-hint">记名称和单价（元），电池、充电器也写这里；售价计算器里选到即自动带价。空名的行保存时会丢弃。</span>
-    {value.length ? <div className="accessory-price-list">{value.map((item, index) => (
-      <div className="accessory-price-row" key={item.id || index}>
-        <input className="input" aria-label={`配件${index + 1}名称`} value={item.name} placeholder="如：21V 2.0Ah 电池" onChange={(event) => update(item.id, { name: event.target.value })} />
-        <input className="input" type="number" min={0} step="0.01" aria-label={`配件${index + 1}价格`} value={item.price} placeholder="元" onChange={(event) => update(item.id, { price: event.target.value })} />
-        <button className="icon-button danger" type="button" title="移除这条配件价格" aria-label={`移除第 ${index + 1} 条配件价格`} onClick={() => onChange(value.filter((entry) => entry.id !== item.id))}><Trash2 size={14} /></button>
-      </div>
-    ))}</div> : <div className="empty-state">暂无配件价格。</div>}
+    {key ? <>
+      <span className="label-hint">本类目专属配件（钻头、锯片这类），「{key}」下的所有产品在售价计算器里都能选到并自动带价；空名行保存时会丢弃。</span>
+      {loading && <div className="table-state">正在加载类目配件...</div>}
+      {!loading && !!items.length && <div className="accessory-price-list">{items.map((item, index) => (
+        <div className="accessory-price-row" key={item.id || index}>
+          <input className="input" aria-label={`类目配件${index + 1}名称`} value={item.name} placeholder="如：9 件套筒" onChange={(event) => update(item.id, { name: event.target.value })} />
+          <input className="input" type="number" min={0} step="0.01" aria-label={`类目配件${index + 1}价格`} value={item.price} placeholder="元" onChange={(event) => update(item.id, { price: Number(event.target.value) || 0 })} />
+          <button className="icon-button danger" type="button" title="移除这条配件价格" aria-label={`移除第 ${index + 1} 条类目配件`} onClick={() => { setItems((current) => current.filter((entry) => entry.id !== item.id)); setDirty(true); }}><Trash2 size={14} /></button>
+        </div>
+      ))}</div>}
+      {!loading && !items.length && <div className="empty-state">「{key}」还没有类目配件，点右上角添加。</div>}
+      {!loading && <div className="packaging-preset-form-footer">
+        <span className={dirty ? 'packaging-preset-dirty' : 'packaging-preset-saved'} role="status">{dirty ? '有未保存的修改' : `${items.length} 条`}</span>
+        {/* 次要样式：弹窗里唯一的绿色主按钮留给「保存产品」，避免两个主操作混淆。 */}
+        <button className="button button-secondary" type="button" disabled={busy || !dirty} onClick={() => void save()}>{busy ? '保存中...' : '保存类目配件'}</button>
+      </div>}
+      {!!message && <p role="status" style={{ margin: 0, fontSize: 12, color: messageKind === 'error' ? 'var(--tone-danger-text)' : '#0f766e' }}>{message}</p>}
+    </> : <span className="label-hint">先在上方填写「产品分类」，保存后即可维护该类目的配件与价格（同类目所有产品共用）。</span>}
   </section>;
 }
 
@@ -361,7 +419,7 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
         <label className="label">备注<textarea className="textarea" rows={6} value={draft.remark ?? ''} onChange={(event) => set('remark', event.target.value)} /></label>
       </div>
       <PackagingTable collapsible value={draft.packaging} onChange={(packaging: PackagingOption[]) => set('packaging', packaging)} presets={packagingPresets} onManagePresets={onManagePresets} />
-      <AccessoryPricesEditor value={draft.accessoryPrices ?? []} onChange={(accessoryPrices) => set('accessoryPrices', accessoryPrices)} />
+      <CategoryAccessoryPricesEditor category={draft.category ?? ''} />
       <ImagePasteUpload label="产品图片与资料图" value={draft.images} onChange={(images) => set('images', images)} multiple showNotes sortable compact selectable categories={PRODUCT_IMAGE_CATEGORY_OPTIONS} />
       <ProductVideoSection value={draft.videos ?? []} onChange={(videos) => set('videos', videos)} />
       <ProductAttachments value={draft.attachments ?? []} onChange={(attachments) => set('attachments', attachments)} />

@@ -1,7 +1,9 @@
 import { Calculator, Check, Copy, Download, ExternalLink, FileText, Image, Package, Play, Video } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Modal from './Modal';
+import { getCategoryAccessoryPrices } from '../api';
+import type { AccessoryPrice } from '../../shared/accessory-prices';
 import PendingImageTile from './PendingImageTile';
 import ProductImagesModal from './ProductImagesModal';
 import VideoPlayerModal from './VideoPlayerModal';
@@ -63,6 +65,20 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
   const [copiedPackagingId, setCopiedPackagingId] = useState<string>();
   const [packagingImages, setPackagingImages] = useState<{ name: string; images: ProductRecord['packaging'][number]['images'] }>();
   const [playingVideo, setPlayingVideo] = useState<ProductVideo>();
+  const [categoryAccessories, setCategoryAccessories] = useState<AccessoryPrice[]>([]);
+  const detailCategory = (product?.category ?? '').trim();
+  // 「配件」行显示本类目配件清单（同类目共用，编辑器里维护）。
+  useEffect(() => {
+    if (!open || !detailCategory) {
+      setCategoryAccessories([]);
+      return;
+    }
+    let cancelled = false;
+    getCategoryAccessoryPrices(detailCategory)
+      .then((items) => { if (!cancelled) setCategoryAccessories(items.filter((item) => item.name.trim())); })
+      .catch(() => { if (!cancelled) setCategoryAccessories([]); });
+    return () => { cancelled = true; };
+  }, [open, detailCategory]);
   if (!product) return null;
 
   const parameters = product.parameters ?? '';
@@ -129,7 +145,13 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
               </div>)}
             </div>
           </DetailItem>}
-          <DetailItem label="配件" fullWidth>{product.accessories || '—'}</DetailItem>
+          <DetailItem label={`配件${detailCategory ? `（${detailCategory} · 同类目共用）` : ''}`} fullWidth>
+            {categoryAccessories.length
+              ? <div className="product-detail-accessory-lines">{categoryAccessories.map((item) => (
+                <span key={item.id}>{item.name}{item.price > 0 ? ` ¥${item.price.toFixed(2)}` : ''}</span>
+              ))}</div>
+              : '—'}
+          </DetailItem>
           <DetailItem label="备注" fullWidth>{product.remark || '—'}</DetailItem>
           <DetailItem label="图片" fullWidth>
             {image || pendingImages.length ? (

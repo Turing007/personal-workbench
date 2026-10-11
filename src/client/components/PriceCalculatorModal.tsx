@@ -4,6 +4,7 @@ import Modal from './Modal';
 import {
   deletePricePlan,
   getAccessoryPrices,
+  getCategoryAccessoryPrices,
   listPricePlans,
   savePricePlan,
   type PricePlanRecord,
@@ -87,7 +88,8 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const [targetPrice, setTargetPrice] = useState('');
   const [planName, setPlanName] = useState('');
   const [plans, setPlans] = useState<PricePlanRecord[]>([]);
-  const [sharedAccessories, setSharedAccessories] = useState<AccessoryPrice[]>([]);
+  const [globalAccessories, setGlobalAccessories] = useState<AccessoryPrice[]>([]);
+  const [categoryAccessories, setCategoryAccessories] = useState<AccessoryPrice[]>([]);
   const [pickerRow, setPickerRow] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -102,8 +104,9 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     setPickerRow(null);
     setMessage('');
     setPlans([]);
-    setSharedAccessories([]);
-    // 打开时载入：本产品最近一份方案（回显上次算的）+ 全店共用配件清单。
+    setGlobalAccessories([]);
+    setCategoryAccessories([]);
+    // 打开时载入：本产品最近一份方案（回显上次算的）+ 全局配件 + 本类目配件。
     if (/^\d+$/.test(product.id)) {
       listPricePlans(product.id)
         .then((items) => {
@@ -120,8 +123,14 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
         .catch(() => { if (!cancelled) setMessage('算价方案加载失败'); });
     }
     getAccessoryPrices()
-      .then((items) => { if (!cancelled) setSharedAccessories(items); })
+      .then((items) => { if (!cancelled) setGlobalAccessories(items); })
       .catch(() => {});
+    const category = (product.category ?? '').trim();
+    if (category) {
+      getCategoryAccessoryPrices(category)
+        .then((items) => { if (!cancelled) setCategoryAccessories(items); })
+        .catch(() => {});
+    }
     return () => { cancelled = true; };
   }, [open, product]);
 
@@ -191,7 +200,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   };
 
   const packagingOptions = product.packaging.filter((item) => item.name.trim());
-  const ownAccessories = (product.accessoryPrices ?? []).filter((item) => item.name.trim());
+  const productCategory = (product.category ?? '').trim();
 
   return <Modal open={open} title={`售价计算 · ${product.name || product.sku || '产品'}`} onClose={onClose} width={980}>
     <div className="price-calc">
@@ -227,22 +236,25 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
                   onClick={() => pickIntoRow(row.key, option.name.trim(), option.purchasePrice)}
                 >{option.name.trim()}<em>{option.purchasePrice.trim() ? `¥${option.purchasePrice}` : '未填采购价'}</em></button>)}
               </>}
-              {(sharedAccessories.length > 0 || ownAccessories.length > 0) && <>
-                <span className="price-calc-picker-label">配件与价格</span>
-                {sharedAccessories.map((option) => <button
-                  key={`shared-${option.id}`}
+              {categoryAccessories.length > 0 && <>
+                <span className="price-calc-picker-label">本类目配件（{productCategory}）</span>
+                {categoryAccessories.map((option) => <button
+                  key={`category-${option.id}`}
                   className="price-calc-picker-item"
                   type="button"
                   onClick={() => pickIntoRow(row.key, option.name, String(option.price))}
-                >{option.name}<em>共用 · ¥{option.price.toFixed(2)}</em></button>)}
-                {ownAccessories.map((option) => <button
-                  key={`own-${option.id}`}
+                >{option.name}<em>本类目 · ¥{option.price.toFixed(2)}</em></button>)}
+              </>}
+              {globalAccessories.length > 0 && <>
+                <span className="price-calc-picker-label">全局配件（所有产品通用）</span>
+                {globalAccessories.map((option) => <button
+                  key={`global-${option.id}`}
                   className="price-calc-picker-item"
                   type="button"
-                  onClick={() => pickIntoRow(row.key, option.name.trim(), option.price)}
-                >{option.name.trim()}<em>本产品 · ¥{Number(option.price || 0).toFixed(2)}</em></button>)}
+                  onClick={() => pickIntoRow(row.key, option.name, String(option.price))}
+                >{option.name}<em>全局 · ¥{option.price.toFixed(2)}</em></button>)}
               </>}
-              {!packagingOptions.length && !sharedAccessories.length && !ownAccessories.length && <span className="price-calc-picker-empty">还没有可选的包装与配件价格：产品里填「包装采购价」，设置页或产品里填「配件与价格」。</span>}
+              {!packagingOptions.length && !categoryAccessories.length && !globalAccessories.length && <span className="price-calc-picker-empty">还没有可选的包装与配件价格：产品里填「包装采购价」，编辑器里维护「类目配件」，设置页维护「全局配件」。</span>}
             </div>}
           </div>;
         })}

@@ -144,7 +144,7 @@ describe('售价计算器：产品「配件与价格」', () => {
     expect(cleared.json().data.accessoryPrices).toEqual([]);
   });
 
-  it('全店共用的配件清单：保存与读取走 settings，空名丢弃', async () => {
+  it('全局配件清单：保存与读取走 settings，空名丢弃', async () => {
     const { settingsRepository } = await createFixture();
     expect(settingsRepository.readAccessoryPrices()).toEqual([]);
     const saved = settingsRepository.saveAccessoryPrices([
@@ -154,5 +154,17 @@ describe('售价计算器：产品「配件与价格」', () => {
     ]);
     expect(saved).toHaveLength(2);
     expect(settingsRepository.readAccessoryPrices().map((item) => item.name)).toEqual(['21V 2.0Ah 电池', '1.5A 充电器']);
+  });
+
+  it('类目配件表：按分类分开存取，互不覆盖', async () => {
+    const { settingsRepository } = await createFixture();
+    settingsRepository.saveCategoryAccessoryPrices('电锤', [{ name: '9 件套筒', price: 6 }]);
+    settingsRepository.saveCategoryAccessoryPrices('链锯', [{ name: '链条', price: 12 }, { name: '', price: 1 }]);
+    expect(settingsRepository.readCategoryAccessoryPricesFor('电锤')).toEqual([expect.objectContaining({ name: '9 件套筒', price: 6 })]);
+    expect(settingsRepository.readCategoryAccessoryPricesFor('链锯')).toHaveLength(1);
+    expect(settingsRepository.readCategoryAccessoryPricesFor(' 电锤 ')).toHaveLength(1);
+    expect(settingsRepository.readCategoryAccessoryPrices()).toEqual(
+      expect.objectContaining({ 电锤: expect.any(Array), 链锯: expect.any(Array) }),
+    );
   });
 });

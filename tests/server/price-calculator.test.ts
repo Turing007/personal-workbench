@@ -8,7 +8,7 @@ import {
   pricePlanMarkup,
   round2,
 } from '../../src/shared/price-calculator';
-import { normalizeAccessoryPrices } from '../../src/shared/accessory-prices';
+import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesText } from '../../src/shared/accessory-prices';
 
 describe('售价计算（纯函数）', () => {
   it('行金额 = 数量 × 单价，合计到分，售价按加价率折算', () => {
@@ -63,5 +63,24 @@ describe('配件与价格清洗', () => {
     ]);
     const many = Array.from({ length: 100 }, (_, index) => ({ name: `配件${index}`, price: index }));
     expect(normalizeAccessoryPrices(many)).toHaveLength(80);
+  });
+
+  it('旧配件文本按行拆分：行尾「6元」「0.03/根」作价格，其余作名称', () => {
+    expect(
+      parseLegacyAccessoriesText('套筒9件套（10 11 12  13 14 15 17 3/8转1/4  75mm加长杆 ） 6元\n3.2 4.0 4.8拉嘴+扳手（标配）\n铆钉 0.03/根\n\n'),
+    ).toEqual([
+      { id: '', name: '套筒9件套（10 11 12  13 14 15 17 3/8转1/4  75mm加长杆 ）', price: 6 },
+      { id: '', name: '3.2 4.0 4.8拉嘴+扳手（标配）', price: 0 },
+      { id: '', name: '铆钉', price: 0.03 },
+    ]);
+  });
+
+  it('同名合并保留先出现的条目，价格为空时用新值补上', () => {
+    expect(
+      mergeAccessoryPrices([{ id: 'a1', name: '钻头', price: 0 }], [{ id: '', name: '钻头', price: 3 }, { id: '', name: '锯片', price: 4.5 }]),
+    ).toEqual([
+      { id: 'a1', name: '钻头', price: 3 },
+      { id: '', name: '锯片', price: 4.5 },
+    ]);
   });
 });

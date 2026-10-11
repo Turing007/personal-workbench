@@ -174,6 +174,27 @@ export async function registerSettingsRoutes(app: FastifyInstance, options: Sett
     }, reply),
   );
 
+  app.get('/api/settings/category-accessory-prices', async (request, reply) =>
+    safeRoute(() => {
+      const category = String((request.query as { category?: string }).category ?? '').trim();
+      if (!category) throw new ApiError(400, 'VALIDATION_ERROR', '缺少分类名', 'category');
+      return sendSuccess(reply, { items: options.service.getCategoryAccessoryPrices(category) });
+    }, reply),
+  );
+
+  app.put('/api/settings/category-accessory-prices', async (request, reply) =>
+    safeRoute(() => {
+      const body = asRecord(request.body);
+      const category = typeof body.category === 'string' ? body.category.trim().slice(0, 40) : '';
+      if (!category) throw new ApiError(400, 'VALIDATION_ERROR', '缺少分类名', 'category');
+      if (!Array.isArray(body.items)) throw new ApiError(400, 'VALIDATION_ERROR', '配件价格数据格式不正确', 'items');
+      if (body.items.length > ACCESSORY_PRICE_LIST_LIMIT) {
+        throw new ApiError(400, 'ACCESSORY_LIMIT', `配件价格最多 ${ACCESSORY_PRICE_LIST_LIMIT} 条，请先删除再添加`, 'items');
+      }
+      return sendSuccess(reply, { items: options.service.saveCategoryAccessoryPrices(category, body.items) });
+    }, reply),
+  );
+
   app.post('/api/settings/company-profile/logo', async (request, reply) =>
     safeRoute(async () => {
       const file = await request.file(imageFileOptions);

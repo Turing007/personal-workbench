@@ -24,13 +24,13 @@ test('售价计算器：默认带价、选配件带价、保存方案、回显�
       category: '电动工具',
       purchaseQuotes: [{ supplier: 'E2E算价供应商', variant: '', price: 46, isDefault: true }],
       packaging: [{ name: '彩盒包装', innerSize: '30*22*10', innerWeight: 0.8, outerSize: '62*40*25', outerWeight: 12, packCount: 24, purchasePrice: 3.2 }],
-      accessoryPrices: [{ name: '21V 2.0Ah 电池', price: 8.5 }],
     },
   });
   expect(created.ok()).toBe(true);
   const product = (await created.json()).data as { id: number };
-  // 共用配件清单给一条，验证「共用 ·」来源也能选到。
+  // 两层配件：全局给充电器、类目（电动工具）给电池，验证两个来源都能选到并自动带价。
   expect((await page.request.put('/api/settings/accessory-prices', { data: { items: [{ name: 'E2E充电器', price: 6 }] } })).ok()).toBe(true);
+  expect((await page.request.put('/api/settings/category-accessory-prices', { data: { category: '电动工具', items: [{ name: '21V 2.0Ah 电池', price: 8.5 }] } })).ok()).toBe(true);
 
   try {
     await page.goto('/');
@@ -48,8 +48,9 @@ test('售价计算器：默认带价、选配件带价、保存方案、回显�
     await expect(dialog.getByTestId('price-calc-total')).toHaveText('¥49.20');
     await expect(dialog.getByTestId('price-calc-sale')).toHaveText('¥59.04');
 
-    // 电池行：从本产品配件表选 → 名称与单价自动带出；数量改 2 → 合计 66.20 / 售价 79.44。
+    // 电池行：从「本类目配件」选 → 名称与单价自动带出；数量改 2 → 合计 66.20 / 售价 79.44。
     await dialog.getByLabel('为第 3 行选择包装或配件').click();
+    await expect(dialog.locator('.price-calc-picker-item', { hasText: '本类目 · ¥8.50' })).toBeVisible();
     await dialog.locator('.price-calc-picker-item', { hasText: '21V 2.0Ah 电池' }).first().click();
     await expect(dialog.getByLabel('成本3名称')).toHaveValue('21V 2.0Ah 电池');
     await expect(dialog.getByLabel('成本3单价')).toHaveValue('8.5');
@@ -57,9 +58,9 @@ test('售价计算器：默认带价、选配件带价、保存方案、回显�
     await expect(dialog.getByTestId('price-calc-total')).toHaveText('¥66.20');
     await expect(dialog.getByTestId('price-calc-sale')).toHaveText('¥79.44');
 
-    // 充电器行：从共用清单选（来源标识「共用」）。
+    // 充电器行：从「全局配件」选（来源标识「全局」）。
     await dialog.getByLabel('为第 4 行选择包装或配件').click();
-    await expect(dialog.locator('.price-calc-picker-item', { hasText: '共用 · ¥6.00' })).toBeVisible();
+    await expect(dialog.locator('.price-calc-picker-item', { hasText: '全局 · ¥6.00' })).toBeVisible();
     await dialog.locator('.price-calc-picker-item', { hasText: 'E2E充电器' }).click();
     await expect(dialog.getByLabel('成本4单价')).toHaveValue('6');
 
@@ -97,5 +98,6 @@ test('售价计算器：默认带价、选配件带价、保存方案、回显�
   } finally {
     await page.request.delete(`/api/products/${product.id}`);
     await page.request.put('/api/settings/accessory-prices', { data: { items: [] } });
+    await page.request.put('/api/settings/category-accessory-prices', { data: { category: '电动工具', items: [] } });
   }
 });
