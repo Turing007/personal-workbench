@@ -4245,13 +4245,6 @@ select {
 .accessory-prices-table th:nth-child(1),
 .accessory-prices-table td:nth-child(1) { width: 190px; }
 
-.purchase-quotes-hint {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: var(--text-2xs);
-  line-height: 1.5;
-}
-
 /* 窄屏时报价表压成一行；「默认档」列已并入供应商高亮，共四列：
    供应商与价格定宽、「名目 / 款式」吃掉剩余空间、末列删除。
    输入框这里破例降到 13px（全局 iOS 底线是 16px），配套 viewport 的 maximum-scale=1 关掉聚焦自动放大，

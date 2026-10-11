@@ -90,6 +90,9 @@ test('编辑器：采购报价在品名下面，多档可增可改且默认档�
   expect(sectionBackgrounds).toHaveLength(2);
   expect(sectionBackgrounds[0]).toBe(sectionBackgrounds[1]);
 
+  // 报价表下面的提示小字已移除：区块里不再有说明段落。
+  await expect(quotesSection(page).locator('p')).toHaveCount(0);
+
   await editor.getByRole('button', { name: '保存产品' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
@@ -151,6 +154,9 @@ test('详情弹窗：按供应商分组展示各档，受小眼睛控制', async
     // 详情里不再单列「供应商 / 价格」两格：默认档只随采购报价出现一次（镜像列由列表价格与接口回读覆盖）。
     await expect(dialog.locator('.product-detail-label', { hasText: '供应商' })).toHaveCount(0);
     await expect(dialog.locator('.product-detail-label', { hasText: '价格' })).toHaveCount(0);
+    // 「配件」行标签只有两个字，不再带类目括号说明。
+    await expect(dialog.locator('.product-detail-label', { hasText: '配件' })).toHaveText('配件');
+    await expect(dialog.getByText('同类目共用')).toHaveCount(0);
 
     // 小眼睛关闭：采购报价整行连同价格一起消失。
     await dialog.locator('.modal-close').click();

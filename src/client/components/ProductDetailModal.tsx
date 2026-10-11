@@ -145,7 +145,7 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
               </div>)}
             </div>
           </DetailItem>}
-          <DetailItem label={`配件${detailCategory ? `（${detailCategory} · 同类目共用）` : ''}`} fullWidth>
+          <DetailItem label="配件" fullWidth>
             {categoryAccessories.length
               ? <div className="product-detail-accessory-lines">{categoryAccessories.map((item) => (
                 <span key={item.id}>{item.name}{item.price > 0 ? ` ¥${item.price.toFixed(2)}` : ''}</span>

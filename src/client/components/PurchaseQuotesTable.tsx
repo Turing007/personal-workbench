@@ -61,7 +61,6 @@ export default function PurchaseQuotesTable({ value, onChange }: PurchaseQuotesT
           </tr>)}</tbody>
         </table>
       </div> : <div className="empty-state">还没有采购报价。填一条即可，第一行会自动作为默认档。</div>}
-      <p className="purchase-quotes-hint">点供应商输入框把该档设为默认（高亮那格）；默认档就是产品库列表上的价格，也是新建客户产品时带过去的成本价；其余档在详情里按供应商分组查看。</p>
     </div>
   );
 }
