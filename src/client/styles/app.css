@@ -4871,8 +4871,9 @@ select {
 .price-calc-name { display: flex; gap: 4px; align-items: center; }
 .price-calc-name .input { min-width: 0; }
 .price-calc-amount { font-size: 13px; text-align: right; }
-.price-calc-row-block { display: grid; gap: 4px; }
-.price-calc-picker { display: grid; gap: 4px; padding: 8px 10px; border: 1px dashed var(--color-border-subtle); border-radius: 8px; background: #f7f9fa; }
+.price-calc-row-block { display: grid; gap: 4px; position: relative; }
+/* 选择浮层：覆盖在下面的行之上，不把后面的行挤走；点空白处自动关闭。 */
+.price-calc-picker { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 8; max-height: 260px; overflow: auto; display: grid; gap: 4px; padding: 8px 10px; border: 1px solid var(--color-border-subtle); border-radius: 8px; background: #fff; box-shadow: 0 12px 28px -10px rgba(15, 23, 42, .3); }
 .price-calc-picker-label { font-size: 11px; color: var(--color-text-muted); margin-top: 2px; }
 .price-calc-picker-item { display: flex; justify-content: space-between; gap: 10px; text-align: left; background: #fff; border: 1px solid var(--color-border-subtle); border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 12.5px; cursor: pointer; }
 .price-calc-picker-item:hover { border-color: var(--color-accent); }

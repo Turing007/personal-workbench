@@ -48,6 +48,7 @@ test('售价计算器：默认带价、选配件带价、保存方案、回显�
     await expect(dialog.getByLabel('成本2单价')).toHaveValue('3.2');
     await expect(dialog.getByTestId('price-calc-total')).toHaveText('¥49.20');
     await expect(dialog.getByTestId('price-calc-sale')).toHaveText('¥59.04');
+    await expect(dialog.getByTestId('price-calc-profit')).toHaveText('¥9.84');
 
     // 下拉按行过滤：包装行只出包装方式，不出电池/充电器。
     await dialog.getByLabel('为第 2 行选择包装方式').click();
@@ -78,15 +79,19 @@ test('售价计算器：默认带价、选配件带价、保存方案、回显�
     await expect(dialog.locator('.price-calc-picker-item', { hasText: '彩盒包装' })).toHaveCount(0);
     await dialog.getByLabel('为第 5 行选择本类目配件（电动工具）').click();
 
-    // 目标售价反看毛利率：66.20+6=72.20 成本，目标 100 → 27.8%。
+    // 目标售价反看毛利率与毛利：66.20+6=72.20 成本，目标 100 → 27.8% / 毛利 27.80。
     await dialog.getByLabel('目标售价').fill('100');
     await expect(dialog.getByTestId('price-calc-margin')).toHaveText('毛利率 27.8%');
+    await expect(dialog.getByTestId('price-calc-profit')).toHaveText('¥27.80');
 
-    // 保存方案：右侧出现历史（名称 + 售价）。
+    // 保存方案：右侧出现历史（名称 + 售价 + 毛利 + 月日）。
     await dialog.getByLabel('方案名').fill('E2E双电方案');
     await dialog.getByRole('button', { name: '保存为方案' }).click();
-    await expect(dialog.locator('.price-calc-plan', { hasText: 'E2E双电方案' })).toBeVisible();
-    await expect(dialog.locator('.price-calc-plan', { hasText: 'E2E双电方案' })).toContainText('¥86.64');
+    const planCard = dialog.locator('.price-calc-plan', { hasText: 'E2E双电方案' });
+    await expect(planCard).toBeVisible();
+    await expect(planCard).toContainText('售价 ¥86.64');
+    await expect(planCard).toContainText('毛利 ¥14.44');
+    await expect(planCard).toContainText(/\d+月\d+日/);
 
     // 关掉重开：自动回显最近一份方案（电池行的选择都在）。
     await dialog.getByRole('button', { name: '关闭' }).click();

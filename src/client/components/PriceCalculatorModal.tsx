@@ -70,8 +70,11 @@ function formatMoney(value: number): string {
   return `¥${value.toFixed(2)}`;
 }
 
-function formatTime(iso: string): string {
-  return iso ? iso.replace('T', ' ').slice(5, 16) : '';
+/** 只显示到「几月几日」，不显示几点。 */
+function formatDate(iso: string): string {
+  const matched = iso.match(/^\d{4}-(\d{2})-(\d{2})/);
+  if (!matched) return iso;
+  return `${Number(matched[1])}月${Number(matched[2])}日`;
 }
 
 export interface PriceCalculatorModalProps {
@@ -141,6 +144,18 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     return () => { cancelled = true; };
   }, [open, product]);
 
+  // 选择浮层：点浮层与触发按钮以外的任何地方都关掉。
+  useEffect(() => {
+    if (!pickerRow) return;
+    const onDocumentClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('.price-calc-picker') || target?.closest('[data-picker-toggle]')) return;
+      setPickerRow(null);
+    };
+    document.addEventListener('click', onDocumentClick);
+    return () => document.removeEventListener('click', onDocumentClick);
+  }, [pickerRow]);
+
   if (!open || !product) return null;
 
   const items = rows.map(rowToItem).filter((item) => item.name);
@@ -149,6 +164,10 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const salePrice = planSalePrice(totalCost, Number.isFinite(markupValue) && markupValue >= 0 ? markupValue : 0);
   const targetValue = targetPrice.trim() === '' ? null : Number(targetPrice);
   const margin = targetValue != null && Number.isFinite(targetValue) ? planMargin(targetValue, totalCost) : planMargin(salePrice, totalCost);
+  // 毛利按「当前采用的那档售价」算：填了目标售价就用目标售价，否则用建议售价。
+  const effectivePrice = targetValue != null && Number.isFinite(targetValue) ? targetValue : salePrice;
+  const profit = Math.round((effectivePrice - totalCost) * 100) / 100;
+  const profitText = profit < 0 ? `-¥${Math.abs(profit).toFixed(2)}` : formatMoney(profit);
 
   const updateRow = (key: string, patch: Partial<CalculatorRow>) => {
     setRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));
@@ -176,7 +195,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
       try { localStorage.setItem(MARKUP_MEMORY_KEY, String(Number.isFinite(parsedMarkup) ? parsedMarkup : 0)); } catch { /* 记住加价率失败不影响保存 */ }
       setPlans((current) => [saved, ...current]);
       setPlanName(saved.name);
-      setMessage(`已保存方案「${saved.name || formatTime(saved.createdAt)}」`);
+      setMessage(`已保存方案「${saved.name || formatDate(saved.createdAt)}」`);
     } catch (error) {
       setMessage((error as { message?: string })?.message ?? '保存失败，请重试');
     } finally {
@@ -189,11 +208,11 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     setMarkup(String(plan.markupPercent));
     setTargetPrice(plan.targetPrice == null ? '' : String(plan.targetPrice));
     setPlanName(plan.name);
-    setMessage(`已载入「${plan.name || formatTime(plan.createdAt)}」`);
+    setMessage(`已载入「${plan.name || formatDate(plan.createdAt)}」`);
   };
 
   const removePlan = async (plan: PricePlanRecord) => {
-    if (!window.confirm(`确定删除方案「${plan.name || formatTime(plan.createdAt)}」吗？删掉后无法恢复。`)) return;
+    if (!window.confirm(`确定删除方案「${plan.name || formatDate(plan.createdAt)}」吗？删掉后无法恢复。`)) return;
     setBusy(true);
     try {
       await deletePricePlan(product.id, plan.id);
@@ -245,6 +264,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
                 {options.length > 0 && <button
                   className="icon-button"
                   type="button"
+                  data-picker-toggle="true"
                   title={`从${options[0].source}选择并自动带价`}
                   aria-label={`为第 ${index + 1} 行选择${options[0].source}`}
                   aria-expanded={pickerOpen}
@@ -273,6 +293,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
           <div className="price-calc-summary-line"><span>成本合计</span><strong data-testid="price-calc-total">{formatMoney(totalCost)}</strong></div>
           <div className="price-calc-summary-line"><span>加价率 <input className="input price-calc-markup" type="number" min={0} aria-label="加价率" value={markup} onChange={(event) => setMarkup(event.target.value)} /> %</span><span>建议售价 <strong data-testid="price-calc-sale">{formatMoney(salePrice)}</strong></span></div>
           <div className="price-calc-summary-line"><span>目标售价 <input className="input price-calc-target" type="number" min={0} step="0.01" aria-label="目标售价" value={targetPrice} placeholder="选填" onChange={(event) => setTargetPrice(event.target.value)} /></span><span data-testid="price-calc-margin">毛利率 {margin == null ? '—' : `${margin.toFixed(1)}%`}</span></div>
+          <div className="price-calc-summary-line price-calc-summary-profit"><span>毛利</span><strong data-testid="price-calc-profit">{profitText}</strong></div>
         </div>
 
         <div className="price-calc-save">
@@ -284,16 +305,19 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
 
       <div className="price-calc-right">
         <div className="price-calc-plans-head">已存方案<em>{plans.length ? `${plans.length} 份` : ''}</em></div>
-        {plans.length ? <div className="price-calc-plans">{plans.map((plan) => <div className="price-calc-plan" key={plan.id}>
+        {plans.length ? <div className="price-calc-plans">{plans.map((plan) => {
+          const planProfit = Math.round((plan.salePrice - plan.totalCost) * 100) / 100;
+          return <div className="price-calc-plan" key={plan.id}>
           <div className="price-calc-plan-main">
-            <strong>{plan.name || formatTime(plan.createdAt)}</strong>
-            <span>{formatMoney(plan.salePrice)} · {formatTime(plan.createdAt)}</span>
+            <strong>{plan.name || formatDate(plan.createdAt)}</strong>
+            <span>售价 {formatMoney(plan.salePrice)} · 毛利 {planProfit < 0 ? `-¥${Math.abs(planProfit).toFixed(2)}` : formatMoney(planProfit)}</span>
+            {plan.name ? <span className="price-calc-plan-date">{formatDate(plan.createdAt)}</span> : null}
           </div>
           <div className="price-calc-plan-actions">
             <button className="button button-secondary button-sm" type="button" disabled={busy} onClick={() => loadPlan(plan)}>载入</button>
-            <button className="icon-button danger" type="button" title="删除方案" aria-label={`删除方案 ${plan.name || formatTime(plan.createdAt)}`} disabled={busy} onClick={() => void removePlan(plan)}><Trash2 size={14} /></button>
+            <button className="icon-button danger" type="button" title="删除方案" aria-label={`删除方案 ${plan.name || formatDate(plan.createdAt)}`} disabled={busy} onClick={() => void removePlan(plan)}><Trash2 size={14} /></button>
           </div>
-        </div>)}</div> : <div className="empty-state">还没有保存过方案。左侧算好后点「保存为方案」，以后打开会自动回显最近一份。</div>}
+        </div>; })}</div> : <div className="empty-state">还没有保存过方案。左侧算好后点「保存为方案」，以后打开会自动回显最近一份。</div>}
       </div>
     </div>
   </Modal>;
