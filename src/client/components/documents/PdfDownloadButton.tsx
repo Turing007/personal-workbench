@@ -1,5 +1,6 @@
 import { Download, LoaderCircle } from 'lucide-react';
 import { useState } from 'react';
+import { saveFileOrDownload } from '../../file-save';
 
 export interface PdfDownloadButtonProps {
   number: string;
@@ -30,21 +31,13 @@ export default function PdfDownloadButton({
   const handleDownload = async () => {
     if (loading || disabled) return;
     setLoading(true);
-    let url: string | undefined;
     try {
       const blob = await download();
-      url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `${number || 'document'}.pdf`;
-      anchor.style.display = 'none';
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
+      // App 壳里由原生写进手机「下载」并弹分享；浏览器里回退 blob 链接下载。
+      await saveFileOrDownload(blob, `${number || 'document'}.pdf`);
     } catch (error) {
       onError(errorMessage(error));
     } finally {
-      if (url) URL.revokeObjectURL(url);
       setLoading(false);
     }
   };

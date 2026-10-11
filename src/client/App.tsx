@@ -3,7 +3,8 @@ import type { CompanySnapshot } from '../shared/documents';
 import AuthGate from './components/auth/AuthGate';
 import EnvironmentShell from './components/EnvironmentShell';
 import { productUploadQueue, type UploadBatch } from './product-upload-queue';
-import { startUploadKeepAlive, stopUploadKeepAlive, updateUploadKeepAlive } from './app-bridge';
+import { startUploadKeepAlive, stopUploadKeepAlive, updateUploadKeepAlive, registerFileSaveFailureHandler } from './app-bridge';
+import { saveFileOrDownload } from './file-save';
 import Sidebar from './components/Sidebar';
 import { navigationKeys, type NavigationKey } from './navigation';
 import { loadMobileTabs, saveMobileTabs } from './mobile-tabs';
@@ -246,6 +247,12 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
   }, []);
 
   const [backupAlert, setBackupAlert] = useState<string | null>(null);
+  // App 壳里导出文件保存到手机失败时（写盘失败/权限被拒），原生会回调到这里提示；
+  // 浏览器与旧壳不会回调，无事发生。
+  useEffect(() => registerFileSaveFailureHandler((stage, message) => {
+    console.warn('file save failed', stage, message);
+    notify('导出文件保存失败，请重试或改用电脑端导出', 'error');
+  }), [notify]);
   // 自动备份失败原先只在设置页显示一行，谁都不会没事去翻；而备份停摆恰恰是最不能错过的。
   // 所以开屏查一次状态，失败就常驻横幅，直到用户处理或手动关掉。
   useEffect(() => {
@@ -540,24 +547,15 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
   const exportProductLibrary = async () => {
     try {
       const blob = await exportProducts();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `产品库-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.xlsx`;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      // App 壳里由原生写进手机「下载」并弹分享；浏览器里回退 blob 链接下载。
+      await saveFileOrDownload(blob, `产品库-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.xlsx`);
       notify('产品库已导出', 'success');
     } catch (error) { notify((error as { message?: string }).message ?? '产品库导出失败', 'error'); }
   };
   const downloadProductTemplate = async () => {
     try {
       const blob = await downloadProductImportTemplate();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = '产品库导入模板.xlsx';
-      anchor.click();
-      URL.revokeObjectURL(url);
+      await saveFileOrDownload(blob, '产品库导入模板.xlsx');
       notify('产品库导入模板已下载', 'success');
     } catch (error) { notify((error as { message?: string }).message ?? '模板下载失败', 'error'); }
   };
@@ -650,14 +648,8 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     if (!order.id) return;
     try {
       const blob = await generateOrderContractPdf(order.id);
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `${order.orderNo}-购销合同.pdf`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
+      // App 壳里由原生写进手机「下载」并弹分享；浏览器里回退 blob 链接下载。
+      await saveFileOrDownload(blob, `${order.orderNo}-购销合同.pdf`);
       // 服务端已把 PDF 归档进订单附件，刷新后即可在详情里看到。
       await loadOrders();
       notify('购销合同已生成并归档', 'success');

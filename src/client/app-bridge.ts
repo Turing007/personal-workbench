@@ -26,6 +26,15 @@ export interface WorkbenchAppBridge {
    * 返回 true 表示已拉起，结果经 window.__workbenchPickedFiles(requestId, files) 异步回传。
    */
   pickFiles?(acceptJson: string, multiple: boolean, maxCount: number, requestId: string): boolean;
+  /**
+   * 导出文件（PDF/Excel）保存到手机「下载」并弹分享（1.19 之前的 App 没有这些方法）。
+   * 协议仿照选文件的分块回传：Begin 返回 true 表示开始接收；Chunk 逐块传 base64；
+   * End 落盘并弹系统分享面板；Abort 丢弃半截文件。WebView 会静默忽略 blob 下载，App 内只能走这条。
+   */
+  saveFileBegin?(requestId: string, fileName: string, mimeType: string): boolean;
+  saveFileChunk?(requestId: string, base64: string): void;
+  saveFileEnd?(requestId: string): void;
+  saveFileAbort?(requestId: string): void;
   /** 上传期间保活（前台服务 + 通知栏进度；1.16 之前的 App 没有这些方法）。 */
   startUploadKeepAlive?(text: string, done: number, total: number): void;
   updateUploadKeepAlive?(text: string, done: number, total: number): void;
@@ -105,6 +114,18 @@ export function registerImageSavedHandler(handler: ImageSavedHandler): () => voi
   target.__workbenchImageSaved = handler;
   return () => {
     if (target.__workbenchImageSaved === handler) delete target.__workbenchImageSaved;
+  };
+}
+
+/** 导出文件保存失败的回执：原生通过 window.__workbenchFileSaveFailed(stage, message) 通知网页（1.19+）。 */
+export type FileSaveFailureHandler = (stage: string, message: string) => void;
+
+export function registerFileSaveFailureHandler(handler: FileSaveFailureHandler): () => void {
+  if (typeof window === 'undefined') return () => {};
+  const target = window as unknown as { __workbenchFileSaveFailed?: FileSaveFailureHandler };
+  target.__workbenchFileSaveFailed = handler;
+  return () => {
+    if (target.__workbenchFileSaveFailed === handler) delete target.__workbenchFileSaveFailed;
   };
 }
 

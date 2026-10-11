@@ -193,3 +193,77 @@ test('产品库里的「产品图册」菜单跳到新模块', async ({ page }) 
   await page.locator('.anchored-popover .toolbar-menu-item', { hasText: '产品图册' }).click();
   await expect(page.locator('.catalog-page')).toBeVisible();
 });
+
+test('导出 PDF：浏览器回退下载；App 壳里分块交给原生保存并弹分享', async ({ page }) => {
+  const stamp = Date.now();
+  const product = await seedProduct(page, `E2E导出PDF${stamp}`, stamp);
+  let catalogId: number | null = null;
+
+  try {
+    const created = await page.request.post('/api/catalogs', { data: { name: `E2E导出图册${stamp}`, productIds: [product.id] } });
+    expect(created.ok()).toBe(true);
+    catalogId = ((await created.json()).data as { id: number }).id;
+
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '产品图册', exact: true }).click();
+    const card = page.locator('.catalog-page article', { hasText: `E2E导出图册${stamp}` });
+    await expect(card).toBeVisible();
+
+    // 1) 普通浏览器：blob 链接照旧触发下载（回退路径不能坏）。
+    await card.getByRole('button', { name: '导出 PDF' }).click();
+    const exportDialog = page.getByRole('dialog');
+    await expect(exportDialog).toBeVisible();
+    const downloadPromise = page.waitForEvent('download');
+    await exportDialog.getByRole('button', { name: '生成 PDF' }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/^产品图册-\d{8}\.pdf$/);
+
+    // 2) App 壳（1.19+）：注入假桥，导出应分块过桥、字节完整、文件名与 MIME 正确。
+    //    WebView 会静默忽略 blob 下载，App 内只能走这条通道（真机由壳原生写「下载」并弹分享）。
+    await page.addInitScript(() => {
+      const calls = { begin: [] as Array<[string, string, string]>, chunks: [] as string[], end: 0, aborted: 0 };
+      (window as unknown as { __bridgeCalls: typeof calls }).__bridgeCalls = calls;
+      (window as unknown as { workbenchApp: unknown }).workbenchApp = {
+        saveFileBegin: (_id: string, name: string, mime: string) => { calls.begin.push([_id, name, mime]); return true; },
+        saveFileChunk: (_id: string, base64: string) => { calls.chunks.push(base64); },
+        saveFileEnd: () => { calls.end += 1; },
+        saveFileAbort: () => { calls.aborted += 1; },
+      };
+    });
+    await page.reload();
+    await page.locator('.sidebar-nav').getByRole('button', { name: '产品图册', exact: true }).click();
+    await card.getByRole('button', { name: '导出 PDF' }).click();
+    await expect(exportDialog).toBeVisible();
+    await exportDialog.getByRole('button', { name: '生成 PDF' }).click();
+    await expect.poll(
+      async () => page.evaluate(() => (window as unknown as { __bridgeCalls: { end: number } }).__bridgeCalls.end),
+    ).toBe(1);
+
+    const result = await page.evaluate(() => {
+      const calls = (window as unknown as {
+        __bridgeCalls: { begin: Array<[string, string, string]>; chunks: string[]; end: number; aborted: number };
+      }).__bridgeCalls;
+      const binary = atob(calls.chunks.join(''));
+      return {
+        begin: calls.begin,
+        chunkCount: calls.chunks.length,
+        end: calls.end,
+        aborted: calls.aborted,
+        head: binary.slice(0, 5),
+        size: binary.length,
+      };
+    });
+    expect(result.begin).toHaveLength(1);
+    expect(result.begin[0][1]).toMatch(/^产品图册-\d{8}\.pdf$/);
+    expect(result.begin[0][2]).toBe('application/pdf');
+    expect(result.chunkCount).toBeGreaterThanOrEqual(1);
+    expect(result.end).toBe(1);
+    expect(result.aborted).toBe(0);
+    // 分块拼回来的字节要真的是 PDF（%PDF- 魔数），不是半截或错位。
+    expect(result.head).toBe('%PDF-');
+    expect(result.size).toBeGreaterThan(2000);
+  } finally {
+    if (catalogId) await page.request.delete(`/api/catalogs/${catalogId}`);
+    await page.request.delete(`/api/products/${product.id}`);
+  }
+});

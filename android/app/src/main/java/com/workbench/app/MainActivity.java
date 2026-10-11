@@ -54,6 +54,7 @@ import com.journeyapps.barcodescanner.ScanOptions;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -98,6 +99,10 @@ public class MainActivity extends Activity {
     private static final int PICK_CHUNK_BYTES = 2 * 1024 * 1024;
     /** 相册里的子目录，便于用户在工作台 App 存图后一眼找到。 */
     private static final String GALLERY_FOLDER = "个人工作台";
+    /** 导出文件（PDF/Excel）保存到「下载」目录下的子文件夹，便于一眼找到。 */
+    private static final String EXPORT_FOLDER = "个人工作台";
+    /** 导出文件保存的磁盘暂存目录（cache 下）；End 之后即搬进「下载」并删除。 */
+    private static final String FILE_SAVE_TEMP_DIR = "file-save";
     /** 只接管「图片地址」的长按，避免把普通链接当成图片存进相册。 */
     private static final Pattern IMAGE_URL_PATTERN =
             Pattern.compile("\\.(png|jpe?g|webp|gif|bmp)(\\?.*)?$", Pattern.CASE_INSENSITIVE);
@@ -127,6 +132,10 @@ public class MainActivity extends Activity {
     /** 同一流程的「网页已抓好字节」版本：授权通过后写这一份 base64。 */
     private String pendingImageData;
     private String pendingImageDataName;
+    /** API 29 以下保存导出文件前要先申请存储权限，授权通过后接着写盘与分享。 */
+    private FileSaveSink pendingFileSave;
+    /** 进行中的「导出文件保存」：requestId → 磁盘暂存与目标信息（桥线程顺序写入）。 */
+    private final Map<String, FileSaveSink> fileSaveSinks = new LinkedHashMap<>();
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -829,6 +838,93 @@ public class MainActivity extends Activity {
         }
 
         /**
+         * 网页「导出 PDF / Excel」的保存通道（1.19+ 网页）：WebView 会静默忽略 blob + a[download]，
+         * 所以由网页分块把文件字节传进来，原生写进「下载」目录并拉起分享面板。
+         * 返回 true 表示已开始接收；旧网页不调用这些方法。
+         */
+        @JavascriptInterface
+        public boolean saveFileBegin(String requestId, String fileName, String mimeType) {
+            if (TextUtils.isEmpty(requestId)) return false;
+            try {
+                File folder = new File(getCacheDir(), FILE_SAVE_TEMP_DIR);
+                if (!folder.exists() && !folder.mkdirs()) throw new IOException("mkdir failed");
+                File tempFile = new File(folder, requestId.replaceAll("[^A-Za-z0-9_-]", "_") + ".part");
+                FileSaveSink sink = new FileSaveSink(
+                        safeExportFileName(fileName), exportMimeType(fileName, mimeType), tempFile);
+                sink.stream = new FileOutputStream(tempFile);
+                synchronized (fileSaveSinks) {
+                    fileSaveSinks.put(requestId, sink);
+                }
+                return true;
+            } catch (Exception error) {
+                reportFileSaveFailure("begin", describe(error));
+                return false;
+            }
+        }
+
+        /** 收到一块文件字节：桥线程上顺序到达，直接写磁盘暂存，内存只占一块的量级。 */
+        @JavascriptInterface
+        public void saveFileChunk(String requestId, String base64) {
+            if (TextUtils.isEmpty(requestId) || TextUtils.isEmpty(base64)) return;
+            FileSaveSink sink;
+            synchronized (fileSaveSinks) {
+                sink = fileSaveSinks.get(requestId);
+            }
+            if (sink == null || sink.failed) return;
+            try {
+                byte[] bytes = Base64.decode(base64, Base64.DEFAULT);
+                sink.stream.write(bytes);
+                sink.totalBytes += bytes.length;
+            } catch (Exception error) {
+                sink.failed = true;
+                closeFileSinkQuietly(sink);
+                reportFileSaveFailure("write", describe(error));
+            }
+        }
+
+        /** 文件传完：整体搬进「下载」并弹分享（旧系统先补存储权限）。 */
+        @JavascriptInterface
+        public void saveFileEnd(String requestId) {
+            if (TextUtils.isEmpty(requestId)) return;
+            FileSaveSink sink;
+            synchronized (fileSaveSinks) {
+                sink = fileSaveSinks.remove(requestId);
+            }
+            if (sink == null) return;
+            closeFileSinkQuietly(sink);
+            if (sink.failed) {
+                sink.tempFile.delete();
+                return; // 失败已在收到坏块时回报过
+            }
+            if (sink.totalBytes <= 0) {
+                sink.tempFile.delete();
+                reportFileSaveFailure("write", "empty file");
+                return;
+            }
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                    && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                pendingFileSave = sink;
+                requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, STORAGE_PERMISSION_REQUEST);
+                return;
+            }
+            Toast.makeText(MainActivity.this, R.string.save_file_started, Toast.LENGTH_SHORT).show();
+            executor.execute(() -> finishFileSave(sink));
+        }
+
+        /** 网页中途放弃（传输异常）：丢弃半截文件，不在暂存目录里留垃圾。 */
+        @JavascriptInterface
+        public void saveFileAbort(String requestId) {
+            if (TextUtils.isEmpty(requestId)) return;
+            FileSaveSink sink;
+            synchronized (fileSaveSinks) {
+                sink = fileSaveSinks.remove(requestId);
+            }
+            if (sink == null) return;
+            closeFileSinkQuietly(sink);
+            sink.tempFile.delete();
+        }
+
+        /**
          * 网页弹窗打开/关闭时调用：弹窗内部是独立滚动容器，期间必须禁用下拉刷新，
          * 否则弹窗里的下滑会被当成刷新页面、内容滑不动。
          */
@@ -1451,9 +1547,153 @@ public class MainActivity extends Activity {
                 this, new String[]{file.getAbsolutePath()}, new String[]{mimeTypeOf(fileName)}, null);
     }
 
+    /** 导出文件保存：把暂存文件搬进「下载」目录，完成后弹分享面板。 */
+    private void finishFileSave(FileSaveSink sink) {
+        Uri shareUri = null;
+        boolean saved = false;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                shareUri = exportToMediaStore(sink);
+            } else {
+                writeExportToLegacyDownloads(sink);
+            }
+            saved = true;
+        } catch (Exception error) {
+            reportFileSaveFailure("write", describe(error));
+        } finally {
+            sink.tempFile.delete();
+        }
+        boolean ok = saved;
+        Uri uri = shareUri;
+        mainHandler.post(() -> {
+            Toast.makeText(this, ok ? R.string.save_file_done : R.string.save_file_failed, Toast.LENGTH_SHORT).show();
+            if (ok && uri != null) shareSavedFile(uri, sink.mimeType);
+        });
+    }
+
+    /** Android 10 及以上：通过 MediaStore 写进「下载/个人工作台」，无需存储权限；返回可直接分享的 Uri。 */
+    private Uri exportToMediaStore(FileSaveSink sink) throws IOException {
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.Downloads.DISPLAY_NAME, sink.fileName);
+        values.put(MediaStore.Downloads.MIME_TYPE, sink.mimeType);
+        values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + EXPORT_FOLDER);
+        values.put(MediaStore.Downloads.IS_PENDING, 1);
+        Uri target = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+        if (target == null) throw new IOException("media store insert failed");
+        try {
+            try (InputStream input = new FileInputStream(sink.tempFile);
+                 OutputStream output = getContentResolver().openOutputStream(target)) {
+                if (output == null) throw new IOException("media store open failed");
+                output.write(readAllBytes(input));
+            }
+            ContentValues ready = new ContentValues();
+            ready.put(MediaStore.Downloads.IS_PENDING, 0);
+            getContentResolver().update(target, ready, null, null);
+            return target;
+        } catch (IOException error) {
+            getContentResolver().delete(target, null, null); // 写失败别在「下载」里留半个坏文件
+            throw error;
+        }
+    }
+
+    /** Android 9 及以下：直接写公共「下载」目录（存储权限已在 End 处确保），再通知媒体库。 */
+    private void writeExportToLegacyDownloads(FileSaveSink sink) throws IOException {
+        File folder = new File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), EXPORT_FOLDER);
+        if (!folder.exists() && !folder.mkdirs()) throw new IOException("mkdir failed");
+        File file = new File(folder, sink.fileName);
+        try (InputStream input = new FileInputStream(sink.tempFile);
+             OutputStream output = new FileOutputStream(file)) {
+            output.write(readAllBytes(input));
+        }
+        MediaScannerConnection.scanFile(this, new String[]{file.getAbsolutePath()}, new String[]{sink.mimeType}, null);
+    }
+
+    /** 拉起系统分享面板：客户资料最终大多发微信，保存完直接给一条快路径。 */
+    private void shareSavedFile(Uri uri, String mimeType) {
+        try {
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType(TextUtils.isEmpty(mimeType) ? "application/octet-stream" : mimeType);
+            send.putExtra(Intent.EXTRA_STREAM, uri);
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(send, getString(R.string.save_file_share_title)));
+        } catch (Exception error) {
+            // 没有可分享的目标不算保存失败：文件已经在「下载」里。
+            Log.w("WorkbenchFileSave", "share: " + describe(error));
+        }
+    }
+
+    /** 文件保存失败回报：网页端据此提示，本地留 logcat（与相册存图同一套协议风格）。 */
+    private void reportFileSaveFailure(String stage, String message) {
+        String detail = message == null ? "" : message;
+        Log.w("WorkbenchFileSave", stage + ": " + detail);
+        if (webView == null) return;
+        final String script = "window.__workbenchFileSaveFailed&&window.__workbenchFileSaveFailed("
+                + JSONObject.quote(stage) + "," + JSONObject.quote(detail) + ");";
+        mainHandler.post(() -> {
+            if (webView == null) return;
+            webView.evaluateJavascript(script, null);
+        });
+    }
+
+    private static void closeFileSinkQuietly(FileSaveSink sink) {
+        if (sink.stream == null) return;
+        try {
+            sink.stream.close();
+        } catch (IOException ignored) {
+        }
+        sink.stream = null;
+    }
+
+    /** 文件名只留安全字符，避免写进「下载」时被 MediaStore 拒绝。 */
+    private static String safeExportFileName(String rawName) {
+        String name = rawName == null ? "" : rawName.trim().replaceAll("[\\\\/:*?\"<>|]+", "_");
+        if (TextUtils.isEmpty(name)) name = "workbench-" + System.currentTimeMillis();
+        return name;
+    }
+
+    /** 网页一般会带对 MIME，个别环境传空——按后缀兜底，分享面板才能正确匹配应用。 */
+    private static String exportMimeType(String fileName, String provided) {
+        if (!TextUtils.isEmpty(provided)) return provided;
+        String lower = fileName == null ? "" : fileName.toLowerCase();
+        if (lower.endsWith(".pdf")) return "application/pdf";
+        if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        if (lower.endsWith(".zip")) return "application/zip";
+        return "application/octet-stream";
+    }
+
+    /** 一次「导出文件保存」：字节先落磁盘暂存，End 时整体搬进「下载」并删暂存。 */
+    private static final class FileSaveSink {
+        final String fileName;
+        final String mimeType;
+        final File tempFile;
+        OutputStream stream;
+        long totalBytes;
+        boolean failed;
+
+        FileSaveSink(String fileName, String mimeType, File tempFile) {
+            this.fileName = fileName;
+            this.mimeType = mimeType;
+            this.tempFile = tempFile;
+        }
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         if (requestCode == STORAGE_PERMISSION_REQUEST) {
+            // 导出文件与相册存图各自独立挂起：谁在等这次授权就续谁，不要互相串流程。
+            FileSaveSink fileSink = pendingFileSave;
+            if (fileSink != null) {
+                pendingFileSave = null;
+                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    executor.execute(() -> finishFileSave(fileSink));
+                } else {
+                    fileSink.tempFile.delete();
+                    reportFileSaveFailure("permission", "storage permission denied");
+                    Toast.makeText(this, R.string.save_file_failed, Toast.LENGTH_SHORT).show();
+                }
+                return;
+            }
             String url = pendingImageUrl;
             String name = pendingImageName;
             String data = pendingImageData;

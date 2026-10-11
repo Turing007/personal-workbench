@@ -6,6 +6,7 @@ import { createCatalog, generateProductCatalog, getCatalog, listCatalogs, update
 import { thumbUrl } from '../image-urls';
 import { CATALOG_DENSITY_OPTIONS, DEFAULT_CATALOG_DENSITY, type CatalogDensity } from '../../shared/product-catalog';
 import { compareProductByName } from '../product-sort';
+import { saveFileOrDownload } from '../file-save';
 import { normalizeProductStatus, type ProductStatus } from '../../shared/product-status';
 import type { ProductRecord } from '../components/ProductEditor';
 
@@ -191,15 +192,8 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
     try {
       const detail = await getCatalog(exportTarget.id);
       const blob = await generateProductCatalog(detail.productIds, exportDensity, exportCover);
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `产品图册-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.pdf`;
-      anchor.rel = 'noopener';
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 40_000);
+      // App 壳里由原生写进手机「下载」并弹分享；浏览器里回退 blob 链接下载。
+      await saveFileOrDownload(blob, `产品图册-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.pdf`);
       setExportTarget(null);
       onNotify('产品图册已生成', 'success');
     } catch (error) {

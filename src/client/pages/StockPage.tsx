@@ -8,6 +8,7 @@ import {
 } from '../api';
 import { errorText } from '../components/finance/finance-format';
 import { copyText } from '../copy-text';
+import { saveFileOrDownload } from '../file-save';
 import Modal from '../components/Modal';
 import SystemProductOptionRow from '../components/SystemProductOptionRow';
 import type { ProductRecord } from '../components/ProductEditor';
@@ -92,12 +93,8 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
   const exportExcel = async () => {
     try {
       const blob = await exportStockPreparation(scopeParam);
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `备货表-${scopeParam === 'all' ? '全部待备货' : scopeParam}.xlsx`;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      // App 壳里由原生写进手机「下载」并弹分享；浏览器里回退 blob 链接下载。
+      await saveFileOrDownload(blob, `备货表-${scopeParam === 'all' ? '全部待备货' : scopeParam}.xlsx`);
     } catch (error) {
       onNotify?.(errorText(error, '备货表导出失败'), 'error');
     }

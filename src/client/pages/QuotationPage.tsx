@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CompanySnapshot, QuotationStatus, QuotationSummary } from '../../shared/documents';
 import type { Customer, CustomerSaveInput } from '../../shared/customers';
 import * as api from '../api';
+import { saveFileOrDownload } from '../file-save';
 import { quotationDetailToDraft, quotationDraftToFormData, type QuotationDraft } from '../documents/document-drafts';
 import Modal from '../components/Modal';
 import SearchInput from '../components/SearchInput';
@@ -44,15 +45,6 @@ const statusOptions: Array<{ value: 'all' | QuotationStatus; label: string }> = 
   { value: 'won', label: '已成交' },
   { value: 'expired', label: '已失效' },
 ];
-
-function downloadBlob(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
-}
 
 export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCustomerProducts, onSaveCustomerProduct, onCreateCustomer }: QuotationPageProps) {
   const [rows, setRows] = useState<QuotationListRow[]>([]);
@@ -184,7 +176,8 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
   const exportPdf = async (row: QuotationListRow) => {
     setBusyId(row.id);
     try {
-      downloadBlob(await api.downloadQuotationPdf(row.id), `${row.number}.pdf`);
+      // App 壳里由原生写进手机「下载」并弹分享；浏览器里回退 blob 链接下载。
+      await saveFileOrDownload(await api.downloadQuotationPdf(row.id), `${row.number}.pdf`);
     } catch (error) {
       notify(error instanceof Error ? error.message : '导出 PDF 失败', 'error');
     } finally {
