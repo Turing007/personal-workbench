@@ -268,6 +268,7 @@ export class DatabaseRepositories {
       colors: JSON.parse(String(row.colors_json)),
       batteryPlugs: JSON.parse(String(row.battery_plugs_json)),
       accessoryPrices: normalizeAccessoryPrices(JSON.parse(String(row.accessory_prices ?? '[]'))),
+      accessoryPricesCustomized: Number(row.accessory_prices_customized ?? 0) === 1,
       packaging: JSON.parse(String(row.packaging_json)).map((item: PackagingInputLike) => mapPackagingRecord(item)),
       purchaseQuotes: mapStoredPurchaseQuotes(JSON.parse(String(row.purchase_quotes_json ?? '[]'))),
       images: JSON.parse(String(row.images_json)),
@@ -315,7 +316,9 @@ export class DatabaseRepositories {
           .prepare(
             `UPDATE products SET name = ?, specification = ?, category = ?, purchase_price = ?,
               parameters = ?, supplier = ?, colors_json = ?, battery_plugs_json = ?, accessories = ?, remark = ?, status = ?,
-              accessory_prices = COALESCE(?, accessory_prices), updated_at = ?
+              accessory_prices = COALESCE(?, accessory_prices),
+              accessory_prices_customized = CASE WHEN ? THEN 1 ELSE accessory_prices_customized END,
+              updated_at = ?
              WHERE id = ?`,
           )
           .run(
@@ -331,6 +334,7 @@ export class DatabaseRepositories {
             input.remark ?? '',
             input.status ?? 'active',
             accessoryPricesProvided ? json(accessoryPrices) : null,
+            accessoryPricesProvided ? 1 : 0,
             timestamp,
             id,
           );
@@ -341,8 +345,8 @@ export class DatabaseRepositories {
           database
             .prepare(
               `INSERT INTO products
-                (name, sku, specification, parameters, category, purchase_price, supplier, colors_json, battery_plugs_json, accessories, accessory_prices, remark, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                (name, sku, specification, parameters, category, purchase_price, supplier, colors_json, battery_plugs_json, accessories, accessory_prices, accessory_prices_customized, remark, status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
             .run(
               input.name.trim(),
@@ -356,6 +360,7 @@ export class DatabaseRepositories {
               json(input.batteryPlugs),
               input.accessories ?? '',
               json(accessoryPrices),
+              accessoryPricesProvided ? 1 : 0,
               input.remark ?? '',
               input.status ?? 'active',
               timestamp,

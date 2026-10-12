@@ -67,9 +67,11 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
   const [playingVideo, setPlayingVideo] = useState<ProductVideo>();
   const [categoryAccessories, setCategoryAccessories] = useState<AccessoryPrice[]>([]);
   const detailCategory = (product?.category ?? '').trim();
-  // 「配件」行显示本类目配件清单（同类目共用，编辑器里维护）。
+  // 配件清单：产品自己保存过（含删空）就以它为准；没保存过的沿用类目默认（老产品显示不变）。
+  const ownAccessories = (product?.accessoryPrices ?? []).filter((item) => item.name.trim());
+  const accessoryCustomized = product?.accessoryPricesCustomized === true;
   useEffect(() => {
-    if (!open || !detailCategory) {
+    if (!open || accessoryCustomized || !detailCategory) {
       setCategoryAccessories([]);
       return;
     }
@@ -78,8 +80,10 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
       .then((items) => { if (!cancelled) setCategoryAccessories(items.filter((item) => item.name.trim())); })
       .catch(() => { if (!cancelled) setCategoryAccessories([]); });
     return () => { cancelled = true; };
-  }, [open, detailCategory]);
+  }, [open, detailCategory, accessoryCustomized]);
   if (!product) return null;
+
+  const accessoryLines = accessoryCustomized ? ownAccessories : categoryAccessories;
 
   const parameters = product.parameters ?? '';
   const purchaseQuotes = product.purchaseQuotes ?? [];
@@ -146,8 +150,8 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
             </div>
           </DetailItem>}
           <DetailItem label="配件" fullWidth>
-            {categoryAccessories.length
-              ? <div className="product-detail-accessory-lines">{categoryAccessories.map((item) => (
+            {accessoryLines.length
+              ? <div className="product-detail-accessory-lines">{accessoryLines.map((item) => (
                 <span key={item.id}>{item.name}{item.price > 0 ? ` ¥${item.price.toFixed(2)}` : ''}</span>
               ))}</div>
               : '—'}

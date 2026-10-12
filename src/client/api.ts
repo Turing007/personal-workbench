@@ -182,6 +182,7 @@ export interface ProductApiRecord {
   packaging?: Array<Record<string, unknown>>;
   purchaseQuotes?: unknown[];
   accessoryPrices?: unknown[];
+  accessoryPricesCustomized?: boolean;
   remark?: string;
   accessories?: string;
   images?: Array<Record<string, unknown>>;
@@ -462,7 +463,11 @@ export function mapProductRecord(row: ProductApiRecord): ProductRecord {
   const packaging = (row.packaging ?? []).map((item) => asPackaging(item));
   const rawAttachments = row.attachments ?? [];
   return { ...mapProduct(row), category: row.category ?? '', purchasePrice: purchasePrice == null ? '' : String(purchasePrice), supplier: row.supplier ?? '', parameters: typeof row.parameters === 'string' ? row.parameters : '', status: normalizeProductStatus(row.status), colors: row.colors ?? [], batteryPlugs: row.batteryPlugs ?? [], images: rawImages.map((image) => ({ id: String(image.id ?? image.relativePath ?? image.relative_path), name: String(image.originalName ?? image.original_name ?? '产品图片'), url: `/files/${String(image.relativePath ?? image.relative_path ?? '')}`, category: normalizeProductImageCategory(image.category), note: String(image.note ?? '') })), videos: (row.videos ?? []).map((raw) => { const item = raw as Record<string, unknown>; const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id ?? relativePath), name: String(item.originalName ?? item.original_name ?? '产品视频'), size: Number(item.size ?? item.size_bytes ?? 0), url: `/files/${relativePath}` }; }), attachments: rawAttachments.map((raw) => { const item = raw as Record<string, unknown>; const category = String(item.category ?? 'other'); const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id), category: (['manual', 'packaging-design', 'label-dieline', 'other'].includes(category) ? category : 'other') as ProductAttachmentCategory, name: String(item.originalName ?? item.original_name ?? '产品附件'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mimeType ?? item.mime_type ?? ''), size: Number(item.size ?? item.size_bytes ?? 0), createdAt: String(item.createdAt ?? item.created_at ?? '') }; }), accessories: row.accessories ?? '', remark: row.remark ?? '', purchaseQuotes: mapStoredPurchaseQuotes(row.purchaseQuotes),
-    packaging: packaging.length ? packaging : [asPackaging(undefined)], createdAt: String(row.createdAt ?? row.created_at ?? ''), updatedAt: String(row.updatedAt ?? row.updated_at ?? '') };
+    packaging: packaging.length ? packaging : [asPackaging(undefined)], createdAt: String(row.createdAt ?? row.created_at ?? ''), updatedAt: String(row.updatedAt ?? row.updated_at ?? ''),
+    // 本产品自己的配件价格清单；未固化时为空，详情/计算器沿用类目默认。
+    accessoryPrices: Array.isArray(row.accessoryPrices) ? row.accessoryPrices as AccessoryPrice[] : [],
+    accessoryPricesCustomized: row.accessoryPricesCustomized === true,
+  };
 }
 
 export function draftToInput(draft: OrderDraft) {
@@ -804,7 +809,10 @@ function packagingToInput(row: PackagingOption) {
   const imageIds = (row.images ?? []).filter((image) => !image.file && /^\d+$/.test(image.id)).map((image) => Number(image.id));
   return { id, imageIds, name: row.name.trim(), innerSize: row.innerSize.trim(), innerWeight: Math.max(0, Number(row.innerWeight || 0)), outerSize: row.outerSize.trim(), outerWeight: Math.max(0, Number(row.outerWeight || 0)), packCount: Math.max(1, Math.trunc(row.packSize)), purchasePrice: row.purchasePrice.trim() ? Math.max(0, Number(row.purchasePrice)) : null, outerLength, outerWidth, outerHeight };
 }
-export function productToInput(product: ProductRecord & { addToCatalogId?: number }) { return { name: product.name.trim(), sku: product.sku.trim(), specification: product.specification.trim(), parameters: product.parameters ?? '', category: product.category, purchasePrice: Number(product.purchasePrice || 0), supplier: product.supplier, colors: product.colors, batteryPlugs: product.batteryPlugs, accessories: product.accessories, remark: product.remark, status: normalizeProductStatus(product.status), purchaseQuotes: product.purchaseQuotes, packaging: product.packaging.map(packagingToInput), ...(product.addToCatalogId ? { addToCatalogId: product.addToCatalogId } : {}) }; }
+export function productToInput(product: ProductRecord & { addToCatalogId?: number }) { return { name: product.name.trim(), sku: product.sku.trim(), specification: product.specification.trim(), parameters: product.parameters ?? '', category: product.category, purchasePrice: Number(product.purchasePrice || 0), supplier: product.supplier, colors: product.colors, batteryPlugs: product.batteryPlugs, accessories: product.accessories, remark: product.remark, status: normalizeProductStatus(product.status), purchaseQuotes: product.purchaseQuotes, packaging: product.packaging.map(packagingToInput),
+  // 配件清单只在这次真的动过（增/删/改）时才写：没动过的产品保持「未固化」，详情与计算器继续沿用类目默认；动过并保存后即固化为本产品自己的清单（含删空）。
+  ...(product.accessoryPricesTouched ? { accessoryPrices: product.accessoryPrices ?? [] } : {}),
+  ...(product.addToCatalogId ? { addToCatalogId: product.addToCatalogId } : {}) }; }
 export function saveProduct(product: ProductRecord) { return request<ProductApiRecord>('/api/products', { method: 'POST', body: JSON.stringify(productToInput(product)) }); }
 export function updateProduct(id: string, product: ProductRecord) { return request<ProductApiRecord>(`/api/products/${id}`, { method: 'PUT', body: JSON.stringify(productToInput(product)) }); }
 export function deleteProduct(id: string) { return request(`/api/products/${id}`, { method: 'DELETE' }); }

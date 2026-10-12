@@ -38,6 +38,12 @@ export interface ProductRecord extends CustomerProduct {
   packaging: PackagingOption[];
   /** 多档采购报价；默认档决定列表价格与客户产品成本价。 */
   purchaseQuotes?: ProductPurchaseQuote[];
+  /** 本产品自己的配件价格清单；没动过时为空，详情/计算器沿用类目默认。 */
+  accessoryPrices?: AccessoryPrice[];
+  /** 服务端标记：已保存过本产品自己的配件清单（含删空）后，不再跟随类目默认。 */
+  accessoryPricesCustomized?: boolean;
+  /** 客户端会话标记：本次编辑里增/删/改过配件清单，保存产品时才会固化。 */
+  accessoryPricesTouched?: boolean;
   attachments: ProductAttachment[];
   /** 落库时间，由服务端 products 表带回；产品库列表按 updatedAt 倒序展示。 */
   createdAt?: string;
@@ -96,7 +102,7 @@ function withFirstQuoteRow(record: ProductRecord): ProductRecord {
 }
 
 function blankProduct(): ProductRecord {
-  return { id: `product-${Date.now()}`, name: '', sku: '', specification: '', packCount: 1, parameters: '', packaging: [blankPackagingRow()], remark: '', category: '', purchasePrice: '', supplier: '', purchaseQuotes: [], colors: [], batteryPlugs: [], images: [], videos: [], accessories: '', attachments: [] };
+  return { id: `product-${Date.now()}`, name: '', sku: '', specification: '', packCount: 1, parameters: '', packaging: [blankPackagingRow()], remark: '', category: '', purchasePrice: '', supplier: '', purchaseQuotes: [], colors: [], batteryPlugs: [], images: [], videos: [], accessories: '', attachments: [], accessoryPrices: [] };
 }
 
 const attachmentCategories: Array<{ value: ProductAttachmentCategory; label: string }> = [
@@ -183,12 +189,16 @@ function ProductVideoSection({ value, onChange }: { value: ProductVideo[]; onCha
 }
 
 /**
- * 类目配件：按产品分类共享（电锤的钻头，同类目所有产品都能用）。
- * 编辑器里维护的是本产品所属分类的表，改动对同类目全部产品即时生效；
- * 电池、充电器这类所有产品通用的件放设置页的「全局配件」。
+ * 「类目默认配件」弹层：只维护新产品的预填模板（服务端按类目存一份），
+ * 不影响任何已保存过配件的产品——编辑器里那张表才是本产品的最终清单。
  */
-function CategoryAccessoryPricesEditor({ category }: { category: string }) {
-  const key = category.trim();
+function CategoryAccessoryDefaultsModal({ open, category, onClose, onChanged }: {
+  open: boolean;
+  category: string;
+  onClose: () => void;
+  /** 保存成功后回调：产品清单本次还没动过时，用它把新默认同步进当前草稿。 */
+  onChanged: () => void;
+}) {
   const [items, setItems] = useState<AccessoryPrice[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -197,20 +207,17 @@ function CategoryAccessoryPricesEditor({ category }: { category: string }) {
   const [messageKind, setMessageKind] = useState<'success' | 'error'>('success');
 
   useEffect(() => {
-    if (!key) {
-      setItems([]);
-      setDirty(false);
-      setMessage('');
-      return;
-    }
+    if (!open || !category) return;
     let cancelled = false;
     setLoading(true);
-    getCategoryAccessoryPrices(key)
-      .then((list) => { if (!cancelled) { setItems(list); setDirty(false); setMessage(''); } })
-      .catch(() => { if (!cancelled) { setItems([]); setMessageKind('error'); setMessage('类目配件加载失败'); } })
+    setMessage('');
+    setDirty(false);
+    getCategoryAccessoryPrices(category)
+      .then((list) => { if (!cancelled) setItems(list); })
+      .catch(() => { if (!cancelled) { setItems([]); setMessageKind('error'); setMessage('类目默认加载失败'); } })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [key]);
+  }, [open, category]);
 
   const update = (id: string, patch: Partial<Pick<AccessoryPrice, 'name' | 'price'>>) => {
     setItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -220,58 +227,140 @@ function CategoryAccessoryPricesEditor({ category }: { category: string }) {
   const save = async () => {
     setBusy(true);
     try {
-      setItems(await saveCategoryAccessoryPrices(key, items));
+      setItems(await saveCategoryAccessoryPrices(category, items));
       setDirty(false);
       setMessageKind('success');
-      setMessage(`已保存「${key}」类目配件，同类目所有产品立即可选`);
+      setMessage(`已保存「${category}」的类目默认配件`);
+      onChanged();
     } catch (error) {
       setMessageKind('error');
-      setMessage((error as { message?: string })?.message ?? '类目配件保存失败');
+      setMessage((error as { message?: string })?.message ?? '类目默认保存失败');
     } finally {
       setBusy(false);
     }
   };
 
-  // 与左侧采购报价同款：共用 packaging-table-section（无灰底无边框），并排时两边视觉一致。
-  return <section className="packaging-table-section accessory-prices-section">
-    <div className="section-box-header"><span className="section-box-title">配件价格</span>
-      {!!key && <button
-        type="button"
-        className="link-button packaging-table-add"
-        disabled={busy || loading}
-        title="添加一条配件价格"
-        onClick={() => {
-          setItems((current) => [...current, { id: `acc-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: '', price: 0 }]);
-          setDirty(true);
-        }}
-      ><Plus size={14} />添加</button>}
-    </div>
-    {key ? <>
+  return <Modal open={open} title={`类目默认配件 · ${category}`} onClose={onClose} width={560} footer={<>
+    <button className="button button-secondary" type="button" onClick={onClose}>关闭</button>
+    <button className="button button-primary" type="button" disabled={busy || loading || !dirty} onClick={() => void save()}>{busy ? '保存中...' : '保存类目默认'}</button>
+  </>}>
+    <div style={{ display: 'grid', gap: 10 }}>
+      <p className="label-hint" style={{ margin: 0 }}>新产品第一次打开时自动带出这套配件与价格；已保存过配件的产品不受影响。</p>
+      <div className="section-box-header"><span className="section-box-title">默认清单</span>
+        <button className="link-button packaging-table-add" type="button" disabled={loading || busy} onClick={() => { setItems((current) => [...current, { id: `def-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: '', price: 0 }]); setDirty(true); }}><Plus size={14} />添加</button>
+      </div>
       {loading && <div className="table-state">正在加载...</div>}
       {!loading && !!items.length && <div className="packaging-table-shell">
         <table className="packaging-table accessory-prices-table">
           <thead><tr>{['名称', '价格', ''].map((title, index) => <th key={index}>{title}</th>)}</tr></thead>
           <tbody>{items.map((item, index) => <tr key={item.id || index}>
             <td className="packaging-table-col-size">
-              <input className="input packaging-table-input" aria-label={`类目配件${index + 1}名称`} value={item.name} placeholder="如：9 件套筒" onChange={(event) => update(item.id, { name: event.target.value })} />
+              <input className="input packaging-table-input" aria-label={`类目默认配件${index + 1}名称`} value={item.name} placeholder="如：9 件套筒" onChange={(event) => update(item.id, { name: event.target.value })} />
             </td>
             <td className="packaging-table-col-price">
-              <input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label={`类目配件${index + 1}价格`} value={item.price} placeholder="元" onChange={(event) => update(item.id, { price: Number(event.target.value) || 0 })} />
+              <input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label={`类目默认配件${index + 1}价格`} value={item.price} placeholder="元" onChange={(event) => update(item.id, { price: Number(event.target.value) || 0 })} />
             </td>
             <td className="packaging-table-col-actions">
-              <button className="icon-button danger" type="button" title="移除这条配件价格" aria-label={`移除第 ${index + 1} 条类目配件`} onClick={() => { setItems((current) => current.filter((entry) => entry.id !== item.id)); setDirty(true); }}><Trash2 size={14} /></button>
+              <button className="icon-button danger" type="button" title="移除这条默认配件" aria-label={`移除第 ${index + 1} 条默认配件`} onClick={() => { setItems((current) => current.filter((entry) => entry.id !== item.id)); setDirty(true); }}><Trash2 size={14} /></button>
             </td>
           </tr>)}</tbody>
         </table>
       </div>}
-      {!loading && !items.length && <div className="empty-state">「{key}」还没有配件价格，点右上角「添加」。</div>}
-      {!loading && <div className="packaging-preset-form-footer">
-        <span className={dirty ? 'packaging-preset-dirty' : 'packaging-preset-saved'} role="status">{dirty ? '有未保存的修改' : `${items.length} 条`}</span>
-        {/* 次要样式：弹窗里唯一的绿色主按钮留给「保存产品」，避免两个主操作混淆。 */}
-        <button className="button button-secondary" type="button" disabled={busy || !dirty} onClick={() => void save()}>{busy ? '保存中...' : '保存类目配件'}</button>
-      </div>}
+      {!loading && !items.length && <div className="empty-state">还没有默认配件，点上方「添加」。</div>}
       {!!message && <p role="status" style={{ margin: 0, fontSize: 12, color: messageKind === 'error' ? 'var(--tone-danger-text)' : '#0f766e' }}>{message}</p>}
-    </> : <span className="label-hint">先在上方填写「产品分类」，保存后即可按类目维护配件价格（同类目所有产品共用）。</span>}
+    </div>
+  </Modal>;
+}
+
+/**
+ * 本产品的配件价格：随产品一起保存（「保存产品」时固化到本产品，不再写类目共享清单）。
+ * 产品没动过这份清单时，第一次打开自动把类目默认连价格带出来；动过并保存后即以本产品为准。
+ * 类目默认只作预填模板，维护入口是「类目默认 ›」弹层；电池、充电器这类全局件仍放设置页。
+ */
+function CategoryAccessoryPricesEditor({ category, value, customized, onSeed, onEdit }: {
+  category: string;
+  value: AccessoryPrice[];
+  customized: boolean;
+  /** 自动带出类目默认（不改「动过」标记）：产品还没固化过清单时才发生。 */
+  onSeed: (next: AccessoryPrice[]) => void;
+  /** 用户增/删/改：保存产品时会把这时的清单固化为本产品自己的。 */
+  onEdit: (next: AccessoryPrice[]) => void;
+}) {
+  const key = category.trim();
+  const [defaultsOpen, setDefaultsOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const seededRef = useRef<string | null>(null);
+  const touchedRef = useRef(false);
+
+  // 第一次打开（产品还没固化过清单）：把类目默认连价格一起带出来；用户动过之后就不再覆盖。
+  useEffect(() => {
+    if (customized || !key || seededRef.current === key) return;
+    let cancelled = false;
+    setLoading(true);
+    getCategoryAccessoryPrices(key)
+      .then((items) => {
+        if (cancelled) return;
+        seededRef.current = key;
+        if (touchedRef.current) return;
+        const rows = items.filter((item) => item.name.trim()).map((item) => ({ ...item }));
+        if (rows.length) onSeed(rows);
+      })
+      .catch(() => { /* 带不出来就保持空表，手填即可 */ })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [customized, key]);
+
+  // 改完默认后把新模板同步进还没动过的草稿（含清空：默认清光了，产品清单也跟着清）。
+  const reloadDefaults = async () => {
+    if (customized || touchedRef.current || !key) return;
+    try {
+      const items = await getCategoryAccessoryPrices(key);
+      onSeed(items.filter((item) => item.name.trim()).map((item) => ({ ...item })));
+    } catch { /* 忽略：下次打开编辑器还会再带一次 */ }
+  };
+
+  const update = (id: string, patch: Partial<Pick<AccessoryPrice, 'name' | 'price'>>) => {
+    touchedRef.current = true;
+    onEdit(value.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  };
+  const add = () => {
+    touchedRef.current = true;
+    onEdit([...value, { id: `acc-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: '', price: 0 }]);
+  };
+  const remove = (id: string) => {
+    touchedRef.current = true;
+    onEdit(value.filter((item) => item.id !== id));
+  };
+
+  // 与左侧采购报价同款：共用 packaging-table-section（无灰底无边框），并排时两边视觉一致。
+  return <section className="packaging-table-section accessory-prices-section">
+    <div className="section-box-header"><span className="section-box-title">配件价格</span>
+      {!!key && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+        <button className="link-button muted" type="button" title="维护该类目的默认配件：新产品第一次打开时自动带出；已保存过配件的产品不受影响" onClick={() => setDefaultsOpen(true)}>类目默认 ›</button>
+        <button className="link-button packaging-table-add" type="button" title="添加一条配件价格" onClick={add}><Plus size={14} />添加</button>
+      </span>}
+    </div>
+    {key ? <>
+      {loading && <div className="table-state">正在加载...</div>}
+      {!loading && !!value.length && <div className="packaging-table-shell">
+        <table className="packaging-table accessory-prices-table">
+          <thead><tr>{['名称', '价格', ''].map((title, index) => <th key={index}>{title}</th>)}</tr></thead>
+          <tbody>{value.map((item, index) => <tr key={item.id || index}>
+            <td className="packaging-table-col-size">
+              <input className="input packaging-table-input" aria-label={`产品配件${index + 1}名称`} value={item.name} placeholder="如：9 件套筒" onChange={(event) => update(item.id, { name: event.target.value })} />
+            </td>
+            <td className="packaging-table-col-price">
+              <input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label={`产品配件${index + 1}价格`} value={item.price} placeholder="元" onChange={(event) => update(item.id, { price: Number(event.target.value) || 0 })} />
+            </td>
+            <td className="packaging-table-col-actions">
+              <button className="icon-button danger" type="button" title="移除这条配件价格" aria-label={`移除第 ${index + 1} 条产品配件`} onClick={() => remove(item.id)}><Trash2 size={14} /></button>
+            </td>
+          </tr>)}</tbody>
+        </table>
+      </div>}
+      {!loading && !value.length && <div className="empty-state">本产品还没有配件价格，点右上角「添加」。</div>}
+      <CategoryAccessoryDefaultsModal open={defaultsOpen} category={key} onClose={() => setDefaultsOpen(false)} onChanged={() => void reloadDefaults()} />
+    </> : <span className="label-hint">先在上方填写「产品分类」；填好后会自动带出该类目的默认配件（可增删改，随产品一起保存）。</span>}
   </section>;
 }
 
@@ -351,7 +440,10 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
   const showParameters = showParametersProp ?? Object.prototype.hasOwnProperty.call(draft, 'parameters');
   useEffect(() => {
     if (!open) return;
-    setDraft(withFirstQuoteRow(product ?? blankProduct()));
+    const nextDraft = withFirstQuoteRow(product ?? blankProduct());
+    // 复制产品时，源产品的配件清单算「这次动过」：副本应保留清单，而不是回落到类目默认。
+    if (copyMode && nextDraft.accessoryPrices?.length) nextDraft.accessoryPricesTouched = true;
+    setDraft(nextDraft);
     setCustomColor('');
     setCustomPlug('');
     // 「添加到产品图册」每次打开都重置为未勾选（只负责加入、默认不产生副作用），
@@ -422,7 +514,13 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
       {/* 采购报价与配件价格并排：左报价、右配件价格。 */}
       <div className="product-editor-quote-row">
         <PurchaseQuotesTable value={purchaseQuotes} onChange={(next) => set('purchaseQuotes', next)} />
-        <CategoryAccessoryPricesEditor category={draft.category ?? ''} />
+        <CategoryAccessoryPricesEditor
+          category={draft.category ?? ''}
+          value={draft.accessoryPrices ?? []}
+          customized={Boolean(draft.accessoryPricesCustomized)}
+          onSeed={(next) => set('accessoryPrices', next)}
+          onEdit={(next) => { set('accessoryPrices', next); set('accessoryPricesTouched', true); }}
+        />
       </div>
       <div className="form-grid product-editor-text-fields">
         {showParameters && <label className="label">产品参数<textarea className="textarea" rows={6} value={draft.parameters ?? ''} onChange={(event) => set('parameters', event.target.value)} placeholder={'例如：扭矩：35N·m\n转速：0-1500rpm\n额定电压：12V'} /></label>}

@@ -135,8 +135,11 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     getChargerPrices()
       .then((items) => { if (!cancelled) setChargerPrices(items); })
       .catch(() => {});
+    // 配件候选：产品自己保存过清单（含删空）就以它为准；没保存过的沿用类目默认。
     const category = (product.category ?? '').trim();
-    if (category) {
+    if (product.accessoryPricesCustomized === true) {
+      setCategoryAccessories((product.accessoryPrices ?? []).filter((item) => item.name.trim()));
+    } else if (category) {
       getCategoryAccessoryPrices(category)
         .then((items) => { if (!cancelled) setCategoryAccessories(items); })
         .catch(() => {});
@@ -246,7 +249,11 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     if (text.includes('充电')) {
       return chargerOptions.map((item) => ({ key: `charger-${item.id}`, name: item.name, price: String(item.price), priceText: `¥${item.price.toFixed(2)}`, source: '充电器价格' }));
     }
-    return categoryAccessories.map((item) => ({ key: `category-${item.id}`, name: item.name, price: String(item.price), priceText: `¥${item.price.toFixed(2)}`, source: `本类目配件${productCategory ? `（${productCategory}）` : ''}` }));
+    // 固化过清单的产品标「本产品配件」；其余沿用类目默认（带类目名）。
+    const accessorySource = product.accessoryPricesCustomized === true
+      ? '本产品配件'
+      : `本类目配件${productCategory ? `（${productCategory}）` : ''}`;
+    return categoryAccessories.map((item) => ({ key: `category-${item.id}`, name: item.name, price: String(item.price), priceText: `¥${item.price.toFixed(2)}`, source: accessorySource }));
   };
 
   return <Modal open={open} title={`售价计算 · ${product.name || product.sku || '产品'}`} onClose={onClose} width={980}>

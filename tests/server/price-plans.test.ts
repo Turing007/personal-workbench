@@ -45,7 +45,7 @@ const productPayload = (name: string, extra: Record<string, unknown> = {}) => ({
 async function createProduct(app: FastifyInstance, name: string, extra: Record<string, unknown> = {}) {
   const response = await app.inject({ method: 'POST', url: '/api/products', payload: productPayload(name, extra) });
   expect(response.statusCode).toBe(201);
-  return response.json().data as { id: number; accessoryPrices: Array<{ name: string; price: number }> };
+  return response.json().data as { id: number; accessoryPrices: Array<{ name: string; price: number }>; accessoryPricesCustomized: boolean };
 }
 
 const planPayload = (extra: Record<string, unknown> = {}) => ({
@@ -111,7 +111,7 @@ describe('售价计算器：算价方案', () => {
 });
 
 describe('售价计算器：产品「配件与价格」', () => {
-  it('随产品保存：带数组整表覆盖、没带保持原样、空数组清空', async () => {
+  it('随产品保存：带数组整表覆盖（并标记已固化）、没带保持原样、空数组清空', async () => {
     const { app } = await createFixture();
     const product = await createProduct(app, '圆锯-7寸', {
       accessoryPrices: [
@@ -120,13 +120,14 @@ describe('售价计算器：产品「配件与价格」', () => {
         { name: '锯片', price: '4.56' },
       ],
     });
-    // 空名行被丢弃、价格保留两位。
+    // 空名行被丢弃、价格保留两位；带数组保存 = 已固化（不再跟随类目默认）。
     expect(product.accessoryPrices).toEqual([
       expect.objectContaining({ name: '21V 2.0Ah 电池', price: 8.5 }),
       expect.objectContaining({ name: '锯片', price: 4.56 }),
     ]);
+    expect(product.accessoryPricesCustomized).toBe(true);
 
-    // Excel 导入这类没带 accessoryPrices 的保存：保持原样。
+    // Excel 导入这类没带 accessoryPrices 的保存：保持原样，固化标记也不动。
     const withoutField = await app.inject({
       method: 'PUT',
       url: `/api/products/${product.id}`,
@@ -134,14 +135,32 @@ describe('售价计算器：产品「配件与价格」', () => {
     });
     expect(withoutField.statusCode).toBe(200);
     expect(withoutField.json().data.accessoryPrices).toHaveLength(2);
+    expect(withoutField.json().data.accessoryPricesCustomized).toBe(true);
 
-    // 显式传空数组：清空。
+    // 显式传空数组：清空，且仍是「已固化」——详情不会回落到类目默认。
     const cleared = await app.inject({
       method: 'PUT',
       url: `/api/products/${product.id}`,
       payload: productPayload('圆锯-7寸-改回', { accessoryPrices: [] }),
     });
     expect(cleared.json().data.accessoryPrices).toEqual([]);
+    expect(cleared.json().data.accessoryPricesCustomized).toBe(true);
+
+    // 从没带过配件的新产品：未固化；改名字也不置位；只有显式保存清单才固化。
+    const fresh = await createProduct(app, '圆锯-8寸');
+    expect(fresh.accessoryPricesCustomized).toBe(false);
+    const renamed = await app.inject({
+      method: 'PUT',
+      url: `/api/products/${fresh.id}`,
+      payload: productPayload('圆锯-8寸-改名'),
+    });
+    expect(renamed.json().data.accessoryPricesCustomized).toBe(false);
+    const frozen = await app.inject({
+      method: 'PUT',
+      url: `/api/products/${fresh.id}`,
+      payload: productPayload('圆锯-8寸-定稿', { accessoryPrices: [{ name: '扳手', price: 5 }] }),
+    });
+    expect(frozen.json().data.accessoryPricesCustomized).toBe(true);
   });
 
   it('电池矩阵与充电器价格：迁移后自带默认矩阵，保存阅读一致', async () => {

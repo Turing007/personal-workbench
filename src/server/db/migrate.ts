@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 31;
+const CURRENT_SCHEMA_VERSION = 32;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS products (
   battery_plugs_json TEXT NOT NULL DEFAULT '[]',
   accessories TEXT NOT NULL DEFAULT '',
   accessory_prices TEXT NOT NULL DEFAULT '[]',
+  accessory_prices_customized INTEGER NOT NULL DEFAULT 0,
   remark TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'active',
   created_at TEXT NOT NULL,
@@ -1159,6 +1160,18 @@ export function buildCategoryAccessorySeed(database: DatabaseSync): Record<strin
 }
 
 /**
+ * 配件价格改为「按产品独立」：products 增加「已固化」标记，区分
+ * 「没改过（详情/计算器继续沿用类目默认）」与「改过、哪怕删成空」两种状态。
+ */
+function migrateVersionThirtyTwo(database: DatabaseSync, now: string): void {
+  const columns = database.prepare('PRAGMA table_info(products)').all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === 'accessory_prices_customized')) {
+    database.exec('ALTER TABLE products ADD COLUMN accessory_prices_customized INTEGER NOT NULL DEFAULT 0');
+  }
+  upsertSetting(database, 'schema_version', '32', now);
+}
+
+/**
  * 电池/充电器价格独立成模块：从旧的「全局配件」清单一次性播种——
  * 「5 节 1300」这类电池条目进矩阵，名字带「充电」的进充电器清单；旧键原样保留。
  */
@@ -1340,6 +1353,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionTwentyNine(transactionDatabase, now);
     migrateVersionThirty(transactionDatabase, now);
     migrateVersionThirtyOne(transactionDatabase, now);
+    migrateVersionThirtyTwo(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

@@ -46,6 +46,8 @@ export function mapProduct(row: Record<string, unknown> | undefined) {
     accessories: String(row.accessories),
     /** 产品专有的「配件与价格」（售价计算器用）；客户版口径会剥掉，见 toCatalogProduct。 */
     accessoryPrices: Array.isArray(row.accessoryPrices) ? row.accessoryPrices : [],
+    /** 是否已按产品固化过配件清单；没固化时详情/计算器沿用类目默认。 */
+    accessoryPricesCustomized: row.accessoryPricesCustomized === true || row.accessoryPricesCustomized === 1,
     remark: String(row.remark),
     status: String(row.status ?? 'active'),
     packaging: Array.isArray(row.packaging) ? row.packaging : [],
