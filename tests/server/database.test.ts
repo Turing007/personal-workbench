@@ -215,7 +215,7 @@ describe('SQLite database foundation', () => {
     const database = new DatabaseSync(':memory:');
     migrateDatabase(database);
 
-    expect(getSetting(database, 'schema_version')).toBe('32');
+    expect(getSetting(database, 'schema_version')).toBe('33');
     expect(getSetting(database, 'customer_products_v6_initialized')).toBe('1');
     expect(getColumnNames(database, 'customers')).toEqual(expect.arrayContaining([
       'id',
@@ -300,7 +300,7 @@ describe('SQLite database foundation', () => {
     expect(database.prepare('SELECT COUNT(*) AS count FROM orders').get()?.count).toBe(1);
     expect(database.prepare('SELECT status, label_printed_at FROM orders WHERE id = ?').get(orderId)).toMatchObject({ status: 'pending_stock' });
     expect(getSetting(database, 'customer_products_v6_initialized')).toBe('1');
-    expect(getSetting(database, 'schema_version')).toBe('32');
+    expect(getSetting(database, 'schema_version')).toBe('33');
     expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     expect(database
       .prepare('PRAGMA foreign_key_list(order_items)')
@@ -372,7 +372,7 @@ describe('SQLite database foundation', () => {
     migrateDatabase(database);
 
     expect(database.prepare('SELECT COUNT(*) AS count FROM customer_products').get()?.count).toBe(1);
-    expect(getSetting(database, 'schema_version')).toBe('32');
+    expect(getSetting(database, 'schema_version')).toBe('33');
     expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     database.close();
   });
@@ -457,18 +457,18 @@ describe('SQLite database foundation', () => {
         updated_at TEXT NOT NULL
       );
       INSERT INTO settings (key, value, updated_at)
-      VALUES ('schema_version', ' 33 ', '2026-08-11');
+      VALUES ('schema_version', ' 34 ', '2026-08-11');
     `);
     const schemaBefore = database
       .prepare("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")
       .all();
 
-    expect(() => migrateDatabase(database)).toThrow('Unsupported database schema version 33; this application supports up to version 32');
+    expect(() => migrateDatabase(database)).toThrow('Unsupported database schema version 34; this application supports up to version 33');
 
     expect(database
       .prepare("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")
       .all()).toEqual(schemaBefore);
-    expect(getSetting(database, 'schema_version')).toBe(' 33 ');
+    expect(getSetting(database, 'schema_version')).toBe(' 34 ');
     expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'products'").get()).toBeUndefined();
     database.close();
   });
@@ -603,7 +603,7 @@ describe('SQLite database foundation', () => {
 
     expect(database.prepare('PRAGMA foreign_keys').get()?.foreign_keys).toBe(1);
     expect(database.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe('wal');
-    expect(database.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()?.value).toBe('32');
+    expect(database.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()?.value).toBe('33');
     expect(getColumnNames(database, 'product_packaging')).toEqual(expect.arrayContaining([
       'inner_size',
       'inner_weight',
@@ -622,7 +622,7 @@ describe('SQLite database foundation', () => {
     expect(productDefault.parameters).toBe('');
 
     migrateDatabase(database);
-    expect(database.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()?.value).toBe('32');
+    expect(database.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()?.value).toBe('33');
 
     const indexNames = database
       .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY name")
@@ -879,7 +879,7 @@ describe('SQLite database foundation', () => {
     migrateDatabase(database);
 
     expect(getColumnNames(database, 'product_images').slice(-2)).toEqual(['category', 'note']);
-    expect(getSetting(database, 'schema_version')).toBe('32');
+    expect(getSetting(database, 'schema_version')).toBe('33');
 
     database.prepare("INSERT INTO products (name, created_at, updated_at) VALUES ('临时代理产品', '2026-01-01', '2026-01-01')").run();
     database
@@ -1060,6 +1060,57 @@ describe('v32：配件价格「已固化」标记', () => {
     expect(added?.dflt_value).toBe('0');
     // 存量行补默认值 0（未固化）。
     expect(database.prepare('SELECT accessory_prices_customized FROM products WHERE name = ?').get('老产品')?.accessory_prices_customized).toBe(0);
+    database.close();
+  });
+});
+
+describe('v33：售价方案参数快照', () => {
+  it('老库给 product_price_plans 补 params_json：存量方案回读为空 {}（按旧方案处理）', () => {
+    const database = new DatabaseSync(':memory:');
+    database.exec(`
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO settings (key, value, updated_at) VALUES ('schema_version', '32', 't');
+      CREATE TABLE products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        sku TEXT NOT NULL DEFAULT '',
+        specification TEXT NOT NULL DEFAULT '',
+        parameters TEXT NOT NULL DEFAULT '',
+        category TEXT NOT NULL DEFAULT '',
+        purchase_price REAL,
+        supplier TEXT NOT NULL DEFAULT '',
+        colors_json TEXT NOT NULL DEFAULT '[]',
+        battery_plugs_json TEXT NOT NULL DEFAULT '[]',
+        accessories TEXT NOT NULL DEFAULT '',
+        accessory_prices TEXT NOT NULL DEFAULT '[]',
+        accessory_prices_customized INTEGER NOT NULL DEFAULT 0,
+        remark TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE product_price_plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL,
+        name TEXT NOT NULL DEFAULT '',
+        markup_percent REAL NOT NULL DEFAULT 0,
+        total_cost REAL NOT NULL DEFAULT 0,
+        sale_price REAL NOT NULL DEFAULT 0,
+        target_price REAL,
+        created_at TEXT NOT NULL
+      );
+      INSERT INTO product_price_plans (product_id, name, created_at) VALUES (1, '旧方案', 't');
+    `);
+    migrateDatabase(database);
+
+    const columns = database.prepare('PRAGMA table_info(product_price_plans)').all() as Array<{ name: string }>;
+    expect(columns.some((column) => column.name === 'params_json')).toBe(true);
+    // 存量方案补默认空对象；仓储层读回时把 '{}' 视为「没有参数」。
+    expect(database.prepare('SELECT params_json FROM product_price_plans WHERE name = ?').get('旧方案')?.params_json).toBe('{}');
     database.close();
   });
 });

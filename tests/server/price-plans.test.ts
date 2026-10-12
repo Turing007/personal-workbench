@@ -91,6 +91,42 @@ describe('售价计算器：算价方案', () => {
     expect((await app.inject({ method: 'DELETE', url: `/api/products/${product.id}/price-plans/${firstPlan.id}` })).statusCode).toBe(404);
   });
 
+  it('方案参数快照：随保存写入并按白名单清洗回读；不带参数存空、读回 null', async () => {
+    const { app } = await createFixture();
+    const product = await createProduct(app, '圆锯-9寸');
+
+    const withParams = await app.inject({
+      method: 'POST',
+      url: `/api/products/${product.id}/price-plans`,
+      payload: planPayload({
+        params: { baseCost: 105, packaging: 0, shipping: 0, taxPercent: 7.7, chargerName: ' 小线充（欧/美规）-0.5A ', chargerPrice: 2.3, junk: 'x', baseCostJunk: 'nope' },
+      }),
+    });
+    expect(withParams.statusCode).toBe(201);
+    const saved = withParams.json().data as { params: Record<string, unknown> };
+    expect(saved.params).toEqual({
+      baseCost: 105, packaging: 0, shipping: 0, taxPercent: 7.7,
+      chargerName: '小线充（欧/美规）-0.5A', chargerPrice: 2.3,
+    });
+    // 读列表同样带回参数快照。
+    const list = await app.inject({ method: 'GET', url: `/api/products/${product.id}/price-plans` });
+    expect((list.json().data.items[0] as { params: Record<string, unknown> }).params).toMatchObject({ baseCost: 105, chargerPrice: 2.3 });
+
+    // 脏值清洗：负价格与非法数字一律按 0。
+    const dirty = await app.inject({
+      method: 'POST',
+      url: `/api/products/${product.id}/price-plans`,
+      payload: planPayload({ name: '脏值', params: { baseCost: -5, chargerPrice: 'abc', chargerName: 42 } }),
+    });
+    expect((dirty.json().data as { params: Record<string, unknown> }).params).toEqual({
+      baseCost: 0, packaging: 0, shipping: 0, taxPercent: 0, chargerName: '', chargerPrice: 0,
+    });
+
+    // 旧客户端不带 params：存空对象、读回 null（按旧方案处理）。
+    const legacy = await app.inject({ method: 'POST', url: `/api/products/${product.id}/price-plans`, payload: planPayload({ name: '旧口径' }) });
+    expect((legacy.json().data as { params: unknown }).params).toBeNull();
+  });
+
   it('校验：没有有效明细 400；产品不存在 404；删产品时方案一并清掉', async () => {
     const { app, pricePlanRepository } = await createFixture();
     const product = await createProduct(app, '圆锯-7寸');

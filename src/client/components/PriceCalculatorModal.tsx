@@ -1,38 +1,27 @@
-import { useEffect, useState } from 'react';
-import { ChevronDown, Plus, Save, Trash2 } from 'lucide-react';
+import { Fragment, useEffect, useState } from 'react';
+import { Check, Save, Trash2 } from 'lucide-react';
 import Modal from './Modal';
 import {
   deletePricePlan,
   getBatteryPriceMatrix,
-  getCategoryAccessoryPrices,
   getChargerPrices,
   listPricePlans,
   savePricePlan,
   type PricePlanRecord,
 } from '../api';
+import { copyText } from '../copy-text';
 import type { ProductRecord } from './ProductEditor';
 import type { AccessoryPrice } from '../../shared/accessory-prices';
-import { batteryMatrixOptions, type BatteryPriceMatrix } from '../../shared/battery-prices';
+import { BATTERY_COMBO_VARIANTS, batteryUnitPriceOf, type BatteryPriceMatrix } from '../../shared/battery-prices';
 import {
-  planItemAmount,
-  planMargin,
+  batteryComboName,
+  comboTotalCost,
   planSalePrice,
-  planTotalCost,
-  type PricePlanItem,
+  round2,
+  type PricePlanParams,
 } from '../../shared/price-calculator';
 
-interface CalculatorRow {
-  key: string;
-  name: string;
-  qty: string;
-  unitPrice: string;
-}
-
 const MARKUP_MEMORY_KEY = 'price-calc-markup';
-
-function makeKey() {
-  return `row-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
 
 function rememberedMarkup(): string {
   try {
@@ -40,30 +29,6 @@ function rememberedMarkup(): string {
   } catch {
     return '20';
   }
-}
-
-/** 默认明细：产品成本与首个包装自动带价，其余留空待选或手填。 */
-function defaultRows(product: ProductRecord): CalculatorRow[] {
-  const quotes = product.purchaseQuotes ?? [];
-  const defaultQuote = quotes.find((quote) => quote.isDefault) ?? quotes[0];
-  const productCost = (defaultQuote?.price ?? '').trim() || product.purchasePrice || '';
-  const firstPackaging = product.packaging[0];
-  return [
-    { key: makeKey(), name: '产品成本', qty: '1', unitPrice: productCost },
-    { key: makeKey(), name: firstPackaging?.name.trim() || '包装', qty: '1', unitPrice: firstPackaging?.purchasePrice ?? '' },
-    { key: makeKey(), name: '电池', qty: '1', unitPrice: '' },
-    { key: makeKey(), name: '充电器', qty: '1', unitPrice: '' },
-    { key: makeKey(), name: '配件', qty: '1', unitPrice: '' },
-    { key: makeKey(), name: '运费', qty: '1', unitPrice: '' },
-  ];
-}
-
-function rowToItem(row: CalculatorRow): PricePlanItem {
-  const qty = Number(row.qty);
-  const unitPrice = Number(row.unitPrice);
-  const safeQty = Number.isFinite(qty) && qty >= 0 ? qty : 0;
-  const safeUnit = Number.isFinite(unitPrice) && unitPrice >= 0 ? unitPrice : 0;
-  return { name: row.name.trim(), qty: safeQty, unitPrice: safeUnit, amount: planItemAmount(safeQty, safeUnit) };
 }
 
 function formatMoney(value: number): string {
@@ -77,6 +42,12 @@ function formatDate(iso: string): string {
   return `${Number(matched[1])}月${Number(matched[2])}日`;
 }
 
+/** 输入框里的数字：空/非法/负号一律按 0（成本不可能为负）。 */
+function amountInput(value: string): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
 export interface PriceCalculatorModalProps {
   open: boolean;
   product?: ProductRecord;
@@ -84,248 +55,258 @@ export interface PriceCalculatorModalProps {
 }
 
 /**
- * 产品售价计算器：左侧成本明细实时试算（选中包装/配件自动带价），右侧本产品已存的算价方案。
- * 保存即新增一条历史（不覆盖）；删除要二次确认。
+ * 产品售价计算器（矩阵口径）：左边填采购价/毛利率/包材配件/运费/税并选充电器，
+ * 右边按「电池容量 × 节数 × 一电一充/两电一充」整表出成本与售价；
+ * 点任意售价即复制「5节1300mah 一电一充 138.12元」，可直接发给客户。
+ * 下方保存方案（记下参数快照，可载入回显）；保存即新增一条历史，不覆盖。
  */
 export default function PriceCalculatorModal({ open, product, onClose }: PriceCalculatorModalProps) {
-  const [rows, setRows] = useState<CalculatorRow[]>([]);
+  const [baseCost, setBaseCost] = useState('');
+  const [packaging, setPackaging] = useState('0');
+  const [shipping, setShipping] = useState('0');
+  const [taxPercent, setTaxPercent] = useState('0');
   const [markup, setMarkup] = useState(rememberedMarkup);
-  const [targetPrice, setTargetPrice] = useState('');
-  const [planName, setPlanName] = useState('');
-  const [plans, setPlans] = useState<PricePlanRecord[]>([]);
-  const [batteryMatrix, setBatteryMatrix] = useState<BatteryPriceMatrix | null>(null);
+  const [chargerId, setChargerId] = useState('');
   const [chargerPrices, setChargerPrices] = useState<AccessoryPrice[]>([]);
-  const [categoryAccessories, setCategoryAccessories] = useState<AccessoryPrice[]>([]);
-  const [pickerRow, setPickerRow] = useState<string | null>(null);
+  const [batteryMatrix, setBatteryMatrix] = useState<BatteryPriceMatrix | null>(null);
+  const [plans, setPlans] = useState<PricePlanRecord[]>([]);
+  const [planName, setPlanName] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [copiedKey, setCopiedKey] = useState('');
 
   useEffect(() => {
     if (!open || !product) return;
     let cancelled = false;
-    setRows(defaultRows(product));
+    // 采购价：默认档报价 → 镜像列兜底；包材配件：第一条包装的采购价。
+    const quotes = product.purchaseQuotes ?? [];
+    const defaultQuote = quotes.find((quote) => quote.isDefault) ?? quotes[0];
+    setBaseCost((defaultQuote?.price ?? '').trim() || product.purchasePrice || '0');
+    setPackaging(product.packaging[0]?.purchasePrice?.trim() || '0');
+    setShipping('0');
+    setTaxPercent('0');
     setMarkup(rememberedMarkup());
-    setTargetPrice('');
     setPlanName('');
-    setPickerRow(null);
     setMessage('');
+    setCopiedKey('');
     setPlans([]);
     setBatteryMatrix(null);
     setChargerPrices([]);
-    setCategoryAccessories([]);
-    // 打开时载入：本产品最近一份方案（回显上次算的）+ 电池矩阵 + 充电器价格 + 本类目配件。
+    setChargerId('');
     if (/^\d+$/.test(product.id)) {
       listPricePlans(product.id)
-        .then((items) => {
-          if (cancelled) return;
-          setPlans(items);
-          const latest = items[0];
-          if (latest) {
-            setRows(latest.items.map((item) => ({ key: makeKey(), name: item.name, qty: String(item.qty), unitPrice: String(item.unitPrice) })));
-            setMarkup(String(latest.markupPercent));
-            setTargetPrice(latest.targetPrice == null ? '' : String(latest.targetPrice));
-            setPlanName(latest.name);
-          }
-        })
-        .catch(() => { if (!cancelled) setMessage('算价方案加载失败'); });
+        .then((items) => { if (!cancelled) setPlans(items); })
+        .catch(() => { if (!cancelled) setMessage('方案加载失败'); });
     }
     getBatteryPriceMatrix()
       .then((matrix) => { if (!cancelled) setBatteryMatrix(matrix); })
       .catch(() => {});
     getChargerPrices()
-      .then((items) => { if (!cancelled) setChargerPrices(items); })
+      .then((items) => {
+        if (cancelled) return;
+        setChargerPrices(items);
+        setChargerId(items[0]?.id ?? '');
+      })
       .catch(() => {});
-    // 配件候选：产品自己保存过清单（含删空）就以它为准；没保存过的沿用类目默认。
-    const category = (product.category ?? '').trim();
-    if (product.accessoryPricesCustomized === true) {
-      setCategoryAccessories((product.accessoryPrices ?? []).filter((item) => item.name.trim()));
-    } else if (category) {
-      getCategoryAccessoryPrices(category)
-        .then((items) => { if (!cancelled) setCategoryAccessories(items); })
-        .catch(() => {});
-    }
     return () => { cancelled = true; };
   }, [open, product]);
 
-  // 选择浮层：点浮层与触发按钮以外的任何地方都关掉。
-  useEffect(() => {
-    if (!pickerRow) return;
-    const onDocumentClick = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('.price-calc-picker') || target?.closest('[data-picker-toggle]')) return;
-      setPickerRow(null);
-    };
-    document.addEventListener('click', onDocumentClick);
-    return () => document.removeEventListener('click', onDocumentClick);
-  }, [pickerRow]);
-
   if (!open || !product) return null;
 
-  const items = rows.map(rowToItem).filter((item) => item.name);
-  const totalCost = planTotalCost(items);
-  const markupValue = Number(markup);
-  const salePrice = planSalePrice(totalCost, Number.isFinite(markupValue) && markupValue >= 0 ? markupValue : 0);
-  const targetValue = targetPrice.trim() === '' ? null : Number(targetPrice);
-  const margin = targetValue != null && Number.isFinite(targetValue) ? planMargin(targetValue, totalCost) : planMargin(salePrice, totalCost);
-  // 毛利按「当前采用的那档售价」算：填了目标售价就用目标售价，否则用建议售价。
-  const effectivePrice = targetValue != null && Number.isFinite(targetValue) ? targetValue : salePrice;
-  const profit = Math.round((effectivePrice - totalCost) * 100) / 100;
-  const profitText = profit < 0 ? `-¥${Math.abs(profit).toFixed(2)}` : formatMoney(profit);
+  const base = amountInput(baseCost);
+  const pack = amountInput(packaging);
+  const ship = amountInput(shipping);
+  const tax = amountInput(taxPercent);
+  const markupValue = amountInput(markup);
+  const charger = chargerPrices.find((item) => item.id === chargerId);
+  const chargerPrice = charger?.price ?? 0;
 
-  const updateRow = (key: string, patch: Partial<CalculatorRow>) => {
-    setRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  const bareCost = comboTotalCost({ baseCost: base, packaging: pack, shipping: ship, taxPercent: tax });
+  const bareSale = planSalePrice(bareCost, markupValue);
+
+  const capacities = batteryMatrix?.capacities ?? [];
+  // 列 = 每个节数 × 两种成套口径；顺序跟随设置里的节数顺序。
+  const combos = batteryMatrix
+    ? batteryMatrix.packCounts.flatMap((packCount) => BATTERY_COMBO_VARIANTS.map((variant) => ({ packCount, batteryCount: variant.batteryCount, label: variant.label })))
+    : [];
+
+  const copySalePrice = async (text: string, key: string) => {
+    const ok = await copyText(text);
+    setMessage(ok ? `已复制：${text}` : '复制失败，请手动选中复制');
+    setCopiedKey(ok ? key : '');
+    if (ok) window.setTimeout(() => setCopiedKey((current) => (current === key ? '' : current)), 1600);
   };
 
-  const pickIntoRow = (key: string, name: string, unitPrice: string) => {
-    updateRow(key, { name, unitPrice });
-    setPickerRow(null);
+  /** 一格组合的成本/售价：矩阵里该单元格没定价时返回 null（显示 —）。 */
+  const comboValues = (capacity: number, packCount: number, batteryCount: number) => {
+    const unit = batteryUnitPriceOf(batteryMatrix!, capacity, packCount);
+    if (unit == null) return null;
+    const cost = comboTotalCost({
+      baseCost: base, packaging: pack, shipping: ship, taxPercent: tax,
+      batteryUnitPrice: unit, batteryCount, chargerPrice,
+    });
+    return { cost, sale: planSalePrice(cost, markupValue) };
   };
 
   const save = async () => {
-    if (!items.length) {
-      setMessage('至少需要一行有名称的成本明细');
-      return;
-    }
+    if (!/^\d+$/.test(product.id) || busy) return;
     setBusy(true);
     try {
-      const parsedMarkup = Number(markup);
-      const saved = await savePricePlan(product.id, {
+      try { localStorage.setItem(MARKUP_MEMORY_KEY, String(markupValue)); } catch { /* 记住毛利率失败不影响保存 */ }
+      // 明细按裸机成本拆四条（税用残差，保证与服务端重算的合计完全一致）；参数快照供载入回显。
+      const taxAmount = round2(bareCost - base - pack - ship);
+      const params: PricePlanParams = {
+        baseCost: base, packaging: pack, shipping: ship, taxPercent: tax,
+        chargerName: charger?.name ?? '', chargerPrice,
+      };
+      const plan = await savePricePlan(product.id, {
         name: planName,
-        markupPercent: Number.isFinite(parsedMarkup) ? parsedMarkup : 0,
-        targetPrice: targetValue != null && Number.isFinite(targetValue) ? targetValue : null,
-        items: items.map((item) => ({ name: item.name, qty: item.qty, unitPrice: item.unitPrice })),
+        markupPercent: markupValue,
+        targetPrice: null,
+        items: [
+          { name: '采购价', qty: 1, unitPrice: base },
+          { name: '包材配件', qty: 1, unitPrice: pack },
+          { name: '运费', qty: 1, unitPrice: ship },
+          { name: '税', qty: 1, unitPrice: taxAmount },
+        ],
+        params,
       });
-      try { localStorage.setItem(MARKUP_MEMORY_KEY, String(Number.isFinite(parsedMarkup) ? parsedMarkup : 0)); } catch { /* 记住加价率失败不影响保存 */ }
-      setPlans((current) => [saved, ...current]);
-      setPlanName(saved.name);
-      setMessage(`已保存方案「${saved.name || formatDate(saved.createdAt)}」`);
+      setPlans((current) => [plan, ...current]);
+      setPlanName('');
+      setMessage(`已保存方案「${plan.name || formatDate(plan.createdAt)}」`);
     } catch (error) {
-      setMessage((error as { message?: string })?.message ?? '保存失败，请重试');
+      setMessage((error as { message?: string })?.message ?? '方案保存失败');
     } finally {
       setBusy(false);
     }
   };
 
   const loadPlan = (plan: PricePlanRecord) => {
-    setRows(plan.items.map((item) => ({ key: makeKey(), name: item.name, qty: String(item.qty), unitPrice: String(item.unitPrice) })));
+    const params = plan.params;
+    if (params) {
+      setBaseCost(String(params.baseCost));
+      setPackaging(String(params.packaging));
+      setShipping(String(params.shipping));
+      setTaxPercent(String(params.taxPercent));
+      const matched = chargerPrices.find((item) => item.name === params.chargerName);
+      if (matched) setChargerId(matched.id);
+      setMessage('');
+    } else {
+      // 旧格式方案（没存参数）：按明细里能认出来的行尽量回显。
+      const byName = new Map(plan.items.map((item) => [item.name, item.unitPrice]));
+      setBaseCost(String(byName.get('产品成本') ?? base));
+      setPackaging(String(byName.get('包装') ?? 0));
+      setShipping(String(byName.get('运费') ?? 0));
+      setMessage('旧方案只回显了采购价等部分参数');
+    }
     setMarkup(String(plan.markupPercent));
-    setTargetPrice(plan.targetPrice == null ? '' : String(plan.targetPrice));
     setPlanName(plan.name);
-    setMessage(`已载入「${plan.name || formatDate(plan.createdAt)}」`);
   };
 
   const removePlan = async (plan: PricePlanRecord) => {
-    if (!window.confirm(`确定删除方案「${plan.name || formatDate(plan.createdAt)}」吗？删掉后无法恢复。`)) return;
+    const label = plan.name || formatDate(plan.createdAt);
+    if (!window.confirm(`确定删除方案「${label}」吗？删除后不能恢复。`)) return;
     setBusy(true);
     try {
       await deletePricePlan(product.id, plan.id);
       setPlans((current) => current.filter((item) => item.id !== plan.id));
-      setMessage('方案已删除');
+      setMessage(`已删除方案「${label}」`);
     } catch (error) {
-      setMessage((error as { message?: string })?.message ?? '删除失败，请重试');
+      setMessage((error as { message?: string })?.message ?? '方案删除失败');
     } finally {
       setBusy(false);
     }
   };
 
-  const packagingOptions = product.packaging.filter((item) => item.name.trim());
-  const productCategory = (product.category ?? '').trim();
-  const batteryOptions = batteryMatrix ? batteryMatrixOptions(batteryMatrix) : [];
-  const chargerOptions = chargerPrices.filter((item) => item.name.trim());
-
-  /**
-   * 每行只出和它相关的来源：包装行只出包装方式、电池行只出电池价、充电器行只出充电器价，
-   * 其余行出本类目配件；产品成本/运费这类不需要选的没有下拉。
-   */
-  const rowOptions = (name: string): Array<{ key: string; name: string; price: string; priceText: string; source: string }> => {
-    const text = name.trim();
-    if (!text || text.includes('成本') || text.includes('运费')) return [];
-    if (text.includes('包装') || packagingOptions.some((item) => text.includes(item.name.trim()))) {
-      return packagingOptions.map((item) => ({ key: `pack-${item.id}`, name: item.name.trim(), price: item.purchasePrice, priceText: item.purchasePrice.trim() ? `¥${item.purchasePrice}` : '未填采购价', source: '包装方式' }));
-    }
-    if (text.includes('电池')) {
-      return batteryOptions.map((item) => ({ key: `battery-${item.id}`, name: item.name, price: String(item.price), priceText: `¥${item.price.toFixed(2)}`, source: '电池价格' }));
-    }
-    if (text.includes('充电')) {
-      return chargerOptions.map((item) => ({ key: `charger-${item.id}`, name: item.name, price: String(item.price), priceText: `¥${item.price.toFixed(2)}`, source: '充电器价格' }));
-    }
-    // 固化过清单的产品标「本产品配件」；其余沿用类目默认（带类目名）。
-    const accessorySource = product.accessoryPricesCustomized === true
-      ? '本产品配件'
-      : `本类目配件${productCategory ? `（${productCategory}）` : ''}`;
-    return categoryAccessories.map((item) => ({ key: `category-${item.id}`, name: item.name, price: String(item.price), priceText: `¥${item.price.toFixed(2)}`, source: accessorySource }));
-  };
-
-  return <Modal open={open} title={`售价计算 · ${product.name || product.sku || '产品'}`} onClose={onClose} width={980}>
-    <div className="price-calc">
-      <div className="price-calc-left">
-        <div className="price-calc-head"><span>成本明细</span><span>数量</span><span>单价</span><span>金额</span><span /></div>
-        {rows.map((row, index) => {
-          const item = rowToItem(row);
-          const options = rowOptions(row.name);
-          const pickerOpen = pickerRow === row.key && options.length > 0;
-          return <div className="price-calc-row-block" key={row.key}>
-            <div className="price-calc-row">
-              <div className="price-calc-name">
-                <input className="input" aria-label={`成本${index + 1}名称`} value={row.name} placeholder="成本项名称" onChange={(event) => updateRow(row.key, { name: event.target.value })} />
-                {options.length > 0 && <button
-                  className="icon-button"
-                  type="button"
-                  data-picker-toggle="true"
-                  title={`从${options[0].source}选择并自动带价`}
-                  aria-label={`为第 ${index + 1} 行选择${options[0].source}`}
-                  aria-expanded={pickerOpen}
-                  onClick={() => setPickerRow((current) => (current === row.key ? null : row.key))}
-                ><ChevronDown size={14} /></button>}
-              </div>
-              <input className="input" type="number" min={0} aria-label={`成本${index + 1}数量`} value={row.qty} onChange={(event) => updateRow(row.key, { qty: event.target.value })} />
-              <input className="input" type="number" min={0} step="0.01" aria-label={`成本${index + 1}单价`} value={row.unitPrice} placeholder="元" onChange={(event) => updateRow(row.key, { unitPrice: event.target.value })} />
-              <span className="price-calc-amount">{formatMoney(item.amount)}</span>
-              <button className="icon-button danger" type="button" title="删除这一行" aria-label={`删除第 ${index + 1} 行成本`} onClick={() => setRows((current) => current.filter((entry) => entry.key !== row.key))}><Trash2 size={14} /></button>
-            </div>
-            {pickerOpen && <div className="price-calc-picker">
-              <span className="price-calc-picker-label">{options[0].source}</span>
-              {options.map((option) => <button
-                key={option.key}
-                className="price-calc-picker-item"
-                type="button"
-                onClick={() => pickIntoRow(row.key, option.name, option.price)}
-              >{option.name}<em>{option.priceText}</em></button>)}
-            </div>}
-          </div>;
-        })}
-        <button className="button button-secondary button-sm price-calc-add" type="button" onClick={() => setRows((current) => [...current, { key: makeKey(), name: '', qty: '1', unitPrice: '' }])}><Plus size={14} />添加成本项</button>
-
-        <div className="price-calc-summary">
-          <div className="price-calc-summary-line"><span>成本合计</span><strong data-testid="price-calc-total">{formatMoney(totalCost)}</strong></div>
-          <div className="price-calc-summary-line"><span>加价率 <input className="input price-calc-markup" type="number" min={0} aria-label="加价率" value={markup} onChange={(event) => setMarkup(event.target.value)} /> %</span><span>建议售价 <strong data-testid="price-calc-sale">{formatMoney(salePrice)}</strong></span></div>
-          <div className="price-calc-summary-line"><span>目标售价 <input className="input price-calc-target" type="number" min={0} step="0.01" aria-label="目标售价" value={targetPrice} placeholder="选填" onChange={(event) => setTargetPrice(event.target.value)} /></span><span data-testid="price-calc-margin">毛利率 {margin == null ? '—' : `${margin.toFixed(1)}%`}</span></div>
-          <div className="price-calc-summary-line price-calc-summary-profit"><span>毛利</span><strong data-testid="price-calc-profit">{profitText}</strong></div>
+  return <Modal open={open} title={`售价计算 · ${product.name || product.sku || '产品'}`} onClose={onClose} width={1100}>
+    <div className="price-calc2">
+      <div className="price-calc2-params">
+        <label className="price-calc2-field"><span>采购价</span><input className="input" type="number" min={0} step="0.01" aria-label="采购价" value={baseCost} onChange={(event) => setBaseCost(event.target.value)} /></label>
+        <label className="price-calc2-field"><span>毛利率 %</span><input className="input" type="number" min={0} aria-label="毛利率" value={markup} onChange={(event) => setMarkup(event.target.value)} /></label>
+        <label className="price-calc2-field"><span>包材配件</span><input className="input" type="number" min={0} step="0.01" aria-label="包材配件" value={packaging} onChange={(event) => setPackaging(event.target.value)} /></label>
+        <label className="price-calc2-field"><span>运费</span><input className="input" type="number" min={0} step="0.01" aria-label="运费" value={shipping} onChange={(event) => setShipping(event.target.value)} /></label>
+        <label className="price-calc2-field"><span>税 %</span><input className="input" type="number" min={0} step="0.01" aria-label="税" value={taxPercent} onChange={(event) => setTaxPercent(event.target.value)} /></label>
+        <label className="price-calc2-field"><span>充电器</span>
+          <select className="toolbar-select price-calc2-charger" aria-label="充电器" value={chargerId} disabled={!chargerPrices.length} onChange={(event) => setChargerId(event.target.value)}>
+            {chargerPrices.map((item) => <option key={item.id} value={item.id}>{item.name} ¥{item.price.toFixed(2)}</option>)}
+            {!chargerPrices.length && <option value="">无（去设置里添加）</option>}
+          </select>
+        </label>
+        <div className="price-calc2-bare">
+          <span className="price-calc2-bare-title">裸机</span>
+          <span>成本 <strong>{formatMoney(bareCost)}</strong></span>
+          <button
+            className={`price-calc2-sale${copiedKey === 'bare' ? ' is-copied' : ''}`}
+            type="button"
+            title="点击复制售价"
+            aria-label={`复制裸机售价 ${bareSale.toFixed(2)}元`}
+            onClick={() => void copySalePrice(`裸机 ${bareSale.toFixed(2)}元`, 'bare')}
+          >{copiedKey === 'bare' ? <Check size={13} /> : null}售价 {formatMoney(bareSale)}</button>
+          <span className="price-calc2-bare-profit">毛利 {formatMoney(round2(bareSale - bareCost))}</span>
         </div>
-
-        <div className="price-calc-save">
-          <input className="input" aria-label="方案名" value={planName} placeholder="方案名（如：双电版）" onChange={(event) => setPlanName(event.target.value)} />
-          <button className="button button-primary" type="button" disabled={busy} onClick={() => void save()}><Save size={14} />{busy ? '处理中...' : '保存为方案'}</button>
-        </div>
-        {!!message && <p className="price-calc-message" role="status">{message}</p>}
       </div>
 
-      <div className="price-calc-right">
-        <div className="price-calc-plans-head">已存方案<em>{plans.length ? `${plans.length} 份` : ''}</em></div>
-        {plans.length ? <div className="price-calc-plans">{plans.map((plan) => {
-          const planProfit = Math.round((plan.salePrice - plan.totalCost) * 100) / 100;
-          return <div className="price-calc-plan" key={plan.id}>
+      <div className="price-calc2-matrix">
+        {!batteryMatrix && <div className="table-state">正在加载电池价格…</div>}
+        {batteryMatrix && !capacities.length && <div className="table-state">电池价格矩阵还是空的：去「设置 → 配件价格」加容量与节数。</div>}
+        {batteryMatrix && !!capacities.length && <div className="price-calc2-scroll">
+          <table className="battery-price-table">
+            <thead>
+              <tr>
+                <th className="battery-price-corner" rowSpan={2}>电池容量</th>
+                {combos.map((combo) => <th key={`${combo.packCount}-${combo.batteryCount}`} colSpan={2}>{combo.packCount}节{combo.label}</th>)}
+              </tr>
+              <tr>{combos.map((combo) => <Fragment key={`${combo.packCount}-${combo.batteryCount}`}><th className="battery-price-mini">成本</th><th className="battery-price-mini">售价</th></Fragment>)}</tr>
+            </thead>
+            <tbody>
+              {capacities.map((capacity) => <tr key={capacity}>
+                <td className="battery-price-capacity">{capacity}mAh</td>
+                {combos.map((combo) => {
+                  const values = comboValues(capacity, combo.packCount, combo.batteryCount);
+                  const key = `${combo.packCount}-${combo.batteryCount}-${capacity}`;
+                  const copyName = batteryComboName(combo.packCount, capacity, combo.label);
+                  return <Fragment key={key}>
+                    <td className="battery-price-cost">{values ? values.cost.toFixed(2) : '—'}</td>
+                    <td className="battery-price-sale-cell">{values
+                      ? <button
+                        className={`price-calc2-sale${copiedKey === key ? ' is-copied' : ''}`}
+                        type="button"
+                        title="点击复制售价（自带名称）"
+                        aria-label={`复制售价 ${copyName} ${values.sale.toFixed(2)}元`}
+                        onClick={() => void copySalePrice(`${copyName} ${values.sale.toFixed(2)}元`, key)}
+                      >{copiedKey === key ? <Check size={13} /> : null}{values.sale.toFixed(2)}</button>
+                      : '—'}</td>
+                  </Fragment>;
+                })}
+              </tr>)}
+            </tbody>
+          </table>
+        </div>}
+      </div>
+    </div>
+
+    <div className="price-calc2-save">
+      <input className="input" aria-label="方案名" value={planName} placeholder="方案名（如：10 节两电一充）" onChange={(event) => setPlanName(event.target.value)} />
+      <button className="button button-primary" type="button" disabled={busy} onClick={() => void save()}><Save size={14} />{busy ? '处理中...' : '保存为方案'}</button>
+    </div>
+    {!!message && <p className="price-calc-message" role="status">{message}</p>}
+
+    <div className="price-calc2-plans">
+      <div className="price-calc-plans-head">已存方案<em>{plans.length ? `${plans.length} 份` : ''}</em></div>
+      {plans.length ? <div className="price-calc-plans">{plans.map((plan) => {
+        const planProfit = round2(plan.salePrice - plan.totalCost);
+        return <div className="price-calc-plan" key={plan.id}>
           <div className="price-calc-plan-main">
             <strong>{plan.name || formatDate(plan.createdAt)}</strong>
-            <span>售价 {formatMoney(plan.salePrice)} · 毛利 {planProfit < 0 ? `-¥${Math.abs(planProfit).toFixed(2)}` : formatMoney(planProfit)}</span>
+            <span>裸机 {formatMoney(plan.salePrice)} · 毛利 {formatMoney(planProfit)}</span>
             {plan.name ? <span className="price-calc-plan-date">{formatDate(plan.createdAt)}</span> : null}
           </div>
           <div className="price-calc-plan-actions">
             <button className="button button-secondary button-sm" type="button" disabled={busy} onClick={() => loadPlan(plan)}>载入</button>
             <button className="icon-button danger" type="button" title="删除方案" aria-label={`删除方案 ${plan.name || formatDate(plan.createdAt)}`} disabled={busy} onClick={() => void removePlan(plan)}><Trash2 size={14} /></button>
           </div>
-        </div>; })}</div> : <div className="empty-state">还没有保存过方案。左侧算好后点「保存为方案」，以后打开会自动回显最近一份。</div>}
-      </div>
+        </div>;
+      })}</div> : <div className="empty-state">还没有保存过方案。上面算好后点「保存为方案」。</div>}
     </div>
   </Modal>;
 }

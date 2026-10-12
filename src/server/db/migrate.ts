@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 32;
+const CURRENT_SCHEMA_VERSION = 33;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -1160,6 +1160,18 @@ export function buildCategoryAccessorySeed(database: DatabaseSync): Record<strin
 }
 
 /**
+ * 售价计算器改矩阵口径后，方案需要回显采购价/包材/运费/税/充电器等参数：
+ * product_price_plans 加 params_json 存参数快照；旧方案为空 '{}'，只按明细回显。
+ */
+function migrateVersionThirtyThree(database: DatabaseSync, now: string): void {
+  const columns = database.prepare('PRAGMA table_info(product_price_plans)').all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === 'params_json')) {
+    database.exec("ALTER TABLE product_price_plans ADD COLUMN params_json TEXT NOT NULL DEFAULT '{}'");
+  }
+  upsertSetting(database, 'schema_version', '33', now);
+}
+
+/**
  * 配件价格改为「按产品独立」：products 增加「已固化」标记，区分
  * 「没改过（详情/计算器继续沿用类目默认）」与「改过、哪怕删成空」两种状态。
  */
@@ -1354,6 +1366,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionThirty(transactionDatabase, now);
     migrateVersionThirtyOne(transactionDatabase, now);
     migrateVersionThirtyTwo(transactionDatabase, now);
+    migrateVersionThirtyThree(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

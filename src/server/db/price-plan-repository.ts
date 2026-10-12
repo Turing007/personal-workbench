@@ -1,6 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { withTransaction } from './connection.js';
-import type { PricePlanItem } from '../../shared/price-calculator.js';
+import type { PricePlanItem, PricePlanParams } from '../../shared/price-calculator.js';
+import { normalizePricePlanParams } from '../../shared/price-calculator.js';
 
 /** 算价方案：每次保存新增一条历史；明细行为快照，回看不受后续产品资料变化影响。 */
 export interface PricePlanRecord {
@@ -13,6 +14,20 @@ export interface PricePlanRecord {
   targetPrice: number | null;
   createdAt: string;
   items: Array<{ id: number; name: string; qty: number; unitPrice: number; amount: number }>;
+  /** 矩阵口径的参数快照（采购价/包材/运费/税/充电器）；旧方案为 null，只按明细回显。 */
+  params: PricePlanParams | null;
+}
+
+/** 解析方案参数快照：空 '{}'、坏 JSON 一律当旧方案（null）。 */
+function parsePlanParams(raw: unknown): PricePlanParams | null {
+  if (typeof raw !== 'string' || !raw.trim() || raw.trim() === '{}') return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return normalizePricePlanParams(parsed);
+  } catch {
+    return null;
+  }
 }
 
 export class PricePlanRepository {
@@ -22,7 +37,7 @@ export class PricePlanRepository {
   listForProduct(productId: number): PricePlanRecord[] {
     const plans = this.database
       .prepare(
-        `SELECT id, product_id, name, markup_percent, total_cost, sale_price, target_price, created_at
+        `SELECT id, product_id, name, markup_percent, total_cost, sale_price, target_price, params_json, created_at
          FROM product_price_plans WHERE product_id = ? ORDER BY created_at DESC, id DESC`,
       )
       .all(productId) as Array<Record<string, unknown>>;
@@ -57,6 +72,7 @@ export class PricePlanRepository {
       targetPrice: plan.target_price == null ? null : Number(plan.target_price),
       createdAt: String(plan.created_at),
       items: itemsByPlan.get(Number(plan.id)) ?? [],
+      params: parsePlanParams(plan.params_json),
     }));
   }
 
@@ -68,15 +84,16 @@ export class PricePlanRepository {
     salePrice: number;
     targetPrice: number | null;
     items: PricePlanItem[];
+    params: PricePlanParams | null;
     createdAt: string;
   }): PricePlanRecord {
     return withTransaction(this.database, (database) => {
       const result = database
         .prepare(
-          `INSERT INTO product_price_plans (product_id, name, markup_percent, total_cost, sale_price, target_price, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO product_price_plans (product_id, name, markup_percent, total_cost, sale_price, target_price, params_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(input.productId, input.name, input.markupPercent, input.totalCost, input.salePrice, input.targetPrice, input.createdAt);
+        .run(input.productId, input.name, input.markupPercent, input.totalCost, input.salePrice, input.targetPrice, JSON.stringify(input.params ?? {}), input.createdAt);
       const planId = Number(result.lastInsertRowid);
       const insertItem = database.prepare(
         `INSERT INTO product_price_plan_items (plan_id, name, qty, unit_price, amount, sort_order)

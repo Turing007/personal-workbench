@@ -60,6 +60,21 @@ export function batteryCellPrice(matrix: BatteryPriceMatrix, capacityIndex: numb
   return matrix.prices[capacityIndex]?.[packCountIndex] ?? 0;
 }
 
+/** 矩阵取价：按「容量 × 节数」原样取；没定价（0 或缺格）时返回 null，矩阵表格显示 —。 */
+export function batteryUnitPriceOf(matrix: BatteryPriceMatrix, capacity: number, packCount: number): number | null {
+  const capacityIndex = matrix.capacities.indexOf(capacity);
+  const packCountIndex = matrix.packCounts.indexOf(packCount);
+  if (capacityIndex < 0 || packCountIndex < 0) return null;
+  const price = batteryCellPrice(matrix, capacityIndex, packCountIndex);
+  return price > 0 ? price : null;
+}
+
+/** 售价计算器的两种成套口径：一电一充 = 1 块电池 + 1 个充电器；两电一充 = 2 块 + 1 个。 */
+export const BATTERY_COMBO_VARIANTS: ReadonlyArray<{ batteryCount: number; label: string }> = [
+  { batteryCount: 1, label: '一电一充' },
+  { batteryCount: 2, label: '两电一充' },
+];
+
 /** 电池选项名（与用户既有写法一致）：「5 节 1300 电池」。 */
 export function batteryOptionName(capacity: number, packCount: number): string {
   return `${packCount} 节 ${capacity} 电池`;

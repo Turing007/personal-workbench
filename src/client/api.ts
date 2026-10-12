@@ -7,6 +7,7 @@ import type { AccessoryPrice } from '../shared/accessory-prices';
 import type { BatteryPriceMatrix } from '../shared/battery-prices';
 import type { PricePlanItemInput } from '../shared/price-calculator';
 import { normalizeProductStatus } from '../shared/product-status';
+import type { PricePlanParams } from '../shared/price-calculator';
 import { mapStoredPurchaseQuotes, type ProductPurchaseQuote } from '../shared/product-purchase-quotes';
 import type { PackagingPreset } from '../shared/packaging-presets';
 import type { StockPreparation } from '../shared/stock';
@@ -855,13 +856,15 @@ export interface PricePlanRecord {
   targetPrice: number | null;
   createdAt: string;
   items: Array<{ id: number; name: string; qty: number; unitPrice: number; amount: number }>;
+  /** 矩阵口径的参数快照；旧方案为 null（只按明细回显）。 */
+  params: PricePlanParams | null;
 }
 
 export function listPricePlans(productId: string): Promise<PricePlanRecord[]> {
   return request<{ items: PricePlanRecord[] }>(`/api/products/${productId}/price-plans`).then((result) => result.items);
 }
 
-export function savePricePlan(productId: string, input: { name: string; markupPercent: number; targetPrice: number | null; items: PricePlanItemInput[] }): Promise<PricePlanRecord> {
+export function savePricePlan(productId: string, input: { name: string; markupPercent: number; targetPrice: number | null; items: PricePlanItemInput[]; params: PricePlanParams }): Promise<PricePlanRecord> {
   return request<PricePlanRecord>(`/api/products/${productId}/price-plans`, { method: 'POST', body: JSON.stringify(input) });
 }
 

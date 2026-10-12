@@ -32,6 +32,7 @@ import type { CatalogRepository } from '../db/catalog-repository.js';
 import type { PricePlanRepository } from '../db/price-plan-repository.js';
 import {
   normalizePricePlanItems,
+  normalizePricePlanParams,
   planSalePrice,
   planTotalCost,
   pricePlanAmount,
@@ -638,6 +639,8 @@ export async function registerProductRoutes(app: FastifyInstance, options: Produ
         salePrice,
         targetPrice,
         items,
+        // 矩阵口径的参数快照（采购价/包材/运费/税/充电器）；旧客户端不发则存空对象。
+        params: body.params == null ? null : normalizePricePlanParams(body.params),
         createdAt: new Date().toISOString(),
       });
       return sendSuccess(reply, plan, 201);
