@@ -4867,6 +4867,14 @@ select {
 .price-calc2-field > span { flex: none; }
 .price-calc2-field .input { width: 104px; }
 .price-calc2-field .price-calc2-charger { flex: 1; min-width: 0; max-width: 148px; height: 30px; font-size: 12px; }
+/* 顶部产品图 + 名称 + 小眼睛（隐藏全部成本，留一张干净价格表给客户截图）。 */
+.price-calc2-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.price-calc2-thumb { width: 44px; height: 44px; flex: none; object-fit: cover; border-radius: var(--radius-control); border: 1px solid var(--color-border); background: var(--color-surface-subtle); }
+.price-calc2-thumb.is-empty { display: inline-flex; align-items: center; justify-content: center; color: var(--color-text-muted); }
+.price-calc2-title { display: grid; gap: 2px; min-width: 0; }
+.price-calc2-title strong { font-size: var(--text-sm); color: var(--color-text-strong); }
+.price-calc2-title em { font-style: normal; font-size: var(--text-2xs); color: var(--color-text-muted); }
+.price-calc2-eye { margin-left: auto; }
 .price-calc2-bare { display: grid; gap: 4px; margin-top: 4px; padding: 9px 11px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-subtle); font-size: var(--text-xs); color: var(--color-text-secondary); }
 .price-calc2-bare strong { color: var(--color-text-strong); }
 .price-calc2-bare-title { font-weight: var(--weight-semibold); color: var(--color-text-strong); }

@@ -14,6 +14,11 @@ test.beforeEach(async ({ context }) => {
 test.describe.configure({ timeout: 120_000 });
 test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
 
+const PNG_1X1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+  'base64',
+);
+
 /**
  * 售价计算器（矩阵口径）：左参数自动带价 → 右侧按电池矩阵整表出成本/售价 →
  * 点售价复制「5节1300mah 一电一充 126.50元」→ 保存方案/载入回显/删除。
@@ -32,6 +37,10 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
   });
   expect(created.ok()).toBe(true);
   const product = (await created.json()).data as { id: number };
+  // 产品图：计算器顶部要显示，方便发给客户时一眼看清是哪个产品。
+  expect((await page.request.post(`/api/products/${product.id}/images?category=product`, {
+    multipart: { file: { name: 'e2e-calc.png', mimeType: 'image/png', buffer: PNG_1X1 } },
+  })).ok()).toBe(true);
   expect((await page.request.put('/api/settings/charger-prices', { data: { items: [{ name: 'E2E小线充', price: 2 }, { name: 'E2E大座充', price: 5 }] } })).ok()).toBe(true);
   // 1500 × 10 节故意留空：矩阵里没定价的格子显示 —。
   expect((await page.request.put('/api/settings/battery-price-matrix', { data: { capacities: [1300, 1500], packCounts: [5, 10], prices: [[8, 14], [9, 0]] } })).ok()).toBe(true);
@@ -44,6 +53,9 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     await page.locator('.products-page .price-calc-entry').first().click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toContainText('售价计算');
+    // 顶部：产品图 + 名称 + SKU/分类。
+    await expect(dialog.locator('.price-calc2-thumb')).toBeVisible();
+    await expect(dialog.locator('.price-calc2-head')).toContainText(`E2E矩阵算价${stamp}`);
 
     // 左参数：采购价从默认档自动带出；毛利率改 15 → 裸机 100 / 售价 115 / 毛利 15。
     await expect(dialog.getByLabel('采购价')).toHaveValue('100');
@@ -75,6 +87,20 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     // 裸机售价也能复制。
     await dialog.getByLabel('复制裸机售价 115.00元').click();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('裸机 115.00元');
+
+    // 小眼睛：隐藏全部成本后只剩售价——成本列、参数区、方案区收起，产品名与图仍在，售价仍可复制。
+    await dialog.getByRole('button', { name: '隐藏成本（发客户截图用）' }).click();
+    await expect(dialog.locator('.battery-price-table th', { hasText: '成本' })).toHaveCount(0);
+    await expect(dialog.getByLabel('采购价')).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: '保存为方案' })).toHaveCount(0);
+    await expect(dialog.locator('.price-calc2-head')).toContainText(`E2E矩阵算价${stamp}`);
+    await expect(dialog.locator('.price-calc2-thumb')).toBeVisible();
+    await saleCell('复制售价 5节1300mah 一电一充 126.50元').click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('5节1300mah 一电一充 126.50元');
+    // 再点回来恢复显示（每次打开也默认显示）。
+    await dialog.getByRole('button', { name: '显示成本' }).click();
+    await expect(dialog.getByLabel('采购价')).toHaveValue('100');
+    await expect(dialog.getByRole('button', { name: '保存为方案' })).toBeVisible();
 
     // 保存方案：卡片显示裸机售价与毛利。
     const planInput = dialog.getByLabel('方案名');

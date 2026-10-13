@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { Check, Save, Trash2 } from 'lucide-react';
+import { Check, Eye, EyeOff, Image as ImageIcon, Save, Trash2 } from 'lucide-react';
 import Modal from './Modal';
 import {
   deletePricePlan,
@@ -10,6 +10,7 @@ import {
   type PricePlanRecord,
 } from '../api';
 import { copyText } from '../copy-text';
+import { thumbUrl } from '../image-urls';
 import type { ProductRecord } from './ProductEditor';
 import type { AccessoryPrice } from '../../shared/accessory-prices';
 import { BATTERY_COMBO_VARIANTS, batteryUnitPriceOf, type BatteryPriceMatrix } from '../../shared/battery-prices';
@@ -58,6 +59,8 @@ export interface PriceCalculatorModalProps {
  * 产品售价计算器（矩阵口径）：左边填采购价/毛利率/包材配件/运费/税并选充电器，
  * 右边按「电池容量 × 节数 × 一电一充/两电一充」整表出成本与售价；
  * 点任意售价即复制「5节1300mah 一电一充 138.12元」，可直接发给客户。
+ * 顶部有产品图与名称；「小眼睛」一键隐藏全部成本（含参数、成本列、毛利与方案区），
+ * 留在屏幕上的是干净的价格表，方便直接截图发客户。默认每次打开都显示成本。
  * 下方保存方案（记下参数快照，可载入回显）；保存即新增一条历史，不覆盖。
  */
 export default function PriceCalculatorModal({ open, product, onClose }: PriceCalculatorModalProps) {
@@ -74,6 +77,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [copiedKey, setCopiedKey] = useState('');
+  const [costsVisible, setCostsVisible] = useState(true);
 
   useEffect(() => {
     if (!open || !product) return;
@@ -89,6 +93,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     setPlanName('');
     setMessage('');
     setCopiedKey('');
+    setCostsVisible(true);
     setPlans([]);
     setBatteryMatrix(null);
     setChargerPrices([]);
@@ -113,6 +118,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
 
   if (!open || !product) return null;
 
+  const image = product.images[0];
   const base = amountInput(baseCost);
   const pack = amountInput(packaging);
   const ship = amountInput(shipping);
@@ -219,8 +225,27 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   };
 
   return <Modal open={open} title={`售价计算 · ${product.name || product.sku || '产品'}`} onClose={onClose} width={1100}>
+    {/* 产品图 + 名称：截图发客户时一眼看清是哪个产品；右侧小眼睛隐藏全部成本。 */}
+    <div className="price-calc2-head">
+      {image
+        ? <img className="price-calc2-thumb" src={thumbUrl(image.url, 240)} alt="" loading="lazy" decoding="async" />
+        : <span className="price-calc2-thumb is-empty" aria-hidden="true"><ImageIcon size={18} /></span>}
+      <span className="price-calc2-title">
+        <strong>{product.name || product.sku || '未命名产品'}</strong>
+        <em>{[product.sku, (product.category ?? '').trim()].filter(Boolean).join(' · ')}</em>
+      </span>
+      <button
+        className="icon-button price-calc2-eye"
+        type="button"
+        aria-pressed={!costsVisible}
+        aria-label={costsVisible ? '隐藏成本（发客户截图用）' : '显示成本'}
+        title={costsVisible ? '隐藏成本（发客户截图用）' : '显示成本'}
+        onClick={() => setCostsVisible((current) => !current)}
+      >{costsVisible ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+    </div>
     <div className="price-calc2">
       <div className="price-calc2-params">
+        {costsVisible && <>
         <label className="price-calc2-field"><span>采购价</span><input className="input" type="number" min={0} step="0.01" aria-label="采购价" value={baseCost} onChange={(event) => setBaseCost(event.target.value)} /></label>
         <label className="price-calc2-field"><span>毛利率 %</span><input className="input" type="number" min={0} aria-label="毛利率" value={markup} onChange={(event) => setMarkup(event.target.value)} /></label>
         <label className="price-calc2-field"><span>包材配件</span><input className="input" type="number" min={0} step="0.01" aria-label="包材配件" value={packaging} onChange={(event) => setPackaging(event.target.value)} /></label>
@@ -232,9 +257,10 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
             {!chargerPrices.length && <option value="">无（去设置里添加）</option>}
           </select>
         </label>
+        </>}
         <div className="price-calc2-bare">
           <span className="price-calc2-bare-title">裸机</span>
-          <span>成本 <strong>{formatMoney(bareCost)}</strong></span>
+          {costsVisible && <span>成本 <strong>{formatMoney(bareCost)}</strong></span>}
           <button
             className={`price-calc2-sale${copiedKey === 'bare' ? ' is-copied' : ''}`}
             type="button"
@@ -242,7 +268,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
             aria-label={`复制裸机售价 ${bareSale.toFixed(2)}元`}
             onClick={() => void copySalePrice(`裸机 ${bareSale.toFixed(2)}元`, 'bare')}
           >{copiedKey === 'bare' ? <Check size={13} /> : null}售价 {formatMoney(bareSale)}</button>
-          <span className="price-calc2-bare-profit">毛利 {formatMoney(round2(bareSale - bareCost))}</span>
+          {costsVisible && <span className="price-calc2-bare-profit">毛利 {formatMoney(round2(bareSale - bareCost))}</span>}
         </div>
       </div>
 
@@ -254,9 +280,9 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
             <thead>
               <tr>
                 <th className="battery-price-corner" rowSpan={2}>电池容量</th>
-                {combos.map((combo) => <th key={`${combo.packCount}-${combo.batteryCount}`} colSpan={2}>{combo.packCount}节{combo.label}</th>)}
+                {combos.map((combo) => <th key={`${combo.packCount}-${combo.batteryCount}`} colSpan={costsVisible ? 2 : 1}>{combo.packCount}节{combo.label}</th>)}
               </tr>
-              <tr>{combos.map((combo) => <Fragment key={`${combo.packCount}-${combo.batteryCount}`}><th className="battery-price-mini">成本</th><th className="battery-price-mini">售价</th></Fragment>)}</tr>
+              <tr>{combos.map((combo) => <Fragment key={`${combo.packCount}-${combo.batteryCount}`}>{costsVisible && <th className="battery-price-mini">成本</th>}<th className="battery-price-mini">售价</th></Fragment>)}</tr>
             </thead>
             <tbody>
               {capacities.map((capacity) => <tr key={capacity}>
@@ -266,7 +292,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
                   const key = `${combo.packCount}-${combo.batteryCount}-${capacity}`;
                   const copyName = batteryComboName(combo.packCount, capacity, combo.label);
                   return <Fragment key={key}>
-                    <td className="battery-price-cost">{values ? values.cost.toFixed(2) : '—'}</td>
+                    {costsVisible && <td className="battery-price-cost">{values ? values.cost.toFixed(2) : '—'}</td>}
                     <td className="battery-price-sale-cell">{values
                       ? <button
                         className={`price-calc2-sale${copiedKey === key ? ' is-copied' : ''}`}
@@ -285,13 +311,13 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
       </div>
     </div>
 
-    <div className="price-calc2-save">
+    {costsVisible && <div className="price-calc2-save">
       <input className="input" aria-label="方案名" value={planName} placeholder="方案名（如：10 节两电一充）" onChange={(event) => setPlanName(event.target.value)} />
       <button className="button button-primary" type="button" disabled={busy} onClick={() => void save()}><Save size={14} />{busy ? '处理中...' : '保存为方案'}</button>
-    </div>
+    </div>}
     {!!message && <p className="price-calc-message" role="status">{message}</p>}
 
-    <div className="price-calc2-plans">
+    {costsVisible && <div className="price-calc2-plans">
       <div className="price-calc-plans-head">已存方案<em>{plans.length ? `${plans.length} 份` : ''}</em></div>
       {plans.length ? <div className="price-calc-plans">{plans.map((plan) => {
         const planProfit = round2(plan.salePrice - plan.totalCost);
@@ -307,6 +333,6 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
           </div>
         </div>;
       })}</div> : <div className="empty-state">还没有保存过方案。上面算好后点「保存为方案」。</div>}
-    </div>
+    </div>}
   </Modal>;
 }
