@@ -32,8 +32,18 @@ function rememberedMarkup(): string {
   }
 }
 
+/** 价格显示口径：四舍五入到 0.5，最多一位小数（100 / 126.5 / 130）。 */
+function roundHalf(value: number): number {
+  return Math.round(value * 2 + 1e-6) / 2;
+}
+
+function formatHalf(value: number): string {
+  const rounded = roundHalf(value);
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
 function formatMoney(value: number): string {
-  return `¥${value.toFixed(2)}`;
+  return `¥${formatHalf(value)}`;
 }
 
 /** 只显示到「几月几日」，不显示几点。 */
@@ -253,7 +263,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
         <label className="price-calc2-field"><span>税 %</span><input className="input" type="number" min={0} step="0.01" aria-label="税" value={taxPercent} onChange={(event) => setTaxPercent(event.target.value)} /></label>
         <label className="price-calc2-field"><span>充电器</span>
           <select className="toolbar-select price-calc2-charger" aria-label="充电器" value={chargerId} disabled={!chargerPrices.length} onChange={(event) => setChargerId(event.target.value)}>
-            {chargerPrices.map((item) => <option key={item.id} value={item.id}>{item.name} ¥{item.price.toFixed(2)}</option>)}
+            {chargerPrices.map((item) => <option key={item.id} value={item.id}>{item.name} ¥{formatHalf(item.price)}</option>)}
             {!chargerPrices.length && <option value="">无（去设置里添加）</option>}
           </select>
         </label>
@@ -265,8 +275,8 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
             className={`price-calc2-sale${copiedKey === 'bare' ? ' is-copied' : ''}`}
             type="button"
             title="点击复制售价"
-            aria-label={`复制裸机售价 ${bareSale.toFixed(2)}元`}
-            onClick={() => void copySalePrice(`裸机 ${bareSale.toFixed(2)}元`, 'bare')}
+            aria-label={`复制裸机售价 ${formatHalf(bareSale)}元`}
+            onClick={() => void copySalePrice(`裸机 ${formatHalf(bareSale)}元`, 'bare')}
           >{copiedKey === 'bare' ? <Check size={13} /> : null}售价 {formatMoney(bareSale)}</button>
           {costsVisible && <span className="price-calc2-bare-profit">毛利 {formatMoney(round2(bareSale - bareCost))}</span>}
         </div>
@@ -292,15 +302,15 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
                   const key = `${combo.packCount}-${combo.batteryCount}-${capacity}`;
                   const copyName = batteryComboName(combo.packCount, capacity, combo.label);
                   return <Fragment key={key}>
-                    {costsVisible && <td className="battery-price-cost">{values ? values.cost.toFixed(2) : '—'}</td>}
+                    {costsVisible && <td className="battery-price-cost">{values ? formatHalf(values.cost) : '—'}</td>}
                     <td className="battery-price-sale-cell">{values
                       ? <button
                         className={`price-calc2-sale${copiedKey === key ? ' is-copied' : ''}`}
                         type="button"
                         title="点击复制售价（自带名称）"
-                        aria-label={`复制售价 ${copyName} ${values.sale.toFixed(2)}元`}
-                        onClick={() => void copySalePrice(`${copyName} ${values.sale.toFixed(2)}元`, key)}
-                      >{copiedKey === key ? <Check size={13} /> : null}{values.sale.toFixed(2)}</button>
+                        aria-label={`复制售价 ${copyName} ${formatHalf(values.sale)}元`}
+                        onClick={() => void copySalePrice(`${copyName} ${formatHalf(values.sale)}元`, key)}
+                      >{copiedKey === key ? <Check size={13} /> : null}{formatHalf(values.sale)}</button>
                       : '—'}</td>
                   </Fragment>;
                 })}

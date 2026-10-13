@@ -21,7 +21,8 @@ const PNG_1X1 = Buffer.from(
 
 /**
  * 售价计算器（矩阵口径）：左参数自动带价 → 右侧按电池矩阵整表出成本/售价 →
- * 点售价复制「5节1300mah 一电一充 126.50元」→ 保存方案/载入回显/删除。
+ * 点售价复制「5节1300mah 一电一充 126.5元」→ 保存方案/载入回显/删除。
+ * 价格显示口径：四舍五入到 0.5，最多一位小数。
  */
 test('售价计算器：矩阵算价、点售价复制、保存方案与载入回显', async ({ page }) => {
   const stamp = Date.now();
@@ -61,32 +62,32 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     await expect(dialog.getByLabel('采购价')).toHaveValue('100');
     await dialog.getByLabel('毛利率').fill('15');
     const bare = dialog.locator('.price-calc2-bare');
-    await expect(bare).toContainText('¥100.00');
-    await expect(bare).toContainText('¥115.00');
-    await expect(bare).toContainText('毛利 ¥15.00');
+    await expect(bare).toContainText('¥100');
+    await expect(bare).toContainText('¥115');
+    await expect(bare).toContainText('毛利 ¥15');
 
     // 矩阵：按设置生成容量行与组合列；充电器默认第一条（¥2）。
-    // 1300 5节一电一充：(100+8+2)×1.15 = 126.50；1300 5节两电一充：(100+16+2)×1.15 = 135.70；1500 5节一电一充：(100+9+2)×1.15 = 127.65。
+    // 1300 5节一电一充：(100+8+2)×1.15 = 126.50 → 126.5；1300 5节两电一充：(100+16+2)×1.15 = 135.70 → 135.5；1500 5节一电一充：(100+9+2)×1.15 = 127.65 → 127.5。
     const saleCell = (name: string) => dialog.getByLabel(name);
-    await expect(saleCell('复制售价 5节1300mah 一电一充 126.50元')).toHaveText('126.50');
-    await expect(saleCell('复制售价 5节1300mah 两电一充 135.70元')).toHaveText('135.70');
-    await expect(saleCell('复制售价 5节1500mah 一电一充 127.65元')).toHaveText('127.65');
+    await expect(saleCell('复制售价 5节1300mah 一电一充 126.5元')).toHaveText('126.5');
+    await expect(saleCell('复制售价 5节1300mah 两电一充 135.5元')).toHaveText('135.5');
+    await expect(saleCell('复制售价 5节1500mah 一电一充 127.5元')).toHaveText('127.5');
     // 1500 × 10 节没定价：一电一充/两电一充两列的成本与售价共 4 格都显示 —。
     await expect(dialog.locator('.battery-price-table tbody tr', { hasText: '1500mAh' }).locator('td', { hasText: '—' })).toHaveCount(4);
 
-    // 切充电器到大座充 ¥5：1300 5节一电一充 → (100+8+5)×1.15 = 129.95。
-    await dialog.getByLabel('充电器').selectOption({ label: 'E2E大座充 ¥5.00' });
-    await expect(saleCell('复制售价 5节1300mah 一电一充 129.95元')).toHaveText('129.95');
-    await dialog.getByLabel('充电器').selectOption({ label: 'E2E小线充 ¥2.00' });
+    // 切充电器到大座充 ¥5：1300 5节一电一充 → (100+8+5)×1.15 = 129.95 → 130。
+    await dialog.getByLabel('充电器').selectOption({ label: 'E2E大座充 ¥5' });
+    await expect(saleCell('复制售价 5节1300mah 一电一充 130元')).toHaveText('130');
+    await dialog.getByLabel('充电器').selectOption({ label: 'E2E小线充 ¥2' });
 
     // 点售价复制：自动带上配置名与「元」，剪贴板内容一致。
-    await saleCell('复制售价 5节1300mah 一电一充 126.50元').click();
-    await expect(dialog.locator('.price-calc-message')).toContainText('已复制：5节1300mah 一电一充 126.50元');
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('5节1300mah 一电一充 126.50元');
+    await saleCell('复制售价 5节1300mah 一电一充 126.5元').click();
+    await expect(dialog.locator('.price-calc-message')).toContainText('已复制：5节1300mah 一电一充 126.5元');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('5节1300mah 一电一充 126.5元');
 
     // 裸机售价也能复制。
-    await dialog.getByLabel('复制裸机售价 115.00元').click();
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('裸机 115.00元');
+    await dialog.getByLabel('复制裸机售价 115元').click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('裸机 115元');
 
     // 小眼睛：隐藏全部成本后只剩售价——成本列、参数区、方案区收起，产品名与图仍在，售价仍可复制。
     await dialog.getByRole('button', { name: '隐藏成本（发客户截图用）' }).click();
@@ -95,8 +96,8 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     await expect(dialog.getByRole('button', { name: '保存为方案' })).toHaveCount(0);
     await expect(dialog.locator('.price-calc2-head')).toContainText(`E2E矩阵算价${stamp}`);
     await expect(dialog.locator('.price-calc2-thumb')).toBeVisible();
-    await saleCell('复制售价 5节1300mah 一电一充 126.50元').click();
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('5节1300mah 一电一充 126.50元');
+    await saleCell('复制售价 5节1300mah 一电一充 126.5元').click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('5节1300mah 一电一充 126.5元');
     // 再点回来恢复显示（每次打开也默认显示）。
     await dialog.getByRole('button', { name: '显示成本' }).click();
     await expect(dialog.getByLabel('采购价')).toHaveValue('100');
@@ -107,19 +108,19 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     await planInput.fill('一电一充方案');
     await dialog.getByRole('button', { name: '保存为方案' }).click();
     const firstCard = dialog.locator('.price-calc-plan', { hasText: '一电一充方案' });
-    await expect(firstCard).toContainText('裸机 ¥115.00');
-    await expect(firstCard).toContainText('毛利 ¥15.00');
+    await expect(firstCard).toContainText('裸机 ¥115');
+    await expect(firstCard).toContainText('毛利 ¥15');
 
     // 改毛利率并存第二份；载入第一份应把参数与结果回显回来。
     await dialog.getByLabel('毛利率').fill('20');
-    await expect(bare).toContainText('¥120.00');
+    await expect(bare).toContainText('¥120');
     await planInput.fill('两电一充方案');
     await dialog.getByRole('button', { name: '保存为方案' }).click();
-    await expect(dialog.locator('.price-calc-plan', { hasText: '两电一充方案' })).toContainText('裸机 ¥120.00');
+    await expect(dialog.locator('.price-calc-plan', { hasText: '两电一充方案' })).toContainText('裸机 ¥120');
 
     await firstCard.getByRole('button', { name: '载入' }).click();
     await expect(dialog.getByLabel('毛利率')).toHaveValue('15');
-    await expect(bare).toContainText('¥115.00');
+    await expect(bare).toContainText('¥115');
 
     // 删除方案：确认后从列表消失。
     page.on('dialog', (nativeDialog) => void nativeDialog.accept());
