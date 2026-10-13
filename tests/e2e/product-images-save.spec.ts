@@ -70,6 +70,11 @@ async function openImagesModal(page: Page, sku: string, mobile: boolean) {
   await expect(page.locator('.product-images-content')).toBeVisible();
 }
 
+/** 弹窗打开后不再默认勾选任何图片；要带图保存/复制时，先手动点一张缩略图。 */
+async function selectFirstThumbnail(page: Page) {
+  await page.locator('.product-image-thumbnail').first().click();
+}
+
 test.describe('手机端：触摸 + 局域网 http（非安全上下文）', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 });
 
@@ -84,6 +89,7 @@ test.describe('手机端：触摸 + 局域网 http（非安全上下文）', () 
 
     try {
       await openImagesModal(page, product.sku, true);
+      await selectFirstThumbnail(page);
 
       await expect(page.locator('.product-images-save-button')).toHaveText(/保存到相册（1）/);
       // 这条是本用例的核心：局域网 http 下复制图片必然失败，所以按钮根本不该出现。
@@ -106,6 +112,7 @@ test.describe('手机端：触摸 + 局域网 http（非安全上下文）', () 
 
     try {
       await openImagesModal(page, product.sku, true);
+      await selectFirstThumbnail(page);
 
       await page.locator('.product-images-save-button').click();
 
@@ -158,6 +165,7 @@ test.describe('手机端：触摸 + 局域网 http（非安全上下文）', () 
 
     try {
       await openImagesModal(page, product.sku, true);
+      await selectFirstThumbnail(page);
 
       await expect(page.locator('.product-images-help')).toContainText('点「保存到相册」即可存进手机相册');
       await page.locator('.product-images-save-button').click();
@@ -203,6 +211,7 @@ test.describe('手机端：触摸 + 局域网 http（非安全上下文）', () 
 
     try {
       await openImagesModal(page, product.sku, true);
+      await selectFirstThumbnail(page);
       await page.locator('.product-images-save-button').click();
       await expect(page.locator('.product-images-copy-message')).toHaveText('已保存 1 张到手机相册');
       const saves = await page.evaluate(() => (window as unknown as { __nativeSaves: { url: string }[] }).__nativeSaves);
@@ -246,6 +255,7 @@ test.describe('手机端：触摸 + 局域网 http（非安全上下文）', () 
 
     try {
       await openImagesModal(page, product.sku, true);
+      await selectFirstThumbnail(page);
       await page.locator('.product-images-save-button').click();
       // 等网页把图片抓完并交给壳之后再模拟壳的失败回执（原生也是先回报环节、再给保存回执）。
       await expect.poll(() => page.evaluate(() => (window as unknown as { __saved: unknown[] }).__saved.length)).toBe(1);
@@ -275,6 +285,7 @@ test.describe('桌面端：安全上下文', () => {
 
     try {
       await openImagesModal(page, product.sku, false);
+      await selectFirstThumbnail(page);
 
       const canCopyImages = await page.evaluate(() => (
         window.isSecureContext && typeof navigator.clipboard?.write === 'function' && typeof ClipboardItem !== 'undefined'

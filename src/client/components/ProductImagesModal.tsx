@@ -108,7 +108,7 @@ async function toClipboardBlob(blob: Blob) {
 
 export default function ProductImagesModal({ open, productName = '产品', images, pendingImages = [], onRetryUploadFile, onClose }: ProductImagesModalProps) {
   const [previewId, setPreviewId] = useState(images[0]?.id ?? '');
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(images[0] ? [images[0].id] : []));
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [collapsedFolders, setCollapsedFolders] = useState<string[]>([]);
   const [copying, setCopying] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -192,7 +192,9 @@ export default function ProductImagesModal({ open, productName = '产品', image
   useEffect(() => {
     const firstId = images[0]?.id ?? '';
     setPreviewId(firstId);
-    setSelectedIds(firstId ? new Set([firstId]) : new Set());
+    // 打开弹窗/切换产品时不再默认勾选第一张：预勾选会让复制、下载、保存到相册的计数虚高，
+    // 用户还得先手动取消第一张，一不小心就把不想带的图一起复制走了。
+    setSelectedIds(new Set());
     setCollapsedFolders([]);
     setCopyMessage('');
     setViewerOpen(false);
