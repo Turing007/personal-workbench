@@ -114,35 +114,86 @@ cd android && ~/.workbench-android/downloads/gradle-8.9/bin/gradle assembleRelea
 - 箱唛打印仍建议在连接打印机的电脑上操作，手机端可查看箱唛数据。
 - 局域网直连时如手机打不开地址，多为 Windows 防火墙拦截，需放行 TCP 52342 端口；如只想本机使用，可设置 `WORKBENCH_HOST=127.0.0.1`。
 
-## 服务器部署（手机随时访问）
+## 服务器部署与上线更新
 
 把服务端部署到云服务器后，手机和电脑在任何有网络的地方都能使用，不再依赖家里电脑开机。
 
-**购买建议**：腾讯云/阿里云轻量应用服务器，2核2G 即可；区域选 **香港**（免域名备案，配合免费 sslip.io 域名实现自动 HTTPS）；系统镜像 Ubuntu 24.04。购买后在控制台防火墙放行 22、80、443 端口，并安装 Docker。
+**线上现状（2026-10-14）**：阿里云轻量应用服务器 `101.200.149.84`，入口 `https://www.vigortech.xyz`（Caddy 自动 HTTPS，`vigortech.xyz` 与 `www.vigortech.xyz` 共用一张证书）。服务器上**没有 git 仓库**，`~/workbench` 里是部署脚本解压出来的源码 + bind mount 的 `data/`，所以更新只能从本机推，不能在服务器上 `git pull`。
 
-**一键部署**（在本机项目目录的 Git Bash 中执行）：
+### 一键上线（其他 Agent / 会话请按这条走）
 
-```bash
-bash scripts/deploy-to-server.sh root@服务器IP 服务器IP的sslip域名
-# 示例：服务器 IP 是 1.2.3.4 时，sslip 域名写作 1-2-3-4.sslip.io
-bash scripts/deploy-to-server.sh root@1.2.3.4 1-2-3-4.sslip.io
-```
-
-脚本会把代码上传到服务器的 `~/workbench`，用 Docker Compose 启动「工作台 + Caddy」两个容器：Caddy 自动申请并续期 Let's Encrypt HTTPS 证书，工作台数据保存在 `workbench-data` 数据卷中。
-
-**首次使用**：浏览器打开 `https://你的域名`，页面会引导创建第一个账号（自动成为管理员），在「设置 → 账号与安全」里可以为家人/同事创建更多账号。
-
-**把电脑上的旧数据迁到服务器**：电脑上「设置 → 备份与恢复 → 创建备份」下载 ZIP → 打开服务器站点 → 管理员账号「设置 → 选择备份恢复」上传 ZIP。账号数据不随备份迁移，恢复后用服务器上的账号登录即可。
-
-**日常维护**（SSH 到服务器后，在 `~/workbench` 目录）：
+在本机项目目录的 **Git Bash** 中执行（不要用 PowerShell，脚本是 bash）：
 
 ```bash
-docker compose logs -f workbench   # 查看日志
-docker compose pull && docker compose up -d --build   # 更新到最新代码重新部署
-docker volume ls                   # 数据卷列表（数据在 workbench-data 卷里）
+# 上线前先确认提交已推送到 GitHub（部署包取自工作区，commit 号只用于打版本标记）
+git status -sb          # 应显示 master...origin/master 无 ahead
+npm run typecheck && npm test
+npm run build           # 本地先验一遍打包
+
+SSH_KEY=~/.ssh/workbench_deploy_ed25519 \
+  bash scripts/deploy-to-server.sh root@101.200.149.84 'vigortech.xyz,www.vigortech.xyz'
 ```
 
-服务器上的每日自动备份沿用「设置 → 备份与恢复」中的配置，备份文件在数据卷内，建议每月下载一份 ZIP 存到本地做异地容灾。
+域名参数写成 `vigortech.xyz,www.vigortech.xyz`（**逗号后不要空格**，远端会用 bash source `.env`，带空格会把第二个域名当成命令执行；脚本内部会规范化成逗号+空格再交给 Caddy）。
+
+`SSH_KEY` 指向本机 `~/.ssh/workbench_deploy_ed25519` 私钥；换服务器或换密钥时改这个环境变量即可。免密登录没配好时脚本会停在第一步并提示。
+
+**脚本五步各自做什么**（失败即中止，不会带病上线）：
+
+| 步骤 | 动作 |
+|---|---|
+| 1 | SSH 检查连通性与服务器上的 Docker |
+| 2 | 打包**源代码**（排除 `node_modules` `dist` `data` `.git` `android`）——注意传的是源码不是构建产物 |
+| 3 | scp 上传到 `~/workbench` 并解压 |
+| 4 | **部署前给线上数据库拍快照** `data/backups/部署前快照-*.sqlite`（保留最近 10 份）。快照失败直接中止 |
+| 5 | 服务器上 `docker compose --profile https up -d --build` 重新构建镜像并启动，然后探活 `/health`，域名模式还会用 `--resolve` 把整条 HTTPS 链路验一遍 |
+
+第 4 步必须先于第 5 步：数据库迁移是**容器启动时自动执行**的，一旦写坏，最近的回滚点就只剩最多 24 小时前那份定时备份。
+
+### 上线后怎么确认成功
+
+```bash
+curl -s https://www.vigortech.xyz/health
+```
+
+返回里的 `gitCommit` 应等于刚推送的 commit 短号，`status` 为 `ok`，`environment` 为 `production`。示例：
+
+```json
+{"ok":true,"data":{"status":"ok","version":"0.3.0","buildTime":"...","gitCommit":"092454f","mode":"production","environment":"production"}}
+```
+
+`gitCommit` 来自部署脚本写入 `.env` 的 `WORKBENCH_GIT_COMMIT`，所以它是判断「线上跑的是哪一版」的唯一可靠依据。
+
+### 出问题怎么回滚
+
+用第 4 步那份快照，退到发布前的数据状态：
+
+```bash
+docker compose stop workbench
+cp data/backups/部署前快照-<时间戳>.sqlite data/workbench.sqlite
+rm -f data/workbench.sqlite-wal data/workbench.sqlite-shm   # 不删会和新库对不上
+docker compose --profile https up -d
+```
+
+只回滚数据不够，还要把代码也退回去：在本机 `git revert` 或 checkout 到上一个 commit 后重跑一次部署脚本。只回滚数据、不退回代码，下次发版又会把问题带回来。
+
+### 日常维护（SSH 到服务器后，在 `~/workbench` 目录）
+
+```bash
+docker compose --profile https logs -f workbench   # 查看日志
+docker compose --profile https ps                  # 容器状态
+docker volume ls                                   # Caddy 证书数据卷
+df -h /                                            # 磁盘（备份 zip 单个约 900MB，注意余量）
+```
+
+> ⚠️ **不要**在服务器上执行 `docker compose pull && docker compose up -d --build` 来「更新代码」——服务器没有 git，也没有新代码可拉，这条命令只会用现有源码重建同一个版本。更新一律从本机跑部署脚本。
+
+服务器上的每日自动备份沿用「设置 → 备份与恢复」中的配置，备份 ZIP 在 `data/backups/`，建议每月下载一份存到本地做异地容灾。
+
+**把电脑上的旧数据迁到服务器**：电脑上「设置 → 备份与恢复 → 创建备份」下载 ZIP → 打开服务器站点 → 管理员账号「设置 → 选择备份恢复」上传 ZIP。账号数据不随备份迁移，恢复后用服务器上的账号登录即可。全量数据（图片附件数百 MB）超出界面上传上限（20MB），这种情况改用文件：把本机 `data/` 整份拷到服务器 `~/workbench/data`（compose 用的就是 bind mount），再重启容器。
+
+**首次部署新服务器**（换机器时）：先 `bash scripts/provision-server.sh root@新IP` 装 Docker，再跑部署脚本。IP 直连模式（域名未备案时）把域名参数省略即可，脚本会只起应用不起 Caddy，记得在控制台放行 `52341/tcp`。
+
 
 ## 数据和备份
 
