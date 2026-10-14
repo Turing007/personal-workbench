@@ -226,7 +226,9 @@ describe('按客户维护的产品 API', () => {
       systemProductId,
       name: '无刷电钻',
       specification: '20V',
-      sku: 'VT-0099',
+      // 客户 SKU 不自动带出系统产品 SKU，导入后留空由客户自己填。
+      sku: '',
+      // 装箱数取包装方式首行（sort_order=1 的「首选包装」24）。
       packCount: 24,
       finalPriceCents: null,
       freightPerBoxCents: null,

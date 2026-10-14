@@ -109,7 +109,6 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
   const [batchRows, setBatchRows] = useState<BatchRowDraft[]>([]);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
-  const [packCount, setPackCount] = useState('');
   const [finalPrice, setFinalPrice] = useState('');
   const [costPrice, setCostPrice] = useState('');
   const [freightPerBox, setFreightPerBox] = useState('');
@@ -131,6 +130,14 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
 
   const systemProductLabel = (item: ProductRecord) => [item.name, item.specification, item.sku].filter(Boolean).join(' · ');
 
+  /** 装箱数不再单独录入：取包装方式首行的外箱装箱数，与订单行口径一致。 */
+  const derivedPackCount = useMemo(() => {
+    const first = packaging[0];
+    if (!first) return null;
+    const count = Math.trunc(Number(first.packSize));
+    return Number.isSafeInteger(count) && count > 0 ? count : null;
+  }, [packaging]);
+
   useEffect(() => {
     if (!open) return;
     setSystemProductId(product?.systemProductId ?? null);
@@ -144,7 +151,6 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
     setBatchRows([]);
     setPasteOpen(false);
     setPasteText('');
-    setPackCount(product?.packCount == null ? '' : String(product.packCount));
     setFinalPrice(product?.finalPriceCents == null ? '' : (product.finalPriceCents / 100).toFixed(2));
     setCostPrice(product?.costPriceCents == null ? '' : (product.costPriceCents / 100).toFixed(2));
     setFreightPerBox(product?.freightPerBoxCents == null ? '' : (product.freightPerBoxCents / 100).toFixed(2));
@@ -195,8 +201,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
     setSystemProductPickerOpen(false);
     setName(next.name);
     setSpecification(next.specification);
-    setSku(next.sku);
-    setPackCount(next.packCount == null ? '' : String(next.packCount));
+    setSku('');
     setCostPrice(next.purchasePrice ? String(next.purchasePrice) : '');
     setFreightPerBox('');
     setRemark(next.remark ?? ''); setLabelRequirement('');
@@ -258,7 +263,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
   }));
 
   const save = async () => {
-    const count = packCount.trim() ? Math.trunc(Number(packCount)) : null;
+    const count = derivedPackCount;
     const price = yuanToCents(finalPrice);
     const cost = yuanToCents(costPrice);
     const freight = yuanToCents(freightPerBox);
@@ -268,7 +273,6 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
       if (!batch.items.length) return setError('请至少添加一行产品');
       if (batch.items.length > CUSTOMER_PRODUCT_BATCH_LIMIT) return setError(`单个批次最多创建 ${CUSTOMER_PRODUCT_BATCH_LIMIT} 个客户产品`);
     } else if (!name.trim()) return setError('请填写品名');
-    if (packCount.trim() && (!Number.isSafeInteger(count) || (count ?? 0) <= 0)) return setError('装箱数必须是正整数');
     if (finalPrice.trim() && price === null) return setError('最终价格必须是大于等于 0 的数字');
     if (costPrice.trim() && cost === null) return setError('成本价必须是大于等于 0 的数字');
     setBusy(true);
@@ -370,7 +374,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
           ))}
           {!batchRows.length && <div style={{ padding: '10px 12px', border: '1px dashed #cbd5e1', borderRadius: 6, color: '#94a3b8', fontSize: 12 }}>暂无产品行，点击“添加一行”或“粘贴导入”开始。</div>}
         </div>
-        <div style={{ color: '#94a3b8', fontSize: 11 }}>品名必填；规格与 SKU 可逐行填写或留空待完善。装箱数、价格、备注与下方包装信息为所有产品共用；“品名+规格”重复的行会自动忽略。</div>
+        <div style={{ color: '#94a3b8', fontSize: 11 }}>品名必填；规格与 SKU 可逐行填写或留空待完善。装箱数取下方包装方式首行的外箱装箱数，与价格、备注、包装信息为所有产品共用；“品名+规格”重复的行会自动忽略。</div>
       </section>}
       {!batchMode && <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: 10 }}>
         <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>品名<input autoFocus value={name} onChange={(event) => setName(event.target.value)} style={inputStyle} /></label>
@@ -380,8 +384,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
       {!batchMode && <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>供应商产品名称
         <input value={supplierProductName} onChange={(event) => setSupplierProductName(event.target.value)} style={inputStyle} placeholder="报给供应商的名称，留空则按系统产品名报供（备货表使用）" />
       </label>}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-        <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>装箱数<input type="number" min={1} step={1} value={packCount} onChange={(event) => setPackCount(event.target.value)} style={inputStyle} placeholder="待完善" /></label>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
         <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>成本价（元）<input type="number" min={0} step="0.01" value={costPrice} onChange={(event) => setCostPrice(event.target.value)} style={inputStyle} placeholder="待完善" /></label>
         <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>最终价格（元）<input type="number" min={0} step="0.01" value={finalPrice} onChange={(event) => setFinalPrice(event.target.value)} style={inputStyle} placeholder="待完善" /></label>
         <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>运费（元/箱）<input type="number" min={0} step="0.01" value={freightPerBox} onChange={(event) => setFreightPerBox(event.target.value)} style={inputStyle} placeholder="可选" /></label>
@@ -389,6 +392,10 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
       <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>箱唛要求（会印在箱面上）<textarea rows={2} value={labelRequirement} onChange={(event) => setLabelRequirement(event.target.value)} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} placeholder="只写要让仓库/工厂照做并印上箱子的话，如：外箱贴条码箱唛、机器套气泡袋" /></label>
       <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>备注（仅内部可见，不打印）<textarea rows={3} value={remark} onChange={(event) => setRemark(event.target.value)} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} placeholder="价格、税运、结算等内部信息写这里；要印到箱子上的请填上面的「箱唛要求」" /></label>
       {selectedSystemProduct && <div style={{ color: '#64748b', fontSize: 11 }}>已从系统产品库带入基础信息，可继续修改后保存。</div>}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ color: '#64748b', fontSize: 12 }}>装箱数（取包装方式首行的外箱装箱数）</span>
+        <strong style={{ fontSize: 13 }}>{derivedPackCount == null ? <span style={{ color: '#b45309' }}>待完善</span> : `${derivedPackCount} 个/箱`}</strong>
+      </div>
       <PackagingTable value={packaging} onChange={setPackaging} compact showPurchasePrice={false} showImages={false} />
       {!batchMode && <>
         <ImagePasteUpload label="客户产品图片" value={images} onChange={setImages} multiple={false} maxFiles={1} showNotes={false} />

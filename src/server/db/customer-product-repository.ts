@@ -38,8 +38,6 @@ interface SystemProductImportRow extends Record<string, unknown> {
   id: number;
   name: string;
   specification: string;
-  sku: string;
-  pack_count: number | null;
   image_relative_path: string | null;
   purchase_price: number | null;
   packaging_json: string;
@@ -284,6 +282,9 @@ export class CustomerProductRepository {
   createFromSystemProduct(customerId: number, systemProductId: number, overrides?: CustomerProductSaveInput): CustomerProduct {
     const product = this.getSystemProductImport(systemProductId);
     if (!product) throw new SystemProductNotFoundError();
+    const packaging = overrides?.packaging ?? parsePackaging(product.packaging_json);
+    // 装箱数取包装方式首行的外箱装箱数，不再单独从系统产品字段复制。
+    const fallbackPackCount = packaging[0]?.packCount;
     const timestamp = new Date().toISOString();
     const result = this.database.prepare(`
       INSERT INTO customer_products
@@ -296,12 +297,13 @@ export class CustomerProductRepository {
       overrides?.name ?? product.name,
       overrides?.supplierProductName ?? '',
       overrides?.specification ?? product.specification,
-      overrides?.sku ?? product.sku,
-      overrides?.packCount ?? product.pack_count,
+      // 客户 SKU 不自动带出系统产品 SKU，留空由客户自己填。
+      overrides?.sku ?? '',
+      overrides?.packCount ?? fallbackPackCount ?? null,
       overrides?.finalPriceCents ?? null,
       overrides?.costPriceCents ?? (product.purchase_price == null ? null : Math.round(product.purchase_price * 100)),
       overrides?.freightPerBoxCents ?? null,
-      JSON.stringify(overrides?.packaging ?? parsePackaging(product.packaging_json)),
+      JSON.stringify(packaging),
       overrides?.imageRelativePath ?? product.image_relative_path,
       overrides?.remark ?? '',
       overrides?.labelRequirement ?? '',
@@ -431,14 +433,6 @@ export class CustomerProductRepository {
         p.id,
         p.name,
         p.specification,
-        p.sku,
-        (
-          SELECT pp.pack_count
-          FROM product_packaging pp
-          WHERE pp.product_id = p.id AND pp.pack_count > 0
-          ORDER BY pp.sort_order, pp.id
-          LIMIT 1
-        ) AS pack_count,
         (
           SELECT pi.relative_path
           FROM product_images pi
