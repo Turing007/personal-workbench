@@ -3,6 +3,7 @@ import {
   ALLOWED_ATTACHMENT_EXTENSIONS,
   ATTACHMENT_ACCEPT,
   attachmentFilesFromClipboard,
+  filesFromClipboard,
   isSupportedAttachmentName,
   normalizeUploadAttachment,
   SUPPORTED_ATTACHMENT_HINT,
@@ -78,5 +79,27 @@ describe('从剪贴板取附件', () => {
     const clipboard = { files: [], items: [{ kind: 'string', type: 'text/plain', getAsFile: () => null }] } as unknown as DataTransfer;
     expect(attachmentFilesFromClipboard(clipboard)).toEqual([]);
     expect(attachmentFilesFromClipboard(null)).toEqual([]);
+  });
+});
+
+describe('filesFromClipboard 通用取文件', () => {
+  it('不过滤扩展名，视频与附件区块可各自按白名单筛选', () => {
+    const video = file('产品实拍.mp4', '');
+    const pdf = file('合同.pdf', 'application/pdf');
+    const clipboard = fakeClipboard([video], [pdf]);
+    const files = filesFromClipboard(clipboard);
+    // 两类文件都取得到，具体收不收由调用方决定 —— 视频区块认 .mp4，附件区块认 .pdf。
+    expect(files).toHaveLength(2);
+    expect(files.map((item) => item.name)).toEqual(['产品实拍.mp4', '合同.pdf']);
+  });
+
+  it('同一文件在 files 与 items 各出现一次时只保留一份', () => {
+    const video = file('实拍.mov', 'video/quicktime');
+    expect(filesFromClipboard(fakeClipboard([video], [video]))).toEqual([video]);
+  });
+
+  it('剪贴板为空或没有文件项时返回空数组', () => {
+    expect(filesFromClipboard(null)).toEqual([]);
+    expect(filesFromClipboard({ files: [], items: [] } as unknown as DataTransfer)).toEqual([]);
   });
 });

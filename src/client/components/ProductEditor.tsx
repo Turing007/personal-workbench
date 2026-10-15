@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent } from 'react';
 import { getCategoryAccessoryPrices, listCatalogs, saveCategoryAccessoryPrices, type CatalogSummary } from '../api';
 import type { AccessoryPrice } from '../../shared/accessory-prices';
-import { Download, ExternalLink, FilePlus2, Play, Plus, Save, Trash2, Video } from 'lucide-react';
+import { Download, ExternalLink, FilePlus2, ClipboardPaste, Play, Plus, Save, Trash2, Video } from 'lucide-react';
 import ImagePasteUpload, { type ImageAttachment } from './ImagePasteUpload';
 import VideoPlayerModal from './VideoPlayerModal';
 import { canPickFilesNatively, pickFilesNatively } from '../app-bridge';
-import { ATTACHMENT_ACCEPT, normalizeUploadAttachment, attachmentFilesFromClipboard, SUPPORTED_ATTACHMENT_HINT } from '../attachment-mime';
+import { ATTACHMENT_ACCEPT, normalizeUploadAttachment, attachmentFilesFromClipboard, filesFromClipboard, SUPPORTED_ATTACHMENT_HINT } from '../attachment-mime';
 import { useFileDrop } from '../use-file-drop';
 import { PRODUCT_IMAGE_CATEGORY_OPTIONS } from '../../shared/product-image-categories';
 import Modal from './Modal';
@@ -119,8 +119,11 @@ export function formatFileSize(size: number) {
 }
 
 const VIDEO_ACCEPT = '.mp4,.mov,.m4v,.webm';
+/** 与服务端 ALLOWED_VIDEO_EXTENSIONS 对齐：只认扩展名，不信 MIME（剪贴板文件常无类型）。 */
+const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.m4v', '.webm'];
 /** 与服务端 MAX_VIDEO_SIZE 保持一致：单个视频不超过 200MB。 */
 const VIDEO_MAX_SIZE = 200 * 1024 * 1024;
+const VIDEO_HINT = '视频支持 MP4、MOV、M4V、WebM 格式';
 
 /** 产品视频区块：手机/电脑选视频，保存后进后台上传队列；已保存的可页内播放。 */
 function ProductVideoSection({ value, onChange }: { value: ProductVideo[]; onChange: (next: ProductVideo[]) => void }) {
@@ -132,14 +135,21 @@ function ProductVideoSection({ value, onChange }: { value: ProductVideo[]; onCha
     if (!files.length) return;
     const accepted: ProductVideo[] = [];
     const rejected: string[] = [];
+    const wrongType: string[] = [];
     for (const file of files) {
+      // 粘贴来的视频常报 application/octet-stream 或空类型，按扩展名判定。
+      if (!VIDEO_EXTENSIONS.some((extension) => file.name.toLowerCase().endsWith(extension))) {
+        wrongType.push(file.name);
+        continue;
+      }
       if (file.size > VIDEO_MAX_SIZE) {
         rejected.push(file.name);
         continue;
       }
       accepted.push({ id: `video-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: file.name, size: file.size, url: '', file });
     }
-    if (rejected.length) setMessage(`「${rejected.join('、')}」超过 200MB，请先压缩或剪辑后再传`);
+    if (wrongType.length) setMessage(`${VIDEO_HINT}；已忽略 ${wrongType.length} 个不支持的文件`);
+    else if (rejected.length) setMessage(`「${rejected.join('、')}」超过 200MB，请先压缩或剪辑后再传`);
     else setMessage('');
     if (accepted.length) onChange([...value, ...accepted]);
   };
@@ -155,7 +165,16 @@ function ProductVideoSection({ value, onChange }: { value: ProductVideo[]; onCha
     inputRef.current?.click();
   };
 
-  return <section className="section-box">
+  // 与产品图片/附件同一套粘贴交互：点进区块后 Ctrl+V 直接入库。
+  // 手机端没有键盘，靠「添加视频」按钮；桌面端复制文件后不用先找按钮。
+  const onPaste = (event: ReactClipboardEvent<HTMLElement>) => {
+    const files = filesFromClipboard(event.clipboardData);
+    if (!files.length) return; // 纯文本/图片粘贴不拦截，交给浏览器默认行为
+    event.preventDefault();
+    addFiles(files);
+  };
+
+  return <section className="section-box product-video-section" onPaste={onPaste} tabIndex={0}>
     <div className="section-box-header"><span className="section-box-title">产品视频</span>
       <button type="button" className="button button-secondary button-sm" onClick={pickVideos}><Video size={14} />添加视频</button>
     </div>
@@ -170,6 +189,7 @@ function ProductVideoSection({ value, onChange }: { value: ProductVideo[]; onCha
         <button type="button" className="icon-button danger" title="移除视频" aria-label={`移除 ${video.name}`} onClick={() => onChange(value.filter((item) => item.id !== video.id))}><Trash2 size={14} /></button>
       </div>
     ))}</div> : <div className="empty-state">暂无视频，可添加手机拍的产品实拍视频（单个不超过 200MB）。</div>}
+    <div className="image-upload-hint" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><ClipboardPaste size={13} /><span>点击本区域后可 Ctrl+V 粘贴视频</span></div>
     {message && <div className="image-upload-message" role="status">{message}</div>}
     <input
       ref={inputRef}

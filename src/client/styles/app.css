@@ -3604,6 +3604,12 @@ select {
   font-size: 11px;
 }
 
+/* 视频区块支持 Ctrl+V 粘贴：给一个可见的聚焦反馈，否则用户不知道要点哪里。 */
+.product-video-section:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
 .video-player {
   display: block;
   width: 100%;

@@ -67,6 +67,15 @@ export function normalizeUploadAttachment(file: File): File | undefined {
  * 两者都取一遍再去重（同一文件可能同时出现在两处）。
  */
 export function attachmentFilesFromClipboard(clipboard: DataTransfer | null): File[] {
+  return filesFromClipboard(clipboard);
+}
+
+/**
+ * 剪贴板取文件的通用实现：不过滤扩展名，由调用方按各自的白名单筛。
+ * 视频区块与附件区块共用 —— 桌面端复制文件后粘贴的落点行为必须一致，
+ * 否则同一份剪贴板数据在附件区能粘、视频区不能粘，用户只会以为是 bug。
+ */
+export function filesFromClipboard(clipboard: DataTransfer | null): File[] {
   if (!clipboard) return [];
   const files: File[] = [];
   const seen = new Set<string>();
