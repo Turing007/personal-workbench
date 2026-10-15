@@ -26,15 +26,7 @@ import {
   type PriceShippingMode,
 } from '../../shared/price-calculator';
 
-const MARKUP_MEMORY_KEY = 'price-calc-markup';
-
-function rememberedMarkup(): string {
-  try {
-    return localStorage.getItem(MARKUP_MEMORY_KEY) ?? '20';
-  } catch {
-    return '20';
-  }
-}
+import { rememberedMarkup, rememberMarkup, rememberedShippingUnitPrice, rememberShippingUnitPrice } from '../price-calc-memory';
 
 /** 价格显示口径：四舍五入到 0.5，最多一位小数（100 / 126.5 / 130）。 */
 function roundHalf(value: number): number {
@@ -106,7 +98,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     setShipping('0');
     // 每次打开回到自动预估：这是默认口径，手动是临时覆盖。
     setShippingMode('auto');
-    setShippingUnitPrice(String(DEFAULT_SHIPPING_UNIT_PRICE));
+    setShippingUnitPrice(rememberedShippingUnitPrice());
     setTaxPercent('0');
     setMarkup(rememberedMarkup());
     setPlanName('');
@@ -200,7 +192,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     if (!/^\d+$/.test(product.id) || busy) return;
     setBusy(true);
     try {
-      try { localStorage.setItem(MARKUP_MEMORY_KEY, String(markupValue)); } catch { /* 记住毛利率失败不影响保存 */ }
+      rememberMarkup(String(markupValue));
       // 明细按裸机成本拆四条（税用残差，保证与服务端重算的合计完全一致）；参数快照供载入回显。
       const taxAmount = round2(bareCost - base - pack - bareShip);
       const params: PricePlanParams = {
@@ -295,7 +287,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
         <label className="price-calc2-field"><span>毛利率 %</span><input className="input" type="number" min={0} aria-label="毛利率" value={markup} onChange={(event) => setMarkup(event.target.value)} /></label>
         <label className="price-calc2-field"><span>包材配件</span><input className="input" type="number" min={0} step="0.01" aria-label="包材配件" value={packaging} onChange={(event) => setPackaging(event.target.value)} /></label>
         {/* 运费：自动按「计费重量 × 单价」预估，手动则手填固定值。单价放运费前面。 */}
-        <label className="price-calc2-field"><span>运费单价</span><span className="price-calc2-unit"><input className="input" type="number" min={0} step="0.01" aria-label="运费单价" value={shippingUnitPrice} disabled={!autoMode} onChange={(event) => setShippingUnitPrice(event.target.value)} /><em>/kg</em></span></label>
+        <label className="price-calc2-field"><span>运费单价</span><span className="price-calc2-unit"><input className="input" type="number" min={0} step="0.01" aria-label="运费单价" value={shippingUnitPrice} disabled={!autoMode} onChange={(event) => { setShippingUnitPrice(event.target.value); rememberShippingUnitPrice(event.target.value); }} /><em>/kg</em></span></label>
         <label className="price-calc2-field"><span>运费</span><span className="price-calc2-unit">
           <input className="input" type="number" min={0} step="0.01" aria-label="运费金额" value={autoMode ? String(bareShip) : shipping} readOnly={autoMode} onChange={(event) => setShipping(event.target.value)} />
           {autoMode && <em>自动</em>}
