@@ -1,15 +1,25 @@
-import { ArrowDown, ArrowUp, Package, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Package, Plus, RotateCcw, Save, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { getPackagingPresets, reseedPackagingPresets, savePackagingPresets } from '../../api';
+import { getPackagingCategories, getPackagingPresets, reseedPackagingPresets, savePackagingPresets } from '../../api';
 import { PACKAGING_PRESET_LIMIT, type PackagingPreset } from '../../../shared/packaging-presets';
 
 function errorMessage(error: unknown, fallback: string) {
   return (error as { message?: string } | undefined)?.message ?? fallback;
 }
 
-/** 包装预设维护：产品编辑器「包装方式」上方一键填入的那几套常用组合。 */
+interface CategoryOption {
+  name: string;
+  productCount: number;
+}
+
+/**
+ * 包装管理：包装规格的主数据维护入口。
+ * 既保留「一键填入」的原有用途，又新增「可以装哪些产品」—— 按产品分类关联，
+ * 产品编辑器里命中的包装会排到最前面并带「适用本类」角标。
+ */
 export default function PackagingPresetsSection() {
   const [items, setItems] = useState<PackagingPreset[]>([]);
+  const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -23,13 +33,19 @@ export default function PackagingPresetsSection() {
 
   useEffect(() => {
     let cancelled = false;
-    getPackagingPresets()
-      .then((list) => { if (!cancelled) { setItems(list); setLoading(false); } })
+    Promise.all([getPackagingPresets(), getPackagingCategories()])
+      .then(([presets, categories]) => {
+        if (cancelled) return;
+        setItems(presets);
+        setCategoryOptions(categories);
+        setLoading(false);
+      })
       .catch((error) => {
         if (cancelled) return;
         setItems([]);
+        setCategoryOptions([]);
         setLoading(false);
-        show(errorMessage(error, '包装预设加载失败'), 'error');
+        show(errorMessage(error, '包装管理数据加载失败'), 'error');
       });
     return () => { cancelled = true; };
   }, []);
@@ -53,29 +69,52 @@ export default function PackagingPresetsSection() {
     setDirty(true);
   };
   const add = () => {
-    setItems((current) => [...current, { id: `pack-preset-${Date.now()}`, name: '', innerSize: '', outerSize: '', packSize: 1, purchasePrice: '' }]);
+    setItems((current) => [...current, { id: `pack-preset-${Date.now()}`, name: '', innerSize: '', outerSize: '', packSize: 1, purchasePrice: '', categories: [] }]);
     setDirty(true);
+  };
+
+  /** 勾选/取消一个适用分类；候选之外的手工分类也能加进来（回车提交）。 */
+  const toggleCategory = (index: number, category: string) => {
+    const name = category.trim();
+    if (!name) return;
+    setItems((current) => current.map((item, position) => {
+      if (position !== index) return item;
+      const exists = item.categories.includes(name);
+      return { ...item, categories: exists ? item.categories.filter((entry) => entry !== name) : [...item.categories, name] };
+    }));
+    setDirty(true);
+    if (!categoryOptions.some((option) => option.name === name)) {
+      setCategoryOptions((current) => [...current, { name, productCount: 0 }].sort((a, b) => b.productCount - a.productCount || a.name.localeCompare(b.name)));
+    }
   };
 
   const save = async () => {
     setBusy(true);
     try {
       // 以服务端清洗后的结果为准：全空行会被丢掉、超出上限会被截断。
-      setItems(await savePackagingPresets(items));
+      const saved = await savePackagingPresets(items);
+      setItems(saved);
       setDirty(false);
-      show('包装预设已保存，产品编辑器立即可用');
+      // 保存后重新拉一次候选：可能新增了手工分类，合并进列表供下次编辑展示。
+      try {
+        setCategoryOptions(await getPackagingCategories());
+      } catch {
+        // 候选刷新失败不影响保存结果，静默保留旧候选。
+      }
+      show('包装管理已保存，产品编辑器立即可用');
     } catch (error) {
-      show(errorMessage(error, '包装预设保存失败'), 'error');
+      show(errorMessage(error, '包装管理保存失败'), 'error');
     } finally {
       setBusy(false);
     }
   };
 
   const reseed = async () => {
-    if (!window.confirm('确定按现有产品包装记录重算预设吗？当前这份列表（含手工改过的）会被覆盖。')) return;
+    if (!window.confirm('确定按现有产品包装记录重算吗？当前这份列表（含手工改过的）会被覆盖。')) return;
     setBusy(true);
     try {
-      setItems(await reseedPackagingPresets());
+      const list = await reseedPackagingPresets();
+      setItems(list);
       setDirty(false);
       show('已按产品库重新统计，确认无误后请点击保存');
     } catch (error) {
@@ -88,32 +127,50 @@ export default function PackagingPresetsSection() {
   const atLimit = items.length >= PACKAGING_PRESET_LIMIT;
 
   return <div className="settings-section card">
-    <div className="settings-heading"><Package size={18} /><strong>包装预设</strong></div>
-    <p>产品编辑器里的「包装方式」会把这些组合显示成一键填入的卡片：点一下同时填好包装名称、内盒尺寸、外箱尺寸、装箱数和包装采购价。预设存在服务端，手机和电脑看到的是同一份。</p>
-    {loading && <div className="table-state">正在加载包装预设...</div>}
+    <div className="settings-heading"><Package size={18} /><strong>包装管理</strong></div>
+    <p>包装规格的主数据。产品编辑器「包装方式」上方的卡片点一下即可整行填入；「可以装哪些产品」按产品分类关联，编辑对应分类的产品时，适用的包装会排到最前面并标注「适用本类」。留空表示通用，不限分类。</p>
+    {loading && <div className="table-state">正在加载包装管理...</div>}
     {!loading && !!items.length && <div className="packaging-preset-form">
       <div className="packaging-preset-form-head">
-        <span>包装名称</span><span>内盒尺寸</span><span>外箱尺寸</span><span>装箱数</span><span>包装采购价</span><span />
+        <span>包装名称</span><span>内盒尺寸</span><span>外箱尺寸</span><span>装箱数</span><span>包装采购价</span><span>可以装哪些产品</span><span />
       </div>
       {items.map((item, index) => <div className="packaging-preset-form-row" key={item.id || index}>
-        <input className="input" aria-label={`预设${index + 1}包装名称`} value={item.name} disabled={busy} placeholder="牛皮纸盒-20台装" onChange={(event) => update(index, { name: event.target.value })} />
-        <input className="input" aria-label={`预设${index + 1}内盒尺寸`} value={item.innerSize} disabled={busy} placeholder="45*9*9" onChange={(event) => update(index, { innerSize: event.target.value })} />
-        <input className="input" aria-label={`预设${index + 1}外箱尺寸`} value={item.outerSize} disabled={busy} placeholder="47*48*36" onChange={(event) => update(index, { outerSize: event.target.value })} />
-        <input className="input" type="number" min={1} aria-label={`预设${index + 1}装箱数`} value={item.packSize} disabled={busy} onChange={(event) => update(index, { packSize: Math.max(1, Math.trunc(Number(event.target.value) || 1)) })} />
-        <input className="input" type="number" min={0} step="0.01" aria-label={`预设${index + 1}包装采购价`} value={item.purchasePrice} disabled={busy} placeholder="元" onChange={(event) => update(index, { purchasePrice: event.target.value })} />
+        <input className="input" aria-label={`包装${index + 1}包装名称`} value={item.name} disabled={busy} placeholder="牛皮纸盒-20台装" onChange={(event) => update(index, { name: event.target.value })} />
+        <input className="input" aria-label={`包装${index + 1}内盒尺寸`} value={item.innerSize} disabled={busy} placeholder="45*9*9" onChange={(event) => update(index, { innerSize: event.target.value })} />
+        <input className="input" aria-label={`包装${index + 1}外箱尺寸`} value={item.outerSize} disabled={busy} placeholder="47*48*36" onChange={(event) => update(index, { outerSize: event.target.value })} />
+        <input className="input" type="number" min={1} aria-label={`包装${index + 1}装箱数`} value={item.packSize} disabled={busy} onChange={(event) => update(index, { packSize: Math.max(1, Math.trunc(Number(event.target.value) || 1)) })} />
+        <input className="input" type="number" min={0} step="0.01" aria-label={`包装${index + 1}包装采购价`} value={item.purchasePrice} disabled={busy} placeholder="元" onChange={(event) => update(index, { purchasePrice: event.target.value })} />
+        <div className="packaging-preset-categories">
+          {item.categories.map((category) => <span className="packaging-preset-category-chip" key={category}>
+            {category}
+            <button type="button" aria-label={`移除包装${index + 1}的分类 ${category}`} title="移除该分类" disabled={busy} onClick={() => toggleCategory(index, category)}><X size={11} /></button>
+          </span>)}
+          <select
+            className="input packaging-preset-category-select"
+            aria-label={`包装${index + 1}添加适用分类`}
+            value=""
+            disabled={busy}
+            onChange={(event) => { if (event.target.value) toggleCategory(index, event.target.value); }}
+          >
+            <option value="">+ 添加分类</option>
+            {categoryOptions
+              .filter((option) => !item.categories.includes(option.name))
+              .map((option) => <option key={option.name} value={option.name}>{option.name}{option.productCount ? `（${option.productCount}）` : ''}</option>)}
+          </select>
+        </div>
         <div className="packaging-preset-form-actions">
-          <button className="icon-button" type="button" title="上移" aria-label={`上移第 ${index + 1} 条预设`} disabled={index === 0 || busy} onClick={() => move(index, -1)}><ArrowUp size={14} /></button>
-          <button className="icon-button" type="button" title="下移" aria-label={`下移第 ${index + 1} 条预设`} disabled={index === items.length - 1 || busy} onClick={() => move(index, 1)}><ArrowDown size={14} /></button>
-          <button className="icon-button danger" type="button" title="删除预设" aria-label={`删除第 ${index + 1} 条预设`} disabled={busy} onClick={() => remove(index)}><Trash2 size={14} /></button>
+          <button className="icon-button" type="button" title="上移" aria-label={`上移第 ${index + 1} 条包装`} disabled={index === 0 || busy} onClick={() => move(index, -1)}><ArrowUp size={14} /></button>
+          <button className="icon-button" type="button" title="下移" aria-label={`下移第 ${index + 1} 条包装`} disabled={index === items.length - 1 || busy} onClick={() => move(index, 1)}><ArrowDown size={14} /></button>
+          <button className="icon-button danger" type="button" title="删除包装" aria-label={`删除第 ${index + 1} 条包装`} disabled={busy} onClick={() => remove(index)}><Trash2 size={14} /></button>
         </div>
       </div>)}
     </div>}
-    {!loading && !items.length && <div className="empty-state">还没有预设。点「从产品库重新统计」可立刻按现有包装记录生成一批，或手动添加。</div>}
+    {!loading && !items.length && <div className="empty-state">还没有包装规格。点「从产品库重新统计」可立刻按现有包装记录生成一批，或手动添加。</div>}
     <div className="packaging-preset-form-footer">
-      <button className="button button-secondary" type="button" disabled={busy || atLimit} title={atLimit ? `最多 ${PACKAGING_PRESET_LIMIT} 条` : undefined} onClick={add}><Plus size={14} />添加预设</button>
+      <button className="button button-secondary" type="button" disabled={busy || atLimit} title={atLimit ? `最多 ${PACKAGING_PRESET_LIMIT} 条` : undefined} onClick={add}><Plus size={14} />添加包装</button>
       <button className="button button-secondary" type="button" disabled={busy || loading} onClick={() => void reseed()}><RotateCcw size={14} />从产品库重新统计</button>
       <span className={dirty ? 'packaging-preset-dirty' : 'packaging-preset-saved'} role="status">{dirty ? '有未保存的修改' : `${items.length} / ${PACKAGING_PRESET_LIMIT} 条`}</span>
-      <button className="button button-primary" type="button" disabled={busy || loading || !dirty} onClick={() => void save()}><Save size={14} />{busy ? '保存中...' : '保存预设'}</button>
+      <button className="button button-primary" type="button" disabled={busy || loading || !dirty} onClick={() => void save()}><Save size={14} />{busy ? '保存中...' : '保存'}</button>
     </div>
     {!!message && <p role="status" className={`notice notice-${messageKind}`} style={{ color: messageKind === 'error' ? 'var(--tone-danger-text)' : 'var(--tone-accent-text)', fontSize: 12 }}>{message}</p>}
   </div>;

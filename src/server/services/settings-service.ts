@@ -19,6 +19,8 @@ export class SettingsService {
     private readonly fileStore?: FileStore,
     /** 全库包装记录，用于首次使用时统计出预设初值。 */
     private readonly packagingSource?: () => PackagingSourceRow[],
+    /** 产品库现存分类（含产品数），包装管理「可以装哪些产品」的候选来源。 */
+    private readonly productCategorySource?: () => Array<{ name: string; productCount: number }>,
   ) {}
 
   getPackagingPresets(): PackagingPreset[] {
@@ -27,6 +29,26 @@ export class SettingsService {
 
   savePackagingPresets(value: unknown): PackagingPreset[] {
     return this.settings.savePackagingPresets(value);
+  }
+
+  /** 包装管理的分类候选：产品库现存分类 + 已在包装上关联过的分类（后者可能是手工输入的新分类）。 */
+  getPackagingCategories(): Array<{ name: string; productCount: number }> {
+    const fromProducts = this.productCategorySource?.() ?? [];
+    const merged = new Map<string, number>();
+    for (const entry of fromProducts) {
+      const name = entry.name.trim();
+      if (name) merged.set(name, Math.max(merged.get(name) ?? 0, Number(entry.productCount) || 0));
+    }
+    // 已关联但产品库里没有的分类也要出现在候选里，否则用户打开编辑就看不到自己之前勾过什么。
+    for (const preset of this.getPackagingPresets()) {
+      for (const category of preset.categories) {
+        const name = category.trim();
+        if (name && !merged.has(name)) merged.set(name, 0);
+      }
+    }
+    return [...merged.entries()]
+      .map(([name, productCount]) => ({ name, productCount }))
+      .sort((a, b) => b.productCount - a.productCount || a.name.localeCompare(b.name));
   }
 
   /** 电池价格矩阵（行=单节容量、列=节数）；从未维护过时给默认模板。 */

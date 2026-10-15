@@ -18,6 +18,7 @@ import {
   sendSuccess,
 } from './api-response.js';
 import { contractFileOptions, imageFileOptions, videoFileOptions } from './multipart-limits.js';
+import type { VideoTranscodeQueue } from '../videos/video-transcode-queue.js';
 import { PdfRenderer } from '../documents/pdf-renderer.js';
 import { ThumbnailService, isResizableImage } from '../files/thumbnail-service.js';
 import {
@@ -71,6 +72,8 @@ interface ProductRouteOptions {
   catalogRepository?: CatalogRepository;
   /** 售价计算器的算价方案仓储。 */
   pricePlanRepository?: PricePlanRepository;
+  /** 产品视频上传后的异步压缩队列；不传则跳过压缩（本地无 ffmpeg 时）。 */
+  videoTranscodeQueue?: VideoTranscodeQueue;
 }
 
 /**
@@ -425,7 +428,7 @@ async function safeRoute<T>(
 }
 
 export async function registerProductRoutes(app: FastifyInstance, options: ProductRouteOptions): Promise<void> {
-  const { repositories, fileStore, thumbnailService } = options;
+  const { repositories, fileStore, thumbnailService, videoTranscodeQueue } = options;
   const pdfRenderer = options.pdfRenderer ?? new PdfRenderer();
 
   app.get('/api/products/export', async (_request, reply) =>
@@ -739,8 +742,13 @@ export async function registerProductRoutes(app: FastifyInstance, options: Produ
       if (!file) throw new ApiError(400, 'FILE_REQUIRED', '请选择产品视频', 'file');
       const stored = await fileStore.saveFile(file.file, 'product-video', file.filename, file.mimetype);
       try {
+        // 原文件先落库立即可用，压缩交给异步队列：上传接口不等待转码，
+        // 转码期间播放原画质，完成后原子替换成压缩版。
         const video = repositories.addProductVideo(id, stored);
-        return sendSuccess(reply, video ? mapVideo(video as Record<string, unknown>) : null, 201);
+        if (!video) throw new ApiError(500, 'VIDEO_SAVE_FAILED', '视频保存失败');
+        const videoId = Number((video as Record<string, unknown>).id);
+        if (Number.isSafeInteger(videoId)) videoTranscodeQueue?.enqueue({ videoId, relativePath: stored.relativePath, originalName: stored.originalName });
+        return sendSuccess(reply, mapVideo(video as Record<string, unknown>), 201);
       } catch (error) {
         await fileStore.deleteFile(stored.relativePath);
         throw error;

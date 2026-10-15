@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { withTransaction } from './connection.js';
 import { mapPackagingRecord, normalizePackagingItem, type PackagingInputLike } from './packaging.js';
 import { normalizeAccessoryPrices } from '../../shared/accessory-prices.js';
+import type { PackagingSourceRow } from '../../shared/packaging-presets.js';
 import { OrderNumberService } from '../services/order-number-service.js';
 import { autoPack, type PackedBox } from '../../shared/packing.js';
 import { calculateOutstandingCents, deriveFinancePaymentStatus } from '../../shared/finance.js';
@@ -277,18 +278,40 @@ export class DatabaseRepositories {
     }));
   }
 
-  /** 包装预设的统计原料：全库包装记录里与预设相关的几个字段。 */
-  listPackagingRowsForPresets(): Array<{ name: string; innerSize: string; outerSize: string; packSize: number; purchasePrice: string }> {
+  /** 包装预设的统计原料：全库包装记录里与预设相关的几个字段，连同所属产品的分类一起带回。 */
+  listPackagingRowsForPresets(): PackagingSourceRow[] {
     const rows = this.database
-      .prepare('SELECT name, inner_size, outer_size, pack_count, purchase_price FROM product_packaging')
-      .all() as Array<{ name: string | null; inner_size: string | null; outer_size: string | null; pack_count: number | null; purchase_price: number | null }>;
+      .prepare(`
+        SELECT pp.name, pp.inner_size, pp.outer_size, pp.pack_count, pp.purchase_price, p.category
+        FROM product_packaging pp
+        JOIN products p ON p.id = pp.product_id
+      `)
+      .all() as Array<{ name: string | null; inner_size: string | null; outer_size: string | null; pack_count: number | null; purchase_price: number | null; category: string | null }>;
     return rows.map((row) => ({
       name: row.name ?? '',
       innerSize: row.inner_size ?? '',
       outerSize: row.outer_size ?? '',
       packSize: row.pack_count ?? 1,
       purchasePrice: row.purchase_price == null ? '' : String(row.purchase_price),
+      category: row.category ?? '',
     }));
+  }
+
+  /**
+   * 产品库现存分类（含产品数）：包装管理的「可以装哪些产品」候选来源。
+   * 手动输入的新分类不在其中，由调用方自行合并。
+   */
+  listProductCategoriesWithCounts(): Array<{ name: string; productCount: number }> {
+    const rows = this.database
+      .prepare(`
+        SELECT TRIM(category) AS name, COUNT(*) AS product_count
+        FROM products
+        WHERE TRIM(category) != ''
+        GROUP BY TRIM(category)
+        ORDER BY product_count DESC, name ASC
+      `)
+      .all() as Array<{ name: string; product_count: number }>;
+    return rows.map((row) => ({ name: row.name, productCount: Number(row.product_count) }));
   }
 
   saveProduct(input: ProductInput, productId?: number) {
@@ -512,19 +535,54 @@ export class DatabaseRepositories {
 
   addProductVideo(
     productId: number,
-    video: { relativePath: string; originalName: string; mimeType: string; size: number },
+    video: { relativePath: string; originalName: string; mimeType: string; size: number; transcodeStatus?: string },
   ) {
     const createdAt = now();
     const videoId = lastInsertId(
       this.database
         .prepare(
           `INSERT INTO product_videos
-            (product_id, relative_path, original_name, mime_type, size_bytes, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+            (product_id, relative_path, original_name, mime_type, size_bytes, transcode_status, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(productId, video.relativePath, video.originalName, video.mimeType, video.size, createdAt),
+        .run(productId, video.relativePath, video.originalName, video.mimeType, video.size, video.transcodeStatus ?? 'pending', createdAt),
     );
     return this.database.prepare('SELECT * FROM product_videos WHERE id = ?').get(videoId);
+  }
+
+  /** 转码成功后把压缩结果落库：文件已被替换，体积换成压缩后的。 */
+  completeProductVideoTranscode(videoId: number, sizeBytes: number): boolean {
+    const result = this.database
+      .prepare("UPDATE product_videos SET transcode_status = 'done', size_bytes = ?, transcoded_size_bytes = ? WHERE id = ?")
+      .run(sizeBytes, sizeBytes, videoId);
+    return Number(result.changes ?? 0) > 0;
+  }
+
+  /** 转码失败：保留原文件，只把状态标成 failed，界面照常能播放原画质。 */
+  failProductVideoTranscode(videoId: number): boolean {
+    const result = this.database
+      .prepare("UPDATE product_videos SET transcode_status = 'failed' WHERE id = ?")
+      .run(videoId);
+    return Number(result.changes ?? 0) > 0;
+  }
+
+  /**
+   * 待转码的视频（含卡在 processing 的）：服务重启后 processing 不会自动回到 pending，
+   * 这里一并返回，由队列重置后重跑 —— 否则那条视频会永远停在「压缩中」。
+   */
+  listPendingVideoTranscodes(): Array<{ id: number; relativePath: string; originalName: string }> {
+    const rows = this.database
+      .prepare("SELECT id, relative_path, original_name FROM product_videos WHERE transcode_status IN ('pending', 'processing') ORDER BY id")
+      .all() as Array<{ id: number; relative_path: string; original_name: string }>;
+    return rows.map((row) => ({ id: Number(row.id), relativePath: String(row.relative_path), originalName: String(row.original_name) }));
+  }
+
+  /** 领取一个转码任务：把状态推进到 processing，避免重复入队。 */
+  claimVideoTranscode(videoId: number): boolean {
+    const result = this.database
+      .prepare("UPDATE product_videos SET transcode_status = 'processing' WHERE id = ? AND transcode_status IN ('pending', 'processing')")
+      .run(videoId);
+    return Number(result.changes ?? 0) > 0;
   }
 
   /** 删除一条产品视频并返回文件路径（不存在返回 null），文件由调用方落盘删除。 */

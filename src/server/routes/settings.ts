@@ -144,6 +144,11 @@ export async function registerSettingsRoutes(app: FastifyInstance, options: Sett
     safeRoute(() => sendSuccess(reply, { items: options.service.getPackagingPresets() }), reply),
   );
 
+  /** 包装管理的「可以装哪些产品」候选：产品库现存分类 + 已关联过的手工分类。 */
+  app.get('/api/settings/packaging-categories', async (_request, reply) =>
+    safeRoute(() => sendSuccess(reply, { items: options.service.getPackagingCategories() }), reply),
+  );
+
   app.put('/api/settings/packaging-presets', async (request, reply) =>
     safeRoute(() => {
       const body = asRecord(request.body);

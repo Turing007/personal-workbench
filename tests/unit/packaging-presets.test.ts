@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  PACKAGING_PRESET_CATEGORY_LIMIT,
   PACKAGING_PRESET_LIMIT,
   derivePackagingPresets,
+  normalizeCategoryList,
   normalizePackagingPresets,
+  packagingPresetMatches,
+  sortPackagingPresetsForProduct,
+  type PackagingPreset,
   type PackagingSourceRow,
 } from '../../src/shared/packaging-presets';
 import { applyPackagingPreset, isBlankPackagingRow } from '../../src/client/packaging-preset';
@@ -46,6 +51,88 @@ describe('derivePackagingPresets', () => {
     const rows = Array.from({ length: 12 }, (_, index) => row({ innerSize: `10*10*${index}` }));
     expect(derivePackagingPresets(rows)).toHaveLength(8);
     expect(derivePackagingPresets(rows, 3)).toHaveLength(3);
+  });
+
+  it('按来源产品的分类填 categories，统计不到分类时留空', () => {
+    const presets = derivePackagingPresets([
+      row({ category: '电钻' }),
+      row({ category: '电钻' }),
+      row({ category: '扳手' }),
+      row({ innerSize: '20*20*20', outerSize: '30*30*30', packSize: 6, category: '' }),
+    ]);
+    // 同一组合用了三次（电钻×2、扳手×1），分类按出现频次倒序。
+    expect(presets[0].categories).toEqual(['电钻', '扳手']);
+    // 没填分类的产品贡献不了分类信息，结果是空数组而不是 undefined。
+    expect(presets[1].categories).toEqual([]);
+  });
+
+  it('分类名做 trim，空格与空串不计入', () => {
+    const presets = derivePackagingPresets([row({ category: '  电钻  ' }), row({ category: '   ' })]);
+    expect(presets[0].categories).toEqual(['电钻']);
+  });
+});
+
+describe('normalizeCategoryList', () => {
+  it('trim、去重、丢空串，非字符串项忽略', () => {
+    expect(normalizeCategoryList([' 电钻 ', '电钻', '', '扳手', 42 as never, null as never])).toEqual(['电钻', '扳手']);
+  });
+
+  it('非数组输入返回空数组', () => {
+    expect(normalizeCategoryList(undefined)).toEqual([]);
+    expect(normalizeCategoryList('电钻')).toEqual([]);
+  });
+
+  it('按上限截断', () => {
+    const many = Array.from({ length: PACKAGING_PRESET_CATEGORY_LIMIT + 4 }, (_, index) => `分类${index}`);
+    expect(normalizeCategoryList(many)).toHaveLength(PACKAGING_PRESET_CATEGORY_LIMIT);
+  });
+
+  it('单个分类名超长时截断', () => {
+    const [name] = normalizeCategoryList(['x'.repeat(50)]);
+    expect(name).toHaveLength(30);
+  });
+});
+
+describe('包装管理的分类关联', () => {
+  const preset = (categories: string[]): PackagingPreset => ({
+    id: 'p1', name: '牛皮纸盒-20台装', innerSize: '45*9*9', outerSize: '47*48*36', packSize: 20, purchasePrice: '', categories,
+  });
+
+  it('缺省 categories 按通用处理，旧数据无缝升级', () => {
+    const result = normalizePackagingPresets([{ name: '老预设', innerSize: '10*10*10', outerSize: '', packSize: 10, purchasePrice: '' }]);
+    expect(result[0].categories).toEqual([]);
+    expect(packagingPresetMatches({ activeCategories: ['任意分类'], preset: result[0] })).toBe(true);
+  });
+
+  it('只勾了分类、没填规格的行不被当成空行丢掉', () => {
+    const result = normalizePackagingPresets([{ name: '', innerSize: '', outerSize: '', packSize: 1, purchasePrice: '', categories: ['电钻'] }]);
+    expect(result).toHaveLength(1);
+    expect(result[0].categories).toEqual(['电钻']);
+  });
+
+  it('分类名 trim 后精确匹配', () => {
+    expect(packagingPresetMatches({ activeCategories: ['电钻 '], preset: preset(['电钻']) })).toBe(true);
+    expect(packagingPresetMatches({ activeCategories: ['扳手'], preset: preset(['电钻']) })).toBe(false);
+    expect(packagingPresetMatches({ activeCategories: [], preset: preset(['电钻']) })).toBe(false);
+    expect(packagingPresetMatches({ activeCategories: [], preset: preset([]) })).toBe(true);
+  });
+
+  it('多分类产品命中任一交集即算适用', () => {
+    expect(packagingPresetMatches({ activeCategories: ['充电式', '扳手'], preset: preset(['电钻', '扳手']) })).toBe(true);
+  });
+
+  it('排序把命中的排前、未命中排后，组内保持原有顺序', () => {
+    const a = preset([]);           // 通用 → 命中
+    const b = { ...preset(['电钻']), id: 'p2', name: '电钻专用' };
+    const c = { ...preset(['扳手']), id: 'p3', name: '扳手专用' };
+    const d = { ...preset(['电钻']), id: 'p4', name: '电钻备用' };
+    const sorted = sortPackagingPresetsForProduct([a, b, c, d], ['电钻']);
+    expect(sorted.map((item) => item.name)).toEqual(['牛皮纸盒-20台装', '电钻专用', '电钻备用', '扳手专用']);
+  });
+
+  it('产品没填分类时，通用包装仍排在前、限定了分类的排后', () => {
+    const list = [preset(['电钻']), preset(['扳手']), preset([])];
+    expect(sortPackagingPresetsForProduct(list, []).map((item) => item.categories)).toEqual([[], ['电钻'], ['扳手']]);
   });
 });
 

@@ -49,6 +49,7 @@ import { DocumentCustomerService } from './services/document-customer-service.js
 import { QuotationService } from './services/quotation-service.js';
 import { SalesDocumentService } from './services/sales-document-service.js';
 import { SettingsService } from './services/settings-service.js';
+import { VideoTranscodeQueue } from './videos/video-transcode-queue.js';
 import { CustomerService } from './services/customer-service.js';
 import { CustomerProductService } from './services/customer-product-service.js';
 import { QuotationCustomerProductSyncService } from './services/quotation-customer-product-sync-service.js';
@@ -167,7 +168,10 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   const settingsRepository = new SettingsRepository(options.database);
   const catalogRepository = new CatalogRepository(options.database);
   const pricePlanRepository = new PricePlanRepository(options.database);
-  await registerProductRoutes(app, { repositories, fileStore: options.fileStore, thumbnailService, settingsRepository, catalogRepository, pricePlanRepository });
+  // 视频压缩队列：只在配了文件存储（生产/Docker）时启用，本地缺 ffmpeg 也不影响上传。
+  const videoTranscodeQueue = options.fileStore ? new VideoTranscodeQueue(repositories, options.fileStore) : undefined;
+  videoTranscodeQueue?.start();
+  await registerProductRoutes(app, { repositories, fileStore: options.fileStore, thumbnailService, settingsRepository, catalogRepository, pricePlanRepository, videoTranscodeQueue });
   const catalogService = new CatalogService(catalogRepository, {
     listProductRows: () => repositories.listProducts(),
     settingsRepository,
@@ -258,7 +262,7 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   });
 
   await registerSettingsRoutes(app, {
-    service: new SettingsService(settingsRepository, options.fileStore, () => repositories.listPackagingRowsForPresets()),
+    service: new SettingsService(settingsRepository, options.fileStore, () => repositories.listPackagingRowsForPresets(), () => repositories.listProductCategoriesWithCounts()),
   });
   await registerDocumentCustomerRoutes(app, {
     service: new DocumentCustomerService(options.database),

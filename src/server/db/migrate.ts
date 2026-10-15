@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 33;
+const CURRENT_SCHEMA_VERSION = 34;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -1160,6 +1160,21 @@ export function buildCategoryAccessorySeed(database: DatabaseSync): Record<strin
 }
 
 /**
+ * 产品视频上传后由服务端 ffmpeg 异步压缩：product_videos 增加转码状态与压缩后体积。
+ * 存量视频一律标成 done —— 只压新上传的，不做一次性全量转码（会把服务器 CPU 打满）。
+ */
+function migrateVersionThirtyFour(database: DatabaseSync, now: string): void {
+  const columns = database.prepare('PRAGMA table_info(product_videos)').all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === 'transcode_status')) {
+    database.exec("ALTER TABLE product_videos ADD COLUMN transcode_status TEXT NOT NULL DEFAULT 'done'");
+  }
+  if (!columns.some((column) => column.name === 'transcoded_size_bytes')) {
+    database.exec('ALTER TABLE product_videos ADD COLUMN transcoded_size_bytes INTEGER');
+  }
+  upsertSetting(database, 'schema_version', '34', now);
+}
+
+/**
  * 售价计算器改矩阵口径后，方案需要回显采购价/包材/运费/税/充电器等参数：
  * product_price_plans 加 params_json 存参数快照；旧方案为空 '{}'，只按明细回显。
  */
@@ -1367,6 +1382,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionThirtyOne(transactionDatabase, now);
     migrateVersionThirtyTwo(transactionDatabase, now);
     migrateVersionThirtyThree(transactionDatabase, now);
+    migrateVersionThirtyFour(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

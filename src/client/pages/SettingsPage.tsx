@@ -75,7 +75,7 @@ export type { SettingsSectionKey };
 const SETTINGS_MENU_GROUPS: Array<{ label: string; items: Array<{ key: SettingsSectionKey; label: string; icon: LucideIcon }> }> = [
   { label: '基础资料', items: [{ key: 'company', label: '公司资料', icon: Building2 }] },
   { label: '单据模板', items: [{ key: 'contract', label: '购销合同模板', icon: ScrollText }] },
-  { label: '产品资料', items: [{ key: 'packaging', label: '包装预设', icon: Package }, { key: 'accessory-prices', label: '配件价格', icon: Calculator }] },
+  { label: '产品资料', items: [{ key: 'packaging', label: '包装管理', icon: Package }, { key: 'accessory-prices', label: '配件价格', icon: Calculator }] },
   {
     label: '数据与备份',
     items: [

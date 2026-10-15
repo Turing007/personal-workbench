@@ -51,7 +51,7 @@ import type {
 } from '../shared/finance';
 import type { CustomerProduct as LegacyCustomerProduct, OrderDraft, OrderItemDraft, PackagingOption } from './components/OrderForm';
 import type { ProductRecord } from './components/ProductEditor';
-import type { ProductAttachmentCategory } from './components/ProductEditor';
+import type { ProductAttachmentCategory, ProductVideo } from './components/ProductEditor';
 
 export interface ApiErrorShape {
   code: string;
@@ -463,7 +463,7 @@ export function mapProductRecord(row: ProductApiRecord): ProductRecord {
   const rawImages = row.images ?? (row as ProductApiRecord & { images_json?: Array<Record<string, unknown>> }).images_json ?? [];
   const packaging = (row.packaging ?? []).map((item) => asPackaging(item));
   const rawAttachments = row.attachments ?? [];
-  return { ...mapProduct(row), category: row.category ?? '', purchasePrice: purchasePrice == null ? '' : String(purchasePrice), supplier: row.supplier ?? '', parameters: typeof row.parameters === 'string' ? row.parameters : '', status: normalizeProductStatus(row.status), colors: row.colors ?? [], batteryPlugs: row.batteryPlugs ?? [], images: rawImages.map((image) => ({ id: String(image.id ?? image.relativePath ?? image.relative_path), name: String(image.originalName ?? image.original_name ?? '产品图片'), url: `/files/${String(image.relativePath ?? image.relative_path ?? '')}`, category: normalizeProductImageCategory(image.category), note: String(image.note ?? '') })), videos: (row.videos ?? []).map((raw) => { const item = raw as Record<string, unknown>; const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id ?? relativePath), name: String(item.originalName ?? item.original_name ?? '产品视频'), size: Number(item.size ?? item.size_bytes ?? 0), url: `/files/${relativePath}` }; }), attachments: rawAttachments.map((raw) => { const item = raw as Record<string, unknown>; const category = String(item.category ?? 'other'); const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id), category: (['manual', 'packaging-design', 'label-dieline', 'other'].includes(category) ? category : 'other') as ProductAttachmentCategory, name: String(item.originalName ?? item.original_name ?? '产品附件'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mimeType ?? item.mime_type ?? ''), size: Number(item.size ?? item.size_bytes ?? 0), createdAt: String(item.createdAt ?? item.created_at ?? '') }; }), accessories: row.accessories ?? '', remark: row.remark ?? '', purchaseQuotes: mapStoredPurchaseQuotes(row.purchaseQuotes),
+  return { ...mapProduct(row), category: row.category ?? '', purchasePrice: purchasePrice == null ? '' : String(purchasePrice), supplier: row.supplier ?? '', parameters: typeof row.parameters === 'string' ? row.parameters : '', status: normalizeProductStatus(row.status), colors: row.colors ?? [], batteryPlugs: row.batteryPlugs ?? [], images: rawImages.map((image) => ({ id: String(image.id ?? image.relativePath ?? image.relative_path), name: String(image.originalName ?? image.original_name ?? '产品图片'), url: `/files/${String(image.relativePath ?? image.relative_path ?? '')}`, category: normalizeProductImageCategory(image.category), note: String(image.note ?? '') })), videos: (row.videos ?? []).map((raw) => { const item = raw as Record<string, unknown>; const relativePath = String(item.relativePath ?? item.relative_path ?? ''); const status = String(item.transcodeStatus ?? item.transcode_status ?? 'done'); return { id: String(item.id ?? relativePath), name: String(item.originalName ?? item.original_name ?? '产品视频'), size: Number(item.size ?? item.size_bytes ?? 0), url: `/files/${relativePath}`, transcodeStatus: (['pending', 'processing', 'done', 'failed'].includes(status) ? status : 'done') as ProductVideo['transcodeStatus'] }; }), attachments: rawAttachments.map((raw) => { const item = raw as Record<string, unknown>; const category = String(item.category ?? 'other'); const relativePath = String(item.relativePath ?? item.relative_path ?? ''); return { id: String(item.id), category: (['manual', 'packaging-design', 'label-dieline', 'other'].includes(category) ? category : 'other') as ProductAttachmentCategory, name: String(item.originalName ?? item.original_name ?? '产品附件'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mimeType ?? item.mime_type ?? ''), size: Number(item.size ?? item.size_bytes ?? 0), createdAt: String(item.createdAt ?? item.created_at ?? '') }; }), accessories: row.accessories ?? '', remark: row.remark ?? '', purchaseQuotes: mapStoredPurchaseQuotes(row.purchaseQuotes),
     packaging: packaging.length ? packaging : [asPackaging(undefined)], createdAt: String(row.createdAt ?? row.created_at ?? ''), updatedAt: String(row.updatedAt ?? row.updated_at ?? ''),
     // 本产品自己的配件价格清单；未固化时为空，详情/计算器沿用类目默认。
     accessoryPrices: Array.isArray(row.accessoryPrices) ? row.accessoryPrices as AccessoryPrice[] : [],
@@ -632,7 +632,7 @@ export async function importProducts(file: File) {
   return request<{ total: number; created: number; updated: number }>('/api/products/import', { method: 'POST', body: form });
 }
 
-/** 包装方式预设：产品编辑器一键填入的常用包装组合，存在服务端供多设备共用。 */
+/** 包装管理：产品编辑器一键填入的常用包装组合（含适用分类），存在服务端供多设备共用。 */
 export async function getPackagingPresets() {
   const result = await request<{ items?: PackagingPreset[] }>('/api/settings/packaging-presets');
   return result.items ?? [];
@@ -645,6 +645,12 @@ export async function savePackagingPresets(items: PackagingPreset[]) {
 
 export async function reseedPackagingPresets() {
   const result = await request<{ items?: PackagingPreset[] }>('/api/settings/packaging-presets/reseed', { method: 'POST' });
+  return result.items ?? [];
+}
+
+/** 「可以装哪些产品」的分类候选：产品库现存分类 + 已关联过的手工分类。 */
+export async function getPackagingCategories() {
+  const result = await request<{ items?: Array<{ name: string; productCount: number }> }>('/api/settings/packaging-categories');
   return result.items ?? [];
 }
 

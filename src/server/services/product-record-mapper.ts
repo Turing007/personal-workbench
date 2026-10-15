@@ -5,6 +5,7 @@ import type { CatalogProduct } from '../documents/product-catalog-template.js';
  * 也要用同一套口径，抽到独立模块避免两处漂移。
  */
 export function mapVideo(row: Record<string, unknown>) {
+  const status = String(row.transcodeStatus ?? row.transcode_status ?? 'done');
   return {
     id: Number(row.id),
     relativePath: String(row.relativePath ?? row.relative_path ?? ''),
@@ -12,6 +13,10 @@ export function mapVideo(row: Record<string, unknown>) {
     mimeType: String(row.mimeType ?? row.mime_type ?? ''),
     size: Number(row.size ?? row.size_bytes ?? 0),
     createdAt: String(row.createdAt ?? row.created_at ?? ''),
+    /** 压缩状态：pending 排队中 / processing 压缩中 / done 已完成 / failed 失败（保留原文件）。 */
+    transcodeStatus: (['pending', 'processing', 'done', 'failed'] as const).includes(status as 'pending')
+      ? status as 'pending' | 'processing' | 'done' | 'failed'
+      : 'done',
   };
 }
 

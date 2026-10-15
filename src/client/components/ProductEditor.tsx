@@ -70,6 +70,8 @@ export interface ProductVideo {
   size: number;
   url: string;
   file?: File;
+  /** 服务端压缩状态；本地未上传的草稿没有这个字段。 */
+  transcodeStatus?: 'pending' | 'processing' | 'done' | 'failed';
 }
 
 export interface ProductEditorProps {
@@ -129,7 +131,21 @@ const VIDEO_HINT = '视频支持 MP4、MOV、M4V、WebM 格式';
 function ProductVideoSection({ value, onChange }: { value: ProductVideo[]; onChange: (next: ProductVideo[]) => void }) {
   const [message, setMessage] = useState('');
   const [playing, setPlaying] = useState<ProductVideo>();
+  const [pasteArmed, setPasteArmed] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+
+  // 点击激活粘贴：section 自身不含可聚焦控件，点击不会自动获得焦点，
+  // 靠 onBlur 取消会失效（高亮卡住）。改成监听 document 的 pointerdown：
+  // 点在区块外就取消，点区块内则激活。挂载期间监听、卸载时移除，不泄漏。
+  useEffect(() => {
+    if (!pasteArmed) return;
+    const onOutsidePointerDown = (event: PointerEvent) => {
+      if (!sectionRef.current?.contains(event.target as Node)) setPasteArmed(false);
+    };
+    document.addEventListener('pointerdown', onOutsidePointerDown);
+    return () => document.removeEventListener('pointerdown', onOutsidePointerDown);
+  }, [pasteArmed]);
 
   const addFiles = (files: File[]) => {
     if (!files.length) return;
@@ -174,7 +190,16 @@ function ProductVideoSection({ value, onChange }: { value: ProductVideo[]; onCha
     addFiles(files);
   };
 
-  return <section className="section-box product-video-section" onPaste={onPaste} tabIndex={0}>
+  return <section
+    ref={sectionRef}
+    className={`section-box product-video-section${pasteArmed ? ' is-paste-armed' : ''}`}
+    onPaste={onPaste}
+    tabIndex={0}
+    // 点击即「激活粘贴」：给一个醒目的高亮，让用户明确知道现在 Ctrl+V 会进到这里。
+    // 取消交给 document 上的 pointerdown 监听（点在区块外即取消），见上方 useEffect。
+    onClick={() => setPasteArmed(true)}
+    aria-label="产品视频，点击后可按 Ctrl+V 粘贴视频"
+  >
     <div className="section-box-header"><span className="section-box-title">产品视频</span>
       <button type="button" className="button button-secondary button-sm" onClick={pickVideos}><Video size={14} />添加视频</button>
     </div>
@@ -185,11 +210,17 @@ function ProductVideoSection({ value, onChange }: { value: ProductVideo[]; onCha
         <span className="product-video-size">{formatFileSize(video.size)}</span>
         {video.file
           ? <span className="product-video-pending" title="保存后自动在后台上传">待上传</span>
-          : <button type="button" className="icon-button" title="播放视频" aria-label={`播放 ${video.name}`} onClick={() => setPlaying(video)}><Play size={14} /></button>}
+          : video.transcodeStatus === 'pending'
+            ? <span className="product-video-pending" title="已进入压缩队列">待压缩</span>
+            : video.transcodeStatus === 'processing'
+              ? <span className="product-video-pending" title="服务端正在压缩，期间播放为原画质">压缩中</span>
+              : video.transcodeStatus === 'failed'
+                ? <span className="product-video-pending" title="压缩失败，保留原文件，播放不受影响">压缩失败</span>
+                : <button type="button" className="icon-button" title="播放视频" aria-label={`播放 ${video.name}`} onClick={() => setPlaying(video)}><Play size={14} /></button>}
         <button type="button" className="icon-button danger" title="移除视频" aria-label={`移除 ${video.name}`} onClick={() => onChange(value.filter((item) => item.id !== video.id))}><Trash2 size={14} /></button>
       </div>
     ))}</div> : <div className="empty-state">暂无视频，可添加手机拍的产品实拍视频（单个不超过 200MB）。</div>}
-    <div className="image-upload-hint" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><ClipboardPaste size={13} /><span>点击本区域后可 Ctrl+V 粘贴视频</span></div>
+    <div className="image-upload-hint" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><ClipboardPaste size={13} /><span>{pasteArmed ? '已激活，现在 Ctrl+V 即可粘贴视频' : '点击本区域后可 Ctrl+V 粘贴视频'}</span></div>
     {message && <div className="image-upload-message" role="status">{message}</div>}
     <input
       ref={inputRef}
@@ -497,6 +528,8 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
   const purchaseQuotes = draft.purchaseQuotes ?? [];
   const categorySuggestion = suggestProductCategory(draft.name, productCategories);
   const categoryCandidates = orderCategoriesWithSuggestion(productCategories, categorySuggestion);
+  /** 当前产品自身的分类（包装管理「可以装哪些产品」的匹配依据）。 */
+  const activeProductCategories = (draft.category ?? '').trim() ? [String(draft.category).trim()] : [];
   return <Modal open={open} title={copyMode ? '复制产品（新建）' : editingDraft ? '编辑产品（草稿）' : editingExisting ? '编辑产品' : '添加产品'} onClose={onClose} width={900} footer={<div className="product-editor-footer">
     {catalogs.length > 0 && <label className="product-editor-catalog-add" title="勾选后点「保存产品」，本产品会加入所选图册；已在图册中不会重复加，移出仍去图册模块操作">
       <input type="checkbox" aria-label="添加到产品图册" checked={addToCatalog} disabled={saving} onChange={(event) => setAddToCatalog(event.target.checked)} />
@@ -546,7 +579,7 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
         {showParameters && <label className="label">产品参数<textarea className="textarea" rows={6} value={draft.parameters ?? ''} onChange={(event) => set('parameters', event.target.value)} placeholder={'例如：扭矩：35N·m\n转速：0-1500rpm\n额定电压：12V'} /></label>}
         <label className="label">备注<textarea className="textarea" rows={6} value={draft.remark ?? ''} onChange={(event) => set('remark', event.target.value)} /></label>
       </div>
-      <PackagingTable collapsible value={draft.packaging} onChange={(packaging: PackagingOption[]) => set('packaging', packaging)} presets={packagingPresets} onManagePresets={onManagePresets} />
+      <PackagingTable collapsible value={draft.packaging} onChange={(packaging: PackagingOption[]) => set('packaging', packaging)} presets={packagingPresets} activeCategories={activeProductCategories} onManagePresets={onManagePresets} />
       <ImagePasteUpload label="产品图片与资料图" value={draft.images} onChange={(images) => set('images', images)} multiple showNotes sortable compact selectable categories={PRODUCT_IMAGE_CATEGORY_OPTIONS} />
       <ProductVideoSection value={draft.videos ?? []} onChange={(videos) => set('videos', videos)} />
       <ProductAttachments value={draft.attachments ?? []} onChange={(attachments) => set('attachments', attachments)} />
