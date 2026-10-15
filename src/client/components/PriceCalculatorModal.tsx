@@ -290,9 +290,9 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
             <thead>
               <tr>
                 <th className="battery-price-corner" rowSpan={2}>电池容量</th>
-                {combos.map((combo) => <th key={`${combo.packCount}-${combo.batteryCount}`} colSpan={costsVisible ? 2 : 1}>{combo.packCount}节{combo.label}</th>)}
+                {combos.map((combo) => <th key={`${combo.packCount}-${combo.batteryCount}`} colSpan={costsVisible ? 3 : 1}>{combo.packCount}节{combo.label}</th>)}
               </tr>
-              <tr>{combos.map((combo) => <Fragment key={`${combo.packCount}-${combo.batteryCount}`}>{costsVisible && <th className="battery-price-mini">成本</th>}<th className="battery-price-mini">售价</th></Fragment>)}</tr>
+              <tr>{combos.map((combo) => <Fragment key={`${combo.packCount}-${combo.batteryCount}`}>{costsVisible && <th className="battery-price-mini">成本</th>}<th className="battery-price-mini">售价</th>{costsVisible && <th className="battery-price-mini">毛利</th>}</Fragment>)}</tr>
             </thead>
             <tbody>
               {capacities.map((capacity) => <tr key={capacity}>
@@ -312,6 +312,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
                         onClick={() => void copySalePrice(`${copyName} ${formatHalf(values.sale)}元`, key)}
                       >{copiedKey === key ? <Check size={13} /> : null}{formatHalf(values.sale)}</button>
                       : '—'}</td>
+                    {costsVisible && <td className="battery-price-profit">{values ? formatHalf(round2(values.sale - values.cost)) : '—'}</td>}
                   </Fragment>;
                 })}
               </tr>)}

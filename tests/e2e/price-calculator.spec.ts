@@ -72,8 +72,11 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     await expect(saleCell('复制售价 5节1300mah 一电一充 126.5元')).toHaveText('126.5');
     await expect(saleCell('复制售价 5节1300mah 两电一充 135.5元')).toHaveText('135.5');
     await expect(saleCell('复制售价 5节1500mah 一电一充 127.5元')).toHaveText('127.5');
-    // 1500 × 10 节没定价：一电一充/两电一充两列的成本与售价共 4 格都显示 —。
-    await expect(dialog.locator('.battery-price-table tbody tr', { hasText: '1500mAh' }).locator('td', { hasText: '—' })).toHaveCount(4);
+    // 含电池套装也显示毛利：1300 5节一电一充 (100+8+2) × 0.15 = 16.5。
+    const firstCombo = dialog.locator('.battery-price-table tbody tr', { hasText: '1300mAh' }).first();
+    await expect(firstCombo.locator('.battery-price-profit').first()).toHaveText('16.5');
+    // 1500 × 10 节没定价：一电一充/两电一充两列的成本/售价/毛利共 6 格都显示 —。
+    await expect(dialog.locator('.battery-price-table tbody tr', { hasText: '1500mAh' }).locator('td', { hasText: '—' })).toHaveCount(6);
 
     // 切充电器到大座充 ¥5：1300 5节一电一充 → (100+8+5)×1.15 = 129.95 → 130。
     await dialog.getByLabel('充电器').selectOption({ label: 'E2E大座充 ¥5' });
@@ -89,9 +92,11 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     await dialog.getByLabel('复制裸机售价 115元').click();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('裸机 115元');
 
-    // 小眼睛：隐藏全部成本后只剩售价——成本列、参数区、方案区收起，产品名与图仍在，售价仍可复制。
+    // 小眼睛：隐藏全部成本后只剩售价——成本列、毛利列、参数区、方案区收起，产品名与图仍在，售价仍可复制。
     await dialog.getByRole('button', { name: '隐藏成本（发客户截图用）' }).click();
     await expect(dialog.locator('.battery-price-table th', { hasText: '成本' })).toHaveCount(0);
+    await expect(dialog.locator('.battery-price-table th', { hasText: '毛利' })).toHaveCount(0);
+    await expect(dialog.locator('.battery-price-profit')).toHaveCount(0);
     await expect(dialog.getByLabel('采购价')).toHaveCount(0);
     await expect(dialog.getByRole('button', { name: '保存为方案' })).toHaveCount(0);
     await expect(dialog.locator('.price-calc2-head')).toContainText(`E2E矩阵算价${stamp}`);

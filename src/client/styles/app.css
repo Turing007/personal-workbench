@@ -4978,6 +4978,8 @@ select {
 .battery-price-mini { font-weight: var(--weight-medium, 500); }
 .battery-price-capacity { text-align: left; font-weight: var(--weight-semibold); color: var(--color-text-strong); }
 .battery-price-cost { color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+/* 毛利与成本同口径（售价 − 成本），样式与裸机行的「毛利」保持一致。 */
+.battery-price-profit { color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
 .battery-price-sale-cell { min-width: 76px; }
 .price-calc2-save { margin-top: 14px; display: flex; gap: 8px; }
 .price-calc2-save .input { flex: 1; }
@@ -4997,6 +4999,19 @@ select {
   .price-calc2-field .price-calc2-charger { max-width: none; }
   .battery-price-table { font-size: 11px; }
   .battery-price-table th, .battery-price-table td { padding: 5px 6px; }
+  /* 窄屏（手机 App）组合列多、必然横向溢出：把「电池容量」列钉在左边，
+     左右滑动时始终知道自己在看哪一行。桌面端宽度够、不会溢出，不需要固定。
+     分隔线用 box-shadow 而不是 border-right —— border-collapse: collapse 下
+     sticky 单元格的边框由表格绘制，会跟着一起滚走。 */
+  .battery-price-capacity,
+  .battery-price-corner {
+    position: sticky;
+    left: 0;
+    box-shadow: 1px 0 0 var(--color-divider);
+  }
+  /* 表头角格要盖住下方所有滚动的数据行，层级最高；数据行之间互不重叠，给 1 即可。 */
+  .battery-price-corner { z-index: 3; }
+  .battery-price-capacity { z-index: 1; background: var(--color-surface); }
   .accessory-price-row { grid-template-columns: minmax(0, 1fr) 110px 32px; }
 }
 
