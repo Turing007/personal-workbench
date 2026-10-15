@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  autoShippingCost,
+  batteryPackWeightKg,
+  CHARGER_WEIGHT_KG,
+  comboShippingWeightKg,
+  DEFAULT_SHIPPING_UNIT_PRICE,
   normalizePricePlanItems,
+  normalizePricePlanParams,
   planItemAmount,
   planMargin,
   planSalePrice,
@@ -47,6 +53,65 @@ describe('售价计算（纯函数）', () => {
     expect(pricePlanMarkup(3000)).toBe(1000);
     expect(pricePlanMarkup('abc')).toBe(0);
     expect(round2(0.1 + 0.2)).toBe(0.3);
+  });
+});
+
+describe('运费预估（按计费重量 × 单价）', () => {
+  it('电池包单重：5 节 0.3 / 10 节 0.5 / 15 节 0.7 / 20 节 0.9', () => {
+    expect(batteryPackWeightKg(5)).toBe(0.3);
+    expect(batteryPackWeightKg(10)).toBe(0.5);
+    expect(batteryPackWeightKg(15)).toBe(0.7);
+    expect(batteryPackWeightKg(20)).toBe(0.9);
+  });
+
+  it('表里没有的节数按斜率外推，非法输入归零', () => {
+    // 5 节 0.3 起、每 5 节 +0.2kg → 斜率 0.04/kg，截距 0.1。
+    expect(batteryPackWeightKg(25)).toBe(1.1);
+    expect(batteryPackWeightKg(30)).toBe(1.3);
+    expect(batteryPackWeightKg(0)).toBe(0);
+    expect(batteryPackWeightKg(-5)).toBe(0);
+    expect(batteryPackWeightKg(Number.NaN)).toBe(0);
+  });
+
+  it('组合计费重量 = 产品重量 + 电池包重量 × 电数 + 充电器 0.05', () => {
+    // 裸机：只有产品重量。
+    expect(comboShippingWeightKg({ productWeightKg: 0.9 })).toBe(0.9);
+    // 5 节一电一充：0.9 + 0.3 + 0.05。
+    expect(comboShippingWeightKg({ productWeightKg: 0.9, batteryPackCount: 5, batteryCount: 1, hasCharger: true })).toBe(1.25);
+    // 5 节两电一充：0.9 + 0.6 + 0.05。
+    expect(comboShippingWeightKg({ productWeightKg: 0.9, batteryPackCount: 5, batteryCount: 2, hasCharger: true })).toBe(1.55);
+    // 10 节两电一充：0.9 + 1.0 + 0.05。
+    expect(comboShippingWeightKg({ productWeightKg: 0.9, batteryPackCount: 10, batteryCount: 2, hasCharger: true })).toBe(1.95);
+    // 充电器按 0.05kg 计。
+    expect(CHARGER_WEIGHT_KG).toBe(0.05);
+  });
+
+  it('无电池组合不带充电器重量；产品重量为负按 0 兜底', () => {
+    expect(comboShippingWeightKg({ productWeightKg: 1.2, batteryPackCount: 5, batteryCount: 0 })).toBe(1.2);
+    expect(comboShippingWeightKg({ productWeightKg: -1 })).toBe(0);
+  });
+
+  it('运费 = 重量 × 单价，保留两位小数；默认单价 1.5', () => {
+    expect(autoShippingCost(1.25, DEFAULT_SHIPPING_UNIT_PRICE)).toBe(1.88);
+    expect(autoShippingCost(0.9, 1.5)).toBe(1.35);
+    expect(autoShippingCost(0, 1.5)).toBe(0);
+    expect(DEFAULT_SHIPPING_UNIT_PRICE).toBe(1.5);
+  });
+
+  it('参数快照存运费模式与单价；旧方案按手动回显既有运费', () => {
+    const params = normalizePricePlanParams({
+      baseCost: 100, packaging: 2, shipping: 1.88, taxPercent: 0,
+      chargerName: '小线充', chargerPrice: 2, shippingMode: 'auto', shippingUnitPrice: 1.5,
+    });
+    expect(params.shippingMode).toBe('auto');
+    expect(params.shippingUnitPrice).toBe(1.5);
+    // 旧方案（没有这两个字段）：模式回落到手动、运费保持原值、单价补默认。
+    const legacy = normalizePricePlanParams({ baseCost: 100, shipping: 7.5 });
+    expect(legacy.shippingMode).toBe('manual');
+    expect(legacy.shipping).toBe(7.5);
+    expect(legacy.shippingUnitPrice).toBe(DEFAULT_SHIPPING_UNIT_PRICE);
+    // 非法模式值一律按手动。
+    expect(normalizePricePlanParams({ shippingMode: 'weird' }).shippingMode).toBe('manual');
   });
 });
 

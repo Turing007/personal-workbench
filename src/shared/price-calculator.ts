@@ -66,7 +66,7 @@ export function pricePlanMarkup(value: unknown): number {
   return Math.min(round2(parsed), PRICE_PLAN_MARKUP_LIMIT);
 }
 
-/** 售价计算器的参数快照：方案保存与载入回显用（旧方案没有该字段）。 */
+/** 售价计算器的参数快照：方案保存与载入回显用（旧方案没有新增字段）。 */
 export interface PricePlanParams {
   /** 采购价（裸机）。 */
   baseCost: number;
@@ -79,6 +79,10 @@ export interface PricePlanParams {
   /** 充电器名称快照：载入方案时按名称找回下拉项。 */
   chargerName: string;
   chargerPrice: number;
+  /** 运费模式：auto = 按计费重量 × 单价自动预估；manual = 手填固定值。旧方案缺省按 manual 原样回显。 */
+  shippingMode: PriceShippingMode;
+  /** 自动预估的运费单价（元/kg）。 */
+  shippingUnitPrice: number;
 }
 
 /** 清洗参数快照：全部按金额口径处理（≥0、两位小数），缺省为 0 与空名。 */
@@ -91,7 +95,56 @@ export function normalizePricePlanParams(value: unknown): PricePlanParams {
     taxPercent: pricePlanAmount(record.taxPercent),
     chargerName: typeof record.chargerName === 'string' ? record.chargerName.trim().slice(0, 60) : '',
     chargerPrice: pricePlanAmount(record.chargerPrice),
+    // 旧方案没存过这两个字段：按 manual 回显既有运费值，单价补默认值，行为与改版前一致。
+    shippingMode: record.shippingMode === 'auto' ? 'auto' : 'manual',
+    shippingUnitPrice: record.shippingUnitPrice == null ? DEFAULT_SHIPPING_UNIT_PRICE : pricePlanAmount(record.shippingUnitPrice),
   };
+}
+
+/* ===== 运费预估：按计费重量 × 单价 ===== */
+
+/**
+ * 电池包单重（kg）。5 节 0.3 / 10 节 0.5 / 15 节 0.7 / 20 节 0.9 ——
+ * 用查表而不是公式，某一档要单独调整时不会牵动其他档位。
+ */
+const BATTERY_PACK_WEIGHT_KG: Record<number, number> = { 5: 0.3, 10: 0.5, 15: 0.7, 20: 0.9 };
+
+/** 充电器按 0.05kg 计。 */
+export const CHARGER_WEIGHT_KG = 0.05;
+
+/** 运费预估单价默认值（元/kg），低于线下常用值，用户自行调整。 */
+export const DEFAULT_SHIPPING_UNIT_PRICE = 1.5;
+
+export type PriceShippingMode = 'auto' | 'manual';
+
+/**
+ * 单个电池包的重量（kg）：已知档位查表；表里没有的节数按同一斜率线性外推
+ * （5 节 0.3kg 起、每 5 节 +0.2kg），保证设置里出现新档位时仍算得出重量而不是卡住。
+ */
+export function batteryPackWeightKg(packCount: number): number {
+  const count = Math.trunc(packCount);
+  if (!Number.isFinite(count) || count <= 0) return 0;
+  return BATTERY_PACK_WEIGHT_KG[count] ?? round2(0.1 + 0.04 * count);
+}
+
+/**
+ * 一格组合的计费重量（kg）= 产品重量（包装首行内盒重量）+ 电池包重量 × 电数 + 充电器重量。
+ * 裸机就是电池与充电器都为 0 的同一口径。
+ */
+export function comboShippingWeightKg(input: {
+  productWeightKg: number;
+  batteryPackCount?: number;
+  batteryCount?: number;
+  hasCharger?: boolean;
+}): number {
+  const battery = input.batteryCount ? batteryPackWeightKg(input.batteryPackCount ?? 0) * input.batteryCount : 0;
+  const charger = input.hasCharger ? CHARGER_WEIGHT_KG : 0;
+  return round2(Math.max(0, input.productWeightKg) + battery + charger);
+}
+
+/** 按重量预估运费：重量 × 单价，两位小数 —— 界面显示与实际入账用同一个值。 */
+export function autoShippingCost(weightKg: number, unitPrice: number): number {
+  return round2(Math.max(0, weightKg) * Math.max(0, unitPrice));
 }
 
 /**

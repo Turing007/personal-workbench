@@ -15,11 +15,15 @@ import type { ProductRecord } from './ProductEditor';
 import type { AccessoryPrice } from '../../shared/accessory-prices';
 import { BATTERY_COMBO_VARIANTS, batteryUnitPriceOf, type BatteryPriceMatrix } from '../../shared/battery-prices';
 import {
+  autoShippingCost,
   batteryComboName,
+  comboShippingWeightKg,
   comboTotalCost,
+  DEFAULT_SHIPPING_UNIT_PRICE,
   planSalePrice,
   round2,
   type PricePlanParams,
+  type PriceShippingMode,
 } from '../../shared/price-calculator';
 
 const MARKUP_MEMORY_KEY = 'price-calc-markup';
@@ -77,6 +81,8 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const [baseCost, setBaseCost] = useState('');
   const [packaging, setPackaging] = useState('0');
   const [shipping, setShipping] = useState('0');
+  const [shippingMode, setShippingMode] = useState<PriceShippingMode>('auto');
+  const [shippingUnitPrice, setShippingUnitPrice] = useState(String(DEFAULT_SHIPPING_UNIT_PRICE));
   const [taxPercent, setTaxPercent] = useState('0');
   const [markup, setMarkup] = useState(rememberedMarkup);
   const [chargerId, setChargerId] = useState('');
@@ -98,6 +104,9 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     setBaseCost((defaultQuote?.price ?? '').trim() || product.purchasePrice || '0');
     setPackaging(product.packaging[0]?.purchasePrice?.trim() || '0');
     setShipping('0');
+    // 每次打开回到自动预估：这是默认口径，手动是临时覆盖。
+    setShippingMode('auto');
+    setShippingUnitPrice(String(DEFAULT_SHIPPING_UNIT_PRICE));
     setTaxPercent('0');
     setMarkup(rememberedMarkup());
     setPlanName('');
@@ -131,13 +140,29 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const image = product.images[0];
   const base = amountInput(baseCost);
   const pack = amountInput(packaging);
-  const ship = amountInput(shipping);
   const tax = amountInput(taxPercent);
   const markupValue = amountInput(markup);
   const charger = chargerPrices.find((item) => item.id === chargerId);
   const chargerPrice = charger?.price ?? 0;
 
-  const bareCost = comboTotalCost({ baseCost: base, packaging: pack, shipping: ship, taxPercent: tax });
+  // 产品重量取包装第一行的内盒重量（单台重量，与矩阵每台成本口径一致）。
+  const productWeightKg = Number(product.packaging[0]?.innerWeight) || 0;
+  const weightMissing = productWeightKg <= 0;
+  const unitPriceValue = amountInput(shippingUnitPrice);
+  const autoMode = shippingMode === 'auto';
+  // 自动模式下运费按重量现算；手动模式用输入框里的固定值。
+  const manualShip = amountInput(shipping);
+
+  /** 某格组合的运费：自动按「(产品重量 + 电池×电数 + 充电器) × 单价」，手动全体同值。 */
+  const shippingFor = (batteryPackCount?: number, batteryCount?: number, hasCharger?: boolean) => {
+    if (!autoMode) return manualShip;
+    const weight = comboShippingWeightKg({ productWeightKg, batteryPackCount, batteryCount, hasCharger });
+    return autoShippingCost(weight, unitPriceValue);
+  };
+
+  const bareShip = shippingFor();
+  const bareWeight = comboShippingWeightKg({ productWeightKg });
+  const bareCost = comboTotalCost({ baseCost: base, packaging: pack, shipping: bareShip, taxPercent: tax });
   const bareSale = planSalePrice(bareCost, markupValue);
 
   const capacities = batteryMatrix?.capacities ?? [];
@@ -158,10 +183,17 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     const unit = batteryUnitPriceOf(batteryMatrix!, capacity, packCount);
     if (unit == null) return null;
     const cost = comboTotalCost({
-      baseCost: base, packaging: pack, shipping: ship, taxPercent: tax,
+      baseCost: base, packaging: pack, taxPercent: tax,
+      shipping: shippingFor(packCount, batteryCount, true),
       batteryUnitPrice: unit, batteryCount, chargerPrice,
     });
     return { cost, sale: planSalePrice(cost, markupValue) };
+  };
+
+  /** 切到手动：先把当前自动值填进去，避免切过去变 0 让人以为算错。 */
+  const switchToManual = () => {
+    setShipping(String(bareShip));
+    setShippingMode('manual');
   };
 
   const save = async () => {
@@ -170,10 +202,11 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     try {
       try { localStorage.setItem(MARKUP_MEMORY_KEY, String(markupValue)); } catch { /* 记住毛利率失败不影响保存 */ }
       // 明细按裸机成本拆四条（税用残差，保证与服务端重算的合计完全一致）；参数快照供载入回显。
-      const taxAmount = round2(bareCost - base - pack - ship);
+      const taxAmount = round2(bareCost - base - pack - bareShip);
       const params: PricePlanParams = {
-        baseCost: base, packaging: pack, shipping: ship, taxPercent: tax,
+        baseCost: base, packaging: pack, shipping: bareShip, taxPercent: tax,
         chargerName: charger?.name ?? '', chargerPrice,
+        shippingMode, shippingUnitPrice: unitPriceValue,
       };
       const plan = await savePricePlan(product.id, {
         name: planName,
@@ -182,7 +215,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
         items: [
           { name: '采购价', qty: 1, unitPrice: base },
           { name: '包材配件', qty: 1, unitPrice: pack },
-          { name: '运费', qty: 1, unitPrice: ship },
+          { name: '运费', qty: 1, unitPrice: bareShip },
           { name: '税', qty: 1, unitPrice: taxAmount },
         ],
         params,
@@ -203,6 +236,8 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
       setBaseCost(String(params.baseCost));
       setPackaging(String(params.packaging));
       setShipping(String(params.shipping));
+      setShippingMode(params.shippingMode);
+      setShippingUnitPrice(String(params.shippingUnitPrice));
       setTaxPercent(String(params.taxPercent));
       const matched = chargerPrices.find((item) => item.name === params.chargerName);
       if (matched) setChargerId(matched.id);
@@ -259,7 +294,18 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
         <label className="price-calc2-field"><span>采购价</span><input className="input" type="number" min={0} step="0.01" aria-label="采购价" value={baseCost} onChange={(event) => setBaseCost(event.target.value)} /></label>
         <label className="price-calc2-field"><span>毛利率 %</span><input className="input" type="number" min={0} aria-label="毛利率" value={markup} onChange={(event) => setMarkup(event.target.value)} /></label>
         <label className="price-calc2-field"><span>包材配件</span><input className="input" type="number" min={0} step="0.01" aria-label="包材配件" value={packaging} onChange={(event) => setPackaging(event.target.value)} /></label>
-        <label className="price-calc2-field"><span>运费</span><input className="input" type="number" min={0} step="0.01" aria-label="运费" value={shipping} onChange={(event) => setShipping(event.target.value)} /></label>
+        {/* 运费：自动按「计费重量 × 单价」预估，手动则手填固定值。单价放运费前面。 */}
+        <label className="price-calc2-field"><span>运费单价</span><span className="price-calc2-unit"><input className="input" type="number" min={0} step="0.01" aria-label="运费单价" value={shippingUnitPrice} disabled={!autoMode} onChange={(event) => setShippingUnitPrice(event.target.value)} /><em>/kg</em></span></label>
+        <label className="price-calc2-field"><span>运费</span><span className="price-calc2-unit">
+          <input className="input" type="number" min={0} step="0.01" aria-label="运费金额" value={autoMode ? String(bareShip) : shipping} readOnly={autoMode} onChange={(event) => setShipping(event.target.value)} />
+          {autoMode && <em>自动</em>}
+        </span></label>
+        <div className="price-calc2-shipmode">
+          <button type="button" className={autoMode ? 'is-on' : ''} aria-pressed={autoMode} onClick={() => setShippingMode('auto')}>自动</button>
+          <button type="button" className={!autoMode ? 'is-on' : ''} aria-pressed={!autoMode} onClick={switchToManual}>手动</button>
+          {autoMode && <span className="price-calc2-shiphint">裸机 {bareWeight}kg{weightMissing ? '（未填重量）' : ''}</span>}
+        </div>
+        {autoMode && weightMissing && <p className="price-calc2-warn" role="status">该产品包装第一行没填内盒重量，产品部分按 0 算（电池与充电器重量照常计）；去产品库补重量或切手动。</p>}
         <label className="price-calc2-field"><span>税 %</span><input className="input" type="number" min={0} step="0.01" aria-label="税" value={taxPercent} onChange={(event) => setTaxPercent(event.target.value)} /></label>
         <label className="price-calc2-field"><span>充电器</span>
           <select className="toolbar-select price-calc2-charger" aria-label="充电器" value={chargerId} disabled={!chargerPrices.length} onChange={(event) => setChargerId(event.target.value)}>

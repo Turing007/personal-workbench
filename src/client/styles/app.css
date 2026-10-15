@@ -4951,6 +4951,16 @@ select {
 .price-calc2-field > span { flex: none; }
 .price-calc2-field .input { width: 104px; }
 .price-calc2-field .price-calc2-charger { flex: 1; min-width: 0; max-width: 148px; height: 30px; font-size: 12px; }
+
+/* 带单位/状态后缀的输入（运费单价 /kg、自动运费标「自动」）。 */
+.price-calc2-unit { display: inline-flex; align-items: center; gap: 4px; }
+.price-calc2-unit em { font-style: normal; font-size: var(--text-2xs); color: var(--color-text-muted); }
+/* 自动/手动切换 + 计费重量提示。 */
+.price-calc2-shipmode { display: flex; align-items: center; gap: 6px; font-size: var(--text-2xs); }
+.price-calc2-shipmode button { border: 1px solid var(--color-border-control); border-radius: var(--radius-control); padding: 2px 9px; background: var(--color-surface); color: var(--color-text-secondary); font: inherit; font-size: var(--text-2xs); cursor: pointer; }
+.price-calc2-shipmode button.is-on { border-color: var(--color-accent-border); background: var(--color-accent-soft); color: var(--tone-accent-text); font-weight: var(--weight-semibold); }
+.price-calc2-shiphint { margin-left: auto; color: var(--color-text-muted); }
+.price-calc2-warn { margin: 0; color: var(--color-warning-text); font-size: var(--text-2xs); line-height: 1.5; }
 /* 顶部产品图 + 名称 + 小眼睛（隐藏全部成本，留一张干净价格表给客户截图）。 */
 .price-calc2-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .price-calc2-thumb { width: 44px; height: 44px; flex: none; object-fit: cover; border-radius: var(--radius-control); border: 1px solid var(--color-border); background: var(--color-surface-subtle); }
