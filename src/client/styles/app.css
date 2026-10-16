@@ -145,7 +145,9 @@ select {
   color: var(--tone-text-faint);
 }
 
-.search-control svg {
+/* 只作用于搜索框的放大镜图标：写成 .search-control > svg 限定直接子元素，
+   否则幕布胶囊里的删除小叉也会被绝对定位到框外（踩过：叉跑到距按钮 -65px 处）。 */
+.search-control > svg {
   position: absolute;
   left: 9px;
   pointer-events: none;
@@ -200,28 +202,29 @@ select {
   background: var(--color-surface-subtle);
 }
 
-/* 覆盖通用规则：.search-control svg 的绝对定位是给放大镜的，小叉里的图标要回到按钮内。 */
-.search-control .search-clear svg {
-  position: static;
-  left: auto;
-  pointer-events: auto;
-}
-
-/* 搜索历史幕布：聚焦搜索框时从下方拉出，关键词以胶囊排布，点一下即搜。
-   绝对定位在搜索框下方，宽度随搜索框（窄屏也不会溢出屏幕）。 */
-.search-history-curtain {
+/* 下拉幕布（搜索历史 / 分类筛共用）：从触发器下方拉出一块面板，内容为胶囊排布。
+   绝对定位在触发器下方；宽度默认跟随内容，is-anchor-width 时才跟触发器等宽。 */
+.picker-curtain {
   position: absolute;
   z-index: 30;
   top: calc(100% + 4px);
   left: 0;
-  right: 0;
   display: grid;
   gap: 7px;
+  min-width: 220px;
+  max-width: min(340px, calc(100vw - 24px));
   padding: 10px 11px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface);
   box-shadow: 0 10px 24px rgba(15, 23, 42, .13);
+}
+
+/* 跟随锚点宽度（搜索框用）：输入框多宽幕布就多宽，窄屏不会溢出屏幕。 */
+.picker-curtain.is-anchor-width {
+  right: 0;
+  min-width: 0;
+  max-width: none;
 }
 
 .search-history-head {
@@ -231,9 +234,13 @@ select {
   gap: 8px;
   color: var(--color-text-muted);
   font-size: var(--text-2xs);
+  white-space: nowrap;
 }
 
 .search-history-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   border: 0;
   padding: 0;
   color: var(--color-text-muted);
@@ -251,7 +258,7 @@ select {
   gap: 6px;
 }
 
-/* 胶囊 = 主按钮（点击即搜）+ 尾部小叉（删这一条）。整体描边，内部两块无边框。 */
+/* 胶囊 = 主按钮（点击即搜/筛选）+ 尾部小叉（删这一条）。整体描边，内部两块无边框。 */
 .search-history-chip {
   display: inline-flex;
   align-items: center;
@@ -297,6 +304,52 @@ select {
 }
 
 .search-history-chip-remove:hover { opacity: 1; background: var(--color-accent-border); }
+
+/* 分类筛选：触发器长得像工具条下拉（显示当前选中项 + 箭头），展开是幕布。
+   锚点自身是 inline-flex 定位上下文，幕布贴它下方。 */
+.category-filter { position: relative; display: inline-flex; }
+
+.category-filter-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.category-filter-label {
+  overflow: hidden;
+  max-width: 150px;
+  text-overflow: ellipsis;
+}
+
+/* 分类胶囊：没有小叉，点一下即筛选；选中项高亮。 */
+.category-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  border: 1px solid var(--color-border-control);
+  border-radius: 999px;
+  padding: 4px 11px;
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.category-chip:hover { border-color: var(--color-accent-border); background: var(--color-accent-soft); }
+
+.category-chip.is-selected {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--tone-accent-text);
+  font-weight: var(--weight-semibold);
+}
+
+.category-chip em { font-style: normal; font-size: var(--text-2xs); color: var(--color-text-muted); }
+.category-chip.is-selected em { color: inherit; }
 
 .button {
   display: inline-flex;
@@ -5603,8 +5656,10 @@ select {
   }
   /* 「N 个产品」与分页条上的「共 N 个产品」重复，窄屏让位给状态与分类两个筛选框。 */
   .products-page .page-toolbar .toolbar-count { display: none; }
-  /* 分类筛选框接管原来的撑开位，把右侧按钮推到行尾。 */
-  .products-page .page-toolbar .products-category-filter { margin-right: auto; }
+  /* 分类筛选框接管原来的撑开位，把右侧按钮推到行尾。锚点现在是包按钮的容器，
+     撑开与 margin 都交给它；幕布锚在容器上，仍贴在按钮下方。 */
+  .products-page .page-toolbar .products-category-filter-wrap { flex: 0 1 auto; min-width: 0; margin-right: auto; }
+  .products-page .page-toolbar .products-category-filter { min-width: 0; }
   .products-page .page-toolbar .button { flex: 0 0 auto; padding: 0 var(--space-3); }
   /* 刷新收成 40×40 纯图标按钮，比「图标 + 刷新」窄约 30px。 */
   .products-page .page-toolbar .products-refresh-button {

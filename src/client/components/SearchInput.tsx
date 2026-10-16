@@ -1,6 +1,7 @@
 import { Search, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { clearSearchHistory, loadSearchHistory, pushSearchHistory, removeSearchHistory } from '../search-history';
+import PickerCurtain from './PickerCurtain';
 
 export interface SearchInputProps {
   value: string;
@@ -28,8 +29,10 @@ export default function SearchInput({ value, onChange, placeholder, disabled = f
   const [historyItems, setHistoryItems] = useState<string[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const commitTimer = useRef<number | undefined>(undefined);
-  const blurTimer = useRef<number | undefined>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
+  const controlRef = useRef<HTMLDivElement>(null);
+  /** 点胶囊后自己调 focus 会触发 onFocus：这一跳不该重新拉开幕布，用标记让 onFocus 跳过。 */
+  const suppressFocusOpen = useRef(false);
 
   const openHistory = () => {
     if (!history) return;
@@ -43,10 +46,9 @@ export default function SearchInput({ value, onChange, placeholder, disabled = f
     setHistoryItems(loadSearchHistory());
   }, [history]);
 
-  // 卸载时清掉两个定时器，避免在已卸载组件上更新状态。
+  // 卸载时清掉定时器，避免在已卸载组件上更新状态。
   useEffect(() => () => {
     if (commitTimer.current) window.clearTimeout(commitTimer.current);
-    if (blurTimer.current) window.clearTimeout(blurTimer.current);
   }, []);
 
   const commit = (keyword: string) => {
@@ -66,8 +68,10 @@ export default function SearchInput({ value, onChange, placeholder, disabled = f
     if (commitTimer.current) window.clearTimeout(commitTimer.current);
     onChange(keyword);
     commit(keyword);
+    // 先标记「这次 focus 是我自己发的」，避免 focus 的 onFocus 把幕布又弹回来。
+    suppressFocusOpen.current = true;
     setHistoryOpen(false);
-    // 焦点回到输入框：点胶囊后光标停在词尾，方便继续改词再搜。
+    // 焦点回到输入框：光标停在词尾，方便继续改词再搜。
     inputRef.current?.focus();
   };
 
@@ -83,7 +87,7 @@ export default function SearchInput({ value, onChange, placeholder, disabled = f
   const showCurtain = history && historyOpen && historyItems.length > 0;
 
   return (
-    <div className={className ? `search-control ${className}` : 'search-control'}>
+    <div ref={controlRef} className={className ? `search-control ${className}` : 'search-control'}>
       <Search size={15} />
       <input
         ref={inputRef}
@@ -93,18 +97,20 @@ export default function SearchInput({ value, onChange, placeholder, disabled = f
         disabled={disabled}
         autoComplete="off"
         onFocus={() => {
-          if (blurTimer.current) window.clearTimeout(blurTimer.current);
-          openHistory();
+          // 点胶囊后由代码触发的 focus 不再重开幕布（见 pickKeyword 的标记）。
+          if (suppressFocusOpen.current) {
+            suppressFocusOpen.current = false;
+          } else {
+            openHistory();
+          }
           onFocus?.();
         }}
         // 输入框已经处于焦点时再点它不会再触发 focus：用 click 兜底重开幕布，
-        // 否则点完一个胶囊想换另一个词时，幕布打不开（capsule 点完焦点在输入框内）。
+        // 否则点完一个胶囊想换另一个词时，幕布打不开。
         onClick={openHistory}
-        onBlur={() => {
-          // 点胶囊时输入框会先失焦：延后关闭，让点击落地。150ms 足够覆盖一次点击。
-          if (history) blurTimer.current = window.setTimeout(() => setHistoryOpen(false), 150);
-          onBlur?.();
-        }}
+        // 幕布的关闭由 PickerCurtain 统一处理（点外部空白才关）。
+        // 这里不做 onBlur 关闭：滚动、点胶囊都会先让输入框失焦，靠失焦关会误关。
+        onBlur={() => onBlur?.()}
       />
       {!!value && !disabled && (
         <button
@@ -119,24 +125,27 @@ export default function SearchInput({ value, onChange, placeholder, disabled = f
           <X size={14} />
         </button>
       )}
-      {showCurtain && (
-        // 幕布用 div 而非 list：胶囊要能换行排布，点空白处不关（靠输入框失焦关），
-        // 避免误触。mousedown 阻止默认，防止点击时输入框失焦导致的竞态。
-        <div className="search-history-curtain" role="listbox" aria-label="最近搜索" onMouseDown={(event) => event.preventDefault()}>
-          <div className="search-history-head">
-            <span>最近搜索</span>
-            <button type="button" className="search-history-clear" onClick={clearAll}>清空历史</button>
-          </div>
-          <div className="search-history-chips">
-            {historyItems.map((keyword) => (
-              <span className="search-history-chip" key={keyword}>
-                <button type="button" className="search-history-chip-main" role="option" aria-selected="false" title={`搜索「${keyword}」`} onClick={() => pickKeyword(keyword)}>{keyword}</button>
-                <button type="button" className="search-history-chip-remove" aria-label={`删除历史关键词 ${keyword}`} title="删除这条" onClick={() => removeKeyword(keyword)}><X size={11} /></button>
-              </span>
-            ))}
-          </div>
+      <PickerCurtain
+        open={showCurtain}
+        onClose={() => setHistoryOpen(false)}
+        anchorRef={controlRef}
+        matchAnchorWidth
+        ariaLabel="最近搜索"
+        className="search-history-curtain"
+      >
+        <div className="search-history-head">
+          <span>最近搜索</span>
+          <button type="button" className="search-history-clear" onClick={clearAll}>清空历史</button>
         </div>
-      )}
+        <div className="search-history-chips">
+          {historyItems.map((keyword) => (
+            <span className="search-history-chip" key={keyword}>
+              <button type="button" className="search-history-chip-main" title={`搜索「${keyword}」`} onClick={() => pickKeyword(keyword)}>{keyword}</button>
+              <button type="button" className="search-history-chip-remove" aria-label={`删除历史关键词 ${keyword}`} title="删除这条" onClick={() => removeKeyword(keyword)}><X size={11} /></button>
+            </span>
+          ))}
+        </div>
+      </PickerCurtain>
     </div>
   );
 }

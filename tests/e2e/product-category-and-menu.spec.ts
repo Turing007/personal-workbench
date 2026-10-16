@@ -111,7 +111,9 @@ test('编辑器：分类可自由新填并保存生效', async ({ page }) => {
   await editor.locator('button.button-primary').click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
-  await page.locator('.products-page select[aria-label="产品分类筛选"]').selectOption({ label: fresh });
+  // 分类筛选是幕布：点开触发器，点对应胶囊。
+  await page.locator('.products-page [aria-label="产品分类筛选"]').click();
+  await page.locator('.category-filter-curtain .category-chip', { hasText: fresh }).click();
   await page.locator('.products-page .page-toolbar .search-control input').fill(`E2E分类落库${stamp}`);
   await expect(page.locator('.products-gallery .product-gallery-card')).toHaveCount(1);
 });

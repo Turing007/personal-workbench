@@ -14,6 +14,7 @@ import PriceCalculatorModal from '../components/PriceCalculatorModal';
 import ProductImagesModal from '../components/ProductImagesModal';
 import PendingImageTile from '../components/PendingImageTile';
 import SearchInput from '../components/SearchInput';
+import CategoryFilterSelect from '../components/CategoryFilterSelect';
 import type { UploadFileSnapshot } from '../product-upload-queue';
 import ProductParametersModal from '../components/ProductParametersModal';
 import { cloneProductForNew } from '../product-copy';
@@ -142,6 +143,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
   // 手机端搜索框悬浮在顶部：连续下滑收起，回滑展开；输入时锁住展开避免打字途中消失。
   const searchHidden = useHideOnScroll(narrow && !searchFocused);
   // 分类候选直接来自现有产品，出现次数多的排前面；空分类归进「未分类」。
+  // 幕布里的胶囊要显示每个分类的产品数，所以连同计数一起返回。
   const categoryOptions = useMemo(() => {
     const counts = new Map<string, number>();
     let uncategorized = 0;
@@ -151,7 +153,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
       else uncategorized += 1;
     }
     const named = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([category]) => category);
-    return { named, hasUncategorized: uncategorized > 0 };
+    return { named, counts, hasUncategorized: uncategorized > 0, uncategorized };
   }, [products]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -222,11 +224,17 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
       <select aria-label="产品状态筛选" className="toolbar-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}>
         {statusFilterLabels.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
-      <select aria-label="产品分类筛选" className="toolbar-select products-category-filter" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
-        <option value={CATEGORY_ALL}>全部分类</option>
-        {categoryOptions.named.map((category) => <option key={category} value={category}>{category}</option>)}
-        {categoryOptions.hasUncategorized && <option value={CATEGORY_UNCATEGORIZED}>未分类</option>}
-      </select>
+      <CategoryFilterSelect
+        className="products-category-filter-wrap"
+        ariaLabel="产品分类筛选"
+        value={categoryFilter}
+        onChange={setCategoryFilter}
+        options={[
+          { value: CATEGORY_ALL, label: '全部分类' },
+          ...categoryOptions.named.map((category) => ({ value: category, label: category, count: categoryOptions.counts.get(category) ?? 0 })),
+          ...(categoryOptions.hasUncategorized ? [{ value: CATEGORY_UNCATEGORIZED, label: '未分类', count: categoryOptions.uncategorized }] : []),
+        ]}
+      />
       <span className="toolbar-count">{filtered.length} 个产品</span>
       <button className="button button-secondary products-view-toggle" type="button" aria-pressed={view === 'gallery'} aria-label={view === 'gallery' ? '切换到列表视图' : '切换到大图浏览'} title={view === 'gallery' ? '切换到列表视图' : '切换到大图浏览'} onClick={toggleView}>{view === 'gallery' ? <List size={15} /> : <Images size={15} />}<span className="products-mobile-hidden">{view === 'gallery' ? '列表' : '大图'}</span></button>
       <button className="icon-button products-sensitive-toggle" type="button" aria-pressed={showSensitive} aria-label={showSensitive ? '隐藏供应商与价格' : '显示供应商与价格'} title={showSensitive ? '隐藏供应商与价格' : '显示供应商与价格'} onClick={() => setShowSensitive((current) => !current)}>{showSensitive ? <EyeOff size={16} /> : <Eye size={16} />}</button>

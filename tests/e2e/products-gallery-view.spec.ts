@@ -63,7 +63,7 @@ async function openProducts(page: Page, mobile = false) {
 const toggle = (page: Page) => page.locator('.products-page .products-view-toggle');
 const gallery = (page: Page) => page.locator('.products-gallery');
 const search = (page: Page) => page.locator('.products-page .page-toolbar .search-control input');
-const categoryFilter = (page: Page) => page.locator('.products-page select[aria-label="产品分类筛选"]');
+const categoryTrigger = (page: Page) => page.locator('.products-page [aria-label="产品分类筛选"]');
 const card = (page: Page, sku: string) => gallery(page).locator('.product-gallery-card', { hasText: sku });
 
 test('桌面端：默认就是大图浏览，卡片带图片、价格与操作按钮', async ({ page }) => {
@@ -114,21 +114,26 @@ test('桌面端：分类筛选与搜索、分页共用同一份结果', async ({
   await expect(gallery(page).locator('.product-gallery-card')).toHaveCount(3);
   await expect(page.locator('.products-pagination-summary')).toContainText('共 3 个产品');
 
-  // 分类下拉里能找得到本轮新建的两个分类。
-  await expect(categoryFilter(page)).toContainText(CAT_A);
-  await categoryFilter(page).selectOption({ label: CAT_A });
+  // 分类筛选改成幕布：点开触发器，分类以胶囊呈现，点胶囊即筛选。
+  await expect(categoryTrigger(page)).toContainText('全部分类');
+  await categoryTrigger(page).click();
+  await page.locator('.category-filter-curtain .category-chip', { hasText: CAT_A }).click();
   await expect(gallery(page).locator('.product-gallery-card')).toHaveCount(1);
   await expect(card(page, withImage.sku)).toHaveCount(1);
 
-  await categoryFilter(page).selectOption({ label: CAT_B });
+  await categoryTrigger(page).click();
+  await page.locator('.category-filter-curtain .category-chip', { hasText: CAT_B }).click();
   await expect(card(page, withoutImage.sku)).toHaveCount(1);
 
   // 「未分类」把没填分类的产品单独捞出来。
-  await categoryFilter(page).selectOption({ value: '__none__' });
+  await categoryTrigger(page).click();
+  await page.locator('.category-filter-curtain .category-chip', { hasText: '未分类' }).click();
   await expect(gallery(page).locator('.product-gallery-card')).toHaveCount(1);
   await expect(card(page, uncategorized.sku)).toHaveCount(1);
 
-  await categoryFilter(page).selectOption({ value: '__all__' });
+  // 头部「清除」回到全部分类。
+  await categoryTrigger(page).click();
+  await page.locator('.category-filter-curtain .search-history-clear').click();
   await expect(gallery(page).locator('.product-gallery-card')).toHaveCount(3);
 });
 
@@ -146,7 +151,8 @@ test('编辑器里的分类输入框带候选，能改能新填', async ({ page 
   await editor.locator('button.button-primary').click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 
-  await categoryFilter(page).selectOption({ label: fresh });
+  await categoryTrigger(page).click();
+  await page.locator('.category-filter-curtain .category-chip', { hasText: fresh }).click();
   await search(page).fill(withImage.sku);
   await expect(card(page, withImage.sku)).toHaveCount(1);
 });
