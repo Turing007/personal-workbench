@@ -227,6 +227,19 @@ select {
   max-width: none;
 }
 
+/* 宽幅大面板（分类筛选用）：分类多（线上 57 个）时窄条会排成几十行、把页面撑得很长，
+   改为固定宽度的大面板，高度受视口限制、超出部分面板内部滚动。
+   靠右对齐锚点：面板比触发器宽得多，从左侧展开会顶出屏幕右边。 */
+.picker-curtain.is-wide {
+  width: min(560px, calc(100vw - 24px));
+  max-width: none;
+  max-height: min(60vh, 460px);
+  overflow-y: auto;
+  padding: 13px 14px;
+  left: auto;
+  right: 0;
+}
+
 .search-history-head {
   display: flex;
   align-items: center;

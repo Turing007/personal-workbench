@@ -46,6 +46,7 @@ export default function CategoryFilterSelect({ value, options, onChange, ariaLab
         open={open}
         onClose={() => setOpen(false)}
         anchorRef={anchorRef}
+        wide
         ariaLabel={ariaLabel}
         className="category-filter-curtain"
       >

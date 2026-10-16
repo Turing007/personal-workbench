@@ -40,13 +40,19 @@ test('搜索历史：停顿后记入、幕布胶囊可点即搜、可删单条�
   await search.fill(`${NAME}乙`);
   await page.waitForTimeout(1000);
 
-  // 清空输入后失焦再聚焦，幕布出现，含两条胶囊（最新在前）。
+  // 搜不到东西的词不记：停 1 秒后仍应只有上面两条。
+  await search.fill(`${NAME}不存在的词`);
+  await expect(page.locator('.products-page')).toContainText('0 个产品');
+  await page.waitForTimeout(1000);
+
+  // 清空输入后失焦再聚焦，幕布出现，只有两条（无结果的词没被记进来）。
   await search.fill('');
   await search.blur();
   await search.click();
   await expect(curtain).toBeVisible();
   await expect(curtain).toContainText('最近搜索');
   await expect(chips).toHaveCount(2);
+  await expect(curtain).not.toContainText(`${NAME}不存在的词`);
   await expect(chips.first()).toHaveText(`${NAME}乙`);
 
   // 点胶囊直接搜：输入框填入该词、幕布收起、列表只剩对应产品。
@@ -75,4 +81,45 @@ test('搜索历史：停顿后记入、幕布胶囊可点即搜、可删单条�
   for (const item of items.filter((entry) => entry.name.startsWith(NAME))) {
     await page.request.delete(`/api/products/${item.id}`);
   }
+});
+
+test('搜索幕布：滚动即收起，轻点外部也收起', async ({ page }) => {
+  const search = page.locator('.products-page .search-control input');
+  const curtain = page.locator('.search-history-curtain');
+  const anchorName = `${NAME}滚动${Date.now()}`;
+
+  await page.goto('/');
+  await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+
+  // 用 page.request 建数据：它复用页面的会话 cookie，裸 request fixture 不带 cookie 会 401。
+  const created = await page.request.post('/api/products', { data: { name: anchorName, status: 'active', packaging: [{ name: '彩盒包装', packCount: 10 }] } });
+  expect(created.ok()).toBe(true);
+  const product = (await created.json()).data as { id: string };
+  await page.locator('.products-page .products-refresh-button').click();
+
+  // 先造一条历史（用真实存在的产品名，否则会被「无结果不记」挡掉），否则空历史不弹幕布。
+  await search.fill(anchorName);
+  await expect(page.locator('.products-page')).toContainText(anchorName);
+  await page.waitForTimeout(1000);
+  await search.fill('');
+  await search.blur();
+
+  // 滚动收起：手机端输入框聚焦时滚动，浮层要让位给内容。
+  // 直接派发 scroll 事件：测试库里的产品少、页面没有可滚空间，
+  // 靠 scrollTop/wheel 都造不出真实滚动；这里验证的是「收到 scroll 就收」这条逻辑。
+  await search.click();
+  await expect(curtain).toBeVisible();
+  await page.evaluate(() => { document.querySelector('.app-content')?.dispatchEvent(new Event('scroll')); });
+  await expect(curtain).toHaveCount(0);
+
+  // 轻点外部（不滚动）也收起。点侧边栏导航：它明确在「锚点 + 幕布」之外，
+  // 不会像页面中部那样可能被高幕布盖住而误判成「点内部」。
+  await search.click();
+  await expect(curtain).toBeVisible();
+  await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
+  await expect(curtain).toHaveCount(0);
+  // 侧栏点击会切走页面，切回产品库供后续步骤用。
+  await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+
+  await page.request.delete(`/api/products/${product.id}`);
 });

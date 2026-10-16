@@ -17,6 +17,12 @@ export interface SearchInputProps {
    * 词条存本机 localStorage，不影响服务端。
    */
   history?: boolean;
+  /**
+   * 当前搜索词的结果数（由调用方给出）。停顿结束时若为 0 就**不记入历史** ——
+   * 搜不到东西的词记下来只会让人下次点到一次空结果。
+   * 不传则不限制（任何词都记）。
+   */
+  resultCount?: number;
 }
 
 /** 输入停顿多久算「这一次搜索」，之后记入历史。产品库是即时筛选、没有搜索按钮，
@@ -25,7 +31,7 @@ const HISTORY_COMMIT_DELAY_MS = 800;
 
 /** 列表页统一的搜索框：右侧自带一键清空的小叉，有内容才出现。
  *  传 history 后聚焦时从下方拉出搜索历史幕布，点关键词直接填入并搜索。 */
-export default function SearchInput({ value, onChange, placeholder, disabled = false, onFocus, onBlur, className, history = false }: SearchInputProps) {
+export default function SearchInput({ value, onChange, placeholder, disabled = false, onFocus, onBlur, className, history = false, resultCount }: SearchInputProps) {
   const [historyItems, setHistoryItems] = useState<string[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const commitTimer = useRef<number | undefined>(undefined);
@@ -33,6 +39,12 @@ export default function SearchInput({ value, onChange, placeholder, disabled = f
   const controlRef = useRef<HTMLDivElement>(null);
   /** 点胶囊后自己调 focus 会触发 onFocus：这一跳不该重新拉开幕布，用标记让 onFocus 跳过。 */
   const suppressFocusOpen = useRef(false);
+  /**
+   * 最新的结果数。停顿回调是 800ms 后才跑的，直接读 props 会拿到打字那一刻的旧值；
+   * 用 ref 每次渲染同步，回调里读到的才是「停下来那一刻」的结果数。
+   */
+  const resultCountRef = useRef(resultCount);
+  resultCountRef.current = resultCount;
 
   const openHistory = () => {
     if (!history) return;
@@ -53,6 +65,8 @@ export default function SearchInput({ value, onChange, placeholder, disabled = f
 
   const commit = (keyword: string) => {
     if (!history || !keyword.trim()) return;
+    // 停下来时一条结果都没有：这个词不记 —— 记下来只会让下次点到空结果。
+    if (resultCountRef.current === 0) return;
     setHistoryItems((current) => pushSearchHistory(keyword, current));
   };
 
@@ -67,7 +81,9 @@ export default function SearchInput({ value, onChange, placeholder, disabled = f
   const pickKeyword = (keyword: string) => {
     if (commitTimer.current) window.clearTimeout(commitTimer.current);
     onChange(keyword);
-    commit(keyword);
+    // 用户主动从历史里点的词：无条件提到最前，不受「无结果不记」约束 ——
+    // 它在历史里说明以前搜到过东西，点了只是复现那次搜索。
+    if (history && keyword.trim()) setHistoryItems((current) => pushSearchHistory(keyword, current));
     // 先标记「这次 focus 是我自己发的」，避免 focus 的 onFocus 把幕布又弹回来。
     suppressFocusOpen.current = true;
     setHistoryOpen(false);
@@ -130,6 +146,7 @@ export default function SearchInput({ value, onChange, placeholder, disabled = f
         onClose={() => setHistoryOpen(false)}
         anchorRef={controlRef}
         matchAnchorWidth
+        closeOnScroll
         ariaLabel="最近搜索"
         className="search-history-curtain"
       >
