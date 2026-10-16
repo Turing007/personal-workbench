@@ -287,11 +287,9 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
         <label className="price-calc2-field"><span>毛利率 %</span><input className="input" type="number" min={0} aria-label="毛利率" value={markup} onChange={(event) => setMarkup(event.target.value)} /></label>
         <label className="price-calc2-field"><span>包材配件</span><input className="input" type="number" min={0} step="0.01" aria-label="包材配件" value={packaging} onChange={(event) => setPackaging(event.target.value)} /></label>
         {/* 运费：自动按「计费重量 × 单价」预估，手动则手填固定值。单价放运费前面。 */}
-        <label className="price-calc2-field"><span>运费单价</span><span className="price-calc2-unit"><input className="input" type="number" min={0} step="0.01" aria-label="运费单价" value={shippingUnitPrice} disabled={!autoMode} onChange={(event) => { setShippingUnitPrice(event.target.value); rememberShippingUnitPrice(event.target.value); }} /><em>/kg</em></span></label>
-        <label className="price-calc2-field"><span>运费</span><span className="price-calc2-unit">
-          <input className="input" type="number" min={0} step="0.01" aria-label="运费金额" value={autoMode ? String(bareShip) : shipping} readOnly={autoMode} onChange={(event) => setShipping(event.target.value)} />
-          {autoMode && <em>自动</em>}
-        </span></label>
+        <label className="price-calc2-field"><span>运费单价 /kg</span><input className="input" type="number" min={0} step="0.01" aria-label="运费单价" value={shippingUnitPrice} disabled={!autoMode} onChange={(event) => { setShippingUnitPrice(event.target.value); rememberShippingUnitPrice(event.target.value); }} /></label>
+        {/* 当前是自动还是手动由下方两个按钮显示，这里不再重复标「自动」。 */}
+        <label className="price-calc2-field"><span>运费</span><input className="input" type="number" min={0} step="0.01" aria-label="运费金额" value={autoMode ? String(bareShip) : shipping} readOnly={autoMode} onChange={(event) => setShipping(event.target.value)} /></label>
         <div className="price-calc2-shipmode">
           <button type="button" className={autoMode ? 'is-on' : ''} aria-pressed={autoMode} onClick={() => setShippingMode('auto')}>自动</button>
           <button type="button" className={!autoMode ? 'is-on' : ''} aria-pressed={!autoMode} onClick={switchToManual}>手动</button>
@@ -328,9 +326,12 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
             <thead>
               <tr>
                 <th className="battery-price-corner" rowSpan={2}>电池容量</th>
-                {combos.map((combo) => <th key={`${combo.packCount}-${combo.batteryCount}`} colSpan={costsVisible ? 3 : 1}>{combo.packCount}节{combo.label}</th>)}
+                {combos.map((combo) => <th key={`${combo.packCount}-${combo.batteryCount}`} className="battery-price-group-start" colSpan={costsVisible ? 3 : 1}>{combo.packCount}节{combo.label}</th>)}
               </tr>
-              <tr>{combos.map((combo) => <Fragment key={`${combo.packCount}-${combo.batteryCount}`}>{costsVisible && <th className="battery-price-mini">成本</th>}<th className="battery-price-mini">售价</th>{costsVisible && <th className="battery-price-mini">毛利</th>}</Fragment>)}</tr>
+              {/* 每组首列打 group-start 标记（隐藏成本时首列是售价），CSS 据此画组分隔线。 */}
+              <tr>{combos.map((combo) => <Fragment key={`${combo.packCount}-${combo.batteryCount}`}>{costsVisible
+                ? <><th className="battery-price-mini battery-price-group-start">成本</th><th className="battery-price-mini">售价</th><th className="battery-price-mini">毛利</th></>
+                : <th className="battery-price-mini battery-price-group-start">售价</th>}</Fragment>)}</tr>
             </thead>
             <tbody>
               {capacities.map((capacity) => <tr key={capacity}>
@@ -339,9 +340,10 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
                   const values = comboValues(capacity, combo.packCount, combo.batteryCount);
                   const key = `${combo.packCount}-${combo.batteryCount}-${capacity}`;
                   const copyName = batteryComboName(combo.packCount, capacity, combo.label);
+                  const groupStart = ' battery-price-group-start';
                   return <Fragment key={key}>
-                    {costsVisible && <td className="battery-price-cost">{values ? formatHalf(values.cost) : '—'}</td>}
-                    <td className="battery-price-sale-cell">{values
+                    {costsVisible && <td className={`battery-price-cost${groupStart}`}>{values ? formatHalf(values.cost) : '—'}</td>}
+                    <td className={costsVisible ? 'battery-price-sale-cell' : `battery-price-sale-cell${groupStart}`}>{values
                       ? <button
                         className={`price-calc2-sale${copiedKey === key ? ' is-copied' : ''}`}
                         type="button"

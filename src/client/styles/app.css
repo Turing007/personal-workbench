@@ -4951,10 +4951,6 @@ select {
 .price-calc2-field > span { flex: none; }
 .price-calc2-field .input { width: 104px; }
 .price-calc2-field .price-calc2-charger { flex: 1; min-width: 0; max-width: 148px; height: 30px; font-size: 12px; }
-
-/* 带单位/状态后缀的输入（运费单价 /kg、自动运费标「自动」）。 */
-.price-calc2-unit { display: inline-flex; align-items: center; gap: 4px; }
-.price-calc2-unit em { font-style: normal; font-size: var(--text-2xs); color: var(--color-text-muted); }
 /* 自动/手动切换 + 计费重量提示。 */
 .price-calc2-shipmode { display: flex; align-items: center; gap: 6px; font-size: var(--text-2xs); }
 .price-calc2-shipmode button { border: 1px solid var(--color-border-control); border-radius: var(--radius-control); padding: 2px 9px; background: var(--color-surface); color: var(--color-text-secondary); font: inherit; font-size: var(--text-2xs); cursor: pointer; }
@@ -4982,6 +4978,13 @@ select {
 .battery-price-table { width: 100%; border-collapse: collapse; font-size: var(--text-xs); color: var(--color-text-secondary); }
 .battery-price-table th { padding: 6px 8px; background: var(--color-surface-subtle); font-size: var(--text-2xs); font-weight: var(--weight-semibold); white-space: nowrap; border-bottom: 1px solid var(--color-divider); }
 .battery-price-table th[colspan] { border-left: 1px solid var(--color-divider); text-align: center; }
+/* 套餐组之间的分隔线：每组的首列画一条明显的主色浅线，横向滑动时也能一眼分清
+   5节一电一充 / 5节两电一充 这些组的边界。不用 --color-border/-divider —— 两者
+   只差 0.1 与 0.07 的透明度，肉眼区分不出来，等于白画。组内三列之间仍是细线。 */
+.battery-price-table th.battery-price-group-start,
+.battery-price-table td.battery-price-group-start {
+  border-left: 1px solid var(--color-accent-border);
+}
 .battery-price-table td { padding: 5px 8px; border-top: 1px solid var(--color-divider); text-align: center; white-space: nowrap; }
 .battery-price-table tbody tr:first-child td { border-top: 0; }
 .battery-price-corner { text-align: left; vertical-align: bottom; }
