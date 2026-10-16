@@ -207,6 +207,97 @@ select {
   pointer-events: auto;
 }
 
+/* 搜索历史幕布：聚焦搜索框时从下方拉出，关键词以胶囊排布，点一下即搜。
+   绝对定位在搜索框下方，宽度随搜索框（窄屏也不会溢出屏幕）。 */
+.search-history-curtain {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 7px;
+  padding: 10px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .13);
+}
+
+.search-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: var(--text-2xs);
+}
+
+.search-history-clear {
+  border: 0;
+  padding: 0;
+  color: var(--color-text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+
+.search-history-clear:hover { color: var(--tone-danger-text); }
+
+.search-history-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 胶囊 = 主按钮（点击即搜）+ 尾部小叉（删这一条）。整体描边，内部两块无边框。 */
+.search-history-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border: 1px solid var(--color-accent-border);
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+  color: var(--tone-accent-text);
+  overflow: hidden;
+}
+
+.search-history-chip-main {
+  max-width: 180px;
+  overflow: hidden;
+  border: 0;
+  padding: 4px 3px 4px 11px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.search-history-chip-main:hover { background: var(--color-accent-border); }
+
+.search-history-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  margin-right: 3px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  opacity: .55;
+}
+
+.search-history-chip-remove:hover { opacity: 1; background: var(--color-accent-border); }
+
 .button {
   display: inline-flex;
   align-items: center;

@@ -218,7 +218,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
 
   return <div className="page-shell products-page">
     <div className="page-toolbar">
-      <SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="按品名、SKU、供应商、分类筛选" />
+      <SearchInput value={query} onChange={setQuery} history className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="按品名、SKU、供应商、分类筛选" />
       <select aria-label="产品状态筛选" className="toolbar-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}>
         {statusFilterLabels.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
