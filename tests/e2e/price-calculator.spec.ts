@@ -44,8 +44,10 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     multipart: { file: { name: 'e2e-calc.png', mimeType: 'image/png', buffer: PNG_1X1 } },
   })).ok()).toBe(true);
   expect((await page.request.put('/api/settings/charger-prices', { data: { items: [{ name: 'E2E小线充', price: 2 }, { name: 'E2E大座充', price: 5 }] } })).ok()).toBe(true);
-  // 1500 × 10 节故意留空：矩阵里没定价的格子显示 —。
-  expect((await page.request.put('/api/settings/battery-price-matrix', { data: { capacities: [1300, 1500], packCounts: [5, 10], prices: [[8, 14], [9, 0]] } })).ok()).toBe(true);
+  // 4 容量 × 4 节数（每节数还有两种成套口径）在桌面宽度下也会横向溢出 ——
+  // 「电池容量」列固定在左侧的断言需要真实溢出才验得到。
+  // 只有 5 节两档定了价：1500 行以下的 10/15/20 节全是空格，用来验「—」占位。
+  expect((await page.request.put('/api/settings/battery-price-matrix', { data: { capacities: [1300, 1500, 1800, 2000], packCounts: [5, 10, 15, 20], prices: [[8, 14, 0, 0], [9, 0, 0, 0], [10, 15, 0, 0], [11, 16, 0, 0]] } })).ok()).toBe(true);
 
   try {
     await page.goto('/');
@@ -78,8 +80,24 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     // 含电池套装也显示毛利：5节一电一充 128.66 − 111.88 = 16.78 → 17。
     const firstCombo = dialog.locator('.battery-price-table tbody tr', { hasText: '1300mAh' }).first();
     await expect(firstCombo.locator('.battery-price-profit').first()).toHaveText('17');
-    // 1500 × 10 节没定价：一电一充/两电一充两列的成本/售价/毛利共 6 格都显示 —。
-    await expect(dialog.locator('.battery-price-table tbody tr', { hasText: '1500mAh' }).locator('td', { hasText: '—' })).toHaveCount(6);
+    // 1500 行只有 5 节两档定了价；10/15/20 节共 6 个组合没定价，每组成本/售价/毛利 3 格都是 —，合计 18 格。
+    await expect(dialog.locator('.battery-price-table tbody tr', { hasText: '1500mAh' }).locator('td', { hasText: '—' })).toHaveCount(18);
+
+    // 「电池容量」列在桌面端也固定：表格横向溢出时滑到最右，该列左边缘仍贴着容器。
+    // e2e 默认 1280px 宽（桌面），正是要覆盖的场景 —— 这条断言以前没有，导致
+    // 桌面端不固定的问题一直没被测试发现。
+    const matrixScroll = dialog.locator('.price-calc2-scroll');
+    const capacityCell = dialog.locator('.battery-price-capacity').first();
+    await expect(capacityCell).toHaveCSS('position', 'sticky');
+    const overflow = await matrixScroll.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+    expect(overflow.scrollWidth).toBeGreaterThan(overflow.clientWidth);
+    await matrixScroll.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
+    const pinned = await matrixScroll.evaluate((el) => {
+      const cell = el.querySelector('.battery-price-capacity') as HTMLElement;
+      return { cellLeft: Math.round(cell.getBoundingClientRect().left), containerLeft: Math.round(el.getBoundingClientRect().left) };
+    });
+    expect(Math.abs(pinned.cellLeft - pinned.containerLeft)).toBeLessThanOrEqual(2);
+    await matrixScroll.evaluate((el) => { el.scrollLeft = 0; });
 
     // 切充电器到大座充 ¥5：5节1300一电一充 → (100+1.88+8+5)×1.15 = 132.11 → 132。
     await dialog.getByLabel('充电器').selectOption({ label: 'E2E大座充 ¥5' });
