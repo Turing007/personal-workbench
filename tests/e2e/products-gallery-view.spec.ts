@@ -213,6 +213,34 @@ test.describe('手机端', () => {
     expect(rect.top).toBeGreaterThanOrEqual(0);
     expect(rect.bottom).toBeLessThanOrEqual(rect.viewportHeight);
   });
+
+  test('App 内幕布打开时暂停下拉刷新，关闭后恢复', async ({ page }) => {
+    // 模拟安卓壳：记录 setOverlayOpen 的调用序列。壳的下拉刷新只看整页是否在顶部，
+    // 幕布内部滚到边界后再往下滑会被当成刷新页面抢走——幕布打开期间必须让壳暂停。
+    await page.addInitScript(() => {
+      const calls: boolean[] = [];
+      (window as unknown as { __overlayCalls: boolean[] }).__overlayCalls = calls;
+      (window as unknown as { workbenchApp: unknown }).workbenchApp = {
+        getNetworks: () => '[]',
+        switchNetwork: () => undefined,
+        openAddressEditor: () => undefined,
+        setOverlayOpen: (open: boolean) => { calls.push(open); },
+      };
+    });
+    await openProducts(page, true);
+
+    const overlayCalls = () => page.evaluate(() => (window as unknown as { __overlayCalls: boolean[] }).__overlayCalls);
+    // 进产品库的过程中「更多模块」抽屉开合也会走同一个开关，先清掉这段历史。
+    await page.evaluate(() => { (window as unknown as { __overlayCalls: boolean[] }).__overlayCalls.length = 0; });
+
+    await categoryTrigger(page).click();
+    await expect(page.locator('.category-filter-curtain')).toBeVisible();
+    expect(await overlayCalls()).toEqual([true]);
+
+    await page.locator('.category-filter-curtain .category-chip').first().click();
+    await expect(page.locator('.category-filter-curtain')).toHaveCount(0);
+    expect(await overlayCalls()).toEqual([true, false]);
+  });
 });
 
 test('大图卡片：点图片开图片浏览，点名称或 SKU 才开产品详情', async ({ page }) => {

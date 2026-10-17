@@ -2,7 +2,7 @@ import { X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useEffect, useRef } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { notifyOverlayOpen } from '../app-bridge';
+import { holdOverlayOpen } from '../app-bridge';
 import { registerCloseLayer, unregisterCloseLayer } from '../navigation-history';
 
 export interface ModalProps {
@@ -24,13 +24,15 @@ export interface ModalProps {
 /** 打开着的弹窗数量：只有第一个负责锁页面滚动，最后一个关掉时才还原。 */
 const openModalIds = new Set<symbol>();
 let previousBodyOverflow: string | null = null;
+/** 释放「App 暂停下拉刷新」的句柄；计数在 app-bridge 里，多个覆盖层互不干扰。 */
+let releaseSwipeRefreshHold: (() => void) | null = null;
 
 function registerModal(id: symbol) {
   if (!openModalIds.size) {
     previousBodyOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     // 弹窗打开期间让 App 暂停下拉刷新，否则弹窗内的下滑会被当成刷新页面。
-    notifyOverlayOpen(true);
+    releaseSwipeRefreshHold = holdOverlayOpen();
   }
   openModalIds.add(id);
 }
@@ -40,7 +42,8 @@ function unregisterModal(id: symbol) {
   if (openModalIds.size) return;
   document.body.style.overflow = previousBodyOverflow ?? '';
   previousBodyOverflow = null;
-  notifyOverlayOpen(false);
+  releaseSwipeRefreshHold?.();
+  releaseSwipeRefreshHold = null;
 }
 
 export default function Modal({ open, title, children, onClose, width = 760, footer, layer = 20, variant = 'dialog', drawerSide = 'right', className }: ModalProps) {

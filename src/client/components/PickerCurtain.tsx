@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
+import { holdOverlayOpen } from '../app-bridge';
 
 export interface PickerCurtainProps {
   open: boolean;
@@ -95,6 +96,14 @@ export default function PickerCurtain({ open, onClose, anchorRef, matchAnchorWid
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [open, onClose]);
+
+  // App 内暂停下拉刷新：壳只看整页是否在顶部，看不到幕布内部的滚动区，
+  // 否则手指在幕布上往下滑会被壳当成下拉刷新抢走（幕布滑不动、滚到底往回滑直接刷页面）。
+  // 与弹窗共用同一个计数开关，幕布关掉才释放。
+  useEffect(() => {
+    if (!open) return;
+    return holdOverlayOpen();
+  }, [open]);
 
   // 横向夹取：面板（尤其宽面板）按 CSS 的 right:0 对齐后可能超出屏幕。
   // 桌面端触发器居中、两边有余量，right:0 正好；手机端触发器靠左，面板比它宽得多，

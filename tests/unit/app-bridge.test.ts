@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { canPickFilesNatively, nativeFileToFile, pickFilesNatively, startUploadKeepAlive, stopUploadKeepAlive, updateUploadKeepAlive } from '../../src/client/app-bridge';
+import { canPickFilesNatively, holdOverlayOpen, nativeFileToFile, pickFilesNatively, startUploadKeepAlive, stopUploadKeepAlive, updateUploadKeepAlive } from '../../src/client/app-bridge';
 
 /** 1×1 PNG，68 字节。 */
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
@@ -237,5 +237,40 @@ describe('原生选文件桥（App 内上传通路）', () => {
     const files = await pickFilesNatively(['.mp4'], true, 5)!;
     expect(files.map((file) => file.name)).toEqual(['好的.mp4']);
     expect(files[0].size).toBe(2);
+  });
+});
+
+describe('覆盖层暂停 App 下拉刷新（弹窗 / 抽屉 / 幕布共用）', () => {
+  it('计数式：两层同时打开，先关掉一层不会提前恢复刷新', () => {
+    const calls: boolean[] = [];
+    installWindow({ workbenchApp: { setOverlayOpen: (open: boolean) => calls.push(open) } });
+
+    const releaseModal = holdOverlayOpen();
+    const releaseCurtain = holdOverlayOpen();
+    expect(calls).toEqual([true]);
+
+    releaseCurtain();
+    expect(calls).toEqual([true]); // 弹窗还开着，不能放开
+
+    releaseModal();
+    expect(calls).toEqual([true, false]);
+  });
+
+  it('重复调用同一个释放函数不会把计数减穿', () => {
+    const calls: boolean[] = [];
+    installWindow({ workbenchApp: { setOverlayOpen: (open: boolean) => calls.push(open) } });
+
+    const releaseA = holdOverlayOpen();
+    const releaseB = holdOverlayOpen();
+    releaseA();
+    releaseA(); // 重复释放忽略
+    expect(calls).toEqual([true]);
+    releaseB();
+    expect(calls).toEqual([true, false]);
+  });
+
+  it('浏览器环境（没有桥）不抛异常', () => {
+    installWindow({});
+    expect(() => holdOverlayOpen()()).not.toThrow();
   });
 });

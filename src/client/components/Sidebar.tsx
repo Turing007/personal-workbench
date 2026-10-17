@@ -1,6 +1,6 @@
 import { ChevronRight, Menu, X, LogOut } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { notifyOverlayOpen } from '../app-bridge';
+import { holdOverlayOpen } from '../app-bridge';
 import { navigationItems, type NavigationItem, type NavigationKey } from '../navigation';
 
 export type { NavigationKey };
@@ -44,10 +44,10 @@ export default function Sidebar({ activeKey, onNavigate, collapsed = false, comp
     if (!mobileOpen) return undefined;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    notifyOverlayOpen(true);
+    const release = holdOverlayOpen();
     return () => {
       document.body.style.overflow = previousOverflow ?? '';
-      notifyOverlayOpen(false);
+      release();
     };
   }, [mobileOpen]);
   const navigate = (key: NavigationKey) => {

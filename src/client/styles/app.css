@@ -6294,10 +6294,13 @@ select {
   .product-images-thumbnails {
     overscroll-behavior-x: contain;
   }
+  /* 宽幕布是幕布里唯一会滚的：滚到底继续拖时别把滚动接力给整页，
+     否则手机浏览器会把它当成整页下拉（App 里另有原生开关暂停下拉刷新）。 */
   .sidebar,
   .modal-body,
   .customer-list-scroll,
-  .product-parameters-modal-value {
+  .product-parameters-modal-value,
+  .picker-curtain.is-wide {
     overscroll-behavior-y: contain;
   }
 

@@ -130,16 +130,36 @@ export function registerFileSaveFailureHandler(handler: FileSaveFailureHandler):
 }
 
 /**
- * 通知 App 是否有弹窗打开。
- * 弹窗内部是独立滚动容器（文档本身不滚动），若不禁用下拉刷新，弹窗里的下滑手势
- * 会被当成「刷新页面」抢走，表现为弹窗内容滑不动。
+ * 覆盖层（弹窗 / 抽屉 / 幕布）打开期间暂停 App 的下拉刷新。
+ * 壳只看整页是否在顶部，看不到弹窗或幕布内部的滚动区；不暂停的话，内部往下滑
+ * 会被壳当成下拉刷新抢走，表现为内容滑不动、反而刷新了页面。
+ *
+ * 用计数而不是布尔：可能同时有多个覆盖层（幕布上面再开弹窗），
+ * 先关掉的那个不能把仍在打开的那个的保护一并撤掉。返回释放函数，可安全重复调用。
  */
-export function notifyOverlayOpen(open: boolean): void {
-  try {
-    getAppBridge()?.setOverlayOpen?.(open);
-  } catch {
-    /* 旧版本 App 没有该方法时忽略 */
+let overlayHoldCount = 0;
+
+export function holdOverlayOpen(): () => void {
+  overlayHoldCount += 1;
+  if (overlayHoldCount === 1) {
+    try {
+      getAppBridge()?.setOverlayOpen?.(true);
+    } catch {
+      /* 旧版本 App 没有该方法时忽略 */
+    }
   }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    overlayHoldCount = Math.max(0, overlayHoldCount - 1);
+    if (overlayHoldCount > 0) return;
+    try {
+      getAppBridge()?.setOverlayOpen?.(false);
+    } catch {
+      /* 旧版本 App 没有该方法时忽略 */
+    }
+  };
 }
 
 /** 当前是否跑在自带原生选文件能力的安卓壳里（1.12 起）。 */
