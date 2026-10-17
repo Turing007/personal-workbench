@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 
 export interface PickerCurtainProps {
@@ -24,6 +24,9 @@ export interface PickerCurtainProps {
 
 /** 位移超过这个值就按「滚动/拖拽」处理，不当作点击。 */
 const TAP_SLOP_PX = 10;
+
+/** 横向夹取时与屏幕边缘保留的间距（px）。 */
+const EDGE_GAP = 12;
 
 /**
  * 下拉幕布：点触发器后从下方拉出一块面板（不是原生 select / 列表式下拉），
@@ -92,6 +95,30 @@ export default function PickerCurtain({ open, onClose, anchorRef, matchAnchorWid
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [open, onClose]);
+
+  // 横向夹取：面板（尤其宽面板）按 CSS 的 right:0 对齐后可能超出屏幕。
+  // 桌面端触发器居中、两边有余量，right:0 正好；手机端触发器靠左，面板比它宽得多，
+  // 右缘对齐就把左半截推出屏幕（实测 531px 视口下左边缘到 -329px）。
+  // 用 transform 整体平移夹进视口（左右各留 EDGE_GAP），不改 left/right ——
+  // 三种幕布变体（left:0 / right:0 / 跟随锚点宽）的定位模型都保持原样。
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const curtain = curtainRef.current;
+      if (!curtain) return;
+      curtain.style.transform = '';
+      const rect = curtain.getBoundingClientRect();
+      const maxRight = window.innerWidth - EDGE_GAP;
+      let shift = 0;
+      if (rect.right > maxRight) shift = maxRight - rect.right;
+      if (rect.left + shift < EDGE_GAP) shift += EDGE_GAP - (rect.left + shift);
+      // shift 为 0（桌面端）时不动，行为与之前完全一致。
+      curtain.style.transform = shift ? `translateX(${Math.round(shift)}px)` : '';
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [open, anchorRef]);
 
   if (!open) return null;
   return <div

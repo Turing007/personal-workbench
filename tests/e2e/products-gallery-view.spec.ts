@@ -194,6 +194,25 @@ test.describe('手机端', () => {
     await page.getByRole('dialog').locator('.modal-close').click();
     await expect(card(page, uncategorized.sku)).toHaveCount(1);
   });
+
+  test('分类幕布完整落在视口内（横向不越界）', async ({ page }) => {
+    await openProducts(page, true);
+    await categoryTrigger(page).click();
+    const curtain = page.locator('.category-filter-curtain');
+    await expect(curtain).toBeVisible();
+
+    // 宽面板按「右缘贴触发器」定位：手机端触发器靠左、面板比它宽得多，
+    // 会把左半截推出屏幕（曾在 531px 视口实测左边缘 -329px）。
+    // 断言面板矩形完整落在视口内，横向与纵向都查。
+    const rect = await curtain.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight };
+    });
+    expect(rect.left).toBeGreaterThanOrEqual(0);
+    expect(rect.right).toBeLessThanOrEqual(rect.viewportWidth);
+    expect(rect.top).toBeGreaterThanOrEqual(0);
+    expect(rect.bottom).toBeLessThanOrEqual(rect.viewportHeight);
+  });
 });
 
 test('大图卡片：点图片开图片浏览，点名称或 SKU 才开产品详情', async ({ page }) => {
