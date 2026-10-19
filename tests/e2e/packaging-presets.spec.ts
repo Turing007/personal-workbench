@@ -115,7 +115,7 @@ test('桌面端：管理预设跳转设置页，改名保存后编辑器卡片�
     await dialog.locator('.packaging-preset-manage').click();
 
     const section = page.locator('.settings-section');
-    await expect(section).toContainText('包装预设');
+    await expect(section).toContainText('包装管理');
     await expect(section.locator('.packaging-preset-form-row')).toHaveCount(1);
 
     // 表头与数据行是两个独立 grid，最后一列一旦写 auto，两边 fr 宽度就会错开、整排表头跑偏。
@@ -125,10 +125,11 @@ test('桌面端：管理预设跳转设置页，改名保存后编辑器卡片�
       const row = xs('.packaging-preset-form-row');
       return head.map((x, index) => (row[index] ?? 0) - x);
     });
-    expect(drift).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(drift).toHaveLength(7);
+    expect(drift.every((offset) => offset === 0)).toBe(true);
 
     const renamed = 'E2E改过的包装';
-    await section.locator('input[aria-label="预设1包装名称"]').fill(renamed);
+    await section.locator('input[aria-label="包装1包装名称"]').fill(renamed);
     await expect(section.locator('.packaging-preset-dirty')).toBeVisible();
     await section.locator('.packaging-preset-form-footer button.button-primary').click();
     await expect(section.locator('.notice-success')).toContainText('已保存');
