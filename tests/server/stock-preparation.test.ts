@@ -281,12 +281,14 @@ describe('备货表接口', () => {
       payload: { name: '另一手工产品', specification: '', sku: '', packCount: null, finalPriceCents: null },
     });
     const anotherId = Number(another.json().data.id);
-    const conflict = await authInject(app, {
+    // 同一系统 SKU 允许多条客户产品匹配（不同规格各一条），不再报冲突。
+    const secondLink = await authInject(app, {
       method: 'POST',
       url: `/api/customer-products/${anotherId}/link`,
       payload: { systemProductId: secondSystemProductId, supplierProductName: '' },
     });
-    expect(conflict.statusCode).toBe(409);
+    expect(secondLink.statusCode).toBe(200);
+    expect(secondLink.json().data).toMatchObject({ systemProductId: secondSystemProductId });
 
     const missingProduct = await authInject(app, {
       method: 'POST',

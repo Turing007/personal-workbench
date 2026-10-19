@@ -203,7 +203,8 @@ export class QuotationCustomerProductSyncService {
 
   private findExisting(customerId: number, item: SyncItemInput): CustomerProduct | undefined {
     return item.productId != null
-      ? this.customerProductRepository.findBySystemProduct(customerId, item.productId)
+      // 同一系统产品可能对应客户的多条规格：先按规格精确找，找不到再退回最近更新的一条。
+      ? this.customerProductRepository.findBySystemProduct(customerId, item.productId, item.specification)
       : this.customerProductRepository.findTemporary(customerId, item.name, item.specification);
   }
 

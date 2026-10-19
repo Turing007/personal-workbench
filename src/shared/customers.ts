@@ -48,6 +48,8 @@ export interface CustomerProduct {
   completionStatus: CustomerProductCompletionStatus;
   sourceQuotationId: number | null;
   imageRelativePath: string | null;
+  /** 图片是否为本产品自有：false 表示当前显示的是系统产品首图（只借用、删除不影响系统图）。 */
+  imageOwned: boolean;
   lastSyncedAt: string | null;
   createdAt: string;
   updatedAt: string;

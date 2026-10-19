@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 35;
+const CURRENT_SCHEMA_VERSION = 36;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS customer_products (
   packaging_json TEXT NOT NULL DEFAULT '[]',
   source_quotation_id INTEGER REFERENCES quotations(id) ON DELETE SET NULL,
   image_relative_path TEXT,
+  image_cleared INTEGER NOT NULL DEFAULT 0,
   remark TEXT NOT NULL DEFAULT '',
   label_requirement TEXT NOT NULL DEFAULT '',
   instruction_requirement TEXT NOT NULL DEFAULT '',
@@ -828,9 +829,9 @@ function migrateVersionSix(database: DatabaseSync, now: string, preflight: Migra
       ON customers(is_active, name, id);
     CREATE INDEX IF NOT EXISTS idx_customer_products_customer_updated
       ON customer_products(customer_id, updated_at DESC, id DESC);
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_products_system
-      ON customer_products(customer_id, system_product_id)
-      WHERE system_product_id IS NOT NULL;
+    -- 同一系统 SKU 允许多条客户产品匹配（v36 起），这里不再建唯一索引；
+    -- 老库上已存在的由 migrateVersionThirtySix 删除。
+    DROP INDEX IF EXISTS uq_customer_products_system;
     CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_products_temporary
       ON customer_products(customer_id, lower(trim(name)), lower(trim(specification)))
       WHERE system_product_id IS NULL;
@@ -1386,6 +1387,18 @@ function migrateVersionThirtyFive(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '35', now);
 }
 
+/**
+ * 客户产品与系统 SKU 改成多对一：同一个系统产品允许被同一客户的多条客户产品匹配
+ * （系统 SKU 本身有多个规格，客户会按规格各建一条）。
+ * 只删唯一索引，不动数据；临时产品的「品名 + 规格」查重保持不变。
+ */
+function migrateVersionThirtySix(database: DatabaseSync, now: string): void {
+  database.exec('DROP INDEX IF EXISTS uq_customer_products_system');
+  // 图片标记：0 = 没有单独清除（无自有图片时回退系统产品首图），1 = 用户明确删掉了自己的图。
+  addColumnIfMissing(database, 'customer_products', 'image_cleared', 'INTEGER NOT NULL DEFAULT 0');
+  upsertSetting(database, 'schema_version', '36', now);
+}
+
 export function migrateDatabase(database: DatabaseSync): void {
   if (database.isTransaction) {
     throw new Error('Database migration cannot run inside an active transaction');
@@ -1447,6 +1460,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionThirtyThree(transactionDatabase, now);
     migrateVersionThirtyFour(transactionDatabase, now);
     migrateVersionThirtyFive(transactionDatabase, now);
+    migrateVersionThirtySix(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

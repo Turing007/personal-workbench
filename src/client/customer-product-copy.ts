@@ -15,6 +15,7 @@ export function cloneCustomerProductForNew(product: CustomerProduct): CustomerPr
     id: 0,
     systemProductId: null,
     imageRelativePath: null,
+    imageOwned: false,
     latestQuoteCents: null,
     sourceQuotationId: null,
     lastSyncedAt: null,

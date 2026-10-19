@@ -62,7 +62,8 @@ const customerProductSelect = `
     cp.label_requirement,
     cp.source_quotation_id,
     cp.image_relative_path,
-    COALESCE(
+    cp.image_cleared,
+    CASE WHEN cp.image_cleared = 1 THEN NULL ELSE COALESCE(
       NULLIF(trim(cp.image_relative_path), ''),
       (
         SELECT pi.relative_path
@@ -71,7 +72,7 @@ const customerProductSelect = `
         ORDER BY pi.id
         LIMIT 1
       )
-    ) AS resolved_image_relative_path,
+    ) END AS resolved_image_relative_path,
     COALESCE((SELECT json_group_array(json_object(
       'id', cpa.id,
       'customerProductId', cpa.customer_product_id,
@@ -112,6 +113,7 @@ function mapCustomerProduct(row: CustomerProductRow | undefined): CustomerProduc
     imageRelativePath: row.resolved_image_relative_path === null
       ? null
       : String(row.resolved_image_relative_path),
+    imageOwned: typeof row.image_relative_path === 'string' && row.image_relative_path.trim() !== '',
     lastSyncedAt: row.last_synced_at === null ? null : String(row.last_synced_at),
     createdAt: String(row.created_at ?? ''),
     updatedAt: String(row.updated_at ?? ''),
@@ -155,12 +157,28 @@ export class CustomerProductRepository {
     return mapCustomerProduct(row);
   }
 
-  findBySystemProduct(customerId: number, systemProductId: number): CustomerProduct | undefined {
-    const row = this.database.prepare(`
+  /**
+   * 同一个系统产品可以被同一客户的多条客户产品匹配（系统 SKU 有多个规格）。
+   * 给了 specification 时优先取规格一致的那条，报价同步据此避免把别的规格一起改掉。
+   */
+  findBySystemProduct(customerId: number, systemProductId: number, specification?: string): CustomerProduct | undefined {
+    const normalized = specification?.trim();
+    const row = normalized
+      ? this.database.prepare(`
+          ${customerProductSelect}
+          WHERE cp.customer_id = ? AND cp.system_product_id = ?
+            AND lower(trim(cp.specification)) = lower(trim(?))
+          ORDER BY cp.updated_at DESC, cp.id DESC
+          LIMIT 1
+        `).get(customerId, systemProductId, normalized) as CustomerProductRow | undefined
+      : undefined;
+    if (row) return mapCustomerProduct(row);
+    return mapCustomerProduct(this.database.prepare(`
       ${customerProductSelect}
       WHERE cp.customer_id = ? AND cp.system_product_id = ?
-    `).get(customerId, systemProductId) as CustomerProductRow | undefined;
-    return mapCustomerProduct(row);
+      ORDER BY cp.updated_at DESC, cp.id DESC
+      LIMIT 1
+    `).get(customerId, systemProductId) as CustomerProductRow | undefined);
   }
 
   findTemporary(customerId: number, name: string, specification: string): CustomerProduct | undefined {
@@ -241,10 +259,23 @@ export class CustomerProductRepository {
 
   update(id: number, input: CustomerProductSaveInput): CustomerProduct | undefined {
     const existing = this.getById(id);
+    // 读取原始图片列：映射后的 imageRelativePath 可能是系统产品首图的回退值，
+    // 用它回写会把「本来就没有自有图」误记成「存了一张系统图快照」。
+    const rawImage = this.database
+      .prepare('SELECT image_relative_path, image_cleared FROM customer_products WHERE id = ?')
+      .get(id) as { image_relative_path: string | null; image_cleared: number } | undefined;
+    const nextImagePath = input.imageRelativePath === undefined
+      ? rawImage?.image_relative_path ?? null
+      : input.imageRelativePath;
+    // 明确传 null 视为「用户删掉了自有图」：无自有图时不再回退系统产品首图，
+    // 否则删完刷新又冒出来，看起来像删除没生效。
+    const nextImageCleared = input.imageRelativePath === undefined
+      ? Number(rawImage?.image_cleared ?? 0)
+      : input.imageRelativePath === null ? 1 : 0;
     const result = this.database.prepare(`
       UPDATE customer_products
       SET name = ?, supplier_product_name = ?, specification = ?, sku = ?, pack_count = ?, final_price_cents = ?,
-          cost_price_cents = ?, freight_per_box_cents = ?, packaging_json = ?, image_relative_path = ?, remark = ?, label_requirement = ?, updated_at = ?
+          cost_price_cents = ?, freight_per_box_cents = ?, packaging_json = ?, image_relative_path = ?, image_cleared = ?, remark = ?, label_requirement = ?, updated_at = ?
       WHERE id = ?
     `).run(
       input.name,
@@ -256,7 +287,8 @@ export class CustomerProductRepository {
       input.costPriceCents ?? null,
       input.freightPerBoxCents ?? existing?.freightPerBoxCents ?? null,
       JSON.stringify(input.packaging ?? existing?.packaging ?? []),
-      input.imageRelativePath === undefined ? existing?.imageRelativePath ?? null : input.imageRelativePath,
+      nextImagePath,
+      nextImageCleared,
       input.remark ?? existing?.remark ?? '',
       input.labelRequirement ?? existing?.labelRequirement ?? '',
       new Date().toISOString(),
@@ -384,8 +416,8 @@ export class CustomerProductRepository {
 
   setImagePath(id: number, imageRelativePath: string | null): CustomerProduct | undefined {
     const result = this.database.prepare(
-      'UPDATE customer_products SET image_relative_path = ?, updated_at = ? WHERE id = ?',
-    ).run(imageRelativePath, new Date().toISOString(), id);
+      'UPDATE customer_products SET image_relative_path = ?, image_cleared = ?, updated_at = ? WHERE id = ?',
+    ).run(imageRelativePath, imageRelativePath === null ? 1 : 0, new Date().toISOString(), id);
     return result.changes ? this.getById(id) : undefined;
   }
 

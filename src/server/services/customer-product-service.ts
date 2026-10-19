@@ -88,18 +88,13 @@ export class CustomerProductService {
   createFromSystemProduct(customerId: number, systemProductId: unknown): CustomerProduct {
     this.assertActiveCustomer(customerId);
     const normalizedId = normalizePositiveId(systemProductId, 'systemProductId');
-    if (this.repository.findBySystemProduct(customerId, normalizedId)) {
-      throw new CustomerProductExistsError();
-    }
+    // 同一客户可以多次导入同一个系统产品：系统 SKU 有多个规格，客户会按规格各建一条。
     return this.repository.createFromSystemProduct(customerId, normalizedId);
   }
 
   createFromSystemProductWithInput(customerId: number, systemProductId: unknown, input: CustomerProductSaveInput): CustomerProduct {
     this.assertActiveCustomer(customerId);
     const normalizedId = normalizePositiveId(systemProductId, 'systemProductId');
-    if (this.repository.findBySystemProduct(customerId, normalizedId)) {
-      throw new CustomerProductExistsError();
-    }
     const normalized = normalizeInput({ ...input, systemProductId: normalizedId });
     return this.repository.createFromSystemProduct(customerId, normalizedId, normalized);
   }
@@ -166,10 +161,7 @@ export class CustomerProductService {
     }
     const systemProductId = normalizePositiveId(input.systemProductId, 'systemProductId');
     if (!this.systemProductExists(systemProductId)) throw new SystemProductNotFoundError();
-    const mapped = this.repository.findBySystemProduct(existing.customerId, systemProductId);
-    if (mapped && mapped.id !== id) {
-      throw new CustomerProductExistsError('该客户已有其他产品关联此系统产品，请先解除那条关联');
-    }
+    // 允许多条客户产品关联同一个系统产品（不同规格），不再要求先解除旧关联。
     const supplierProductName = input.supplierProductName === undefined || input.supplierProductName === null
       ? ''
       : normalizeText(input.supplierProductName, 'supplierProductName', '供应商产品名称');

@@ -35,6 +35,7 @@ function sampleProduct(overrides: Partial<CustomerProduct> = {}): CustomerProduc
     completionStatus: 'complete',
     sourceQuotationId: 11,
     imageRelativePath: 'customer-product-images/old.webp',
+    imageOwned: true,
     lastSyncedAt: '2026-08-01T00:00:00.000Z',
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt: '2026-08-01T00:00:00.000Z',
@@ -60,6 +61,7 @@ describe('复制客户产品为新建草稿', () => {
     expect(draft.id).not.toBe(42);
     expect(draft.systemProductId).toBeNull();
     expect(draft.imageRelativePath).toBeNull();
+    expect(draft.imageOwned).toBe(false);
     expect(draft.attachments).toHaveLength(0);
     expect(draft.latestQuoteCents).toBeNull();
     expect(draft.sourceQuotationId).toBeNull();

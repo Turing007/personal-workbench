@@ -215,7 +215,7 @@ describe('SQLite database foundation', () => {
     const database = new DatabaseSync(':memory:');
     migrateDatabase(database);
 
-    expect(getSetting(database, 'schema_version')).toBe('35');
+    expect(getSetting(database, 'schema_version')).toBe('36');
     expect(getSetting(database, 'customer_products_v6_initialized')).toBe('1');
     expect(getColumnNames(database, 'customers')).toEqual(expect.arrayContaining([
       'id',
@@ -300,7 +300,7 @@ describe('SQLite database foundation', () => {
     expect(database.prepare('SELECT COUNT(*) AS count FROM orders').get()?.count).toBe(1);
     expect(database.prepare('SELECT status, label_printed_at FROM orders WHERE id = ?').get(orderId)).toMatchObject({ status: 'pending_stock' });
     expect(getSetting(database, 'customer_products_v6_initialized')).toBe('1');
-    expect(getSetting(database, 'schema_version')).toBe('35');
+    expect(getSetting(database, 'schema_version')).toBe('36');
     expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     expect(database
       .prepare('PRAGMA foreign_key_list(order_items)')
@@ -372,7 +372,7 @@ describe('SQLite database foundation', () => {
     migrateDatabase(database);
 
     expect(database.prepare('SELECT COUNT(*) AS count FROM customer_products').get()?.count).toBe(1);
-    expect(getSetting(database, 'schema_version')).toBe('35');
+    expect(getSetting(database, 'schema_version')).toBe('36');
     expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     database.close();
   });
@@ -457,18 +457,18 @@ describe('SQLite database foundation', () => {
         updated_at TEXT NOT NULL
       );
       INSERT INTO settings (key, value, updated_at)
-      VALUES ('schema_version', ' 36 ', '2026-08-11');
+      VALUES ('schema_version', ' 37 ', '2026-08-11');
     `);
     const schemaBefore = database
       .prepare("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")
       .all();
 
-    expect(() => migrateDatabase(database)).toThrow('Unsupported database schema version 36; this application supports up to version 35');
+    expect(() => migrateDatabase(database)).toThrow('Unsupported database schema version 37; this application supports up to version 36');
 
     expect(database
       .prepare("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")
       .all()).toEqual(schemaBefore);
-    expect(getSetting(database, 'schema_version')).toBe(' 36 ');
+    expect(getSetting(database, 'schema_version')).toBe(' 37 ');
     expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'products'").get()).toBeUndefined();
     database.close();
   });
@@ -513,7 +513,7 @@ describe('SQLite database foundation', () => {
     database.close();
   });
 
-  it('enforces customer product uniqueness for system and temporary products', () => {
+  it('allows multiple customer products to match one system SKU, temporary products stay unique', () => {
     const database = new DatabaseSync(':memory:');
     migrateDatabase(database);
     const customerId = insertCustomer(database, '张三');
@@ -531,7 +531,8 @@ describe('SQLite database foundation', () => {
     );
 
     insertSystemProduct.run(customerId, productId);
-    expect(() => insertSystemProduct.run(customerId, productId)).toThrow();
+    // 系统 SKU 有多个规格：同一客户允许多条客户产品匹配同一个系统产品。
+    expect(() => insertSystemProduct.run(customerId, productId)).not.toThrow();
     expect(() => insertSystemProduct.run(otherCustomerId, productId)).not.toThrow();
 
     insertCustomerProduct(database, customerId, '临时电钻', '20V');
@@ -603,7 +604,7 @@ describe('SQLite database foundation', () => {
 
     expect(database.prepare('PRAGMA foreign_keys').get()?.foreign_keys).toBe(1);
     expect(database.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe('wal');
-    expect(database.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()?.value).toBe('35');
+    expect(database.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()?.value).toBe('36');
     expect(getColumnNames(database, 'product_packaging')).toEqual(expect.arrayContaining([
       'inner_size',
       'inner_weight',
@@ -622,7 +623,7 @@ describe('SQLite database foundation', () => {
     expect(productDefault.parameters).toBe('');
 
     migrateDatabase(database);
-    expect(database.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()?.value).toBe('35');
+    expect(database.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()?.value).toBe('36');
 
     const indexNames = database
       .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY name")
@@ -879,7 +880,7 @@ describe('SQLite database foundation', () => {
     migrateDatabase(database);
 
     expect(getColumnNames(database, 'product_images').slice(-2)).toEqual(['category', 'note']);
-    expect(getSetting(database, 'schema_version')).toBe('35');
+    expect(getSetting(database, 'schema_version')).toBe('36');
 
     database.prepare("INSERT INTO products (name, created_at, updated_at) VALUES ('临时代理产品', '2026-01-01', '2026-01-01')").run();
     database
@@ -1115,6 +1116,29 @@ describe('v33：售价方案参数快照', () => {
   });
 });
 
+describe('v36：客户产品与系统 SKU 多对一 + 图片清除标记', () => {
+  it('老库升级后丢弃系统产品唯一索引，临时产品查重保持', () => {
+    const database = new DatabaseSync(':memory:');
+    migrateDatabase(database);
+    const customerId = insertCustomer(database, '张三');
+    const productId = Number(database
+      .prepare("INSERT INTO products (name, created_at, updated_at) VALUES ('系统电钻', '2026-08-11', '2026-08-11')")
+      .run().lastInsertRowid);
+    const insertSystemProduct = database.prepare(
+      `INSERT INTO customer_products
+        (customer_id, system_product_id, name, specification, created_at, updated_at)
+       VALUES (?, ?, '系统电钻', '20V', '2026-08-11', '2026-08-11')`,
+    );
+    insertSystemProduct.run(customerId, productId);
+    expect(() => insertSystemProduct.run(customerId, productId)).not.toThrow();
+    // 列已补上，存量行默认 0（继续允许回退系统首图）。
+    const columns = database.prepare('PRAGMA table_info(customer_products)').all() as Array<{ name: string; dflt_value: string | null }>;
+    expect(columns.find((column) => column.name === 'image_cleared')?.dflt_value).toBe('0');
+    expect(database.prepare('SELECT image_cleared FROM customer_products LIMIT 1').get()?.image_cleared).toBe(0);
+    database.close();
+  });
+});
+
 describe('v35：电池插脚名称统一为缩写', () => {
   function insertProduct(database: DatabaseSync, name: string, plugs: string[]) {
     database
@@ -1145,7 +1169,7 @@ describe('v35：电池插脚名称统一为缩写', () => {
     expect(plugsOf(database, '空值')).toEqual([]);
     const presets = JSON.parse(String(database.prepare("SELECT value FROM settings WHERE key = 'product_option_presets'").get()?.value));
     expect(presets).toEqual({ colors: ['蓝'], plugs: ['MT', 'MI', 'DE'] });
-    expect(getSetting(database, 'schema_version')).toBe('35');
+    expect(getSetting(database, 'schema_version')).toBe('36');
     database.close();
   });
 

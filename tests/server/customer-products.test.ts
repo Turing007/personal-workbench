@@ -209,7 +209,7 @@ describe('按客户维护的产品 API', () => {
     expect(duplicate.json().error.code).toBe('CUSTOMER_PRODUCT_EXISTS');
   });
 
-  it('每个客户只能导入同一系统产品一次，并复制产品快照后允许编辑客户字段', async () => {
+  it('同一客户可多次导入同一系统产品（按规格各建一条），并复制产品快照后允许编辑客户字段', async () => {
     const { app, database } = await testApp();
     const customer = await createCustomer(app, '张三');
     const otherCustomer = await createCustomer(app, '李四');
@@ -238,13 +238,14 @@ describe('按客户维护的产品 API', () => {
     });
     expect(first.json().data.packaging).toHaveLength(2);
 
-    const duplicate = await authInject(app, {
+    const second = await authInject(app, {
       method: 'POST',
       url: `/api/customers/${customer.id}/products/from-library`,
       payload: { systemProductId },
     });
-    expect(duplicate.statusCode).toBe(409);
-    expect(duplicate.json().error.code).toBe('CUSTOMER_PRODUCT_EXISTS');
+    expect(second.statusCode).toBe(201);
+    expect(second.json().data).toMatchObject({ systemProductId });
+    expect(second.json().data.id).not.toBe(first.json().data.id);
     expect((await authInject(app, {
       method: 'POST',
       url: `/api/customers/${otherCustomer.id}/products/from-library`,
@@ -506,9 +507,19 @@ describe('按客户维护的产品 API', () => {
       payload: productInput('无刷电钻', '20V', { imageRelativePath: null }),
     });
     expect(cleared.statusCode).toBe(200);
-    expect(cleared.json().data.imageRelativePath).toBe('products/second.png');
+    // 用户删掉自有图后不能再回退系统产品首图，否则删完刷新又冒出来。
+    expect(cleared.json().data.imageRelativePath).toBeNull();
     await expect(fileStore.readFile(secondPath)).rejects.toThrow();
     await expect(readFile(join(directory, 'files', 'products', 'second.png'))).resolves.toEqual(Buffer.from('system'));
+
+    // 重新上传后又能显示自己的图（清除标记被重置）。
+    const again = await authInject(app, {
+      method: 'POST',
+      url: `/api/customer-products/${customerProductId}/images`,
+      ...multipartImage('again.png', Buffer.from('again')),
+    });
+    expect(again.statusCode).toBe(201);
+    expect(again.json().data.imageRelativePath).toMatch(/^customer-product-images\//);
 
     const temporary = await createCustomerProduct(app, customer.id, productInput('临时图片产品', '标准'));
     const uploaded = await authInject(app, {
