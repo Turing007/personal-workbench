@@ -12,6 +12,7 @@ import type { UploadFileSnapshot } from '../product-upload-queue';
 import { packagingDisplay } from '../packaging-display';
 import { groupPurchaseQuotesBySupplier, purchaseQuoteLabel } from '../../shared/product-purchase-quotes';
 import { copyText } from '../copy-text';
+import { saveFileOrDownload } from '../file-save';
 import { thumbUrl } from '../image-urls';
 import {
   PRODUCT_IMAGE_CATEGORY_LABELS,
@@ -62,9 +63,12 @@ function DetailItem({ label, children, fullWidth = false }: { label: string; chi
 
 export default function ProductDetailModal({ open, product, showSensitive = false, pendingImages = [], onClose, onOpenImages, onOpenCalculator, onUpdateSaleStatus, onDelete }: ProductDetailModalProps) {
   const [copied, setCopied] = useState(false);
+  const [copiedSku, setCopiedSku] = useState(false);
   const [copiedPackagingId, setCopiedPackagingId] = useState<string>();
   const [packagingImages, setPackagingImages] = useState<{ name: string; images: ProductRecord['packaging'][number]['images'] }>();
   const [playingVideo, setPlayingVideo] = useState<ProductVideo>();
+  const [downloadingVideoId, setDownloadingVideoId] = useState<string>();
+  const [videoMessage, setVideoMessage] = useState('');
   const [categoryAccessories, setCategoryAccessories] = useState<AccessoryPrice[]>([]);
   const detailCategory = (product?.category ?? '').trim();
   // 配件清单：产品自己保存过（含删空）就以它为准；没保存过的沿用类目默认（老产品显示不变）。
@@ -104,6 +108,30 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
   };
+  /** SKU 一键复制：只在有 SKU 时出现，复制成功后短暂显示勾选。 */
+  const copySku = async () => {
+    if (!product?.sku || !await copyText(product.sku)) return;
+    setCopiedSku(true);
+    window.setTimeout(() => setCopiedSku(false), 1600);
+  };
+  /** 视频下载：App 内交给原生落盘，浏览器走 blob 下载。 */
+  const downloadVideo = async (video: ProductVideo) => {
+    if (downloadingVideoId) return;
+    setDownloadingVideoId(video.id);
+    setVideoMessage('');
+    try {
+      const response = await fetch(video.url);
+      if (!response.ok) throw new Error('视频读取失败');
+      const blob = await response.blob();
+      const name = (video.name || '产品视频').replace(/[\\/:*?"<>|]+/g, '_');
+      await saveFileOrDownload(blob, /\.[a-z0-9]+$/i.test(name) ? name : `${name}.mp4`);
+      setVideoMessage('已开始下载视频');
+    } catch {
+      setVideoMessage('视频下载失败，请在新标签打开后保存');
+    } finally {
+      setDownloadingVideoId(undefined);
+    }
+  };
 
   // 停售与删除只放在详情弹窗里：列表点开的概率高，误操作的机会也多。
   const detailTitle = product.name || product.sku || '未命名产品';
@@ -133,7 +161,12 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
     <Modal open={open} className="product-detail-modal" title={`产品详情 · ${product.sku || product.name || '未命名产品'}`} onClose={onClose} width={760} footer={footer}>
       <div className="product-detail-content">
         <div className="product-detail-grid kv-grid">
-          <DetailItem label="SKU"><span className="product-detail-emphasis kv-value is-accent">{product.sku || '—'}</span></DetailItem>
+          <DetailItem label="SKU">
+            <span className="product-detail-sku">
+              <span className="product-detail-emphasis kv-value is-accent">{product.sku || '—'}</span>
+              {product.sku && <button className="icon-button product-sku-copy-button" type="button" aria-label="复制 SKU" title={copiedSku ? '已复制 SKU' : '复制 SKU'} onClick={() => void copySku()}>{copiedSku ? <Check size={13} /> : <Copy size={13} />}</button>}
+            </span>
+          </DetailItem>
           <DetailItem label="品名">{product.name || '—'}</DetailItem>
           <DetailItem label="颜色">{product.colors.join('、') || '—'}</DetailItem>
           <DetailItem label="插脚">{product.batteryPlugs.join('、') || '—'}</DetailItem>
@@ -177,8 +210,10 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
                 <span className="product-video-name" title={video.name}>{video.name}</span>
                 <span className="product-video-size">{formatFileSize(video.size)}</span>
                 <button type="button" className="icon-button" title="播放视频" aria-label={`播放 ${video.name}`} onClick={() => setPlayingVideo(video)}><Play size={14} /></button>
+                <button type="button" className="icon-button" title="下载视频" aria-label={`下载 ${video.name}`} disabled={downloadingVideoId === video.id} onClick={() => void downloadVideo(video)}><Download size={14} /></button>
               </div>
             ))}</div> : <div className="product-detail-muted">暂无视频</div>}
+            {!!videoMessage && <div className="product-detail-video-message" role="status">{videoMessage}</div>}
           </DetailItem>
           <DetailItem label="参数" fullWidth>
             <div className="product-detail-parameter-wrap">

@@ -54,15 +54,24 @@ test('产品视频：添加、可移除，保存后上传，详情里能打开�
     return (body.data?.videos ?? []).length;
   }, { timeout: 40_000 }).toBe(1);
 
-  // 卡片带「视频 1」标记；打开详情能点播放
+  // 图片上不再压视频角标（会挡住产品图）；「视频 1」标记留在详情入口那一行。
   await page.locator('.search-control input').fill(name);
   await expect(page.locator('.product-gallery-card')).toHaveCount(1);
+  await expect(page.locator('.product-gallery-card .product-video-badge')).toHaveCount(0);
   await expect(page.locator('.product-gallery-card .badge', { hasText: '视频 1' })).toBeVisible();
 
+  // 视频的播放与下载都在产品详情里。
   await page.locator('.product-gallery-card .product-gallery-open').click();
   const detail = page.getByRole('dialog');
   const videoRow = detail.locator('.product-video-row').first();
   await expect(videoRow).toContainText('测试视频.mp4');
+
+  const downloadPromise = page.waitForEvent('download');
+  await videoRow.getByRole('button', { name: /下载/ }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe('测试视频.mp4');
+  await expect(detail.locator('.product-detail-video-message')).toContainText('已开始下载视频');
+
   await videoRow.getByRole('button', { name: /播放/ }).click();
   await expect(page.locator('video.video-player')).toBeVisible();
 });

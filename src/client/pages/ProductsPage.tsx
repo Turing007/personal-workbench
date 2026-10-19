@@ -115,6 +115,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
   const detailProduct = detailProductId ? products.find((item) => String(item.id) === detailProductId) : undefined;
   const imagesProduct = imagesProductId ? products.find((item) => String(item.id) === imagesProductId) : undefined;
   const [copiedPackagingId, setCopiedPackagingId] = useState<string>();
+  const [copiedSkuId, setCopiedSkuId] = useState<string>();
   const [expandedPackagingId, setExpandedPackagingId] = useState<string>();
   const [parametersProduct, setParametersProduct] = useState<ProductRecord>();
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -205,6 +206,13 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
     try { await onRefresh(); } finally { setRefreshing(false); }
   };
 
+  /** SKU 一键复制：复制成功后按钮短暂变成勾选，不弹 toast 打断浏览。 */
+  const copySku = async (product: ProductRecord) => {
+    if (!product.sku || !await copyText(product.sku)) return;
+    setCopiedSkuId(String(product.id));
+    window.setTimeout(() => setCopiedSkuId((current) => current === String(product.id) ? undefined : current), 1600);
+  };
+
   const copyPackaging = async (item: ProductRecord['packaging'][number]) => {
     const display = packagingDisplay(item);
     const text = [
@@ -263,7 +271,8 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
         {visible.map((product) => {
           const pending = pendingImagesFor(product);
           return <div className="product-gallery-card" key={product.id}>
-          {/* 图片看图片、名称和 SKU 看详情：两件事分开，大图模式下想直接看图就不用先开弹窗再点图片。 */}
+          {/* 图片看图片、名称和 SKU 看详情：两件事分开，大图模式下想直接看图就不用先开弹窗再点图片。
+              视频入口只在产品详情里，列表缩略图上不再压角标（会挡住产品图）。 */}
           {product.images.length
             ? <button className="product-gallery-image-button" type="button" onClick={() => setImagesProductId(String(product.id))} title="查看全部图片"><span className="product-gallery-image"><img src={thumbUrl(product.images[0].url, 480)} alt={product.images[0].name} loading="lazy" decoding="async" /></span></button>
             : pending.length
@@ -291,7 +300,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
       </div>}
       {view === 'list' && <div className="table-scroll products-table-desktop"><table className="data-table products-data-table"><thead><tr>{['SKU', '图片', '品名', '颜色', '插脚', '参数', '包装信息', '备注', ...(showSensitive ? ['供应商', '价格'] : []), '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
         <tbody>{visible.map((product) => <tr key={product.id}>
-          <td className="strong-cell"><button className="product-sku-button" type="button" onClick={() => setDetailProductId(String(product.id))} title="查看产品详情">{product.sku || '查看详情'}</button></td>
+          <td className="strong-cell"><div className="product-sku-cell"><button className="product-sku-button" type="button" onClick={() => setDetailProductId(String(product.id))} title="查看产品详情">{product.sku || '查看详情'}</button>{product.sku && <button className="icon-button product-sku-copy-button" type="button" aria-label={`复制 SKU ${product.sku}`} title={copiedSkuId === String(product.id) ? '已复制 SKU' : '复制 SKU'} onClick={() => void copySku(product)}>{copiedSkuId === String(product.id) ? <Check size={12} /> : <Copy size={12} />}</button>}</div></td>
           <td>{product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProductId(String(product.id))} title="查看全部图片"><span className="product-image-thumb"><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}</td>
           <td className="product-name-cell"><span className="product-name-text">{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}</span>{statusBadge(product)}{uploadBadge(product, uploadingIds)}</td><td>{product.colors.join('、') || '—'}</td><td>{product.batteryPlugs.join('、') || '—'}</td>
           <td className="product-parameters-cell">{product.parameters?.trim() ? <button className="product-parameters-trigger" type="button" onClick={() => setParametersProduct(product)} title="查看完整参数"><span>查看详情</span><Copy size={13} /></button> : <span>—</span>}</td>
@@ -315,7 +324,10 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
             {product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProductId(String(product.id))} title="查看全部图片"><span className="product-image-thumb"><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}
             <div className="product-card-title">
               <strong>{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}{statusBadge(product)}{uploadBadge(product, uploadingIds)}</strong>
-              <button className="product-sku-button" type="button" onClick={() => setDetailProductId(String(product.id))} title="查看产品详情">{product.sku || '查看详情'}</button>
+              <div className="product-card-sku-row">
+                <button className="product-sku-button" type="button" onClick={() => setDetailProductId(String(product.id))} title="查看产品详情">{product.sku || '查看详情'}</button>
+                {product.sku && <button className="icon-button product-sku-copy-button" type="button" aria-label={`复制 SKU ${product.sku}`} title={copiedSkuId === String(product.id) ? '已复制 SKU' : '复制 SKU'} onClick={() => void copySku(product)}>{copiedSkuId === String(product.id) ? <Check size={12} /> : <Copy size={12} />}</button>}
+              </div>
             </div>
           </div>
           <div className="product-card-grid">

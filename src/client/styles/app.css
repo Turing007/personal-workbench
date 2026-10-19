@@ -1012,6 +1012,47 @@ select {
   text-underline-offset: 3px;
 }
 
+/* SKU 一键复制：贴着 SKU 排，平时低调、悬停才显形，不抢 SKU 本身的点击。 */
+.product-sku-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.product-sku-copy-button {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  color: var(--color-text-muted);
+}
+
+.product-sku-copy-button:hover {
+  color: var(--tone-accent-text);
+}
+
+.product-card-sku-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* 详情弹窗的 SKU 格：值与复制按钮同一行，SKU 过长时只截值、不挤掉按钮。 */
+.product-detail-sku {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.product-detail-sku .product-detail-emphasis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .product-image-button {
   display: inline-flex;
   align-items: center;
@@ -3789,6 +3830,25 @@ select {
   font-size: 11px;
 }
 
+.video-player-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.video-player-message {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.product-detail-video-message {
+  margin-top: 6px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
 .video-player-hint a {
   color: var(--tone-accent-text);
 }
@@ -6444,5 +6504,82 @@ select {
   }
   .finance-stat-grid > :nth-child(n + 4) strong {
     font-size: var(--text-lg);
+  }
+}
+
+/* ===== 手机端列表页密度：去掉多余的一层容器 =====
+   页面 padding → 面板边框/圆角 → 卡片列表 padding → 卡片自身 padding，
+   四层叠下来左右共占约 38px（390px 屏只剩 314px 内容宽），卡片看起来又小又空。
+   卡片本身已有边框和圆角，面板这一层在窄屏就是纯装饰，这里直接把面板放平：
+   卡片列表贴到页面内边距上，只保留「页面留白 + 卡片」两层。 */
+@media (max-width: 900px) {
+  .orders-page > .table-panel,
+  .quotation-page > .table-panel,
+  .sales-documents-page > .table-panel,
+  .products-page > .table-panel,
+  .finance-page > .table-panel,
+  .customer-products-page .customer-products-panel {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .orders-card-list,
+  .quotation-card-list,
+  .sales-doc-card-list,
+  .products-card-list,
+  .customer-product-card-list,
+  .finance-card-list {
+    gap: var(--space-2);
+    padding: 0;
+  }
+
+  /* 卡片自身的留白一并收紧：内容区由 14px 降到 10px，字段行距 10 → 8。 */
+  .order-card,
+  .quotation-card,
+  .sales-doc-card,
+  .product-card,
+  .customer-product-card,
+  .finance-card {
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-radius: 12px;
+  }
+
+  .order-card-grid,
+  .quotation-card-grid,
+  .sales-doc-card-grid,
+  .product-card-grid,
+  .customer-product-card-grid {
+    gap: var(--space-2) var(--space-4);
+  }
+
+  .order-card .row-actions,
+  .quotation-card .row-actions,
+  .sales-doc-card .row-actions,
+  .product-card .row-actions,
+  .customer-product-card .row-actions,
+  .finance-card .row-actions {
+    gap: var(--space-2) var(--space-4);
+    padding-top: var(--space-3);
+  }
+
+  /* 订单/客户产品页工具条原本嵌在面板里，面板放平后同步去掉内边距，和卡片左缘对齐。 */
+  .orders-page .orders-table-toolbar { padding: 4px 0 8px; }
+  .customer-products-page .customer-products-panel .customer-products-header,
+  .customer-products-page .customer-products-panel .customer-products-toolbar {
+    padding: 4px 0 8px;
+    border-bottom: 0;
+  }
+
+  /* 大图浏览原本还有一层 12px 内边距（面板放平后就成了多余的一层），一并去掉，
+     卡片直接落在页面留白上；分页条也去掉底色，不再像另一块面板。 */
+  .products-page .products-gallery { padding: 0; gap: var(--space-3); }
+  .products-page .products-pagination {
+    padding-left: 0;
+    padding-right: 0;
+    border-top-color: var(--color-divider);
+    background: transparent;
   }
 }
