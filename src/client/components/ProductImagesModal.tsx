@@ -1,5 +1,6 @@
 import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Copy, Download, ExternalLink, Folder, Hand, Image as ImageIcon, Upload, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import Modal from './Modal';
 import PendingImageTile from './PendingImageTile';
@@ -128,6 +129,8 @@ export default function ProductImagesModal({ open, productName = '产品', image
   const saveResultRef = useRef({ ok: 0, failed: 0 });
   const saveFailureRef = useRef('');
   const albumBatchRef = useRef(false);
+  /** Shift 连选的起点：最近一次普通点击（非 Shift）的那张；Shift 点击本身不移动它。 */
+  const selectionAnchorRef = useRef<string | null>(null);
 
   /** 记录最近一次失败环节：界面提示用，同时回报到服务端日志。 */
   const noteSaveFailure = (stage: string | undefined, message = '') => {
@@ -201,6 +204,7 @@ export default function ProductImagesModal({ open, productName = '产品', image
     // 上一次未存完的批次跟着作废，否则换了产品还会继续往相册里塞旧图。
     albumBatchRef.current = false;
     saveQueueRef.current = [];
+    selectionAnchorRef.current = null;
     setSavingToAlbum(false);
     setSavingProgress('');
   }, [open, images]);
@@ -216,6 +220,13 @@ export default function ProductImagesModal({ open, productName = '产品', image
   }, [images]);
 
   const visibleImages = images;
+  /** 展示顺序（按分类文件夹分组）：Shift 连选按这个顺序框选，折叠起来的文件夹也参与。 */
+  const orderedImages = useMemo(
+    () => PRODUCT_IMAGE_CATEGORY_SEQUENCE
+      .filter((category) => categoryCounts.has(category))
+      .flatMap((category) => images.filter((image) => normalizeProductImageCategory(image.category) === category)),
+    [images, categoryCounts],
+  );
 
   const selectedImage = visibleImages.find((image) => image.id === previewId) ?? visibleImages[0];
   const previewIndex = selectedImage ? visibleImages.findIndex((image) => image.id === selectedImage.id) : -1;
@@ -270,8 +281,27 @@ export default function ProductImagesModal({ open, productName = '产品', image
     return () => document.removeEventListener('keydown', handleViewerKeyDown, true);
   }, [viewerOpen, selectedImages.length]);
 
-  const toggleImage = (image: ImageAttachment) => {
+  const toggleImage = (image: ImageAttachment, event?: ReactMouseEvent<HTMLButtonElement>) => {
     setPreviewId(image.id);
+    // Shift 连选：以最近一次普通点击为锚点，把锚点到目标之间（按文件夹展示顺序）全部选中。
+    // 锚点不随 Shift 点击移动，方便以同一张为起点反复框选；区间外已勾的保持不动。
+    const anchorId = selectionAnchorRef.current;
+    if (event?.shiftKey && anchorId && anchorId !== image.id) {
+      const from = orderedImages.findIndex((item) => item.id === anchorId);
+      const to = orderedImages.findIndex((item) => item.id === image.id);
+      if (from >= 0 && to >= 0) {
+        const [start, end] = from < to ? [from, to] : [to, from];
+        const rangeIds = orderedImages.slice(start, end + 1).map((item) => item.id);
+        setSelectedIds((current) => {
+          const next = new Set(current);
+          for (const id of rangeIds) next.add(id);
+          return next;
+        });
+        setCopyMessage('');
+        return;
+      }
+    }
+    selectionAnchorRef.current = image.id;
     setSelectedIds((current) => {
       const next = new Set(current);
       if (next.has(image.id)) next.delete(image.id);
@@ -283,6 +313,8 @@ export default function ProductImagesModal({ open, productName = '产品', image
 
   const toggleAll = () => {
     setSelectedIds(allSelected ? new Set() : new Set(visibleImages.map((image) => image.id)));
+    // 全选/清空后锚点作废：下一次 Shift 连选从刚点的那张重新起算。
+    selectionAnchorRef.current = null;
     setCopyMessage('');
   };
 
@@ -304,6 +336,9 @@ export default function ProductImagesModal({ open, productName = '产品', image
       const blobs = await fetchImageBlobs(selectedImages);
       blobs.forEach(({ image }, index) => downloadBlob(blobs[index].blob, safeFileName(image.name, index)));
       setCopyMessage(`已开始下载 ${blobs.length} 张图片`);
+      // 下载已启动就清空勾选，省得下一批还要先逐个取消；抓图失败时走到 catch，勾选保留。
+      setSelectedIds(new Set());
+      selectionAnchorRef.current = null;
     } catch {
       setCopyMessage('图片下载失败，请右键保存图片');
     } finally {
@@ -402,7 +437,7 @@ export default function ProductImagesModal({ open, productName = '产品', image
                                 title={`${PRODUCT_IMAGE_CATEGORY_LABELS[normalizeProductImageCategory(image.category)]}：${image.name}${image.note?.trim() ? ` · ${image.note}` : ''}`}
                                 aria-label={`选择图片：${image.name}`}
                                 aria-pressed={selected}
-                                onClick={() => toggleImage(image)}
+                                onClick={(event) => toggleImage(image, event)}
                               >
                                 <img src={thumbUrl(image.url, 240)} alt="" loading="lazy" decoding="async" />
                                 <span className="product-image-thumbnail-category">{PRODUCT_IMAGE_CATEGORY_LABELS[normalizeProductImageCategory(image.category)]}</span>
@@ -442,7 +477,7 @@ export default function ProductImagesModal({ open, productName = '产品', image
             )}
             {copyMessage && <div className="product-images-copy-message" role="status">{copyMessage}</div>}
             {!!visibleImages.length && <div className="product-images-help">
-              点击缩略图可预览并切换选择状态，
+              点击缩略图可预览并切换选择状态，按住 Shift 点击可连选一段；
               {touchDevice ? (nativeSave ? '点「保存到相册」即可存进手机相册。' : '长按大图可保存到相册。') : '也可以右键保存图片。'}
             </div>}
           </div>
