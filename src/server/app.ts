@@ -262,7 +262,7 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   });
 
   await registerSettingsRoutes(app, {
-    service: new SettingsService(settingsRepository, options.fileStore, () => repositories.listPackagingRowsForPresets(), () => repositories.listProductCategoriesWithCounts()),
+    service: new SettingsService(settingsRepository, options.fileStore, () => repositories.listPackagingRowsForPresets(), () => repositories.listProductCategoriesWithCounts(), () => repositories.listProductOptionRows()),
   });
   await registerDocumentCustomerRoutes(app, {
     service: new DocumentCustomerService(options.database),

@@ -56,29 +56,29 @@ const categoryInput = (page: Page) => page.getByRole('dialog').locator('input[ar
 test('编辑器：分类紧跟品名，按品名给建议且只在点一下时才写入', async ({ page }) => {
   const editor = await openEditor(page);
 
-  // 首行顺序：品名 → 产品分类 → 颜色 → 电池插脚（采购价与供应商已并入采购报价表格）。
+  // 首行顺序：品名 → 产品分类（采购价与供应商已并入采购报价表格）。
   const labels = await editor.locator('.product-editor-identity > *').evaluateAll((nodes) => nodes.map((node) => (node.textContent ?? '').trim().slice(0, 2)));
-  expect(labels).toEqual(['品名', '产品', '颜色', '电池']);
+  expect(labels).toEqual(['品名', '产品']);
   expect(editor.locator('.product-editor-identity label', { hasText: '采购价' })).toHaveCount(0);
   expect(editor.locator('.product-editor-identity label', { hasText: '供应商' })).toHaveCount(0);
-  // 首行四格确实排在同一行（比输入框的 y 更稳：格子里的标签结构不同会让输入框差几像素）。
+  // 首行两格确实排在同一行（比输入框的 y 更稳：格子里的标签结构不同会让输入框差几像素）。
   const cellTops = await editor.locator('.product-editor-identity > *').evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().top)));
   expect(new Set(cellTops).size).toBe(1);
 
-  // 颜色 / 电池插脚固定两行：预设 chip 占第一行，「自定义」连着加号整体落到第二行。
-  const chipRows = await editor.locator('.product-editor-identity .product-editor-chips').evaluateAll((nodes) => nodes.map((chips) => {
-    const chipTops = new Set(Array.from(chips.querySelectorAll('.chip')).map((chip) => Math.round(chip.getBoundingClientRect().top)));
-    const custom = chips.querySelector('.chip-custom')!.getBoundingClientRect();
-    const input = chips.querySelector('.chip-input')!.getBoundingClientRect();
-    const add = chips.querySelector('.chip-add')!.getBoundingClientRect();
-    return {
-      chipLines: chipTops.size,
-      customBelowChips: custom.top > Math.max(...chipTops),
-      addBesideInput: add.right <= custom.right + 1 && Math.abs(add.top - input.top) <= 1,
-    };
+  // 颜色与插脚抽成独立一行：两个字段并排（top 相同、left 递增），不再带自定义输入。
+  const optionFields = editor.locator('.product-editor-options-row > *');
+  await expect(optionFields).toHaveCount(2);
+  await expect(editor.locator('.product-editor-options-row .chip-custom, .product-editor-options-row .chip-input, .product-editor-options-row .chip-add')).toHaveCount(0);
+  await expect(editor.locator('input[aria-label="自定义颜色"], input[aria-label="自定义插脚"]')).toHaveCount(0);
+  const positions = await optionFields.evaluateAll((nodes) => nodes.map((node) => {
+    const rect = node.getBoundingClientRect();
+    return { top: Math.round(rect.top), left: Math.round(rect.left), right: Math.round(rect.right) };
   }));
-  expect(chipRows).toHaveLength(2);
-  expect(chipRows.every((row) => row.chipLines === 1 && row.customBelowChips && row.addBesideInput)).toBe(true);
+  expect(new Set(positions.map((position) => position.top)).size).toBe(1);
+  expect(positions[1].left).toBeGreaterThan(positions[0].left);
+  // 窄屏下两列等宽，右侧不能越出容器。
+  const rowRight = await editor.locator('.product-editor-options-row').evaluate((node) => Math.round(node.getBoundingClientRect().right));
+  expect(positions[1].right).toBeLessThanOrEqual(rowRight + 1);
 
   // 还没填品名时不给建议。
   await expect(editor.locator('.product-category-suggest')).toHaveCount(0);

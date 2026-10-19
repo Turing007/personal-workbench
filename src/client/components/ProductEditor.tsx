@@ -9,6 +9,7 @@ import { canPickFilesNatively, pickFilesNatively } from '../app-bridge';
 import { ATTACHMENT_ACCEPT, normalizeUploadAttachment, attachmentFilesFromClipboard, filesFromClipboard, SUPPORTED_ATTACHMENT_HINT } from '../attachment-mime';
 import { useFileDrop } from '../use-file-drop';
 import { PRODUCT_IMAGE_CATEGORY_OPTIONS } from '../../shared/product-image-categories';
+import { DEFAULT_PRODUCT_COLORS, DEFAULT_PRODUCT_PLUGS } from '../../shared/product-options';
 import Modal from './Modal';
 import PackagingTable from './PackagingTable';
 import PurchaseQuotesTable from './PurchaseQuotesTable';
@@ -87,15 +88,17 @@ export interface ProductEditorProps {
   saving?: boolean;
   /** 现有产品的分类，作为分类输入框的候选（仍可自由填写新分类）。 */
   productCategories?: string[];
+  /** 颜色 / 插脚候选：只从设置页维护的清单里勾选，不再临时输入。 */
+  colorOptions?: string[];
+  plugOptions?: string[];
   /** 点「管理预设 ›」时跳到设置页维护，未传则不显示入口。 */
   onManagePresets?: () => void;
+  /** 点颜色 / 插脚旁的「管理 ›」时跳到设置页维护，未传则不显示入口。 */
+  onManageProductOptions?: () => void;
   onClose: () => void;
   /** options.addToCatalogId：「添加到产品图册」勾选后的目标图册，随保存请求带给服务端追加。 */
   onSave: (product: ProductRecord, mode: 'draft' | 'active', options?: { addToCatalogId?: number }) => void;
 }
-
-const colorPresets = ['蓝', '红', '黄'];
-const plugPresets = ['牧田', '德伟', '米沃奇'];
 
 /** 打开编辑器就摆一行空报价：第一行天然就是默认档，省掉「先点添加报价才能填」。 */
 function withFirstQuoteRow(record: ProductRecord): ProductRecord {
@@ -481,10 +484,8 @@ function ProductAttachments({ value, onChange }: { value: ProductAttachment[]; o
   </section>;
 }
 
-export default function ProductEditor({ open, product, copyMode = false, showParameters: showParametersProp, packagingPresets, saving = false, productCategories = [], onManagePresets, onClose, onSave }: ProductEditorProps) {
+export default function ProductEditor({ open, product, copyMode = false, showParameters: showParametersProp, packagingPresets, saving = false, productCategories = [], colorOptions, plugOptions, onManagePresets, onManageProductOptions, onClose, onSave }: ProductEditorProps) {
   const [draft, setDraft] = useState<ProductRecord>(() => withFirstQuoteRow(product ?? blankProduct()));
-  const [customColor, setCustomColor] = useState('');
-  const [customPlug, setCustomPlug] = useState('');
   const [catalogs, setCatalogs] = useState<CatalogSummary[]>([]);
   const [addToCatalog, setAddToCatalog] = useState(false);
   const [catalogId, setCatalogId] = useState<number | null>(null);
@@ -495,8 +496,6 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
     // 复制产品时，源产品的配件清单算「这次动过」：副本应保留清单，而不是回落到类目默认。
     if (copyMode && nextDraft.accessoryPrices?.length) nextDraft.accessoryPricesTouched = true;
     setDraft(nextDraft);
-    setCustomColor('');
-    setCustomPlug('');
     // 「添加到产品图册」每次打开都重置为未勾选（只负责加入、默认不产生副作用），
     // 图册列表现取最新，默认选第一条（在用的主图册）。
     setAddToCatalog(false);
@@ -513,7 +512,13 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
   }, [open, product]);
   const set = <K extends keyof ProductRecord>(key: K, next: ProductRecord[K]) => setDraft((current) => ({ ...current, [key]: next }));
   const toggle = (key: 'colors' | 'batteryPlugs', item: string) => set(key, draft[key].includes(item) ? draft[key].filter((entry) => entry !== item) : [...draft[key], item]);
-  const addCustom = (key: 'colors' | 'batteryPlugs', value: string, clear: (value: string) => void) => { const text = value.trim(); if (text && !draft[key].includes(text)) set(key, [...draft[key], text]); clear(''); };
+  // 候选 = 设置页清单 + 本产品已有但清单里没有的值。
+  // 后者必须保留：老产品存过的颜色/插脚如果在清单里被删了，仍要能看见、默认不丢，
+  // 否则一打开编辑器就会把历史值悄悄清掉（即使这次只想改个品名）。
+  const colors = (colorOptions ?? DEFAULT_PRODUCT_COLORS);
+  const plugs = (plugOptions ?? DEFAULT_PRODUCT_PLUGS);
+  const colorChoices = colors.concat(draft.colors.filter((item) => !colors.includes(item)));
+  const plugChoices = plugs.concat(draft.batteryPlugs.filter((item) => !plugs.includes(item)));
   const editingExisting = Boolean(product && /^\d+$/.test(product.id));
   const editingDraft = editingExisting && product?.status === 'draft';
   const saveDraft = () => onSave({ ...draft, status: 'draft' }, 'draft');
@@ -555,13 +560,16 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
           </div>
           <datalist id="product-category-options">{categoryCandidates.map((category) => <option key={category} value={category} />)}</datalist>
         </div>
-        <div className="field">
-          <span className="field-label">颜色（多选）</span>
-          <div className="product-editor-chips">{colorPresets.concat(draft.colors.filter((item) => !colorPresets.includes(item))).map((color) => <button type="button" key={color} className={`chip${draft.colors.includes(color) ? ' is-selected' : ''}`} onClick={() => toggle('colors', color)}>{color}</button>)}<span className="chip-custom"><input className="chip-input" aria-label="自定义颜色" value={customColor} onChange={(event) => setCustomColor(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addCustom('colors', customColor, setCustomColor); }} placeholder="自定义" /><button type="button" className="chip-add" title="添加自定义颜色" onClick={() => addCustom('colors', customColor, setCustomColor)}><Plus size={14} /></button></span></div>
+      </div>
+      {/* 颜色与插脚固定同一行：去掉自定义输入后每个字段只剩一排胶囊，并排放得下，手机端也不拆行。 */}
+      <div className="form-grid product-editor-options-row">
+        <div className="field product-editor-option-field">
+          <span className="field-label">颜色（多选）{onManageProductOptions && <button type="button" className="link-button product-option-manage" onClick={onManageProductOptions}>管理 ›</button>}</span>
+          <div className="product-editor-chips">{colorChoices.map((color) => <button type="button" key={color} className={`chip${draft.colors.includes(color) ? ' is-selected' : ''}`} onClick={() => toggle('colors', color)}>{color}</button>)}</div>
         </div>
-        <div className="field">
-          <span className="field-label">电池插脚（多选）</span>
-          <div className="product-editor-chips">{plugPresets.concat(draft.batteryPlugs.filter((item) => !plugPresets.includes(item))).map((plug) => <button type="button" key={plug} className={`chip${draft.batteryPlugs.includes(plug) ? ' is-selected' : ''}`} onClick={() => toggle('batteryPlugs', plug)}>{plug}</button>)}<span className="chip-custom"><input className="chip-input" aria-label="自定义插脚" value={customPlug} onChange={(event) => setCustomPlug(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addCustom('batteryPlugs', customPlug, setCustomPlug); }} placeholder="自定义" /><button type="button" className="chip-add" title="添加自定义插脚" onClick={() => addCustom('batteryPlugs', customPlug, setCustomPlug)}><Plus size={14} /></button></span></div>
+        <div className="field product-editor-option-field">
+          <span className="field-label">电池插脚（多选）{onManageProductOptions && <button type="button" className="link-button product-option-manage" onClick={onManageProductOptions}>管理 ›</button>}</span>
+          <div className="product-editor-chips">{plugChoices.map((plug) => <button type="button" key={plug} className={`chip${draft.batteryPlugs.includes(plug) ? ' is-selected' : ''}`} onClick={() => toggle('batteryPlugs', plug)}>{plug}</button>)}</div>
         </div>
       </div>
       {/* 采购报价与配件价格并排：左报价、右配件价格。 */}

@@ -3,6 +3,7 @@ import { networkInterfaces } from 'node:os';
 import { FileStoreError } from '../files/file-store.js';
 import { normalizeContractTemplate } from '../../shared/contract.js';
 import { PACKAGING_PRESET_LIMIT } from '../../shared/packaging-presets.js';
+import { PRODUCT_OPTION_LIMIT } from '../../shared/product-options.js';
 import { ACCESSORY_PRICE_LIST_LIMIT } from '../../shared/accessory-prices.js';
 import { config } from '../config.js';
 import type { CompanyProfileInput, SettingsService } from '../services/settings-service.js';
@@ -162,6 +163,27 @@ export async function registerSettingsRoutes(app: FastifyInstance, options: Sett
 
   app.post('/api/settings/packaging-presets/reseed', async (_request, reply) =>
     safeRoute(() => sendSuccess(reply, { items: options.service.reseedPackagingPresets() }), reply),
+  );
+
+  app.get('/api/settings/product-option-presets', async (_request, reply) =>
+    safeRoute(() => sendSuccess(reply, options.service.getProductOptionPresets()), reply),
+  );
+
+  app.put('/api/settings/product-option-presets', async (request, reply) =>
+    safeRoute(() => {
+      const body = asRecord(request.body);
+      if (!Array.isArray(body.colors) || !Array.isArray(body.plugs)) {
+        throw new ApiError(400, 'VALIDATION_ERROR', '颜色 / 插脚预设数据格式不正确');
+      }
+      if (body.colors.length > PRODUCT_OPTION_LIMIT || body.plugs.length > PRODUCT_OPTION_LIMIT) {
+        throw new ApiError(400, 'PRESET_LIMIT', `颜色与插脚各最多 ${PRODUCT_OPTION_LIMIT} 条，请先删除再添加`);
+      }
+      return sendSuccess(reply, options.service.saveProductOptionPresets(body));
+    }, reply),
+  );
+
+  app.post('/api/settings/product-option-presets/reseed', async (_request, reply) =>
+    safeRoute(() => sendSuccess(reply, options.service.reseedProductOptionPresets()), reply),
   );
 
   app.get('/api/settings/battery-price-matrix', async (_request, reply) =>

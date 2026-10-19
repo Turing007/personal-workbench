@@ -7,6 +7,12 @@ import {
 } from '../../shared/packaging-presets.js';
 import type { AccessoryPrice } from '../../shared/accessory-prices.js';
 import { BATTERY_MATRIX_DEFAULTS, type BatteryPriceMatrix } from '../../shared/battery-prices.js';
+import {
+  DEFAULT_PRODUCT_COLORS,
+  DEFAULT_PRODUCT_PLUGS,
+  deriveProductOptionPresets,
+  type ProductOptionPresets,
+} from '../../shared/product-options.js';
 import { EMPTY_COMPANY_PROFILE, SettingsRepository } from '../db/settings-repository.js';
 import { FileStore } from '../files/file-store.js';
 import type { ContractTemplate } from '../../shared/contract.js';
@@ -21,6 +27,8 @@ export class SettingsService {
     private readonly packagingSource?: () => PackagingSourceRow[],
     /** 产品库现存分类（含产品数），包装管理「可以装哪些产品」的候选来源。 */
     private readonly productCategorySource?: () => Array<{ name: string; productCount: number }>,
+    /** 产品库里实际用过的颜色 / 插脚，用于预设首次自动统计与「重新统计」。 */
+    private readonly productOptionSource?: () => Array<{ colors: string[]; batteryPlugs: string[] }>,
   ) {}
 
   getPackagingPresets(): PackagingPreset[] {
@@ -29,6 +37,25 @@ export class SettingsService {
 
   savePackagingPresets(value: unknown): PackagingPreset[] {
     return this.settings.savePackagingPresets(value);
+  }
+
+  /** 颜色 / 插脚的可选项：从未维护过时按产品库实际取值统计；产品库也空就用默认三条。 */
+  getProductOptionPresets(): ProductOptionPresets {
+    return this.settings.readProductOptionPresets() ?? this.reseedProductOptionPresets();
+  }
+
+  saveProductOptionPresets(value: unknown): ProductOptionPresets {
+    return this.settings.saveProductOptionPresets(value);
+  }
+
+  /** 按现有产品重算并覆盖（设置页「从产品库重新统计」）。 */
+  reseedProductOptionPresets(): ProductOptionPresets {
+    const derived = deriveProductOptionPresets(this.productOptionSource?.() ?? []);
+    // 统计结果为空说明产品还没填过颜色/插脚，这时保留默认三条，避免编辑器变成一片空白。
+    return this.settings.saveProductOptionPresets({
+      colors: derived.colors.length ? derived.colors : DEFAULT_PRODUCT_COLORS,
+      plugs: derived.plugs.length ? derived.plugs : DEFAULT_PRODUCT_PLUGS,
+    });
   }
 
   /** 包装管理的分类候选：产品库现存分类 + 已在包装上关联过的分类（后者可能是手工输入的新分类）。 */

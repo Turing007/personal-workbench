@@ -46,9 +46,10 @@ import {
   type ProductImageCategory,
 } from '../../shared/product-image-categories.js';
 import { DEFAULT_CATALOG_DENSITY, isCatalogDensity } from '../../shared/product-catalog.js';
+import { DEFAULT_PRODUCT_COLORS, DEFAULT_PRODUCT_PLUGS } from '../../shared/product-options.js';
 
-const DEFAULT_COLORS = ['蓝', '红', '黄'];
-const DEFAULT_BATTERY_PLUGS = ['牧田', '德伟', '米沃奇'];
+const DEFAULT_COLORS = DEFAULT_PRODUCT_COLORS;
+const DEFAULT_BATTERY_PLUGS = DEFAULT_PRODUCT_PLUGS;
 /** 缩略图分批处理的并发数：整本图册一次内联所有主图，分批读避免峰值内存过高。 */
 const CATALOG_IMAGE_CONCURRENCY = 6;
 const PRODUCT_ATTACHMENT_CATEGORIES = new Set(['manual', 'packaging-design', 'label-dieline', 'other']);
@@ -260,7 +261,7 @@ function parseExcelImport(buffer: Buffer): ProductImportInput[] {
 function workbookBuffer(products: Array<Record<string, unknown>>, includeSample = false): Buffer {
   const workbook = XLSX.utils.book_new();
   const productRows = includeSample
-    ? [PRODUCT_HEADERS, ['示例-001', '', '示例产品', '', '工具', 0, '', '蓝、红', '牧田', '', '请删除示例行后填写', '']]
+    ? [PRODUCT_HEADERS, ['示例-001', '', '示例产品', '', '工具', 0, '', '蓝、红', 'MT', '', '请删除示例行后填写', '']]
     : [PRODUCT_HEADERS, ...products.map((product) => [
       `P-${product.id}`,
       product.sku,

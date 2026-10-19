@@ -10,6 +10,7 @@ import { normalizeProductStatus } from '../shared/product-status';
 import type { PricePlanParams } from '../shared/price-calculator';
 import { mapStoredPurchaseQuotes, type ProductPurchaseQuote } from '../shared/product-purchase-quotes';
 import type { PackagingPreset } from '../shared/packaging-presets';
+import type { ProductOptionPresets } from '../shared/product-options';
 import type { StockPreparation } from '../shared/stock';
 import type {
   Customer,
@@ -652,6 +653,19 @@ export async function reseedPackagingPresets() {
 export async function getPackagingCategories() {
   const result = await request<{ items?: Array<{ name: string; productCount: number }> }>('/api/settings/packaging-categories');
   return result.items ?? [];
+}
+
+/** 颜色 / 插脚的可选项：产品编辑器只从这里勾选，设置页维护。 */
+export async function getProductOptionPresets() {
+  return request<ProductOptionPresets>('/api/settings/product-option-presets');
+}
+
+export async function saveProductOptionPresets(value: ProductOptionPresets) {
+  return request<ProductOptionPresets>('/api/settings/product-option-presets', { method: 'PUT', body: JSON.stringify(value) });
+}
+
+export async function reseedProductOptionPresets() {
+  return request<ProductOptionPresets>('/api/settings/product-option-presets/reseed', { method: 'POST' });
 }
 
 export function getCustomers(includeInactive = false, q = '') {

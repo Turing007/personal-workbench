@@ -314,6 +314,26 @@ export class DatabaseRepositories {
     return rows.map((row) => ({ name: row.name, productCount: Number(row.product_count) }));
   }
 
+  /**
+   * 颜色 / 插脚的可选清单来源：产品库里实际用过的取值。
+   * 设置页「从产品库重新统计」与首次自动生成都用它。
+   */
+  listProductOptionRows(): Array<{ colors: string[]; batteryPlugs: string[] }> {
+    const rows = this.database
+      .prepare('SELECT colors_json, battery_plugs_json FROM products')
+      .all() as Array<{ colors_json: string | null; battery_plugs_json: string | null }>;
+    const parse = (value: string | null): string[] => {
+      if (!value) return [];
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+      } catch {
+        return [];
+      }
+    };
+    return rows.map((row) => ({ colors: parse(row.colors_json), batteryPlugs: parse(row.battery_plugs_json) }));
+  }
+
   saveProduct(input: ProductInput, productId?: number) {
     const timestamp = now();
     // 报价数组是唯一事实：给了就用默认档的供应商与价格回写镜像列，没给（Excel 导入等老路径）沿用手上的值。

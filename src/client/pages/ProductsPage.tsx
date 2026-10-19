@@ -1,7 +1,8 @@
 import { Calculator, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Copy, Download, Edit3, Eye, EyeOff, FileDown, Image as ImageIcon, Images, List, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getPackagingPresets } from '../api';
+import { getPackagingPresets, getProductOptionPresets } from '../api';
 import type { PackagingPreset } from '../../shared/packaging-presets';
+import type { ProductOptionPresets } from '../../shared/product-options';
 import type { ProductStatus } from '../../shared/product-status';
 import Modal from '../components/Modal';
 import { initialProductsView, saveProductsView, type ProductsView } from '../products-view';
@@ -43,6 +44,8 @@ export interface ProductsPageProps {
   onRefresh: () => Promise<void> | void;
   /** 编辑器里点「管理预设 ›」时跳到设置页维护包装预设。 */
   onManagePresets?: () => void;
+  /** 编辑器里点颜色/插脚的「管理 ›」时跳到设置页维护颜色与插脚。 */
+  onManageProductOptions?: () => void;
   /** 有文件正在后台上传的产品 id：列表上给这些产品打「图片上传中」标记。 */
   uploadingProductIds?: string[];
   /** 后台上传中文件的实时快照：图库给每个产品的待传图片画逐张进度。 */
@@ -85,7 +88,7 @@ function extraQuoteCount(product: ProductRecord) {
   return Math.max(0, (product.purchaseQuotes?.length ?? 0) - 1);
 }
 
-export default function ProductsPage({ products, loading, onSave, saving, onDelete, onUpdateSaleStatus, onExport, onOpenCatalog, onDownloadTemplate, onImport, onRefresh, onManagePresets, uploadingProductIds, uploadFiles, onRetryUploadFile }: ProductsPageProps) {
+export default function ProductsPage({ products, loading, onSave, saving, onDelete, onUpdateSaleStatus, onExport, onOpenCatalog, onDownloadTemplate, onImport, onRefresh, onManagePresets, onManageProductOptions, uploadingProductIds, uploadFiles, onRetryUploadFile }: ProductsPageProps) {
   const uploadingIds = new Set(uploadingProductIds ?? []);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -95,10 +98,12 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
   const [editorOpen, setEditorOpen] = useState(false);
   // 每次打开编辑器重新拉一次预设：在设置页改完回来就能拿到最新的一套。
   const [packagingPresets, setPackagingPresets] = useState<PackagingPreset[]>([]);
+  const [productOptions, setProductOptions] = useState<ProductOptionPresets>();
   useEffect(() => {
     if (!editorOpen) return;
     let cancelled = false;
     getPackagingPresets().then((items) => { if (!cancelled) setPackagingPresets(items); }).catch(() => { if (!cancelled) setPackagingPresets([]); });
+    getProductOptionPresets().then((items) => { if (!cancelled) setProductOptions(items); }).catch(() => { if (!cancelled) setProductOptions(undefined); });
     return () => { cancelled = true; };
   }, [editorOpen]);
   const [editing, setEditing] = useState<ProductRecord>();
@@ -349,7 +354,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
       {loading && <div className="table-state">正在加载产品...</div>}
       {!loading && !filtered.length && <div className="table-state">暂无产品，点击“添加产品”开始维护。</div>}
     </section>
-    <ProductEditor key={editing?.id ?? 'new'} open={editorOpen} saving={saving} product={editing} copyMode={copying} packagingPresets={packagingPresets} productCategories={categoryOptions.named} onManagePresets={onManagePresets} onClose={() => { setEditorOpen(false); setEditing(undefined); setCopying(false); }} onSave={save} />
+    <ProductEditor key={editing?.id ?? 'new'} open={editorOpen} saving={saving} product={editing} copyMode={copying} packagingPresets={packagingPresets} productCategories={categoryOptions.named} colorOptions={productOptions?.colors} plugOptions={productOptions?.plugs} onManagePresets={onManagePresets} onManageProductOptions={onManageProductOptions} onClose={() => { setEditorOpen(false); setEditing(undefined); setCopying(false); }} onSave={save} />
     <ProductParametersModal open={Boolean(parametersProduct)} productName={parametersProduct?.name} parameters={parametersProduct?.parameters} onClose={() => setParametersProduct(undefined)} />
     <ProductDetailModal open={Boolean(detailProduct)} product={detailProduct} showSensitive={showSensitive} pendingImages={detailProduct ? pendingImagesFor(detailProduct) : []} onClose={closeDetail} onOpenImages={(product) => { closeDetail(); setImagesProductId(String(product.id)); }} onOpenCalculator={(product) => { closeDetail(); setCalculatorProduct(product); }} onUpdateSaleStatus={onUpdateSaleStatus} onDelete={onDelete} />
     <PriceCalculatorModal open={Boolean(calculatorProduct)} product={calculatorProduct} onClose={() => setCalculatorProduct(undefined)} />

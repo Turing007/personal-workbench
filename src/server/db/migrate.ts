@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 34;
+const CURRENT_SCHEMA_VERSION = 35;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -1323,6 +1323,69 @@ function migrateVersionTwentyFive(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', String(CURRENT_SCHEMA_VERSION), now);
 }
 
+/**
+ * 电池插脚名称统一成缩写：牧田→MT、德伟/得伟→DE、米沃奇→MI。
+ * 产品库历史值与设置页预设一起改，否则老产品会继续显示旧名（编辑器会保留清单外的历史值）。
+ */
+function migrateVersionThirtyFive(database: DatabaseSync, now: string): void {
+  // 只跑一次：之后用户在设置页手动加回「牧田」等旧名，不能被下次启动悄悄改掉。
+  // 注意版本号仍要在每次启动时推进到 35，不能跟着提前返回一起跳过。
+  const done = database.prepare("SELECT value FROM settings WHERE key = 'battery_plugs_renamed_v35'").get() !== undefined;
+  if (done) {
+    upsertSetting(database, 'schema_version', '35', now);
+    return;
+  }
+  const renames: Record<string, string> = { 牧田: 'MT', 得伟: 'DE', 德伟: 'DE', 米沃奇: 'MI' };
+  /** 只替换完全同名的值；改名后若与已有值重复，保留先出现的那个。 */
+  const renamePlugs = (value: unknown): { next: string[]; changed: boolean } => {
+    if (!Array.isArray(value)) return { next: [], changed: false };
+    const next: string[] = [];
+    let changed = false;
+    for (const entry of value) {
+      if (typeof entry !== 'string') continue;
+      const name = renames[entry] ?? entry;
+      if (name !== entry) changed = true;
+      if (!next.includes(name)) next.push(name);
+      else changed = true;
+    }
+    return { next, changed };
+  };
+
+  const rows = database.prepare('SELECT id, battery_plugs_json FROM products').all() as Array<{ id: number; battery_plugs_json: string | null }>;
+  const updateProduct = database.prepare('UPDATE products SET battery_plugs_json = ? WHERE id = ?');
+  for (const row of rows) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(row.battery_plugs_json ?? '[]');
+    } catch {
+      continue;
+    }
+    const { next, changed } = renamePlugs(parsed);
+    if (changed) updateProduct.run(JSON.stringify(next), row.id);
+  }
+
+  // 设置页维护过的那份清单同样改名：不改的话编辑器里旧胶囊仍会出现，而产品值已经变成缩写。
+  const presetRow = database.prepare("SELECT value FROM settings WHERE key = 'product_option_presets'").get() as { value?: string } | undefined;
+  if (presetRow?.value) {
+    try {
+      const parsed = JSON.parse(presetRow.value) as { colors?: unknown; plugs?: unknown };
+      const { next, changed } = renamePlugs(parsed.plugs);
+      if (changed) {
+        upsertSetting(
+          database,
+          'product_option_presets',
+          JSON.stringify({ colors: Array.isArray(parsed.colors) ? parsed.colors : [], plugs: next }),
+          now,
+        );
+      }
+    } catch {
+      // 预设损坏时留给读取路径按空清单处理，这里不阻断迁移。
+    }
+  }
+  upsertSetting(database, 'battery_plugs_renamed_v35', '1', now);
+  upsertSetting(database, 'schema_version', '35', now);
+}
+
 export function migrateDatabase(database: DatabaseSync): void {
   if (database.isTransaction) {
     throw new Error('Database migration cannot run inside an active transaction');
@@ -1383,6 +1446,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionThirtyTwo(transactionDatabase, now);
     migrateVersionThirtyThree(transactionDatabase, now);
     migrateVersionThirtyFour(transactionDatabase, now);
+    migrateVersionThirtyFive(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

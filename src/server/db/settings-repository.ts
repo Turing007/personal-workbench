@@ -17,6 +17,10 @@ import {
   normalizeContractTemplate,
   type ContractTemplate,
 } from '../../shared/contract.js';
+import {
+  normalizeProductOptionPresets,
+  type ProductOptionPresets,
+} from '../../shared/product-options.js';
 
 const COMPANY_PROFILE_KEY = 'company_profile';
 const CONTRACT_TEMPLATE_KEY = 'contract_template';
@@ -26,6 +30,7 @@ const PACKAGING_PRESETS_KEY = 'packaging_presets';
 const BATTERY_PRICE_MATRIX_KEY = 'battery_price_matrix';
 const CHARGER_PRICES_KEY = 'charger_prices';
 const CATEGORY_ACCESSORY_PRICES_KEY = 'category_accessory_prices';
+const PRODUCT_OPTION_PRESETS_KEY = 'product_option_presets';
 
 export interface AutoBackupSettingsRecord {
   /** 自定义备份目录；空字符串 = 默认目录（数据目录/backups）。 */
@@ -194,6 +199,28 @@ export class SettingsRepository {
       )
       .run(BATTERY_PRICE_MATRIX_KEY, JSON.stringify(matrix), new Date().toISOString());
     return matrix;
+  }
+
+  /** null = 从未写入过，由服务层按现有产品统计；空清单是用户自己清的，不再重算。 */
+  readProductOptionPresets(): ProductOptionPresets | null {
+    const row = this.database.prepare('SELECT value FROM settings WHERE key = ?').get(PRODUCT_OPTION_PRESETS_KEY) as { value?: string } | undefined;
+    if (!row?.value) return null;
+    try {
+      return normalizeProductOptionPresets(JSON.parse(row.value));
+    } catch {
+      return null;
+    }
+  }
+
+  saveProductOptionPresets(value: unknown): ProductOptionPresets {
+    const presets = normalizeProductOptionPresets(value);
+    this.database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(PRODUCT_OPTION_PRESETS_KEY, JSON.stringify(presets), new Date().toISOString());
+    return presets;
   }
 
   /** 充电器价格清单（名称 + 单价）。 */

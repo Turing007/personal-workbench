@@ -3394,43 +3394,41 @@ select {
 .form-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .form-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
-/* 产品编辑器首行：SKU（编辑时）+ 品名 + 分类 + 颜色 + 插脚；采购价与供应商已并入采购报价表格。 */
+/* 产品编辑器首行：SKU（编辑时）+ 品名 + 分类；颜色与插脚单独一行排在一起。
+   采购价与供应商已并入采购报价表格。 */
 .product-editor-identity {
-  grid-template-columns: minmax(0, 1.2fr) 150px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
 }
 
 .product-editor-identity.has-sku {
-  grid-template-columns: 88px minmax(0, 1.2fr) 150px minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 88px minmax(0, 1.6fr) minmax(0, 1fr);
 }
 
-.product-editor-identity .product-editor-chips {
-  gap: 4px;
+/* 颜色 / 插脚同一行两块：两列等宽，手机上也不拆行。
+   胶囊排不下就在本格内换行，不把另一块挤下去。 */
+.product-editor-options-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
 }
 
-/* 颜色 / 插脚固定两行：预设 chip 占第一行，「自定义」输入框连着加号单独占第二行。
-   flex-basis 100% 让它永远换行，不再像以前那样和 chip 抢同一行、或被挤到第三行。 */
-.product-editor-identity .chip-custom {
+.product-editor-option-field .field-label {
   display: flex;
-  flex: 1 1 100%;
-  gap: 4px;
   align-items: center;
+  gap: 6px;
 }
 
-.product-editor-identity .chip {
-  padding: 3px 8px;
+.product-editor-option-field .product-option-manage {
+  margin-left: auto;
   font-size: var(--text-2xs);
 }
 
-.product-editor-identity .chip-input {
-  flex: 1 1 56px;
-  width: auto;
-  min-width: 0;
-  padding: 3px 6px;
+.product-editor-option-field .product-editor-chips {
+  gap: 4px;
 }
 
-.product-editor-identity .chip-add {
-  width: 26px;
-  height: 26px;
+.product-editor-option-field .chip {
+  padding: 3px 8px;
+  font-size: var(--text-2xs);
 }
 
 /* 参数 / 配件 / 备注：一行三列竖排，只留输入框上方的小字标签。 */
@@ -4353,6 +4351,102 @@ select {
 
 .packaging-preset-saved {
   color: var(--color-text-muted);
+}
+
+/* 颜色与插脚：设置页两组并排清单，产品编辑器的候选就来自这里。 */
+.product-options-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.product-options-group {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--tone-surface-frost);
+}
+
+.product-options-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.product-options-group-head span {
+  font-size: var(--text-2xs);
+  color: var(--color-text-muted);
+}
+
+.product-options-hint {
+  margin: 0;
+  font-size: var(--text-2xs);
+  color: var(--color-text-muted);
+}
+
+.product-options-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.product-options-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 9px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--tone-surface);
+  font-size: var(--text-2xs);
+}
+
+.product-options-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.product-options-chip button:hover {
+  background: var(--tone-danger-soft, #fdecec);
+  color: var(--tone-danger-text);
+}
+
+.product-options-add {
+  display: flex;
+  gap: 6px;
+}
+
+.product-options-add .input {
+  min-width: 0;
+  flex: 1;
+}
+
+.product-options-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-top: var(--space-6);
+}
+
+@media (max-width: 640px) {
+  .product-options-editor { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+  .product-options-footer .packaging-preset-dirty,
+  .product-options-footer .packaging-preset-saved { margin-left: 0; }
 }
 
 @media (max-width: 900px) {
