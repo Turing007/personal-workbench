@@ -51,19 +51,23 @@ async function openImagesModal(page: Page, sku: string, mobile = false) {
 }
 
 /** 用 CDP 发真实触摸事件：滑动手势只有走触摸路径才和手机一致。 */
-async function swipe(context: BrowserContext, page: Page, fromX: number, toX: number, y: number) {
+async function dragTouch(context: BrowserContext, page: Page, from: { x: number; y: number }, to: { x: number; y: number }, steps = 10) {
   const client = await context.newCDPSession(page);
   await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
-  await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: fromX, y }] });
-  for (let step = 1; step <= 8; step += 1) {
+  await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [from] });
+  for (let step = 1; step <= steps; step += 1) {
     await client.send('Input.dispatchTouchEvent', {
       type: 'touchMove',
-      touchPoints: [{ x: fromX + ((toX - fromX) * step) / 8, y }],
+      touchPoints: [{ x: from.x + ((to.x - from.x) * step) / steps, y: from.y + ((to.y - from.y) * step) / steps }],
     });
     await page.waitForTimeout(12);
   }
   await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await page.waitForTimeout(250);
+}
+
+async function swipe(context: BrowserContext, page: Page, fromX: number, toX: number, y: number) {
+  await dragTouch(context, page, { x: fromX, y }, { x: toX, y }, 8);
 }
 
 test.describe('产品大图弹窗：缩略图 + 放大镜', () => {
@@ -233,6 +237,64 @@ test.describe('手机端', () => {
       // 滑动只换图，不产生勾选；手机上显示滑动提示。
       await expect(page.locator('.product-images-selection-toolbar')).toContainText('已选 0 / 20');
       await expect(zoom.locator('.product-image-zoom-hint')).toBeVisible();
+    } finally {
+      await page.request.delete(`/api/products/${product.id}`);
+    }
+  });
+
+  test('在缩略图上左右滑动可连选，上下滑不拦截滚动', async ({ page, context }) => {
+    // 记录每个 touchmove 是否被 preventDefault：横滑连选时应当拦，竖滑时不能拦。
+    await page.addInitScript(() => {
+      const target = window as unknown as { __touchMovePrevented?: boolean[] };
+      target.__touchMovePrevented = [];
+      document.addEventListener('touchmove', (event) => {
+        target.__touchMovePrevented?.push(event.defaultPrevented);
+      }, { passive: true });
+    });
+    const product = await seedProductWithImages(page, Date.now());
+    try {
+      // 压到 600 高：20 张图必定撑出滚动，竖滑才有东西可滚。
+      await page.setViewportSize({ width: 390, height: 600 });
+      await openImagesModal(page, product.sku, true);
+      const thumbs = page.locator('.product-image-thumbnail');
+      await expect(thumbs).toHaveCount(20);
+      const boxes = [];
+      for (let index = 0; index < 3; index += 1) {
+        const box = await thumbs.nth(index).locator('.product-image-thumbnail-preview').boundingBox();
+        if (!box) throw new Error(`第 ${index + 1} 张缩略图不可见`);
+        boxes.push(box);
+      }
+      const y = boxes[0]!.y + boxes[0]!.height / 2;
+      const from = { x: boxes[0]!.x + 5, y };
+      const to = { x: boxes[2]!.x + boxes[2]!.width - 5, y };
+
+      // 横向滑过前三张：全部勾上，且不会误弹大图浮层。
+      await dragTouch(context, page, from, to);
+      await expect(page.locator('.product-images-selection-toolbar')).toContainText('已选 3 / 20');
+      for (let index = 0; index < 3; index += 1) {
+        await expect(page.locator('.product-image-thumbnail-select').nth(index)).toHaveAttribute('aria-pressed', 'true');
+      }
+      await expect(page.locator('.product-image-zoom')).toHaveCount(0);
+
+      // 从已勾选的图起滑：同样经过的三张被取消勾选。
+      await dragTouch(context, page, from, to);
+      await expect(page.locator('.product-images-selection-toolbar')).toContainText('已选 0 / 20');
+
+      // 从缩略图起手上下滑：不产生勾选，且不能拦截浏览器的滚动默认行为。
+      const body = page.locator('.modal-body');
+      expect(await body.evaluate((node) => node.scrollHeight - node.clientHeight), '列表本身应当可滚').toBeGreaterThan(0);
+      await page.evaluate(() => { (window as unknown as { __touchMovePrevented?: boolean[] }).__touchMovePrevented = []; });
+      const start = boxes[0]!;
+      await dragTouch(
+        context,
+        page,
+        { x: start.x + start.width / 2, y: start.y + start.height / 2 },
+        { x: start.x + start.width / 2, y: start.y + start.height / 2 + 180 },
+      );
+      await expect(page.locator('.product-images-selection-toolbar')).toContainText('已选 0 / 20');
+      const prevented = await page.evaluate(() => (window as unknown as { __touchMovePrevented?: boolean[] }).__touchMovePrevented ?? []);
+      expect(prevented.length, '竖滑应当产生 touchmove').toBeGreaterThan(0);
+      expect(prevented.some(Boolean), '竖滑不能被连选手势拦截，否则列表滚不动').toBe(false);
     } finally {
       await page.request.delete(`/api/products/${product.id}`);
     }

@@ -145,6 +145,10 @@ export default function ProductImagesModal({ open, productName = '产品', image
   const swipeRef = useRef<{ x: number; y: number } | null>(null);
   /** 刚滑过一张的时间戳：浏览器补发的那次 click 不能把浮层关掉。 */
   const lastSwipeAtRef = useRef(0);
+  /** 缩略图滑动连选的容器；原生非被动 touchmove 才能拦住滚动。 */
+  const thumbnailListRef = useRef<HTMLDivElement>(null);
+  /** 滑动连选结束后浏览器补发的那次 click 要忽略，别顺手把大图打开。 */
+  const suppressThumbClickUntilRef = useRef(0);
 
   /** 记录最近一次失败环节：界面提示用，同时回报到服务端日志。 */
   const noteSaveFailure = (stage: string | undefined, message = '') => {
@@ -336,6 +340,104 @@ export default function ProductImagesModal({ open, productName = '产品', image
     return () => unregisterCloseLayer(zoomLayerRef.current);
   }, [zoomOpen]);
 
+  // 手机端快速多选：在缩略图上横向滑动，手指经过的图片按起始图片的勾选状态统一勾上/取消。
+  // 用原生非被动 touchmove，才能在进入连选后拦住列表滚动；起步明显上下滑则直接让位给滚动。
+  useEffect(() => {
+    const list = thumbnailListRef.current;
+    if (!list || !touchDevice || !visibleImages.length) return undefined;
+
+    let start: { x: number; y: number } | null = null;
+    let startCard: HTMLElement | null = null;
+    let mode: 'add' | 'remove' | null = null;
+    let visited = new Set<string>();
+
+    const applySelection = (id: string) => {
+      if (!mode || visited.has(id)) return;
+      visited.add(id);
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        if (mode === 'add') next.add(id);
+        else next.delete(id);
+        return next;
+      });
+      setCopyMessage('');
+    };
+
+    const applyAtPoint = (x: number, y: number) => {
+      const element = document.elementFromPoint(x, y) as HTMLElement | null;
+      const card = element?.closest<HTMLElement>('.product-image-thumbnail[data-image-id]');
+      const id = card?.dataset.imageId;
+      if (id) applySelection(id);
+    };
+
+    const reset = () => {
+      start = null;
+      startCard = null;
+      mode = null;
+      visited = new Set();
+    };
+
+    const onTouchStart = (event: TouchEvent) => {
+      reset();
+      if (event.touches.length !== 1) return;
+      const target = event.target as HTMLElement | null;
+      // 只从图片本身起滑；底栏的放大镜和勾选圆钮保留原来的点按行为。
+      if (!target?.closest('.product-image-thumbnail-preview')) return;
+      const card = target.closest<HTMLElement>('.product-image-thumbnail[data-image-id]');
+      if (!card?.dataset.imageId) return;
+      const touch = event.touches[0]!;
+      start = { x: touch.clientX, y: touch.clientY };
+      startCard = card;
+    };
+
+    const onTouchMove = (event: TouchEvent) => {
+      if (!start) return;
+      if (event.touches.length !== 1) {
+        reset();
+        return;
+      }
+      const touch = event.touches[0]!;
+      const dx = touch.clientX - start.x;
+      const dy = touch.clientY - start.y;
+
+      if (!mode) {
+        // 起步明显上下滑：按滚动处理，本次手势不再连选。
+        if (Math.abs(dy) > 12 && Math.abs(dy) >= Math.abs(dx)) {
+          reset();
+          return;
+        }
+        // 横向超过阈值才进入连选，避免轻点和斜滑误触。
+        if (Math.abs(dx) < 20 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+        const wasSelected = startCard?.querySelector('.product-image-thumbnail-select')?.getAttribute('aria-pressed') === 'true';
+        mode = wasSelected ? 'remove' : 'add';
+        const startId = startCard?.dataset.imageId;
+        if (startId) applySelection(startId);
+        navigator.vibrate?.(10);
+      }
+
+      // 已经开始连选：拦住列表滚动，经过哪张就勾/取消哪张。
+      event.preventDefault();
+      applyAtPoint(touch.clientX, touch.clientY);
+    };
+
+    const onTouchEnd = () => {
+      // 连选结束后浏览器可能补一次 click，别让它把大图浮层打开。
+      if (mode) suppressThumbClickUntilRef.current = Date.now() + 450;
+      reset();
+    };
+
+    list.addEventListener('touchstart', onTouchStart, { passive: true });
+    list.addEventListener('touchmove', onTouchMove, { passive: false });
+    list.addEventListener('touchend', onTouchEnd);
+    list.addEventListener('touchcancel', onTouchEnd);
+    return () => {
+      list.removeEventListener('touchstart', onTouchStart);
+      list.removeEventListener('touchmove', onTouchMove);
+      list.removeEventListener('touchend', onTouchEnd);
+      list.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, [touchDevice, visibleImages.length]);
+
   useEffect(() => {
     if (!viewerOpen) return undefined;
     const step = (offset: number) => setViewerIndex((index) => Math.min(Math.max(index + offset, 0), selectedImages.length - 1));
@@ -524,7 +626,13 @@ export default function ProductImagesModal({ open, productName = '产品', image
                 {allSelected ? '取消全选' : '全选'}
               </button>
             </div>}
-            <div className="image-folder-list" aria-label="产品图片列表">
+            <div
+              ref={thumbnailListRef}
+              className="image-folder-list"
+              aria-label="产品图片列表"
+              // 手机端长按缩略图别弹系统图片菜单；滑动连选时也不参与文本选择。
+              onContextMenu={(event) => { if (touchDevice) event.preventDefault(); }}
+            >
               {PRODUCT_IMAGE_CATEGORY_SEQUENCE
                 .filter((category) => categoryCounts.has(category))
                 .map((category) => {
@@ -551,15 +659,20 @@ export default function ProductImagesModal({ open, productName = '产品', image
                               <div
                                 key={image.id}
                                 className={`product-image-thumbnail${selected ? ' is-selected' : ''}`}
+                                data-image-id={image.id}
                               >
                                 <button
                                   className="product-image-thumbnail-preview"
                                   type="button"
                                   title={`${PRODUCT_IMAGE_CATEGORY_LABELS[normalizeProductImageCategory(image.category)]}：${image.name}${image.note?.trim() ? ` · ${image.note}` : ''}`}
                                   aria-label={`预览图片：${image.name}`}
-                                  onClick={() => previewImage(image)}
+                                  onClick={() => {
+                                    // 滑动连选刚结束时的那次 click 不算「看大图」。
+                                    if (Date.now() < suppressThumbClickUntilRef.current) return;
+                                    previewImage(image);
+                                  }}
                                 >
-                                  <img src={thumbUrl(image.url, 240)} alt="" loading="lazy" decoding="async" />
+                                  <img src={thumbUrl(image.url, 240)} alt="" loading="lazy" decoding="async" draggable={false} />
                                 </button>
                                 {/* 底栏：分类 + 放大镜 + 勾选圆钮。放大镜点开大图浮层，圆钮只负责勾选，三者热区互不重叠。 */}
                                 <div className="product-image-thumbnail-footer">
@@ -590,8 +703,14 @@ export default function ProductImagesModal({ open, productName = '产品', image
             </div>
             {copyMessage && <div className="product-images-copy-message" role="status">{copyMessage}</div>}
             {!!visibleImages.length && <div className="product-images-help">
-              点缩略图或放大镜看大图，点缩略图底部圆钮勾选（按住 Shift 可连选一段）；
-              {touchDevice ? (nativeSave ? '点顶部的「存相册」即可存进手机相册。' : '长按大图可保存到相册。') : '也可以右键保存图片。'}
+              {touchDevice ? (
+                <>
+                  点缩略图或放大镜看大图；点图片底部圆钮勾选，或在缩略图上左右滑动可连选多张。
+                  {nativeSave ? '点顶部的「存相册」即可存进手机相册。' : '长按大图可保存到相册。'}
+                </>
+              ) : (
+                <>点缩略图或放大镜看大图，点缩略图底部圆钮勾选（按住 Shift 可连选一段）；也可以右键保存图片。</>
+              )}
             </div>}
           </div>
         </div>
