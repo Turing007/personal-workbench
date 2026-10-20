@@ -58,31 +58,32 @@ test.describe('产品图片多选', () => {
     try {
       await openImagesModal(page, product.sku);
       const thumbs = page.locator('.product-image-thumbnail');
+      const selectButtons = page.locator('.product-image-thumbnail-select');
       await expect(thumbs).toHaveCount(4);
       await expect(countText(page, '已选 0 / 4')).toBeVisible();
 
       // 普通点击 a：只选一张，同时成为锚点。
-      await thumbs.nth(0).click();
+      await selectButtons.nth(0).click();
       await expect(countText(page, '已选 1 / 4')).toBeVisible();
 
       // Shift 点 c：a→c 之间的 a、b、c 全部选中（b 在另一个文件夹里也参与）。
-      await thumbs.nth(2).click({ modifiers: ['Shift'] });
+      await selectButtons.nth(2).click({ modifiers: ['Shift'] });
       await expect(countText(page, '已选 3 / 4')).toBeVisible();
-      await expect(thumbs.nth(0)).toHaveAttribute('aria-pressed', 'true');
-      await expect(thumbs.nth(1)).toHaveAttribute('aria-pressed', 'true');
-      await expect(thumbs.nth(2)).toHaveAttribute('aria-pressed', 'true');
-      await expect(thumbs.nth(3)).toHaveAttribute('aria-pressed', 'false');
+      await expect(selectButtons.nth(0)).toHaveAttribute('aria-pressed', 'true');
+      await expect(selectButtons.nth(1)).toHaveAttribute('aria-pressed', 'true');
+      await expect(selectButtons.nth(2)).toHaveAttribute('aria-pressed', 'true');
+      await expect(selectButtons.nth(3)).toHaveAttribute('aria-pressed', 'false');
 
       // 锚点仍是 a：Shift 点 d 直接扩到 a→d 全部，而不是从 c 起算。
-      await thumbs.nth(3).click({ modifiers: ['Shift'] });
+      await selectButtons.nth(3).click({ modifiers: ['Shift'] });
       await expect(countText(page, '已选 4 / 4')).toBeVisible();
 
       // 普通点击 d 取消它，并把锚点移到 d；再 Shift 点 b 会框住 b、c、d。
-      await thumbs.nth(3).click();
+      await selectButtons.nth(3).click();
       await expect(countText(page, '已选 3 / 4')).toBeVisible();
-      await thumbs.nth(1).click({ modifiers: ['Shift'] });
+      await selectButtons.nth(1).click({ modifiers: ['Shift'] });
       await expect(countText(page, '已选 4 / 4')).toBeVisible();
-      await expect(thumbs.nth(0)).toHaveAttribute('aria-pressed', 'true');
+      await expect(selectButtons.nth(0)).toHaveAttribute('aria-pressed', 'true');
     } finally {
       await page.request.delete(`/api/products/${product.id}`);
     }
@@ -93,10 +94,11 @@ test.describe('产品图片多选', () => {
     try {
       await openImagesModal(page, product.sku);
       const thumbs = page.locator('.product-image-thumbnail');
+      const selectButtons = page.locator('.product-image-thumbnail-select');
       const downloadButton = page.locator('.product-images-download-button');
 
-      await thumbs.nth(0).click();
-      await thumbs.nth(2).click();
+      await selectButtons.nth(0).click();
+      await selectButtons.nth(2).click();
       await expect(countText(page, '已选 2 / 4')).toBeVisible();
 
       const firstDownload = page.waitForEvent('download');
@@ -107,10 +109,10 @@ test.describe('产品图片多选', () => {
       await expect(page.locator('.product-images-copy-message')).toContainText('已开始下载 2 张图片');
       await expect(countText(page, '已选 0 / 4')).toBeVisible();
       await expect(downloadButton).toBeDisabled();
-      await expect(thumbs.nth(0)).toHaveAttribute('aria-pressed', 'false');
+      await expect(selectButtons.nth(0)).toHaveAttribute('aria-pressed', 'false');
 
       // 无需先取消旧勾选：直接选一张就能再次下载。
-      await thumbs.nth(3).click();
+      await selectButtons.nth(3).click();
       await expect(downloadButton).toContainText('下载所选图片（1）');
       const secondDownload = page.waitForEvent('download');
       await downloadButton.click();
@@ -135,14 +137,15 @@ test.describe('产品图片多选', () => {
     try {
       await openImagesModal(page, product.sku);
       const thumbs = page.locator('.product-image-thumbnail');
-      await thumbs.nth(0).click();
+      const selectButtons = page.locator('.product-image-thumbnail-select');
+      await selectButtons.nth(0).click();
       await expect(countText(page, '已选 1 / 4')).toBeVisible();
 
       await page.locator('.product-images-download-button').click();
 
       await expect(page.locator('.product-images-copy-message')).toContainText('图片下载失败');
       await expect(countText(page, '已选 1 / 4')).toBeVisible();
-      await expect(thumbs.nth(0)).toHaveAttribute('aria-pressed', 'true');
+      await expect(selectButtons.nth(0)).toHaveAttribute('aria-pressed', 'true');
     } finally {
       await page.request.delete(`/api/products/${product.id}`);
     }

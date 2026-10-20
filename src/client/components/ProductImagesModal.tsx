@@ -1,6 +1,6 @@
 import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Copy, Download, ExternalLink, Folder, Hand, Image as ImageIcon, Upload, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { MouseEvent as ReactMouseEvent } from 'react';
+import type { MouseEvent as ReactMouseEvent, TouchEvent as ReactTouchEvent } from 'react';
 import { createPortal } from 'react-dom';
 import Modal from './Modal';
 import PendingImageTile from './PendingImageTile';
@@ -129,8 +129,10 @@ export default function ProductImagesModal({ open, productName = '产品', image
   const saveResultRef = useRef({ ok: 0, failed: 0 });
   const saveFailureRef = useRef('');
   const albumBatchRef = useRef(false);
-  /** Shift 连选的起点：最近一次普通点击（非 Shift）的那张；Shift 点击本身不移动它。 */
+  /** 最近一次普通点击（非 Shift）的锚点；Shift 连选以它为起点。 */
   const selectionAnchorRef = useRef<string | null>(null);
+  /** 手机端大图左右滑动的起点；只在窄屏生效，桌面仍用两侧按钮。 */
+  const swipeRef = useRef<{ x: number; y: number } | null>(null);
 
   /** 记录最近一次失败环节：界面提示用，同时回报到服务端日志。 */
   const noteSaveFailure = (stage: string | undefined, message = '') => {
@@ -281,9 +283,15 @@ export default function ProductImagesModal({ open, productName = '产品', image
     return () => document.removeEventListener('keydown', handleViewerKeyDown, true);
   }, [viewerOpen, selectedImages.length]);
 
-  const toggleImage = (image: ImageAttachment, event?: ReactMouseEvent<HTMLButtonElement>) => {
+  /** 点缩略图只切换大图预览，不改变勾选；勾选走缩略图右上角的小圆钮。 */
+  const previewImage = (image: ImageAttachment) => {
     setPreviewId(image.id);
-    // Shift 连选：以最近一次普通点击为锚点，把锚点到目标之间（按文件夹展示顺序）全部选中。
+    setCopyMessage('');
+  };
+
+  /** 勾选/取消一张图；Shift 点击按文件夹展示顺序把锚点到目标之间全部选中。 */
+  const toggleImage = (image: ImageAttachment, event?: ReactMouseEvent<HTMLButtonElement>) => {
+    // Shift 连选：以最近一次普通勾选为锚点，把锚点到目标之间（按文件夹展示顺序）全部选中。
     // 锚点不随 Shift 点击移动，方便以同一张为起点反复框选；区间外已勾的保持不动。
     const anchorId = selectionAnchorRef.current;
     if (event?.shiftKey && anchorId && anchorId !== image.id) {
@@ -309,6 +317,24 @@ export default function ProductImagesModal({ open, productName = '产品', image
       return next;
     });
     setCopyMessage('');
+  };
+
+  /** 手机端大图左右滑动切图：横向位移够大且明显大于纵向，才当成换图，避免和上下滚动打架。 */
+  const onPreviewTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    swipeRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+  };
+
+  const onPreviewTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
+    const start = swipeRef.current;
+    swipeRef.current = null;
+    if (!start || !touchDevice) return;
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+    goPreview(dx < 0 ? 1 : -1);
   };
 
   const toggleAll = () => {
@@ -369,19 +395,26 @@ export default function ProductImagesModal({ open, productName = '产品', image
   };
 
   return (
-    <Modal open={open} title={`${productName} · 全部图片`} onClose={onClose} width={820}>
+    <Modal open={open} className="product-images-modal" title={`${productName} · 全部图片`} onClose={onClose} width={820}>
       {!images.length && !pendingImages.length ? (
         <div className="product-images-empty"><ImageIcon size={28} /><span>暂无产品图片</span></div>
       ) : (
         <div className="product-images-content">
           <div className="product-images-preview-wrap">
-            <div className="product-images-preview">
+            <div
+              className="product-images-preview"
+              onTouchStart={onPreviewTouchStart}
+              onTouchEnd={onPreviewTouchEnd}
+            >
               {selectedImage && <img src={selectedImage.url} alt={selectedImage.name} draggable={false} />}
               {!selectedImage && pendingImages.length > 0 && <div className="product-images-preview-uploading"><Upload size={20} /><span>图片正在上传，完成后会显示在这里</span></div>}
               <button className="product-images-preview-nav product-images-preview-nav-prev" type="button" aria-label="上一张图片" title="上一张图片" disabled={previewIndex <= 0} onClick={() => goPreview(-1)}><ChevronLeft size={22} /></button>
               <button className="product-images-preview-nav product-images-preview-nav-next" type="button" aria-label="下一张图片" title="下一张图片" disabled={previewIndex < 0 || previewIndex >= visibleImages.length - 1} onClick={() => goPreview(1)}><ChevronRight size={22} /></button>
             </div>
-            <div className="product-images-preview-name">{selectedImage?.name || '产品图片'}</div>
+            <div className="product-images-preview-name">
+              <span className="product-images-preview-name-text">{selectedImage?.name || '产品图片'}</span>
+              {touchDevice && visibleImages.length > 1 && <span className="product-images-swipe-hint">左右滑动切换</span>}
+            </div>
             {selectedImage && <div className="product-images-preview-meta">
               <span className="product-image-category-badge">{PRODUCT_IMAGE_CATEGORY_LABELS[normalizeProductImageCategory(selectedImage.category)]}</span>
               {selectedImage.note?.trim() && <span className="product-images-preview-note" title={selectedImage.note}>{selectedImage.note}</span>}
@@ -430,19 +463,29 @@ export default function ProductImagesModal({ open, productName = '产品', image
                             const selected = selectedIds.has(image.id);
                             const previewing = image.id === selectedImage?.id;
                             return (
-                              <button
+                              <div
                                 key={image.id}
                                 className={`product-image-thumbnail${selected ? ' is-selected' : ''}${previewing ? ' is-previewing' : ''}`}
-                                type="button"
-                                title={`${PRODUCT_IMAGE_CATEGORY_LABELS[normalizeProductImageCategory(image.category)]}：${image.name}${image.note?.trim() ? ` · ${image.note}` : ''}`}
-                                aria-label={`选择图片：${image.name}`}
-                                aria-pressed={selected}
-                                onClick={(event) => toggleImage(image, event)}
                               >
-                                <img src={thumbUrl(image.url, 240)} alt="" loading="lazy" decoding="async" />
+                                <button
+                                  className="product-image-thumbnail-preview"
+                                  type="button"
+                                  title={`${PRODUCT_IMAGE_CATEGORY_LABELS[normalizeProductImageCategory(image.category)]}：${image.name}${image.note?.trim() ? ` · ${image.note}` : ''}`}
+                                  aria-label={`预览图片：${image.name}`}
+                                  onClick={() => previewImage(image)}
+                                >
+                                  <img src={thumbUrl(image.url, 240)} alt="" loading="lazy" decoding="async" />
+                                </button>
                                 <span className="product-image-thumbnail-category">{PRODUCT_IMAGE_CATEGORY_LABELS[normalizeProductImageCategory(image.category)]}</span>
-                                {selected && <Check size={13} />}
-                              </button>
+                                {/* 查看与勾选分开：点图只看大图，要勾选就点右上角的小圆钮（支持 Shift 连选）。 */}
+                                <button
+                                  className="product-image-thumbnail-select"
+                                  type="button"
+                                  aria-label={`${selected ? '取消选择' : '选择'}图片：${image.name}`}
+                                  aria-pressed={selected}
+                                  onClick={(event) => toggleImage(image, event)}
+                                >{selected && <Check size={11} />}</button>
+                              </div>
                             );
                           })}
                         </div>
@@ -477,7 +520,7 @@ export default function ProductImagesModal({ open, productName = '产品', image
             )}
             {copyMessage && <div className="product-images-copy-message" role="status">{copyMessage}</div>}
             {!!visibleImages.length && <div className="product-images-help">
-              点击缩略图可预览并切换选择状态，按住 Shift 点击可连选一段；
+              点缩略图看大图，点右上角圆钮勾选（按住 Shift 可连选一段）；
               {touchDevice ? (nativeSave ? '点「保存到相册」即可存进手机相册。' : '长按大图可保存到相册。') : '也可以右键保存图片。'}
             </div>}
           </div>

@@ -70,9 +70,9 @@ async function openImagesModal(page: Page, sku: string, mobile: boolean) {
   await expect(page.locator('.product-images-content')).toBeVisible();
 }
 
-/** 弹窗打开后不再默认勾选任何图片；要带图保存/复制时，先手动点一张缩略图。 */
+/** 弹窗打开后不再默认勾选任何图片；要带图保存/复制时，点缩略图右上角的勾选圆钮。 */
 async function selectFirstThumbnail(page: Page) {
-  await page.locator('.product-image-thumbnail').first().click();
+  await page.locator('.product-image-thumbnail-select').first().click();
 }
 
 test.describe('手机端：触摸 + 局域网 http（非安全上下文）', () => {

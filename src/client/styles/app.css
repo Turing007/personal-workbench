@@ -1510,11 +1510,27 @@ select {
 }
 
 .product-images-preview-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   overflow: hidden;
   color: var(--tone-text-soft);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.product-images-preview-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-images-swipe-hint {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--tone-text-faint);
+  font-size: 10px;
 }
 
 .product-images-side {
@@ -1572,7 +1588,6 @@ select {
   border-radius: 5px;
   padding: 2px;
   background: #fff;
-  cursor: pointer;
 }
 
 .product-image-thumbnail:hover,
@@ -1589,19 +1604,51 @@ select {
   outline-offset: 1px;
 }
 
+/* 点缩略图 = 看大图；勾选由右上角的小圆钮负责，两个热区不重叠。 */
+.product-image-thumbnail-preview {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
 .product-image-thumbnail img {
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
 
-.product-image-thumbnail svg {
+/* 勾选圆钮：未选时是空心圈，选中后变实心并显示勾。
+   尺寸收在缩略图右上角，不再向外扩命中区 —— 缩略图只有约 55px 宽时，
+   外扩会把「点图看大图」的中心也盖住。 */
+.product-image-thumbnail-select {
   position: absolute;
-  right: 2px;
-  bottom: 2px;
-  padding: 1px;
+  top: 3px;
+  right: 3px;
+  z-index: 1;
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .9);
   border-radius: 50%;
+  padding: 0;
   color: #fff;
+  background: rgba(15, 23, 42, .42);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .25);
+  cursor: pointer;
+}
+
+.product-image-thumbnail-select:hover {
+  background: rgba(15, 23, 42, .62);
+}
+
+.product-image-thumbnail-select[aria-pressed='true'] {
+  border-color: var(--tone-accent-text);
   background: var(--tone-accent-text);
 }
 
@@ -3174,8 +3221,25 @@ select {
     grid-column: auto;
   }
 
+  /* 单列改用 block：sticky 的包含块若还是「一格网格」，吸顶只会停在那一格高度里。
+     改成普通块后，预览能一直吸到整个弹窗内容结束。 */
   .product-images-content {
-    grid-template-columns: minmax(0, 1fr);
+    display: block;
+  }
+
+  /* 大图吸顶：缩略图往下翻时预览始终留在顶部，不用滑回顶才能看大图。
+     弹窗内容区（.modal-body）是滚动容器，sticky 相对它生效。
+     内容区顶部的 12px 内边距挪进吸顶条里（modal-body 的 padding-top 归零），
+     否则那 12px 会露出后面滚动的缩略图。负外边距则让吸顶条盖满整宽。 */
+  .product-images-modal .modal-body { padding-top: 0; }
+
+  .product-images-preview-wrap {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    margin-inline: -12px;
+    padding: 12px 12px 6px;
+    background: var(--color-surface);
   }
 
   /* 写死 6 列会让这一条的 min-content 变成 6×58+间距，反过来把外层网格顶宽，
@@ -3187,7 +3251,12 @@ select {
   }
 
   .product-images-preview {
-    min-height: 250px;
+    min-height: 210px;
+    max-height: 42vh;
+  }
+
+  .product-images-preview img {
+    max-height: 42vh;
   }
 
   .product-images-thumbnails {
