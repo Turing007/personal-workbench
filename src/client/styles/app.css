@@ -1446,9 +1446,11 @@ select {
   color: var(--tone-accent-text);
 }
 
+/* 上下结构：大图在上、缩略图在下，桌面与手机一致。
+   缩略图区通栏后能排更多列，单张也比原来 190px 侧栏里的三列大得多。 */
 .product-images-content {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 190px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -1461,7 +1463,7 @@ select {
 .product-images-preview {
   position: relative;
   display: grid;
-  min-height: 360px;
+  min-height: 300px;
   place-items: center;
   overflow: hidden;
   border: 1px solid var(--color-border);
@@ -1505,7 +1507,7 @@ select {
 .product-images-preview img {
   display: block;
   max-width: 100%;
-  max-height: 430px;
+  max-height: 360px;
   object-fit: contain;
 }
 
@@ -1571,22 +1573,23 @@ select {
 
 .product-images-thumbnails {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 7px;
-  max-height: 320px;
-  overflow-y: auto;
+  /* auto-fill：桌面通栏后一行约六张，单张约 130px（原来是侧栏里 58px 的三列）；
+     手机屏窄就自动减列，不横滑。不再给单个文件夹设内部滚动条：
+     大图在上之后，整个弹窗内容一起往下滚更顺手。 */
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
 }
 
+/* 缩略图卡片 = 图片 + 底栏（分类 + 勾选圆钮）。
+   底栏占自己的位置，勾选圆钮不再压在图片右上角挡产品。 */
 .product-image-thumbnail {
   position: relative;
-  display: grid;
+  display: flex;
   width: 100%;
-  aspect-ratio: 1;
-  place-items: center;
+  flex-direction: column;
   overflow: hidden;
   border: 1px solid #dbe3ea;
-  border-radius: 5px;
-  padding: 2px;
+  border-radius: 6px;
   background: #fff;
 }
 
@@ -1604,14 +1607,14 @@ select {
   outline-offset: 1px;
 }
 
-/* 点缩略图 = 看大图；勾选由右上角的小圆钮负责，两个热区不重叠。 */
+/* 点缩略图 = 看大图；勾选由卡片底栏的小圆钮负责，两个热区不重叠。 */
 .product-image-thumbnail-preview {
   display: grid;
   width: 100%;
-  height: 100%;
+  aspect-ratio: 1;
   place-items: center;
   border: 0;
-  padding: 0;
+  padding: 3px;
   background: transparent;
   cursor: zoom-in;
 }
@@ -1622,29 +1625,44 @@ select {
   object-fit: contain;
 }
 
-/* 勾选圆钮：未选时是空心圈，选中后变实心并显示勾。
-   尺寸收在缩略图右上角，不再向外扩命中区 —— 缩略图只有约 55px 宽时，
-   外扩会把「点图看大图」的中心也盖住。 */
+/* 卡片底栏：左边分类，右边勾选圆钮。圆钮不再压在产品图上，
+   缩略图被放大后也不会被遮住一角。 */
+.product-image-thumbnail-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-height: 26px;
+  border-top: 1px solid var(--color-divider);
+  padding: 2px 3px 2px 6px;
+}
+
+.product-image-thumbnail-category {
+  overflow: hidden;
+  color: var(--tone-text-soft);
+  font-size: 10px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .product-image-thumbnail-select {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  z-index: 1;
   display: inline-grid;
-  width: 24px;
-  height: 24px;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, .9);
+  border: 1px solid #c3cdd7;
   border-radius: 50%;
   padding: 0;
   color: #fff;
-  background: rgba(15, 23, 42, .42);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, .25);
+  background: #fff;
   cursor: pointer;
 }
 
 .product-image-thumbnail-select:hover {
-  background: rgba(15, 23, 42, .62);
+  border-color: var(--tone-accent-text);
+  background: var(--color-surface-subtle);
 }
 
 .product-image-thumbnail-select[aria-pressed='true'] {
@@ -1832,19 +1850,6 @@ select {
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.product-image-thumbnail-category {
-  position: absolute;
-  bottom: 2px;
-  left: 2px;
-  border-radius: 3px;
-  padding: 0 4px;
-  color: #fff;
-  background: rgba(15, 23, 42, .62);
-  font-size: 9px;
-  line-height: 14px;
-  pointer-events: none;
 }
 
 .product-detail-images {
@@ -3242,12 +3247,26 @@ select {
     background: var(--color-surface);
   }
 
-  /* 写死 6 列会让这一条的 min-content 变成 6×58+间距，反过来把外层网格顶宽，
-     手机上就得左右滑。auto-fill 按实际宽度决定列数，装不下就少放一列。 */
+  /* 缩略图放大后一行只放三张，比原来 58px 的小格子清楚；
+     用 auto-fill 而不是写死列数：窄屏自动减列，不会把外层顶宽。 */
   .product-images-thumbnails {
-    grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 6px;
     min-width: 0;
-    max-height: none;
+  }
+
+  .product-image-thumbnail-footer {
+    min-height: 30px;
+    padding: 2px 2px 2px 7px;
+  }
+
+  .product-image-thumbnail-category {
+    font-size: 11px;
+  }
+
+  .product-image-thumbnail-select {
+    width: 26px;
+    height: 26px;
   }
 
   .product-images-preview {
@@ -3257,10 +3276,6 @@ select {
 
   .product-images-preview img {
     max-height: 42vh;
-  }
-
-  .product-images-thumbnails {
-    max-height: none;
   }
 }
 

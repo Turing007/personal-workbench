@@ -83,7 +83,7 @@ test.describe('产品大图弹窗：查看与勾选分离', () => {
       await expect(page.locator('.product-images-selection-toolbar')).toContainText('已选 0 / 20');
       await expect(selectButtons.nth(2)).toHaveAttribute('aria-pressed', 'false');
 
-      // 点右上角圆钮才勾选；再点一次取消。
+      // 点底栏圆钮才勾选；再点一次取消。
       await selectButtons.nth(2).click();
       await expect(page.locator('.product-images-selection-toolbar')).toContainText('已选 1 / 20');
       await expect(selectButtons.nth(2)).toHaveAttribute('aria-pressed', 'true');

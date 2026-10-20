@@ -283,7 +283,7 @@ export default function ProductImagesModal({ open, productName = '产品', image
     return () => document.removeEventListener('keydown', handleViewerKeyDown, true);
   }, [viewerOpen, selectedImages.length]);
 
-  /** 点缩略图只切换大图预览，不改变勾选；勾选走缩略图右上角的小圆钮。 */
+  /** 点缩略图只切换大图预览，不改变勾选；勾选走缩略图右下角的圆钮。 */
   const previewImage = (image: ImageAttachment) => {
     setPreviewId(image.id);
     setCopyMessage('');
@@ -395,7 +395,7 @@ export default function ProductImagesModal({ open, productName = '产品', image
   };
 
   return (
-    <Modal open={open} className="product-images-modal" title={`${productName} · 全部图片`} onClose={onClose} width={820}>
+    <Modal open={open} className="product-images-modal" title={`${productName} · 全部图片`} onClose={onClose} width={880}>
       {!images.length && !pendingImages.length ? (
         <div className="product-images-empty"><ImageIcon size={28} /><span>暂无产品图片</span></div>
       ) : (
@@ -476,15 +476,18 @@ export default function ProductImagesModal({ open, productName = '产品', image
                                 >
                                   <img src={thumbUrl(image.url, 240)} alt="" loading="lazy" decoding="async" />
                                 </button>
-                                <span className="product-image-thumbnail-category">{PRODUCT_IMAGE_CATEGORY_LABELS[normalizeProductImageCategory(image.category)]}</span>
-                                {/* 查看与勾选分开：点图只看大图，要勾选就点右上角的小圆钮（支持 Shift 连选）。 */}
-                                <button
-                                  className="product-image-thumbnail-select"
-                                  type="button"
-                                  aria-label={`${selected ? '取消选择' : '选择'}图片：${image.name}`}
-                                  aria-pressed={selected}
-                                  onClick={(event) => toggleImage(image, event)}
-                                >{selected && <Check size={11} />}</button>
+                                {/* 查看与勾选分开：点图只看大图，要勾选就点卡片右下角的圆钮（支持 Shift 连选）。
+                                    圆钮放在图片下方，不再压在缩略图本身上面挡产品。 */}
+                                <div className="product-image-thumbnail-footer">
+                                  <span className="product-image-thumbnail-category">{PRODUCT_IMAGE_CATEGORY_LABELS[normalizeProductImageCategory(image.category)]}</span>
+                                  <button
+                                    className="product-image-thumbnail-select"
+                                    type="button"
+                                    aria-label={`${selected ? '取消选择' : '选择'}图片：${image.name}`}
+                                    aria-pressed={selected}
+                                    onClick={(event) => toggleImage(image, event)}
+                                  >{selected && <Check size={11} />}</button>
+                                </div>
                               </div>
                             );
                           })}
@@ -520,7 +523,7 @@ export default function ProductImagesModal({ open, productName = '产品', image
             )}
             {copyMessage && <div className="product-images-copy-message" role="status">{copyMessage}</div>}
             {!!visibleImages.length && <div className="product-images-help">
-              点缩略图看大图，点右上角圆钮勾选（按住 Shift 可连选一段）；
+              点缩略图看大图，点缩略图右下角圆钮勾选（按住 Shift 可连选一段）；
               {touchDevice ? (nativeSave ? '点「保存到相册」即可存进手机相册。' : '长按大图可保存到相册。') : '也可以右键保存图片。'}
             </div>}
           </div>
