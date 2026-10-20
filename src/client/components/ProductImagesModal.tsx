@@ -1,4 +1,4 @@
-import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Copy, Download, ExternalLink, Folder, Hand, Image as ImageIcon, Upload, X } from 'lucide-react';
+import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Copy, Download, ExternalLink, Folder, Hand, Image as ImageIcon, Upload, X, ZoomIn } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent, TouchEvent as ReactTouchEvent } from 'react';
 import { createPortal } from 'react-dom';
@@ -8,6 +8,7 @@ import type { UploadFileSnapshot } from '../product-upload-queue';
 import { canSaveImageNatively, registerImageSaveFailureHandler, registerImageSavedHandler } from '../app-bridge';
 import { reportImageSaveFailure, saveStageText, startSaveImageToAlbum } from '../image-save';
 import { thumbUrl } from '../image-urls';
+import { registerCloseLayer, unregisterCloseLayer } from '../navigation-history';
 import { useIsNarrow } from '../use-is-narrow';
 import type { ImageAttachment } from './ImagePasteUpload';
 import {
@@ -108,12 +109,14 @@ async function toClipboardBlob(blob: Blob) {
 }
 
 export default function ProductImagesModal({ open, productName = '产品', images, pendingImages = [], onRetryUploadFile, onClose }: ProductImagesModalProps) {
-  const [previewId, setPreviewId] = useState(images[0]?.id ?? '');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [collapsedFolders, setCollapsedFolders] = useState<string[]>([]);
   const [copying, setCopying] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [copyMessage, setCopyMessage] = useState('');
+  /** 放大镜浮层：null = 关闭，否则是当前查看的图片 id。 */
+  const [zoomedId, setZoomedId] = useState<string | null>(null);
+  /** 保存到相册的全屏长按查看器（与放大镜是两个独立入口）。 */
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
   const [savingToAlbum, setSavingToAlbum] = useState(false);
@@ -123,6 +126,7 @@ export default function ProductImagesModal({ open, productName = '产品', image
   const touchDevice = touchPointer && narrow;
   const canCopyImages = supportsImageCopy();
   const nativeSave = canSaveImageNatively();
+  const zoomLayerRef = useRef(Symbol('product-image-zoom'));
   /** 原生一次只写一张，剩下的排队；用 ref 保存队列以免回调里读到过期闭包。 */
   const saveQueueRef = useRef<ImageAttachment[]>([]);
   const saveTotalRef = useRef(0);
@@ -131,8 +135,10 @@ export default function ProductImagesModal({ open, productName = '产品', image
   const albumBatchRef = useRef(false);
   /** 最近一次普通点击（非 Shift）的锚点；Shift 连选以它为起点。 */
   const selectionAnchorRef = useRef<string | null>(null);
-  /** 手机端大图左右滑动的起点；只在窄屏生效，桌面仍用两侧按钮。 */
+  /** 手机端大图左右滑动的起点；只在窄屏生效，桌面仍用底部按钮。 */
   const swipeRef = useRef<{ x: number; y: number } | null>(null);
+  /** 刚滑过一张的时间戳：浏览器补发的那次 click 不能把浮层关掉。 */
+  const lastSwipeAtRef = useRef(0);
 
   /** 记录最近一次失败环节：界面提示用，同时回报到服务端日志。 */
   const noteSaveFailure = (stage: string | undefined, message = '') => {
@@ -195,13 +201,12 @@ export default function ProductImagesModal({ open, productName = '产品', image
   }, [nativeSave]);
 
   useEffect(() => {
-    const firstId = images[0]?.id ?? '';
-    setPreviewId(firstId);
     // 打开弹窗/切换产品时不再默认勾选第一张：预勾选会让复制、下载、保存到相册的计数虚高，
     // 用户还得先手动取消第一张，一不小心就把不想带的图一起复制走了。
     setSelectedIds(new Set());
     setCollapsedFolders([]);
     setCopyMessage('');
+    setZoomedId(null);
     setViewerOpen(false);
     // 上一次未存完的批次跟着作废，否则换了产品还会继续往相册里塞旧图。
     albumBatchRef.current = false;
@@ -230,43 +235,48 @@ export default function ProductImagesModal({ open, productName = '产品', image
     [images, categoryCounts],
   );
 
-  const selectedImage = visibleImages.find((image) => image.id === previewId) ?? visibleImages[0];
-  const previewIndex = selectedImage ? visibleImages.findIndex((image) => image.id === selectedImage.id) : -1;
   const selectedImages = useMemo(() => visibleImages.filter((image) => selectedIds.has(image.id)), [visibleImages, selectedIds]);
   const allSelected = visibleImages.length > 0 && selectedImages.length === visibleImages.length;
+  const zoomIndex = zoomedId ? visibleImages.findIndex((image) => image.id === zoomedId) : -1;
+  const zoomedImage = zoomIndex >= 0 ? visibleImages[zoomIndex] : null;
   const viewerImage = selectedImages[Math.min(viewerIndex, selectedImages.length - 1)];
 
   /** 手机端保存入口：打开全屏大图，让用户长按走系统「存储到照片」。 */
   const openViewer = () => {
     if (!selectedImages.length) return;
-    const start = selectedImages.findIndex((image) => image.id === selectedImage?.id);
-    setViewerIndex(start >= 0 ? start : 0);
+    setViewerIndex(0);
     setCopyMessage('');
     setViewerOpen(true);
   };
 
-  const goPreview = (offset: number) => {
-    const nextIndex = previewIndex + offset;
-    if (nextIndex < 0 || nextIndex >= visibleImages.length) return;
-    setPreviewId(visibleImages[nextIndex].id);
-    setCopyMessage('');
+  const goZoom = (offset: number) => {
+    setZoomedId((current) => {
+      const index = visibleImages.findIndex((image) => image.id === current);
+      return visibleImages[index + offset]?.id ?? current;
+    });
   };
 
   useEffect(() => {
-    if (!open) return undefined;
+    if (!zoomedImage) return undefined;
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        goPreview(-1);
-      } else if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        goPreview(1);
-      }
+      if (event.key !== 'Escape' && event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      // 捕获阶段先拦下按键：否则外层图库的监听会跟着响应，Esc 会连整个弹窗一起关掉。
+      event.stopPropagation();
+      event.preventDefault();
+      if (event.key === 'Escape') setZoomedId(null);
+      else goZoom(event.key === 'ArrowLeft' ? -1 : 1);
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open, previewIndex, visibleImages]);
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
+  }, [zoomedImage, visibleImages]);
+
+  // 安卓返回键：放大图浮层在弹窗之上，先关浮层、再关图库。
+  const zoomOpen = Boolean(zoomedImage);
+  useEffect(() => {
+    if (!zoomOpen) return undefined;
+    registerCloseLayer(zoomLayerRef.current, () => setZoomedId(null));
+    return () => unregisterCloseLayer(zoomLayerRef.current);
+  }, [zoomOpen]);
 
   useEffect(() => {
     if (!viewerOpen) return undefined;
@@ -283,9 +293,9 @@ export default function ProductImagesModal({ open, productName = '产品', image
     return () => document.removeEventListener('keydown', handleViewerKeyDown, true);
   }, [viewerOpen, selectedImages.length]);
 
-  /** 点缩略图只切换大图预览，不改变勾选；勾选走缩略图右下角的圆钮。 */
+  /** 点缩略图或放大镜：只打开大图浮层，不改变勾选；勾选走缩略图底部圆钮。 */
   const previewImage = (image: ImageAttachment) => {
-    setPreviewId(image.id);
+    setZoomedId(image.id);
     setCopyMessage('');
   };
 
@@ -320,12 +330,12 @@ export default function ProductImagesModal({ open, productName = '产品', image
   };
 
   /** 手机端大图左右滑动切图：横向位移够大且明显大于纵向，才当成换图，避免和上下滚动打架。 */
-  const onPreviewTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
+  const onZoomTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
     const touch = event.touches[0];
     swipeRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
   };
 
-  const onPreviewTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
+  const onZoomTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
     const start = swipeRef.current;
     swipeRef.current = null;
     if (!start || !touchDevice) return;
@@ -334,9 +344,17 @@ export default function ProductImagesModal({ open, productName = '产品', image
     const dx = touch.clientX - start.x;
     const dy = touch.clientY - start.y;
     if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
-    goPreview(dx < 0 ? 1 : -1);
+    // 滑完浏览器还会补一次 click，别让那一下把刚翻到的大图关掉。
+    lastSwipeAtRef.current = Date.now();
+    goZoom(dx < 0 ? 1 : -1);
   };
 
+  /** 点大图周围的空白关闭浮层（点图片本身不关，方便凑近看细节）；滑动手势紧跟的那次 click 不算。 */
+  const closeZoomOnBackdrop = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (Date.now() - lastSwipeAtRef.current < 350) return;
+    // 外框和舞台都可能是「空白」：图片比舞台小时点到的就是舞台本身。
+    if (event.target === event.currentTarget) setZoomedId(null);
+  };
   const toggleAll = () => {
     setSelectedIds(allSelected ? new Set() : new Set(visibleImages.map((image) => image.id)));
     // 全选/清空后锚点作废：下一次 Shift 连选从刚点的那张重新起算。
@@ -400,26 +418,6 @@ export default function ProductImagesModal({ open, productName = '产品', image
         <div className="product-images-empty"><ImageIcon size={28} /><span>暂无产品图片</span></div>
       ) : (
         <div className="product-images-content">
-          <div className="product-images-preview-wrap">
-            <div
-              className="product-images-preview"
-              onTouchStart={onPreviewTouchStart}
-              onTouchEnd={onPreviewTouchEnd}
-            >
-              {selectedImage && <img src={selectedImage.url} alt={selectedImage.name} draggable={false} />}
-              {!selectedImage && pendingImages.length > 0 && <div className="product-images-preview-uploading"><Upload size={20} /><span>图片正在上传，完成后会显示在这里</span></div>}
-              <button className="product-images-preview-nav product-images-preview-nav-prev" type="button" aria-label="上一张图片" title="上一张图片" disabled={previewIndex <= 0} onClick={() => goPreview(-1)}><ChevronLeft size={22} /></button>
-              <button className="product-images-preview-nav product-images-preview-nav-next" type="button" aria-label="下一张图片" title="下一张图片" disabled={previewIndex < 0 || previewIndex >= visibleImages.length - 1} onClick={() => goPreview(1)}><ChevronRight size={22} /></button>
-            </div>
-            <div className="product-images-preview-name">
-              <span className="product-images-preview-name-text">{selectedImage?.name || '产品图片'}</span>
-              {touchDevice && visibleImages.length > 1 && <span className="product-images-swipe-hint">左右滑动切换</span>}
-            </div>
-            {selectedImage && <div className="product-images-preview-meta">
-              <span className="product-image-category-badge">{PRODUCT_IMAGE_CATEGORY_LABELS[normalizeProductImageCategory(selectedImage.category)]}</span>
-              {selectedImage.note?.trim() && <span className="product-images-preview-note" title={selectedImage.note}>{selectedImage.note}</span>}
-            </div>}
-          </div>
           <div className="product-images-side">
             {!!pendingImages.length && <section className="product-images-pending" aria-label="正在上传的图片">
               <div className={`product-images-pending-header${pendingImages.some((item) => item.status === 'failed') && !pendingImages.some((item) => item.status === 'queued' || item.status === 'uploading') ? ' is-failed' : ''}`}>
@@ -461,11 +459,10 @@ export default function ProductImagesModal({ open, productName = '产品', image
                         <div className="product-images-thumbnails">
                           {folderImages.map((image) => {
                             const selected = selectedIds.has(image.id);
-                            const previewing = image.id === selectedImage?.id;
                             return (
                               <div
                                 key={image.id}
-                                className={`product-image-thumbnail${selected ? ' is-selected' : ''}${previewing ? ' is-previewing' : ''}`}
+                                className={`product-image-thumbnail${selected ? ' is-selected' : ''}`}
                               >
                                 <button
                                   className="product-image-thumbnail-preview"
@@ -476,10 +473,16 @@ export default function ProductImagesModal({ open, productName = '产品', image
                                 >
                                   <img src={thumbUrl(image.url, 240)} alt="" loading="lazy" decoding="async" />
                                 </button>
-                                {/* 查看与勾选分开：点图只看大图，要勾选就点卡片右下角的圆钮（支持 Shift 连选）。
-                                    圆钮放在图片下方，不再压在缩略图本身上面挡产品。 */}
+                                {/* 底栏：分类 + 放大镜 + 勾选圆钮。放大镜点开大图浮层，圆钮只负责勾选，三者热区互不重叠。 */}
                                 <div className="product-image-thumbnail-footer">
                                   <span className="product-image-thumbnail-category">{PRODUCT_IMAGE_CATEGORY_LABELS[normalizeProductImageCategory(image.category)]}</span>
+                                  <button
+                                    className="product-image-thumbnail-zoom"
+                                    type="button"
+                                    title={`放大查看：${image.name}`}
+                                    aria-label={`放大查看图片：${image.name}`}
+                                    onClick={() => previewImage(image)}
+                                  ><ZoomIn size={13} /></button>
                                   <button
                                     className="product-image-thumbnail-select"
                                     type="button"
@@ -523,11 +526,49 @@ export default function ProductImagesModal({ open, productName = '产品', image
             )}
             {copyMessage && <div className="product-images-copy-message" role="status">{copyMessage}</div>}
             {!!visibleImages.length && <div className="product-images-help">
-              点缩略图看大图，点缩略图右下角圆钮勾选（按住 Shift 可连选一段）；
+              点缩略图或放大镜看大图，点缩略图底部圆钮勾选（按住 Shift 可连选一段）；
               {touchDevice ? (nativeSave ? '点「保存到相册」即可存进手机相册。' : '长按大图可保存到相册。') : '也可以右键保存图片。'}
             </div>}
           </div>
         </div>
+      )}
+      {zoomedImage && createPortal(
+        <div
+          className="product-image-zoom"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`查看大图：${zoomedImage.name}`}
+          onClick={closeZoomOnBackdrop}
+        >
+          <div className="product-image-zoom-bar">
+            <span className="product-image-zoom-counter">{zoomIndex + 1} / {visibleImages.length}</span>
+            <span className="product-image-zoom-name">{zoomedImage.name}</span>
+            <button
+              className="product-image-zoom-close"
+              type="button"
+              aria-label="关闭大图"
+              title="关闭大图"
+              onClick={() => setZoomedId(null)}
+            ><X size={20} /></button>
+          </div>
+          <div
+            className="product-image-zoom-stage"
+            onTouchStart={onZoomTouchStart}
+            onTouchEnd={onZoomTouchEnd}
+            onClick={closeZoomOnBackdrop}
+          >
+            <img src={zoomedImage.url} alt={zoomedImage.name} draggable={false} />
+            {touchDevice && visibleImages.length > 1 && <span className="product-image-zoom-hint">左右滑动切换</span>}
+          </div>
+          <div className="product-image-zoom-footer">
+            <span className="product-image-category-badge">{PRODUCT_IMAGE_CATEGORY_LABELS[normalizeProductImageCategory(zoomedImage.category)]}</span>
+            {zoomedImage.note?.trim() && <span className="product-image-zoom-note" title={zoomedImage.note}>{zoomedImage.note}</span>}
+            <button className="product-image-zoom-nav" type="button" disabled={zoomIndex <= 0} onClick={() => goZoom(-1)}><ChevronLeft size={16} />上一张</button>
+            <button className="product-image-zoom-nav" type="button" disabled={zoomIndex >= visibleImages.length - 1} onClick={() => goZoom(1)}>下一张<ChevronRight size={16} /></button>
+            <a className="product-image-zoom-open" href={zoomedImage.url} target="_blank" rel="noreferrer"><ExternalLink size={14} />在新标签打开</a>
+          </div>
+        </div>,
+        document.body,
       )}
       {viewerOpen && viewerImage && createPortal(
         <div

@@ -19,7 +19,7 @@ const PNG_1X1 = Buffer.from(
   'base64',
 );
 
-/** 造 20 张图：够把缩略图区撑到需要滚动，验证大图吸顶。 */
+/** 造 20 张图：够把缩略图区撑得比弹窗还长，验证列表本身能滚。 */
 async function seedProductWithImages(page: Page, stamp: number) {
   const created = await page.request.post('/api/products', {
     data: {
@@ -66,37 +66,55 @@ async function swipe(context: BrowserContext, page: Page, fromX: number, toX: nu
   await page.waitForTimeout(250);
 }
 
-test.describe('产品大图弹窗：查看与勾选分离', () => {
-  test('点缩略图只切换大图，勾选走独立圆钮；桌面端仍用两侧按钮切图', async ({ page }) => {
+test.describe('产品大图弹窗：缩略图 + 放大镜', () => {
+  test('弹窗里不再常驻大图；点缩略图和放大镜都弹出大图浮层，且都不产生勾选', async ({ page }) => {
     const product = await seedProductWithImages(page, Date.now());
     try {
       await openImagesModal(page, product.sku);
-      const previewName = page.locator('.product-images-preview-name');
       const thumbs = page.locator('.product-image-thumbnail');
       const selectButtons = page.locator('.product-image-thumbnail-select');
       await expect(thumbs).toHaveCount(20);
-      const firstName = await previewName.textContent();
 
-      // 点缩略图：大图切过去，但勾选数保持 0。
+      // 顶部那个常驻大图已经去掉：弹窗里第一眼就是缩略图。
+      await expect(page.locator('.product-images-preview')).toHaveCount(0);
+      await expect(page.locator('.product-image-zoom')).toHaveCount(0);
+
+      // 点缩略图：弹出大图浮层，计数从 1 开始，勾选仍为 0。
       await thumbs.nth(2).locator('.product-image-thumbnail-preview').click();
-      await expect(previewName).not.toHaveText(firstName ?? '');
+      const zoom = page.locator('.product-image-zoom');
+      await expect(zoom).toBeVisible();
+      await expect(zoom.locator('.product-image-zoom-counter')).toHaveText('3 / 20');
+      await expect(zoom.locator('.product-image-zoom-stage img')).toBeVisible();
       await expect(page.locator('.product-images-selection-toolbar')).toContainText('已选 0 / 20');
       await expect(selectButtons.nth(2)).toHaveAttribute('aria-pressed', 'false');
 
-      // 点底栏圆钮才勾选；再点一次取消。
+      // 桌面端用底部「上一张 / 下一张」切图，仍然不勾选。
+      // 按钮必须真的可点：原图按自然尺寸撑出浮层时会把底部操作条盖住，Playwright 会报 intercepted。
+      const imageBox = await zoom.locator('.product-image-zoom-stage img').boundingBox();
+      const footerBox = await zoom.locator('.product-image-zoom-footer').boundingBox();
+      expect(imageBox && footerBox && imageBox.y + imageBox.height, '大图不能压到底部操作条').toBeLessThanOrEqual((footerBox?.y ?? 0) + 1);
+      await zoom.getByRole('button', { name: '下一张' }).click();
+      await expect(zoom.locator('.product-image-zoom-counter')).toHaveText('4 / 20');
+      await zoom.getByRole('button', { name: '上一张' }).click();
+      await expect(zoom.locator('.product-image-zoom-counter')).toHaveText('3 / 20');
+      await expect(page.locator('.product-images-selection-toolbar')).toContainText('已选 0 / 20');
+
+      // Esc 关闭浮层，图库弹窗本身还在。
+      await page.keyboard.press('Escape');
+      await expect(zoom).toHaveCount(0);
+      await expect(page.locator('.product-images-content')).toBeVisible();
+
+      // 底栏放大镜打开同一张图；点空白处关闭。
+      await thumbs.nth(0).locator('.product-image-thumbnail-zoom').click();
+      await expect(zoom).toBeVisible();
+      await expect(zoom.locator('.product-image-zoom-counter')).toHaveText('1 / 20');
+      await zoom.locator('.product-image-zoom-stage').click({ position: { x: 5, y: 5 } });
+      await expect(zoom).toHaveCount(0);
+
+      // 勾选仍只认底栏圆钮。
       await selectButtons.nth(2).click();
       await expect(page.locator('.product-images-selection-toolbar')).toContainText('已选 1 / 20');
       await expect(selectButtons.nth(2)).toHaveAttribute('aria-pressed', 'true');
-      await selectButtons.nth(2).click();
-      await expect(page.locator('.product-images-selection-toolbar')).toContainText('已选 0 / 20');
-
-      // 桌面端按钮切图：点「下一张」大图变化，且不产生勾选。
-      const beforeNext = await previewName.textContent();
-      await page.getByRole('button', { name: '下一张图片' }).click();
-      await expect(previewName).not.toHaveText(beforeNext ?? '');
-      await expect(page.locator('.product-images-selection-toolbar')).toContainText('已选 0 / 20');
-      // 桌面端不显示「左右滑动切换」提示。
-      await expect(page.locator('.product-images-swipe-hint')).toHaveCount(0);
     } finally {
       await page.request.delete(`/api/products/${product.id}`);
     }
@@ -106,68 +124,64 @@ test.describe('产品大图弹窗：查看与勾选分离', () => {
 test.describe('手机端', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 });
 
-  test('缩略图往下翻时大图固定在顶部', async ({ page }) => {
+  test('缩略图列表自身可滚，大图浮层铺满屏幕', async ({ page }) => {
     const product = await seedProductWithImages(page, Date.now());
     try {
-      // 高度压到 600：20 张缩略图必定撑出内容区滚动，才能验证吸顶（844 高时整页恰好放得下）。
       await page.setViewportSize({ width: 390, height: 600 });
       await openImagesModal(page, product.sku, true);
       const body = page.locator('.modal-body');
-      const preview = page.locator('.product-images-preview');
 
-      // 先记录大图初始位置，再把内容区滚到底（缩略图多，够滚动）。
-      const before = await preview.evaluate((node) => Math.round(node.getBoundingClientRect().top));
+      // 没有常驻大图占位后，缩略图从弹窗顶部就开始；列表超出时由内容区滚动。
       const scrollable = await body.evaluate((node) => node.scrollHeight - node.clientHeight);
-      expect(scrollable, '内容区应当可以滚动，才能验证吸顶').toBeGreaterThan(0);
-      await body.evaluate((node) => { node.scrollTop = node.scrollHeight; });
-      await page.waitForTimeout(200);
+      expect(scrollable, '内容区应当可以滚动').toBeGreaterThan(0);
 
-      const after = await preview.evaluate((node) => Math.round(node.getBoundingClientRect().top));
-      // 吸顶后与滚动前基本同高（允许 2px 取整误差），而不是被滚出屏幕。
-      expect(Math.abs(after - before)).toBeLessThanOrEqual(2);
-      await expect(preview).toBeVisible();
-      // 大图不能占满整屏，给下面的缩略图留出滚动空间。
+      await page.locator('.product-image-thumbnail-preview').first().click();
+      const zoom = page.locator('.product-image-zoom');
+      await expect(zoom).toBeVisible();
       const metrics = await page.evaluate(() => {
-        const image = document.querySelector('.product-images-preview') as HTMLElement;
-        return { height: image.getBoundingClientRect().height, viewport: window.innerHeight };
+        const node = document.querySelector('.product-image-zoom') as HTMLElement;
+        const rect = node.getBoundingClientRect();
+        return { width: rect.width, height: rect.height, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight };
       });
-      expect(metrics.height).toBeLessThan(metrics.viewport * 0.6);
+      // 浮层铺满视口，大图才够大；不再被弹窗正文的高度限制。
+      expect(Math.abs(metrics.width - metrics.viewportWidth)).toBeLessThanOrEqual(1);
+      expect(Math.abs(metrics.height - metrics.viewportHeight)).toBeLessThanOrEqual(1);
     } finally {
       await page.request.delete(`/api/products/${product.id}`);
     }
   });
 
-  test('大图左滑切下一张、右滑切上一张，到头停住不循环', async ({ page, context }) => {
+  test('大图浮层左滑切下一张、右滑切上一张，到头停住不循环', async ({ page, context }) => {
     const product = await seedProductWithImages(page, Date.now());
     try {
       await openImagesModal(page, product.sku, true);
-      const nameText = () => page.locator('.product-images-preview-name-text').textContent();
-      const preview = page.locator('.product-images-preview');
-      const box = await preview.boundingBox();
+      await page.locator('.product-image-thumbnail-preview').first().click();
+      const zoom = page.locator('.product-image-zoom');
+      await expect(zoom).toBeVisible();
+      await expect(zoom.locator('.product-image-zoom-counter')).toHaveText('1 / 20');
+
+      const stage = zoom.locator('.product-image-zoom-stage');
+      const box = await stage.boundingBox();
       if (!box) throw new Error('大图区域不可见');
       const y = box.y + box.height / 2;
-      const first = await nameText();
-      expect(first).toContain('-0.png');
 
-      // 在第一张上往右滑（想去上一张）：到头停住。
+      // 第一张右滑（想去上一张）：到头停住。
       await swipe(context, page, box.x + 20, box.x + box.width - 20, y);
-      expect(await nameText()).toBe(first);
+      await expect(zoom.locator('.product-image-zoom-counter')).toHaveText('1 / 20');
 
       // 左滑 = 下一张，再左滑 = 再下一张。
       await swipe(context, page, box.x + box.width - 20, box.x + 20, y);
-      const second = await nameText();
-      expect(second).not.toBe(first);
+      await expect(zoom.locator('.product-image-zoom-counter')).toHaveText('2 / 20');
       await swipe(context, page, box.x + box.width - 20, box.x + 20, y);
-      const third = await nameText();
-      expect(third).not.toBe(second);
+      await expect(zoom.locator('.product-image-zoom-counter')).toHaveText('3 / 20');
 
-      // 右滑 = 上一张，回到第二张。
+      // 右滑 = 上一张。
       await swipe(context, page, box.x + 20, box.x + box.width - 20, y);
-      await expect(page.locator('.product-images-preview-name-text')).toHaveText(second ?? '');
+      await expect(zoom.locator('.product-image-zoom-counter')).toHaveText('2 / 20');
 
       // 滑动只换图，不产生勾选；手机上显示滑动提示。
       await expect(page.locator('.product-images-selection-toolbar')).toContainText('已选 0 / 20');
-      await expect(page.locator('.product-images-swipe-hint')).toBeVisible();
+      await expect(zoom.locator('.product-image-zoom-hint')).toBeVisible();
     } finally {
       await page.request.delete(`/api/products/${product.id}`);
     }
