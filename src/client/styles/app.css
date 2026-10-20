@@ -577,15 +577,29 @@ select {
   padding: 0 22px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   border-bottom: 1px solid var(--color-divider);
 }
 
+/* 标题自己吃掉剩余宽度并省略：标题栏右侧可能挂着操作按钮，长产品名不能把它们挤出去。 */
 .modal-title {
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--color-text);
   font-size: 16px;
   font-weight: var(--weight-bold);
   letter-spacing: -.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 标题栏里的额外操作（如产品图库的复制/下载）：关闭按钮始终在最右，不被文字挤走。 */
+.modal-header-extra {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
 }
 
 .modal-close {
@@ -1602,17 +1616,15 @@ select {
   background: var(--tone-accent-text);
 }
 
-.product-images-copy-button {
-  width: 100%;
-}
-
+/* 批量操作在标题栏里：一行放下复制/下载/存相册，不再占满正文宽度。 */
+.product-images-copy-button,
 .product-images-download-button,
 .product-images-save-button {
   display: inline-flex;
-  width: 100%;
   align-items: center;
   justify-content: center;
   gap: 5px;
+  white-space: nowrap;
 }
 
 .product-images-copy-message {
@@ -1731,6 +1743,7 @@ select {
 }
 
 .product-image-zoom-nav,
+.product-image-zoom-download,
 .product-image-zoom-open {
   display: inline-flex;
   min-height: 36px;
@@ -1747,16 +1760,30 @@ select {
   text-decoration: none;
 }
 
-.product-image-zoom-nav:disabled {
+.product-image-zoom-nav:disabled,
+.product-image-zoom-download:disabled {
   cursor: not-allowed;
   opacity: .4;
 }
 
+/* 单张下载是这一行的主操作：绿底描边，和切图按钮区分开。 */
+.product-image-zoom-download {
+  border-color: rgba(45, 212, 191, .45);
+  color: #7ff0e0;
+  background: rgba(45, 212, 191, .18);
+}
+
 .product-image-zoom-open {
   margin-left: auto;
-  border-color: rgba(45, 212, 191, .4);
+  border-color: rgba(245, 247, 251, .22);
+  color: rgba(245, 247, 251, .86);
+  background: rgba(245, 247, 251, .08);
+}
+
+.product-image-zoom-message {
   color: #7ff0e0;
-  background: rgba(45, 212, 191, .14);
+  font-size: var(--text-xs);
+  text-align: center;
 }
 
 /* ===== 手机端「保存到相册」全屏长按保存 =====
@@ -3313,6 +3340,7 @@ select {
   }
 
   .product-image-zoom-nav,
+  .product-image-zoom-download,
   .product-image-zoom-open {
     min-height: 34px;
     padding: 0 var(--space-4);
@@ -3321,6 +3349,15 @@ select {
 
   .product-image-zoom-open {
     margin-left: 0;
+  }
+
+  /* 手机上底部操作会折成两行：分类/备注一行，切图与保存靠右一行。 */
+  .product-image-zoom-footer {
+    gap: var(--space-2);
+  }
+
+  .product-image-zoom-note {
+    flex-basis: 100%;
   }
 }
 

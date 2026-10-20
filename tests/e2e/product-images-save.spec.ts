@@ -91,7 +91,9 @@ test.describe('手机端：触摸 + 局域网 http（非安全上下文）', () 
       await openImagesModal(page, product.sku, true);
       await selectFirstThumbnail(page);
 
-      await expect(page.locator('.product-images-save-button')).toHaveText(/保存到相册（1）/);
+      await expect(page.locator('.product-images-save-button')).toHaveText(/存相册（1）/);
+      // 批量操作在标题栏里固定着，不用滚到列表底部。
+      await expect(page.locator('.product-images-modal .modal-header .product-images-save-button')).toBeVisible();
       // 这条是本用例的核心：局域网 http 下复制图片必然失败，所以按钮根本不该出现。
       await expect(page.locator('.product-images-copy-button')).toHaveCount(0);
       // 手机端不再走 <a download> + blob（iOS/安卓会静默忽略），那条路径的按钮也不该出现。
@@ -167,7 +169,7 @@ test.describe('手机端：触摸 + 局域网 http（非安全上下文）', () 
       await openImagesModal(page, product.sku, true);
       await selectFirstThumbnail(page);
 
-      await expect(page.locator('.product-images-help')).toContainText('点「保存到相册」即可存进手机相册');
+      await expect(page.locator('.product-images-help')).toContainText('点顶部的「存相册」即可存进手机相册');
       await page.locator('.product-images-save-button').click();
 
       await expect(page.locator('.product-images-copy-message')).toHaveText('已保存 1 张到手机相册');
@@ -292,9 +294,11 @@ test.describe('桌面端：安全上下文', () => {
       ));
       expect(canCopyImages).toBe(true);
 
-      await expect(page.locator('.product-images-copy-button')).toHaveText(/复制所选图片（1）/);
+      await expect(page.locator('.product-images-copy-button')).toHaveText(/复制（1）/);
       // 下载兜底不再藏在「复制失败提示」后面，安全上下文下也一直可见。
-      await expect(page.locator('.product-images-download-button')).toHaveText(/下载所选图片（1）/);
+      await expect(page.locator('.product-images-download-button')).toHaveText(/下载（1）/);
+      // 两个按钮都在标题栏，长列表也不用滚到底。
+      await expect(page.locator('.product-images-modal .modal-header .product-images-download-button')).toBeVisible();
       await expect(page.locator('.product-images-save-button')).toHaveCount(0);
       await expect(page.locator('.product-images-help')).toContainText('右键保存图片');
     } finally {

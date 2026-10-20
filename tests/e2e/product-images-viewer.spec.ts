@@ -99,6 +99,14 @@ test.describe('产品大图弹窗：缩略图 + 放大镜', () => {
       await expect(zoom.locator('.product-image-zoom-counter')).toHaveText('3 / 20');
       await expect(page.locator('.product-images-selection-toolbar')).toContainText('已选 0 / 20');
 
+      // 大图上的「下载这张」只下载当前这一张，和勾选无关。
+      const singleDownload = page.waitForEvent('download');
+      await zoom.locator('.product-image-zoom-download').click();
+      const singleFile = await singleDownload;
+      expect(singleFile.suggestedFilename()).toMatch(/viewer-.*-2\.png$/);
+      await expect(zoom.locator('.product-image-zoom-message')).toContainText('已开始下载这张图片');
+      await expect(page.locator('.product-images-selection-toolbar')).toContainText('已选 0 / 20');
+
       // Esc 关闭浮层，图库弹窗本身还在。
       await page.keyboard.press('Escape');
       await expect(zoom).toHaveCount(0);
@@ -146,6 +154,49 @@ test.describe('手机端', () => {
       // 浮层铺满视口，大图才够大；不再被弹窗正文的高度限制。
       expect(Math.abs(metrics.width - metrics.viewportWidth)).toBeLessThanOrEqual(1);
       expect(Math.abs(metrics.height - metrics.viewportHeight)).toBeLessThanOrEqual(1);
+    } finally {
+      await page.request.delete(`/api/products/${product.id}`);
+    }
+  });
+
+  test('大图浮层的「保存到相册」只存当前这一张，等原生回执后提示', async ({ page, context }) => {
+    // 伪装 1.18 壳：网页抓好的字节交给原生，并按壳的行为回执。
+    await context.addInitScript(() => {
+      const target = window as unknown as { __saves: { base64: string; name?: string }[]; workbenchApp: unknown };
+      target.__saves = [];
+      target.workbenchApp = {
+        getNetworks: () => '[]',
+        switchNetwork: () => {},
+        openAddressEditor: () => {},
+        setOverlayOpen: () => {},
+        saveImage: () => {},
+        saveImageData: (base64: string, name?: string) => {
+          target.__saves.push({ base64, name });
+          window.setTimeout(() => {
+            (window as unknown as { __workbenchImageSaved?: (ok: boolean) => void }).__workbenchImageSaved?.(true);
+          }, 0);
+        },
+      };
+    });
+    const client = await context.newCDPSession(page);
+    await client.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+
+    const product = await seedProductWithImages(page, Date.now());
+    try {
+      await openImagesModal(page, product.sku, true);
+      await page.locator('.product-image-thumbnail-zoom').nth(1).click();
+      const zoom = page.locator('.product-image-zoom');
+      await expect(zoom.locator('.product-image-zoom-counter')).toHaveText('2 / 20');
+
+      await zoom.locator('.product-image-zoom-download').click();
+      await expect(zoom.locator('.product-image-zoom-message')).toHaveText('已保存到手机相册');
+      // 只存当前这一张，并且交给原生的是原图字节（1×1 PNG）而不是缩略图。
+      const saves = await page.evaluate(() => (window as unknown as { __saves: { base64: string }[] }).__saves);
+      expect(saves).toHaveLength(1);
+      expect(Buffer.from(saves[0].base64, 'base64').equals(PNG_1X1)).toBe(true);
+      // 单张保存不应把弹窗里的勾选带上。
+      await page.locator('.product-image-zoom-close').click();
+      await expect(page.locator('.product-images-selection-toolbar')).toContainText('已选 0 / 20');
     } finally {
       await page.request.delete(`/api/products/${product.id}`);
     }

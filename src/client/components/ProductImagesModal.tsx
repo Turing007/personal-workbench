@@ -121,6 +121,9 @@ export default function ProductImagesModal({ open, productName = '产品', image
   const [viewerIndex, setViewerIndex] = useState(0);
   const [savingToAlbum, setSavingToAlbum] = useState(false);
   const [savingProgress, setSavingProgress] = useState('');
+  /** 大图浮层里的单张下载：忙碌态与结果提示（浮层关闭后仍可复用状态）。 */
+  const [zoomDownloading, setZoomDownloading] = useState(false);
+  const [zoomSaveMessage, setZoomSaveMessage] = useState('');
   const touchPointer = useTouchPointer();
   const narrow = useIsNarrow();
   const touchDevice = touchPointer && narrow;
@@ -133,6 +136,9 @@ export default function ProductImagesModal({ open, productName = '产品', image
   const saveResultRef = useRef({ ok: 0, failed: 0 });
   const saveFailureRef = useRef('');
   const albumBatchRef = useRef(false);
+  /** 大图浮层里正在等原生回执的单张保存；与批量保存的回执互斥。 */
+  const singleSaveRef = useRef(false);
+  const zoomFailureRef = useRef('');
   /** 最近一次普通点击（非 Shift）的锚点；Shift 连选以它为起点。 */
   const selectionAnchorRef = useRef<string | null>(null);
   /** 手机端大图左右滑动的起点；只在窄屏生效，桌面仍用底部按钮。 */
@@ -184,13 +190,25 @@ export default function ProductImagesModal({ open, productName = '产品', image
   useEffect(() => {
     if (!nativeSave) return undefined;
     const unregisterSaved = registerImageSavedHandler((ok) => {
-      // 长按图片保存走的是同一个回调，但没有排队中的批次，这里忽略即可。
+      // 大图浮层的单张保存：一次只存一张，收到回执就收尾。
+      if (singleSaveRef.current) {
+        singleSaveRef.current = false;
+        setZoomDownloading(false);
+        setZoomSaveMessage(ok ? '已保存到手机相册' : `保存失败${zoomFailureRef.current ? `：${zoomFailureRef.current}` : '，请重试'}`);
+        zoomFailureRef.current = '';
+        return;
+      }
       if (!albumBatchRef.current) return;
       if (ok) saveResultRef.current.ok += 1;
       else saveResultRef.current.failed += 1;
       sendNextToAlbum();
     });
     const unregisterFailed = registerImageSaveFailureHandler((stage, message) => {
+      if (singleSaveRef.current) {
+        zoomFailureRef.current = saveStageText(stage);
+        reportImageSaveFailure(stage, message);
+        return;
+      }
       if (!albumBatchRef.current) return;
       noteSaveFailure(stage, message);
     });
@@ -240,6 +258,46 @@ export default function ProductImagesModal({ open, productName = '产品', image
   const zoomIndex = zoomedId ? visibleImages.findIndex((image) => image.id === zoomedId) : -1;
   const zoomedImage = zoomIndex >= 0 ? visibleImages[zoomIndex] : null;
   const viewerImage = selectedImages[Math.min(viewerIndex, selectedImages.length - 1)];
+
+  /**
+   * 大图浮层里的单张下载。
+   * App 内：交给原生写相册（1.18+ 用网页抓好的字节，旧壳回退原生下载通道），等回执再收尾。
+   * 桌面：直接抓原图字节走 <a download>。
+   */
+  const downloadZoomed = async () => {
+    if (!zoomedImage || zoomDownloading) return;
+    setZoomSaveMessage('');
+    // 手机浏览器（不在壳里）没有可靠的下载通道：<a download> 会被 iOS 静默忽略，
+    // 这时请用户直接长按这张大图走系统「存储到照片」，别假装下载成功。
+    if (touchDevice && !nativeSave) {
+      setZoomSaveMessage('长按这张大图即可保存到相册');
+      return;
+    }
+    if (!nativeSave) {
+      setZoomDownloading(true);
+      try {
+        const { blob } = (await fetchImageBlobs([zoomedImage]))[0];
+        downloadBlob(blob, safeFileName(zoomedImage.name, zoomIndex));
+        setZoomSaveMessage('已开始下载这张图片');
+      } catch {
+        setZoomSaveMessage('图片下载失败，请右键保存图片');
+      } finally {
+        setZoomDownloading(false);
+      }
+      return;
+    }
+
+    setZoomDownloading(true);
+    zoomFailureRef.current = '';
+    singleSaveRef.current = true;
+    const result = await startSaveImageToAlbum(zoomedImage.url, zoomedImage.name);
+    if (result.started) return; // 等原生回执
+    // 没能启动（抓图失败 / 桥接消失）也要结束忙碌态，不能卡在「保存中」。
+    singleSaveRef.current = false;
+    setZoomDownloading(false);
+    setZoomSaveMessage(`保存失败：${saveStageText(result.stage ?? 'bridge')}`);
+    if (result.stage) reportImageSaveFailure(result.stage, result.message ?? '');
+  };
 
   /** 手机端保存入口：打开全屏大图，让用户长按走系统「存储到照片」。 */
   const openViewer = () => {
@@ -412,8 +470,38 @@ export default function ProductImagesModal({ open, productName = '产品', image
     }
   };
 
+  /** 标题栏右侧的批量操作：固定在顶部，不用滚到列表底部。 */
+  const headerActions = (
+    <>
+      {touchDevice ? (
+        <button
+          className="button button-primary button-sm product-images-save-button"
+          type="button"
+          disabled={!selectedImages.length || savingToAlbum}
+          onClick={() => (nativeSave ? saveSelectedToAlbum() : openViewer())}
+        >
+          <Download size={13} />
+          {savingToAlbum ? `保存中 ${savingProgress}` : `存相册（${selectedImages.length}）`}
+        </button>
+      ) : (
+        <>
+          {canCopyImages && (
+            <button className="button button-primary button-sm product-images-copy-button" type="button" disabled={!selectedImages.length || copying} onClick={() => void copySelected()}>
+              {copying ? <Clipboard size={13} /> : <Copy size={13} />}
+              {copying ? '复制中...' : `复制（${selectedImages.length}）`}
+            </button>
+          )}
+          <button className={`button button-sm${canCopyImages ? '' : ' button-primary'} product-images-download-button`} type="button" disabled={!selectedImages.length || downloading} onClick={() => void downloadSelected()}>
+            <Download size={13} />
+            {downloading ? '准备中...' : `下载（${selectedImages.length}）`}
+          </button>
+        </>
+      )}
+    </>
+  );
+
   return (
-    <Modal open={open} className="product-images-modal" title={`${productName} · 全部图片`} onClose={onClose} width={880}>
+    <Modal open={open} className="product-images-modal" title={`${productName} · 全部图片`} onClose={onClose} width={880} headerExtra={headerActions}>
       {!images.length && !pendingImages.length ? (
         <div className="product-images-empty"><ImageIcon size={28} /><span>暂无产品图片</span></div>
       ) : (
@@ -500,34 +588,10 @@ export default function ProductImagesModal({ open, productName = '产品', image
                   );
                 })}
             </div>
-            {touchDevice ? (
-              <button
-                className="button button-primary product-images-save-button"
-                type="button"
-                disabled={!selectedImages.length || savingToAlbum}
-                onClick={() => (nativeSave ? saveSelectedToAlbum() : openViewer())}
-              >
-                <Download size={14} />
-                {savingToAlbum ? `保存中 ${savingProgress}` : `保存到相册（${selectedImages.length}）`}
-              </button>
-            ) : (
-              <>
-                {canCopyImages && (
-                  <button className="button button-primary product-images-copy-button" type="button" disabled={!selectedImages.length || copying} onClick={() => void copySelected()}>
-                    {copying ? <Clipboard size={14} /> : <Copy size={14} />}
-                    {copying ? '复制中...' : `复制所选图片（${selectedImages.length}）`}
-                  </button>
-                )}
-                <button className={`button${canCopyImages ? '' : ' button-primary'} product-images-download-button`} type="button" disabled={!selectedImages.length || downloading} onClick={() => void downloadSelected()}>
-                  <Download size={14} />
-                  {downloading ? '准备中...' : `下载所选图片（${selectedImages.length}）`}
-                </button>
-              </>
-            )}
             {copyMessage && <div className="product-images-copy-message" role="status">{copyMessage}</div>}
             {!!visibleImages.length && <div className="product-images-help">
               点缩略图或放大镜看大图，点缩略图底部圆钮勾选（按住 Shift 可连选一段）；
-              {touchDevice ? (nativeSave ? '点「保存到相册」即可存进手机相册。' : '长按大图可保存到相册。') : '也可以右键保存图片。'}
+              {touchDevice ? (nativeSave ? '点顶部的「存相册」即可存进手机相册。' : '长按大图可保存到相册。') : '也可以右键保存图片。'}
             </div>}
           </div>
         </div>
@@ -565,8 +629,19 @@ export default function ProductImagesModal({ open, productName = '产品', image
             {zoomedImage.note?.trim() && <span className="product-image-zoom-note" title={zoomedImage.note}>{zoomedImage.note}</span>}
             <button className="product-image-zoom-nav" type="button" disabled={zoomIndex <= 0} onClick={() => goZoom(-1)}><ChevronLeft size={16} />上一张</button>
             <button className="product-image-zoom-nav" type="button" disabled={zoomIndex >= visibleImages.length - 1} onClick={() => goZoom(1)}>下一张<ChevronRight size={16} /></button>
+            {/* 单张下载：手机交给相册，桌面走浏览器下载；都只针对当前这一张大图。 */}
+            <button
+              className="product-image-zoom-download"
+              type="button"
+              disabled={zoomDownloading}
+              onClick={() => void downloadZoomed()}
+            >
+              <Download size={14} />
+              {zoomDownloading ? (touchDevice ? '保存中...' : '准备中...') : (touchDevice ? '保存到相册' : '下载这张')}
+            </button>
             <a className="product-image-zoom-open" href={zoomedImage.url} target="_blank" rel="noreferrer"><ExternalLink size={14} />在新标签打开</a>
           </div>
+          {zoomSaveMessage && <div className="product-image-zoom-message" role="status">{zoomSaveMessage}</div>}
         </div>,
         document.body,
       )}

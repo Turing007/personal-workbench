@@ -113,7 +113,7 @@ test.describe('产品图片多选', () => {
 
       // 无需先取消旧勾选：直接选一张就能再次下载。
       await selectButtons.nth(3).click();
-      await expect(downloadButton).toContainText('下载所选图片（1）');
+      await expect(downloadButton).toContainText('下载（1）');
       const secondDownload = page.waitForEvent('download');
       await downloadButton.click();
       await secondDownload;
