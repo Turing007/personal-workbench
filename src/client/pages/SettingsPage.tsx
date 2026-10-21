@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Building2, Calculator, CalendarClock, Copy, Database, Download, Ellipsis, ImageOff, KeyRound, LayoutGrid, Minus, Package, Palette, Plus, RotateCcw, Save, ScrollText, Smartphone, Trash2, Upload, UserPlus, Users, Wifi } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BatteryCharging, Building2, CalendarClock, Copy, Database, Download, Ellipsis, ImageOff, KeyRound, LayoutGrid, Minus, Package, Palette, Plus, RotateCcw, Save, ScrollText, Smartphone, Trash2, Upload, UserPlus, Users, Wifi } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
@@ -76,7 +76,7 @@ export type { SettingsSectionKey };
 const SETTINGS_MENU_GROUPS: Array<{ label: string; items: Array<{ key: SettingsSectionKey; label: string; icon: LucideIcon }> }> = [
   { label: '基础资料', items: [{ key: 'company', label: '公司资料', icon: Building2 }] },
   { label: '单据模板', items: [{ key: 'contract', label: '购销合同模板', icon: ScrollText }] },
-  { label: '产品资料', items: [{ key: 'packaging', label: '包装管理', icon: Package }, { key: 'product-options', label: '颜色与插脚', icon: Palette }, { key: 'accessory-prices', label: '配件价格', icon: Calculator }] },
+  { label: '产品资料', items: [{ key: 'packaging', label: '包装管理', icon: Package }, { key: 'product-options', label: '颜色与插脚', icon: Palette }, { key: 'accessory-prices', label: '电池与充电器', icon: BatteryCharging }] },
   {
     label: '数据与备份',
     items: [

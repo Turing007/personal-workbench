@@ -13,7 +13,7 @@ import { copyText } from '../copy-text';
 import { thumbUrl } from '../image-urls';
 import type { ProductRecord } from './ProductEditor';
 import type { AccessoryPrice } from '../../shared/accessory-prices';
-import { BATTERY_COMBO_VARIANTS, batteryUnitPriceOf, type BatteryPriceMatrix } from '../../shared/battery-prices';
+import { BATTERY_COMBO_VARIANTS, batteryMatrixForProduct, batteryUnitPriceOf, type BatteryPriceMatrix } from '../../shared/battery-prices';
 import {
   autoShippingCost,
   batteryComboName,
@@ -157,10 +157,13 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const bareCost = comboTotalCost({ baseCost: base, packaging: pack, shipping: bareShip, taxPercent: tax });
   const bareSale = planSalePrice(bareCost, markupValue);
 
-  const capacities = batteryMatrix?.capacities ?? [];
+  // 电池矩阵按当前产品的分类裁剪：设置里限定了「只给某些分类看」的行列，其它产品的计算器里不出现。
+  const productCategories = [(product.category ?? '').trim()].filter(Boolean);
+  const scopedMatrix = batteryMatrix ? batteryMatrixForProduct(batteryMatrix, productCategories) : null;
+  const capacities = scopedMatrix?.capacities ?? [];
   // 列 = 每个节数 × 两种成套口径；顺序跟随设置里的节数顺序。
-  const combos = batteryMatrix
-    ? batteryMatrix.packCounts.flatMap((packCount) => BATTERY_COMBO_VARIANTS.map((variant) => ({ packCount, batteryCount: variant.batteryCount, label: variant.label })))
+  const combos = scopedMatrix
+    ? scopedMatrix.packCounts.flatMap((packCount) => BATTERY_COMBO_VARIANTS.map((variant) => ({ packCount, batteryCount: variant.batteryCount, label: variant.label })))
     : [];
 
   const copySalePrice = async (text: string, key: string) => {
@@ -172,7 +175,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
 
   /** 一格组合的成本/售价：矩阵里该单元格没定价时返回 null（显示 —）。 */
   const comboValues = (capacity: number, packCount: number, batteryCount: number) => {
-    const unit = batteryUnitPriceOf(batteryMatrix!, capacity, packCount);
+    const unit = batteryUnitPriceOf(scopedMatrix!, capacity, packCount);
     if (unit == null) return null;
     const cost = comboTotalCost({
       baseCost: base, packaging: pack, taxPercent: tax,
@@ -320,7 +323,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
 
       <div className="price-calc2-matrix">
         {!batteryMatrix && <div className="table-state">正在加载电池价格…</div>}
-        {batteryMatrix && !capacities.length && <div className="table-state">电池价格矩阵还是空的：去「设置 → 配件价格」加容量与节数。</div>}
+        {batteryMatrix && !capacities.length && <div className="table-state">电池价格矩阵还是空的：去「设置 → 电池与充电器」加容量与节数。</div>}
         {batteryMatrix && !!capacities.length && <div className="price-calc2-scroll">
           <table className="battery-price-table">
             <thead>

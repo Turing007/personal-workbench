@@ -15,7 +15,7 @@ import {
   round2,
 } from '../../src/shared/price-calculator';
 import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesText } from '../../src/shared/accessory-prices';
-import { batteryMatrixOptions, buildBatteryMatrixSeed, normalizeBatteryMatrix } from '../../src/shared/battery-prices';
+import { batteryMatrixForProduct, batteryMatrixOptions, buildBatteryMatrixSeed, normalizeBatteryMatrix } from '../../src/shared/battery-prices';
 
 describe('售价计算（纯函数）', () => {
   it('行金额 = 数量 × 单价，合计到分，售价按加价率折算', () => {
@@ -150,6 +150,52 @@ describe('配件与价格清洗', () => {
     expect(
       batteryMatrixOptions({ capacities: [1300], packCounts: [5, 10], prices: [[11, 0]] }),
     ).toEqual([{ id: 'cell-0-0', name: '5 节 1300 电池', price: 11 }]);
+  });
+
+  it('电池矩阵可见范围：没设范围的行列对谁都可见，设了范围的只对命中分类可见', () => {
+    const matrix = normalizeBatteryMatrix({
+      capacities: [1100, 1300],
+      packCounts: [3, 5],
+      prices: [[7, 8], [9, 10]],
+      capacityScopes: [['电钻'], []],
+      packCountScopes: [[], ['扳手']],
+    });
+    expect(matrix.capacityScopes).toEqual([['电钻'], []]);
+    expect(matrix.packCountScopes).toEqual([[], ['扳手']]);
+
+    // 电钻：看得见 1100 行（限定电钻）与 3 节列（未限定）；1300 行通用、5 节列限定扳手 → 5 节对电钻不可见。
+    expect(batteryMatrixForProduct(matrix, ['电钻'])).toMatchObject({
+      capacities: [1100, 1300],
+      packCounts: [3],
+      prices: [[7], [9]],
+    });
+    // 扳手：1100 行限定电钻 → 整行不出现；5 节列限定扳手 → 保留。
+    expect(batteryMatrixForProduct(matrix, ['扳手'])).toMatchObject({
+      capacities: [1300],
+      packCounts: [3, 5],
+      prices: [[9, 10]],
+    });
+    // 没填分类的产品只看到通用的行列。
+    expect(batteryMatrixForProduct(matrix, [])).toMatchObject({
+      capacities: [1300],
+      packCounts: [3],
+      prices: [[9]],
+    });
+    // 分类名两端空格不影响命中。
+    expect(batteryMatrixForProduct(matrix, [' 电钻 ']).capacities).toEqual([1100, 1300]);
+  });
+
+  it('电池矩阵可见范围：清洗非法分类、老数据不凭空多出字段', () => {
+    const cleaned = normalizeBatteryMatrix({
+      capacities: [1300],
+      packCounts: [5],
+      prices: [[1]],
+      capacityScopes: [[' 电钻 ', '', '电钻', 42, 'x'.repeat(60)]],
+    });
+    expect(cleaned.capacityScopes).toEqual([['电钻', 'x'.repeat(30)]]);
+    // 范围全空（或没传）时两个字段都不写出，老数据读回来的形状不变。
+    expect(Object.keys(normalizeBatteryMatrix({ capacities: [1300], packCounts: [5], prices: [[1]] }))).toEqual(['capacities', 'packCounts', 'prices']);
+    expect(Object.keys(normalizeBatteryMatrix({ capacities: [1300], packCounts: [5], prices: [[1]], capacityScopes: [[], []] }))).toEqual(['capacities', 'packCounts', 'prices']);
   });
 
   it('旧配件文本按行拆分：行尾「6元」「0.03/根」作价格，其余作名称', () => {

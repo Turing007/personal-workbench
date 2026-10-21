@@ -10,9 +10,16 @@ export interface BatteryPriceMatrix {
   packCounts: number[];
   /** prices[容量行][节数列] = 单价（元）；0 表示未填。与行列对齐。 */
   prices: number[][];
+  /** 每一容量行的可见范围，与 capacities 同序；空数组 = 所有产品都显示。 */
+  capacityScopes?: string[][];
+  /** 每一节数列的可见范围，与 packCounts 同序；空数组 = 所有产品都显示。 */
+  packCountScopes?: string[][];
 }
 
 export const BATTERY_MATRIX_MAX_DIM = 12;
+/** 单行/单列最多限定的产品分类数，与包装管理「可以装哪些产品」同一口径。 */
+export const BATTERY_SCOPE_CATEGORY_LIMIT = 12;
+export const BATTERY_SCOPE_CATEGORY_NAME_LIMIT = 30;
 
 /** 首次使用的默认模板（用户给过的口径）：1300/1500/2000 × 5/10/15/20，价格留空待填。 */
 export const BATTERY_MATRIX_DEFAULTS: BatteryPriceMatrix = {
@@ -53,7 +60,64 @@ export function normalizeBatteryMatrix(value: unknown): BatteryPriceMatrix {
     const rawRow = Array.isArray(rawRows[rowIndex]) ? (rawRows[rowIndex] as unknown[]) : [];
     return packCounts.map((_packCount, colIndex) => cellPrice(rawRow[colIndex]));
   });
-  return { capacities, packCounts, prices };
+  const matrix: BatteryPriceMatrix = { capacities, packCounts, prices };
+  // 只在确实有限定范围时才写出这两个字段：老数据保持原来的形状，读出来不会凭空多两项。
+  const capacityScopes = scopes(record.capacityScopes, capacities.length);
+  if (capacityScopes.some((scope) => scope.length)) matrix.capacityScopes = capacityScopes;
+  const packCountScopes = scopes(record.packCountScopes, packCounts.length);
+  if (packCountScopes.some((scope) => scope.length)) matrix.packCountScopes = packCountScopes;
+  return matrix;
+}
+
+/** 分类名清洗：trim、去空、去重、按上限截断；非字符串一律丢弃。 */
+function scopeCategories(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'string') continue;
+    const name = entry.trim().slice(0, BATTERY_SCOPE_CATEGORY_NAME_LIMIT);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    result.push(name);
+    if (result.length >= BATTERY_SCOPE_CATEGORY_LIMIT) break;
+  }
+  return result;
+}
+
+/** 逐行/逐列的可见范围：长度对齐维度；缺项补空数组（= 所有产品可见）。 */
+function scopes(value: unknown, length: number): string[][] {
+  const list = Array.isArray(value) ? value : [];
+  return Array.from({ length }, (_item, index) => scopeCategories(list[index]));
+}
+
+/** 这一行/列是否在指定产品分类下可见：范围为空 = 通用，否则要求有交集。 */
+export function batteryScopeVisible(scope: readonly string[] | undefined, productCategories: readonly string[]): boolean {
+  if (!scope?.length) return true;
+  const active = new Set(productCategories.map((item) => item.trim()).filter(Boolean));
+  return scope.some((category) => active.has(category.trim()));
+}
+
+/**
+ * 按产品分类裁剪矩阵：只保留该产品看得见的容量行与节数列，
+ * 单元格价格按原行列位置搬过来。没设置可见范围的行列照常全部显示。
+ */
+export function batteryMatrixForProduct(matrix: BatteryPriceMatrix, productCategories: readonly string[]): BatteryPriceMatrix {
+  const rowIndexes: number[] = [];
+  matrix.capacities.forEach((_capacity, index) => {
+    if (batteryScopeVisible(matrix.capacityScopes?.[index], productCategories)) rowIndexes.push(index);
+  });
+  const colIndexes: number[] = [];
+  matrix.packCounts.forEach((_packCount, index) => {
+    if (batteryScopeVisible(matrix.packCountScopes?.[index], productCategories)) colIndexes.push(index);
+  });
+  return {
+    capacities: rowIndexes.map((index) => matrix.capacities[index]),
+    packCounts: colIndexes.map((index) => matrix.packCounts[index]),
+    prices: rowIndexes.map((rowIndex) => colIndexes.map((colIndex) => matrix.prices[rowIndex]?.[colIndex] ?? 0)),
+    capacityScopes: rowIndexes.map((index) => matrix.capacityScopes?.[index] ?? []),
+    packCountScopes: colIndexes.map((index) => matrix.packCountScopes?.[index] ?? []),
+  };
 }
 
 export function batteryCellPrice(matrix: BatteryPriceMatrix, capacityIndex: number, packCountIndex: number): number {

@@ -5417,6 +5417,24 @@ select {
 .battery-matrix-rowhead .input { width: 76px; padding: 4px 6px; }
 .battery-matrix .input { font-size: 12.5px; }
 
+/* 行首/列头的「眼睛」：限定这一行/列在哪些产品的计算器里出现。 */
+.battery-scope-hint { margin: 0 0 8px; font-size: 12px; color: var(--color-text-muted); }
+.battery-scope-eye { flex: none; width: 20px; height: 20px; color: var(--color-text-muted); }
+.battery-scope-eye:hover { color: var(--color-text-strong); }
+.battery-scope-eye.is-limited { color: var(--color-accent-text); }
+.battery-scope-eye.is-open { background: var(--color-accent-soft); }
+.battery-scope-panel { display: grid; gap: 8px; padding: 10px 12px; font-size: 12px; }
+.battery-scope-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.battery-scope-head strong { font-size: 12.5px; color: var(--color-text-strong); }
+.battery-scope-tip, .battery-scope-foot { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--color-text-muted); }
+.battery-scope-list { display: grid; gap: 2px; max-height: 180px; overflow: auto; padding: 2px 0; }
+.battery-scope-option { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
+.battery-scope-option:hover { background: var(--color-accent-soft); }
+.battery-scope-option span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.battery-scope-option em { font-style: normal; font-size: 11px; color: var(--color-text-muted); }
+.battery-scope-empty { padding: 4px; color: var(--color-text-muted); }
+.battery-scope-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+
 /* 售价计算器 v2：左参数块 / 右电池组合矩阵，方案列表在下方；手机端上下堆叠。 */
 .price-calc2 { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 16px; align-items: start; }
 .price-calc2-params { display: grid; gap: 7px; align-content: start; }
