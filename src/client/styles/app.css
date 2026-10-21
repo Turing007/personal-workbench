@@ -5410,30 +5410,26 @@ select {
 .accessory-module-title { margin: 16px 0 8px; font-size: 14px; }
 .battery-matrix { display: grid; gap: 6px; align-items: center; }
 .battery-matrix-corner { font-size: 12px; color: var(--color-text-muted); }
-.battery-matrix-headcol { display: grid; gap: 4px; justify-items: center; font-size: 12px; color: var(--color-text-muted); }
+.battery-matrix-headcol { display: grid; gap: 3px; justify-items: center; font-size: 12px; color: var(--color-text-muted); }
 .battery-matrix-col-edit { display: flex; align-items: center; gap: 2px; }
 .battery-matrix-col-edit .input { width: 56px; padding: 4px 6px; }
-.battery-matrix-rowhead { display: flex; align-items: center; gap: 3px; font-size: 12px; color: var(--color-text-muted); }
+.battery-matrix-col-tools,
+.battery-matrix-row-tools { display: flex; align-items: center; gap: 1px; }
+.battery-matrix-rowhead { display: grid; gap: 2px; font-size: 12px; color: var(--color-text-muted); }
+.battery-matrix-row-line { display: flex; align-items: center; gap: 3px; }
 .battery-matrix-rowhead .input { width: 76px; padding: 4px 6px; }
 .battery-matrix .input { font-size: 12.5px; }
 
-/* 行首/列头的「眼睛」：限定这一行/列在哪些产品的计算器里出现。 */
+/* 行首/列头：眼睛 = 全局隐藏开关；箭头 = 调整行列顺序。 */
 .battery-scope-hint { margin: 0 0 8px; font-size: 12px; color: var(--color-text-muted); }
-.battery-scope-eye { flex: none; width: 20px; height: 20px; color: var(--color-text-muted); }
-.battery-scope-eye:hover { color: var(--color-text-strong); }
-.battery-scope-eye.is-limited { color: var(--color-accent-text); }
-.battery-scope-eye.is-open { background: var(--color-accent-soft); }
-.battery-scope-panel { display: grid; gap: 8px; padding: 10px 12px; font-size: 12px; }
-.battery-scope-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.battery-scope-head strong { font-size: 12.5px; color: var(--color-text-strong); }
-.battery-scope-tip, .battery-scope-foot { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--color-text-muted); }
-.battery-scope-list { display: grid; gap: 2px; max-height: 180px; overflow: auto; padding: 2px 0; }
-.battery-scope-option { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 4px; cursor: pointer; }
-.battery-scope-option:hover { background: var(--color-accent-soft); }
-.battery-scope-option span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.battery-scope-option em { font-style: normal; font-size: 11px; color: var(--color-text-muted); }
-.battery-scope-empty { padding: 4px; color: var(--color-text-muted); }
-.battery-scope-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.battery-scope-eye { display: inline-grid; flex: none; width: 20px; height: 20px; place-items: center; border: 0; border-radius: 4px; padding: 0; color: var(--color-text-muted); background: transparent; cursor: pointer; }
+.battery-scope-eye:hover:not(:disabled) { color: var(--color-text-strong); background: var(--color-surface-subtle); }
+.battery-scope-eye.is-hidden { color: var(--tone-accent-text); background: var(--color-accent-soft); }
+.battery-scope-eye:disabled { cursor: not-allowed; opacity: .45; }
+.battery-move-button { display: inline-grid; flex: none; width: 17px; height: 17px; place-items: center; border: 0; border-radius: 4px; padding: 0; color: var(--color-text-muted); background: transparent; cursor: pointer; }
+.battery-move-button:hover:not(:disabled) { color: var(--color-text-strong); background: var(--color-surface-subtle); }
+.battery-move-button.is-danger:hover:not(:disabled) { color: var(--tone-danger-text); background: var(--color-danger-soft); }
+.battery-move-button:disabled { cursor: not-allowed; opacity: .3; }
 
 /* 售价计算器 v2：左参数块 / 右电池组合矩阵，方案列表在下方；手机端上下堆叠。 */
 .price-calc2 { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 16px; align-items: start; }

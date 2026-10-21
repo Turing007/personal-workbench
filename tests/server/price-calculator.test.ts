@@ -15,7 +15,14 @@ import {
   round2,
 } from '../../src/shared/price-calculator';
 import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesText } from '../../src/shared/accessory-prices';
-import { batteryMatrixForProduct, batteryMatrixOptions, buildBatteryMatrixSeed, normalizeBatteryMatrix } from '../../src/shared/battery-prices';
+import {
+  batteryMatrixOptions,
+  batteryMatrixVisible,
+  buildBatteryMatrixSeed,
+  moveBatteryCapacity,
+  moveBatteryPackCount,
+  normalizeBatteryMatrix,
+} from '../../src/shared/battery-prices';
 
 describe('售价计算（纯函数）', () => {
   it('行金额 = 数量 × 单价，合计到分，售价按加价率折算', () => {
@@ -152,50 +159,76 @@ describe('配件与价格清洗', () => {
     ).toEqual([{ id: 'cell-0-0', name: '5 节 1300 电池', price: 11 }]);
   });
 
-  it('电池矩阵可见范围：没设范围的行列对谁都可见，设了范围的只对命中分类可见', () => {
+  it('电池矩阵隐藏开关：关掉的行列对所有产品隐藏，恢复后重新出现', () => {
     const matrix = normalizeBatteryMatrix({
       capacities: [1100, 1300],
       packCounts: [3, 5],
       prices: [[7, 8], [9, 10]],
-      capacityScopes: [['电钻'], []],
-      packCountScopes: [[], ['扳手']],
+      capacityHidden: [true, false],
+      packCountHidden: [false, true],
     });
-    expect(matrix.capacityScopes).toEqual([['电钻'], []]);
-    expect(matrix.packCountScopes).toEqual([[], ['扳手']]);
-
-    // 电钻：看得见 1100 行（限定电钻）与 3 节列（未限定）；1300 行通用、5 节列限定扳手 → 5 节对电钻不可见。
-    expect(batteryMatrixForProduct(matrix, ['电钻'])).toMatchObject({
-      capacities: [1100, 1300],
-      packCounts: [3],
-      prices: [[7], [9]],
-    });
-    // 扳手：1100 行限定电钻 → 整行不出现；5 节列限定扳手 → 保留。
-    expect(batteryMatrixForProduct(matrix, ['扳手'])).toMatchObject({
-      capacities: [1300],
-      packCounts: [3, 5],
-      prices: [[9, 10]],
-    });
-    // 没填分类的产品只看到通用的行列。
-    expect(batteryMatrixForProduct(matrix, [])).toMatchObject({
+    expect(matrix.capacityHidden).toEqual([true, false]);
+    expect(matrix.packCountHidden).toEqual([false, true]);
+    expect(batteryMatrixVisible(matrix)).toMatchObject({
       capacities: [1300],
       packCounts: [3],
       prices: [[9]],
     });
-    // 分类名两端空格不影响命中。
-    expect(batteryMatrixForProduct(matrix, [' 电钻 ']).capacities).toEqual([1100, 1300]);
+    // 全部可见：老形状不变，计算器拿到完整矩阵。
+    expect(batteryMatrixVisible(normalizeBatteryMatrix({ capacities: [1100], packCounts: [3], prices: [[7]] }))).toMatchObject({
+      capacities: [1100], packCounts: [3], prices: [[7]],
+    });
   });
 
-  it('电池矩阵可见范围：清洗非法分类、老数据不凭空多出字段', () => {
+  it('电池矩阵隐藏开关：清洗非法值；老「按类目限定」数据按关闭眼睛迁移', () => {
     const cleaned = normalizeBatteryMatrix({
-      capacities: [1300],
-      packCounts: [5],
-      prices: [[1]],
-      capacityScopes: [[' 电钻 ', '', '电钻', 42, 'x'.repeat(60)]],
+      capacities: [1100, 1300],
+      packCounts: [3],
+      prices: [[1], [2]],
+      capacityHidden: ['yes', true],
     });
-    expect(cleaned.capacityScopes).toEqual([['电钻', 'x'.repeat(30)]]);
-    // 范围全空（或没传）时两个字段都不写出，老数据读回来的形状不变。
+    expect(cleaned.capacityHidden).toEqual([false, true]);
+
+    // 上一版把「限定分类」存成非空范围；现在眼睛是全局开关，非空范围按关闭迁移。
+    const migrated = normalizeBatteryMatrix({
+      capacities: [1100, 1300],
+      packCounts: [3, 5],
+      prices: [[1, 2], [3, 4]],
+      capacityScopes: [['电钻'], []],
+      packCountScopes: [[], ['扳手']],
+    });
+    expect(migrated.capacityHidden).toEqual([true, false]);
+    expect(migrated.packCountHidden).toEqual([false, true]);
+
+    // 没有隐藏项时不写出字段，老数据读回来的形状不变。
     expect(Object.keys(normalizeBatteryMatrix({ capacities: [1300], packCounts: [5], prices: [[1]] }))).toEqual(['capacities', 'packCounts', 'prices']);
-    expect(Object.keys(normalizeBatteryMatrix({ capacities: [1300], packCounts: [5], prices: [[1]], capacityScopes: [[], []] }))).toEqual(['capacities', 'packCounts', 'prices']);
+    expect(Object.keys(normalizeBatteryMatrix({ capacities: [1300], packCounts: [5], prices: [[1]], capacityHidden: [false] }))).toEqual(['capacities', 'packCounts', 'prices']);
+  });
+
+  it('电池矩阵排序：移动容量行/节数列时价格与隐藏标记一起走', () => {
+    const matrix = normalizeBatteryMatrix({
+      capacities: [1100, 1300, 1500],
+      packCounts: [3, 5, 10],
+      prices: [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+      capacityHidden: [false, true, false],
+      packCountHidden: [false, false, true],
+    });
+
+    // 把 10 节列从最后移到最前：每一行的价格跟着列走。
+    const movedColumn = moveBatteryPackCount(matrix, 2, 0);
+    expect(movedColumn.packCounts).toEqual([10, 3, 5]);
+    expect(movedColumn.prices).toEqual([[3, 1, 2], [6, 4, 5], [9, 7, 8]]);
+    expect(movedColumn.packCountHidden).toEqual([true, false, false]);
+
+    // 容量行同理：整行价格与隐藏标记一起移动。
+    const movedRow = moveBatteryCapacity(movedColumn, 1, 2);
+    expect(movedRow.capacities).toEqual([1100, 1500, 1300]);
+    expect(movedRow.prices).toEqual([[3, 1, 2], [9, 7, 8], [6, 4, 5]]);
+    expect(movedRow.capacityHidden).toEqual([false, false, true]);
+
+    // 越界不动。
+    expect(moveBatteryCapacity(matrix, 0, -1)).toBe(matrix);
+    expect(moveBatteryPackCount(matrix, 2, 3)).toBe(matrix);
   });
 
   it('旧配件文本按行拆分：行尾「6元」「0.03/根」作价格，其余作名称', () => {

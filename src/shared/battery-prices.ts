@@ -10,16 +10,13 @@ export interface BatteryPriceMatrix {
   packCounts: number[];
   /** prices[容量行][节数列] = 单价（元）；0 表示未填。与行列对齐。 */
   prices: number[][];
-  /** 每一容量行的可见范围，与 capacities 同序；空数组 = 所有产品都显示。 */
-  capacityScopes?: string[][];
-  /** 每一节数列的可见范围，与 packCounts 同序；空数组 = 所有产品都显示。 */
-  packCountScopes?: string[][];
+  /** 每一容量行是否对所有产品隐藏，与 capacities 同序；缺项 = 显示。 */
+  capacityHidden?: boolean[];
+  /** 每一节数列是否对所有产品隐藏，与 packCounts 同序；缺项 = 显示。 */
+  packCountHidden?: boolean[];
 }
 
 export const BATTERY_MATRIX_MAX_DIM = 12;
-/** 单行/单列最多限定的产品分类数，与包装管理「可以装哪些产品」同一口径。 */
-export const BATTERY_SCOPE_CATEGORY_LIMIT = 12;
-export const BATTERY_SCOPE_CATEGORY_NAME_LIMIT = 30;
 
 /** 首次使用的默认模板（用户给过的口径）：1300/1500/2000 × 5/10/15/20，价格留空待填。 */
 export const BATTERY_MATRIX_DEFAULTS: BatteryPriceMatrix = {
@@ -61,62 +58,71 @@ export function normalizeBatteryMatrix(value: unknown): BatteryPriceMatrix {
     return packCounts.map((_packCount, colIndex) => cellPrice(rawRow[colIndex]));
   });
   const matrix: BatteryPriceMatrix = { capacities, packCounts, prices };
-  // 只在确实有限定范围时才写出这两个字段：老数据保持原来的形状，读出来不会凭空多两项。
-  const capacityScopes = scopes(record.capacityScopes, capacities.length);
-  if (capacityScopes.some((scope) => scope.length)) matrix.capacityScopes = capacityScopes;
-  const packCountScopes = scopes(record.packCountScopes, packCounts.length);
-  if (packCountScopes.some((scope) => scope.length)) matrix.packCountScopes = packCountScopes;
+  // 隐藏标记只在确实有隐藏项时才写出：老数据保持原来的形状，读出来不会凭空多两项。
+  const legacy = record as { capacityScopes?: unknown; packCountScopes?: unknown };
+  const capacityHidden = hiddenFlags(record.capacityHidden, legacy.capacityScopes, capacities.length);
+  if (capacityHidden.some(Boolean)) matrix.capacityHidden = capacityHidden;
+  const packCountHidden = hiddenFlags(record.packCountHidden, legacy.packCountScopes, packCounts.length);
+  if (packCountHidden.some(Boolean)) matrix.packCountHidden = packCountHidden;
   return matrix;
 }
 
-/** 分类名清洗：trim、去空、去重、按上限截断；非字符串一律丢弃。 */
-function scopeCategories(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const entry of value) {
-    if (typeof entry !== 'string') continue;
-    const name = entry.trim().slice(0, BATTERY_SCOPE_CATEGORY_NAME_LIMIT);
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
-    result.push(name);
-    if (result.length >= BATTERY_SCOPE_CATEGORY_LIMIT) break;
-  }
-  return result;
-}
-
-/** 逐行/逐列的可见范围：长度对齐维度；缺项补空数组（= 所有产品可见）。 */
-function scopes(value: unknown, length: number): string[][] {
-  const list = Array.isArray(value) ? value : [];
-  return Array.from({ length }, (_item, index) => scopeCategories(list[index]));
-}
-
-/** 这一行/列是否在指定产品分类下可见：范围为空 = 通用，否则要求有交集。 */
-export function batteryScopeVisible(scope: readonly string[] | undefined, productCategories: readonly string[]): boolean {
-  if (!scope?.length) return true;
-  const active = new Set(productCategories.map((item) => item.trim()).filter(Boolean));
-  return scope.some((category) => active.has(category.trim()));
-}
-
 /**
- * 按产品分类裁剪矩阵：只保留该产品看得见的容量行与节数列，
- * 单元格价格按原行列位置搬过来。没设置可见范围的行列照常全部显示。
+ * 逐行/逐列的隐藏标记：长度对齐维度，缺项 = 显示。
+ * 兼容刚上线过的「按类目限定」数据：非空的分类范围按「关闭眼睛」迁移为全局隐藏。
  */
-export function batteryMatrixForProduct(matrix: BatteryPriceMatrix, productCategories: readonly string[]): BatteryPriceMatrix {
-  const rowIndexes: number[] = [];
-  matrix.capacities.forEach((_capacity, index) => {
-    if (batteryScopeVisible(matrix.capacityScopes?.[index], productCategories)) rowIndexes.push(index);
-  });
-  const colIndexes: number[] = [];
-  matrix.packCounts.forEach((_packCount, index) => {
-    if (batteryScopeVisible(matrix.packCountScopes?.[index], productCategories)) colIndexes.push(index);
-  });
+function hiddenFlags(value: unknown, legacyScopes: unknown, length: number): boolean[] {
+  const list = Array.isArray(value) ? value : [];
+  const legacy = Array.isArray(legacyScopes) ? legacyScopes : [];
+  return Array.from({ length }, (_item, index) => (
+    typeof list[index] === 'boolean'
+      ? list[index] as boolean
+      : Array.isArray(legacy[index]) && (legacy[index] as unknown[]).length > 0
+  ));
+}
+
+/** 计算器用的矩阵：去掉全局隐藏的容量行与节数列，单元格价格按剩余行列重新对齐。 */
+export function batteryMatrixVisible(matrix: BatteryPriceMatrix): BatteryPriceMatrix {
+  const rowIndexes = matrix.capacities.map((_capacity, index) => index).filter((index) => !matrix.capacityHidden?.[index]);
+  const colIndexes = matrix.packCounts.map((_packCount, index) => index).filter((index) => !matrix.packCountHidden?.[index]);
   return {
-    capacities: rowIndexes.map((index) => matrix.capacities[index]),
-    packCounts: colIndexes.map((index) => matrix.packCounts[index]),
+    capacities: rowIndexes.map((index) => matrix.capacities[index]!),
+    packCounts: colIndexes.map((index) => matrix.packCounts[index]!),
     prices: rowIndexes.map((rowIndex) => colIndexes.map((colIndex) => matrix.prices[rowIndex]?.[colIndex] ?? 0)),
-    capacityScopes: rowIndexes.map((index) => matrix.capacityScopes?.[index] ?? []),
-    packCountScopes: colIndexes.map((index) => matrix.packCountScopes?.[index] ?? []),
+  };
+}
+
+function moved<T>(list: T[], from: number, to: number): T[] {
+  const next = list.slice();
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item!);
+  return next;
+}
+
+function canMove(length: number, from: number, to: number): boolean {
+  return Number.isInteger(from) && Number.isInteger(to)
+    && from >= 0 && to >= 0 && from < length && to < length && from !== to;
+}
+
+/** 上移/下移容量行：价格行与隐藏标记跟着一起移动。非法位置原样返回。 */
+export function moveBatteryCapacity(matrix: BatteryPriceMatrix, from: number, to: number): BatteryPriceMatrix {
+  if (!canMove(matrix.capacities.length, from, to)) return matrix;
+  return {
+    ...matrix,
+    capacities: moved(matrix.capacities, from, to),
+    prices: moved(matrix.prices, from, to),
+    ...(matrix.capacityHidden ? { capacityHidden: moved(matrix.capacityHidden, from, to) } : {}),
+  };
+}
+
+/** 左移/右移节数列：每一行的价格单元格与隐藏标记跟着一起移动。非法位置原样返回。 */
+export function moveBatteryPackCount(matrix: BatteryPriceMatrix, from: number, to: number): BatteryPriceMatrix {
+  if (!canMove(matrix.packCounts.length, from, to)) return matrix;
+  return {
+    ...matrix,
+    packCounts: moved(matrix.packCounts, from, to),
+    prices: matrix.prices.map((row) => moved(row, from, to)),
+    ...(matrix.packCountHidden ? { packCountHidden: moved(matrix.packCountHidden, from, to) } : {}),
   };
 }
 
