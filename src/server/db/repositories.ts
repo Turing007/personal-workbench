@@ -334,6 +334,26 @@ export class DatabaseRepositories {
     return rows.map((row) => ({ colors: parse(row.colors_json), batteryPlugs: parse(row.battery_plugs_json) }));
   }
 
+  /**
+   * 类目默认配件即将被改写：先把旧模板固化到仍在跟随该类目的产品上。
+   * 这样已经建好的产品保持原样，新模板只影响以后新建的产品。
+   * 只写配件两列，不刷新 updated_at（避免产品库列表顺序被这批快照改动）。
+   */
+  freezeCategoryAccessoryPrices(category: string, items: unknown): number {
+    const key = category.trim();
+    if (!key) return 0;
+    const result = this.database
+      .prepare(`
+        UPDATE products
+        SET accessory_prices = ?, accessory_prices_customized = 1
+        WHERE TRIM(category) = ?
+          AND accessory_prices_customized = 0
+          AND (accessory_prices IS NULL OR TRIM(accessory_prices) IN ('', '[]'))
+      `)
+      .run(json(normalizeAccessoryPrices(items)), key);
+    return Number(result.changes ?? 0);
+  }
+
   saveProduct(input: ProductInput, productId?: number) {
     const timestamp = now();
     // 报价数组是唯一事实：给了就用默认档的供应商与价格回写镜像列，没给（Excel 导入等老路径）沿用手上的值。

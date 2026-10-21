@@ -98,6 +98,8 @@ export interface ProductEditorProps {
   onClose: () => void;
   /** options.addToCatalogId：「添加到产品图册」勾选后的目标图册，随保存请求带给服务端追加。 */
   onSave: (product: ProductRecord, mode: 'draft' | 'active', options?: { addToCatalogId?: number }) => void;
+  /** 类目默认配件被改动后静默刷新产品列表：已有产品的固化标记需要跟着更新，详情才不会继续跟随新默认。 */
+  onCategoryDefaultsSaved?: () => Promise<void> | void;
 }
 
 /** 打开编辑器就摆一行空报价：第一行天然就是默认档，省掉「先点添加报价才能填」。 */
@@ -243,15 +245,16 @@ function ProductVideoSection({ value, onChange }: { value: ProductVideo[]; onCha
 }
 
 /**
- * 「类目默认配件」弹层：只维护新产品的预填模板（服务端按类目存一份），
- * 不影响任何已保存过配件的产品——编辑器里那张表才是本产品的最终清单。
+ * 「类目默认配件」弹层：只维护新产品的预填模板（服务端按类目存一份）。
+ * 保存模板时服务端先把旧模板固化给仍在跟随它的已有产品，所以已有产品保持原样，
+ * 新模板只对之后新建的产品生效。
  */
-function CategoryAccessoryDefaultsModal({ open, category, onClose, onChanged }: {
+function CategoryAccessoryDefaultsModal({ open, category, onClose, onSaved }: {
   open: boolean;
   category: string;
   onClose: () => void;
-  /** 保存成功后回调：产品清单本次还没动过时，用它把新默认同步进当前草稿。 */
-  onChanged: () => void;
+  /** 模板保存成功后：已有产品已被服务端固化，通知外层静默刷新产品列表。 */
+  onSaved?: () => Promise<void> | void;
 }) {
   const [items, setItems] = useState<AccessoryPrice[]>([]);
   const [loading, setLoading] = useState(false);
@@ -283,9 +286,10 @@ function CategoryAccessoryDefaultsModal({ open, category, onClose, onChanged }: 
     try {
       setItems(await saveCategoryAccessoryPrices(category, items));
       setDirty(false);
+      // 刷新产品列表让「已固化」标记生效；刷新失败不影响模板已经保存成功。
+      try { await onSaved?.(); } catch { /* 忽略 */ }
       setMessageKind('success');
       setMessage(`已保存「${category}」的类目默认配件`);
-      onChanged();
     } catch (error) {
       setMessageKind('error');
       setMessage((error as { message?: string })?.message ?? '类目默认保存失败');
@@ -299,7 +303,7 @@ function CategoryAccessoryDefaultsModal({ open, category, onClose, onChanged }: 
     <button className="button button-primary" type="button" disabled={busy || loading || !dirty} onClick={() => void save()}>{busy ? '保存中...' : '保存类目默认'}</button>
   </>}>
     <div style={{ display: 'grid', gap: 10 }}>
-      <p className="label-hint" style={{ margin: 0 }}>新产品第一次打开时自动带出这套配件与价格；已保存过配件的产品不受影响。</p>
+      <p className="label-hint" style={{ margin: 0 }}>保存后只对以后新建的产品生效；已有产品的配件清单保持原样，不会被改动。</p>
       <div className="section-box-header"><span className="section-box-title">默认清单</span>
         <button className="link-button packaging-table-add" type="button" disabled={loading || busy} onClick={() => { setItems((current) => [...current, { id: `def-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: '', price: 0 }]); setDirty(true); }}><Plus size={14} />添加</button>
       </div>
@@ -331,7 +335,7 @@ function CategoryAccessoryDefaultsModal({ open, category, onClose, onChanged }: 
  * 产品没动过这份清单时，第一次打开自动把类目默认连价格带出来；动过并保存后即以本产品为准。
  * 类目默认只作预填模板，维护入口是「类目默认 ›」弹层；电池、充电器这类全局件仍放设置页。
  */
-function CategoryAccessoryPricesEditor({ category, value, customized, onSeed, onEdit }: {
+function CategoryAccessoryPricesEditor({ category, value, customized, onSeed, onEdit, onDefaultsSaved }: {
   category: string;
   value: AccessoryPrice[];
   customized: boolean;
@@ -339,6 +343,8 @@ function CategoryAccessoryPricesEditor({ category, value, customized, onSeed, on
   onSeed: (next: AccessoryPrice[]) => void;
   /** 用户增/删/改：保存产品时会把这时的清单固化为本产品自己的。 */
   onEdit: (next: AccessoryPrice[]) => void;
+  /** 类目默认模板保存后：静默刷新产品列表，让已有产品的固化状态立即生效。 */
+  onDefaultsSaved?: () => Promise<void> | void;
 }) {
   const key = category.trim();
   const [defaultsOpen, setDefaultsOpen] = useState(false);
@@ -364,15 +370,6 @@ function CategoryAccessoryPricesEditor({ category, value, customized, onSeed, on
     return () => { cancelled = true; };
   }, [customized, key]);
 
-  // 改完默认后把新模板同步进还没动过的草稿（含清空：默认清光了，产品清单也跟着清）。
-  const reloadDefaults = async () => {
-    if (customized || touchedRef.current || !key) return;
-    try {
-      const items = await getCategoryAccessoryPrices(key);
-      onSeed(items.filter((item) => item.name.trim()).map((item) => ({ ...item })));
-    } catch { /* 忽略：下次打开编辑器还会再带一次 */ }
-  };
-
   const update = (id: string, patch: Partial<Pick<AccessoryPrice, 'name' | 'price'>>) => {
     touchedRef.current = true;
     onEdit(value.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -390,7 +387,7 @@ function CategoryAccessoryPricesEditor({ category, value, customized, onSeed, on
   return <section className="packaging-table-section accessory-prices-section">
     <div className="section-box-header"><span className="section-box-title">配件价格</span>
       {!!key && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-        <button className="link-button muted" type="button" title="维护该类目的默认配件：新产品第一次打开时自动带出；已保存过配件的产品不受影响" onClick={() => setDefaultsOpen(true)}>类目默认 ›</button>
+        <button className="link-button muted" type="button" title="维护该类目的默认配件：只对以后新建的产品生效；已有产品的配件不会被改动" onClick={() => setDefaultsOpen(true)}>类目默认 ›</button>
         <button className="link-button packaging-table-add" type="button" title="添加一条配件价格" onClick={add}><Plus size={14} />添加</button>
       </span>}
     </div>
@@ -413,7 +410,7 @@ function CategoryAccessoryPricesEditor({ category, value, customized, onSeed, on
         </table>
       </div>}
       {!loading && !value.length && <div className="empty-state">本产品还没有配件价格，点右上角「添加」。</div>}
-      <CategoryAccessoryDefaultsModal open={defaultsOpen} category={key} onClose={() => setDefaultsOpen(false)} onChanged={() => void reloadDefaults()} />
+      <CategoryAccessoryDefaultsModal open={defaultsOpen} category={key} onClose={() => setDefaultsOpen(false)} onSaved={onDefaultsSaved} />
     </> : <span className="label-hint">先在上方填写「产品分类」；填好后会自动带出该类目的默认配件（可增删改，随产品一起保存）。</span>}
   </section>;
 }
@@ -484,7 +481,7 @@ function ProductAttachments({ value, onChange }: { value: ProductAttachment[]; o
   </section>;
 }
 
-export default function ProductEditor({ open, product, copyMode = false, showParameters: showParametersProp, packagingPresets, saving = false, productCategories = [], colorOptions, plugOptions, onManagePresets, onManageProductOptions, onClose, onSave }: ProductEditorProps) {
+export default function ProductEditor({ open, product, copyMode = false, showParameters: showParametersProp, packagingPresets, saving = false, productCategories = [], colorOptions, plugOptions, onManagePresets, onManageProductOptions, onClose, onSave, onCategoryDefaultsSaved }: ProductEditorProps) {
   const [draft, setDraft] = useState<ProductRecord>(() => withFirstQuoteRow(product ?? blankProduct()));
   const [catalogs, setCatalogs] = useState<CatalogSummary[]>([]);
   const [addToCatalog, setAddToCatalog] = useState(false);
@@ -581,6 +578,7 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
           customized={Boolean(draft.accessoryPricesCustomized)}
           onSeed={(next) => set('accessoryPrices', next)}
           onEdit={(next) => { set('accessoryPrices', next); set('accessoryPricesTouched', true); }}
+          onDefaultsSaved={onCategoryDefaultsSaved}
         />
       </div>
       <div className="form-grid product-editor-text-fields">

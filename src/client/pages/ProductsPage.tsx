@@ -42,6 +42,8 @@ export interface ProductsPageProps {
   onDownloadTemplate: () => Promise<void> | void;
   onImport: (file: File) => Promise<void> | void;
   onRefresh: () => Promise<void> | void;
+  /** 静默重新拉产品列表（不弹「已刷新」）：类目默认配件改动后，已有产品的固化标记要立即生效。 */
+  onReloadProducts?: () => Promise<void> | void;
   /** 编辑器里点「管理预设 ›」时跳到设置页维护包装预设。 */
   onManagePresets?: () => void;
   /** 编辑器里点颜色/插脚的「管理 ›」时跳到设置页维护颜色与插脚。 */
@@ -88,7 +90,7 @@ function extraQuoteCount(product: ProductRecord) {
   return Math.max(0, (product.purchaseQuotes?.length ?? 0) - 1);
 }
 
-export default function ProductsPage({ products, loading, onSave, saving, onDelete, onUpdateSaleStatus, onExport, onOpenCatalog, onDownloadTemplate, onImport, onRefresh, onManagePresets, onManageProductOptions, uploadingProductIds, uploadFiles, onRetryUploadFile }: ProductsPageProps) {
+export default function ProductsPage({ products, loading, onSave, saving, onDelete, onUpdateSaleStatus, onExport, onOpenCatalog, onDownloadTemplate, onImport, onRefresh, onReloadProducts, onManagePresets, onManageProductOptions, uploadingProductIds, uploadFiles, onRetryUploadFile }: ProductsPageProps) {
   const uploadingIds = new Set(uploadingProductIds ?? []);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -366,7 +368,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
       {loading && <div className="table-state">正在加载产品...</div>}
       {!loading && !filtered.length && <div className="table-state">暂无产品，点击“添加产品”开始维护。</div>}
     </section>
-    <ProductEditor key={editing?.id ?? 'new'} open={editorOpen} saving={saving} product={editing} copyMode={copying} packagingPresets={packagingPresets} productCategories={categoryOptions.named} colorOptions={productOptions?.colors} plugOptions={productOptions?.plugs} onManagePresets={onManagePresets} onManageProductOptions={onManageProductOptions} onClose={() => { setEditorOpen(false); setEditing(undefined); setCopying(false); }} onSave={save} />
+    <ProductEditor key={editing?.id ?? 'new'} open={editorOpen} saving={saving} product={editing} copyMode={copying} packagingPresets={packagingPresets} productCategories={categoryOptions.named} colorOptions={productOptions?.colors} plugOptions={productOptions?.plugs} onManagePresets={onManagePresets} onManageProductOptions={onManageProductOptions} onCategoryDefaultsSaved={() => onReloadProducts?.()} onClose={() => { setEditorOpen(false); setEditing(undefined); setCopying(false); }} onSave={save} />
     <ProductParametersModal open={Boolean(parametersProduct)} productName={parametersProduct?.name} parameters={parametersProduct?.parameters} onClose={() => setParametersProduct(undefined)} />
     <ProductDetailModal open={Boolean(detailProduct)} product={detailProduct} showSensitive={showSensitive} pendingImages={detailProduct ? pendingImagesFor(detailProduct) : []} onClose={closeDetail} onOpenImages={(product) => { closeDetail(); setImagesProductId(String(product.id)); }} onOpenCalculator={(product) => { closeDetail(); setCalculatorProduct(product); }} onUpdateSaleStatus={onUpdateSaleStatus} onDelete={onDelete} />
     <PriceCalculatorModal open={Boolean(calculatorProduct)} product={calculatorProduct} onClose={() => setCalculatorProduct(undefined)} />

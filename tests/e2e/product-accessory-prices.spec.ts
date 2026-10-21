@@ -109,21 +109,22 @@ test('配件价格按产品独立：首次自动带出类目默认，增删改�
   }
 });
 
-test('类目默认弹层：改默认只同步给没动过的草稿，已保存过配件的产品不受影响', async ({ page }) => {
+test('类目默认弹层：改默认不动已有产品，只给之后新建的产品带出', async ({ page }) => {
   await page.request.put('/api/settings/category-accessory-prices', {
     data: { category: CATEGORY, items: [{ name: DEFAULT_A, price: 6 }] },
   });
-  const product = await seedProduct(page, `E2E默认弹层${stamp}`);
+  const existing = await seedProduct(page, `E2E默认弹层-已有${stamp}`);
 
+  let createdAfter: { id: number } | undefined;
   try {
     await page.goto('/');
     await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
-    const editor = await searchAndOpenEditor(page, `E2E默认弹层${stamp}`);
+    const editor = await searchAndOpenEditor(page, `E2E默认弹层-已有${stamp}`);
     const section = editor.locator('.accessory-prices-section');
     await expect(section.locator('tbody tr')).toHaveCount(1);
     await expect(section.getByLabel('产品配件1名称')).toHaveValue(DEFAULT_A);
 
-    // 打开「类目默认 ›」：加一条默认配件并保存 → 草稿里自动同步出这一行。
+    // 在「类目默认 ›」里加一条并保存：当前产品（已经建好）的草稿不能被同步改动。
     await section.getByRole('button', { name: '类目默认 ›' }).click();
     const defaultsDialog = page.getByRole('dialog', { name: /类目默认配件/ });
     await expect(defaultsDialog).toBeVisible();
@@ -135,14 +136,31 @@ test('类目默认弹层：改默认只同步给没动过的草稿，已保存�
     // X 按钮的 aria-label 也是「关闭」，取页脚那个（DOM 里靠后）。
     await defaultsDialog.getByRole('button', { name: '关闭' }).last().click();
 
-    await expect(section.locator('tbody tr')).toHaveCount(2);
-    await expect(section.getByLabel('产品配件2名称')).toHaveValue('链条');
+    await expect(section.locator('tbody tr')).toHaveCount(1);
+    await expect(section.getByLabel('产品配件1名称')).toHaveValue(DEFAULT_A);
 
-    // 不保存产品，直接关掉：这次没动过清单，产品仍未固化。
+    // 不保存产品，直接关掉。
     await editor.getByRole('button', { name: '取消' }).click();
     await expect(editor).toBeHidden();
+
+    // 已有产品的详情保持原样：只有旧默认，没有后来加的「链条」。
+    const detailExisting = await searchAndOpenDetail(page, `E2E默认弹层-已有${stamp}`);
+    await expect(detailExisting.locator('.product-detail-accessory-lines')).toContainText(DEFAULT_A);
+    await expect(detailExisting.locator('.product-detail-accessory-lines')).not.toContainText('链条');
+    await detailExisting.locator('.modal-close').click();
+
+    // 改完默认之后新建的产品：直接带出最新模板（含「链条」）。
+    createdAfter = await seedProduct(page, `E2E默认弹层-新建${stamp}`);
+    // 新产品是本页加载之后才建的：重进产品库让列表带上它。
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+    const detailNew = await searchAndOpenDetail(page, `E2E默认弹层-新建${stamp}`);
+    await expect(detailNew.locator('.product-detail-accessory-lines')).toContainText(DEFAULT_A);
+    await expect(detailNew.locator('.product-detail-accessory-lines')).toContainText('链条');
+    await detailNew.locator('.modal-close').click();
   } finally {
     await page.request.put('/api/settings/category-accessory-prices', { data: { category: CATEGORY, items: [] } });
-    await page.request.delete(`/api/products/${product.id}`);
+    await page.request.delete(`/api/products/${existing.id}`);
+    if (createdAfter) await page.request.delete(`/api/products/${createdAfter.id}`);
   }
 });

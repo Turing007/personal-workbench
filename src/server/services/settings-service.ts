@@ -29,6 +29,8 @@ export class SettingsService {
     private readonly productCategorySource?: () => Array<{ name: string; productCount: number }>,
     /** 产品库里实际用过的颜色 / 插脚，用于预设首次自动统计与「重新统计」。 */
     private readonly productOptionSource?: () => Array<{ colors: string[]; batteryPlugs: string[] }>,
+    /** 类目默认配件被改写前，把旧模板固化给仍在跟随它的产品（已有产品保持原样）。 */
+    private readonly freezeCategoryAccessories?: (category: string, items: AccessoryPrice[]) => void,
   ) {}
 
   getPackagingPresets(): PackagingPreset[] {
@@ -102,7 +104,10 @@ export class SettingsService {
   }
 
   saveCategoryAccessoryPrices(category: string, value: unknown): AccessoryPrice[] {
-    return this.settings.saveCategoryAccessoryPrices(category, value);
+    const key = category.trim();
+    // 先固化旧模板，再写新模板：已有产品停在它们现在看到的清单上，新模板只给以后新建的产品用。
+    if (key) this.freezeCategoryAccessories?.(key, this.settings.readCategoryAccessoryPricesFor(key));
+    return this.settings.saveCategoryAccessoryPrices(key, value);
   }
 
   /** 按现有产品包装记录重算并覆盖，供设置页「从产品库重新统计」使用。 */

@@ -8,6 +8,7 @@ import { migrateDatabase } from '../../src/server/db/migrate';
 import { DatabaseRepositories } from '../../src/server/db/repositories';
 import { PricePlanRepository } from '../../src/server/db/price-plan-repository';
 import { SettingsRepository } from '../../src/server/db/settings-repository';
+import { SettingsService } from '../../src/server/services/settings-service';
 import { registerProductRoutes } from '../../src/server/routes/products';
 
 const directories: string[] = [];
@@ -26,11 +27,19 @@ async function createFixture() {
   const repositories = new DatabaseRepositories(database);
   const pricePlanRepository = new PricePlanRepository(database);
   const settingsRepository = new SettingsRepository(database);
+  const settingsService = new SettingsService(
+    settingsRepository,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    (category, items) => { repositories.freezeCategoryAccessoryPrices(category, items); },
+  );
   const app = Fastify();
   app.addHook('onClose', async () => database.close());
   await registerProductRoutes(app, { repositories, pricePlanRepository });
   apps.push(app);
-  return { app, repositories, pricePlanRepository, settingsRepository };
+  return { app, repositories, pricePlanRepository, settingsRepository, settingsService };
 }
 
 const productPayload = (name: string, extra: Record<string, unknown> = {}) => ({
@@ -221,6 +230,34 @@ describe('售价计算器：产品「配件与价格」', () => {
     ]);
     expect(chargers).toHaveLength(1);
     expect(settingsRepository.readChargerPrices().map((item) => item.name)).toEqual(['1.5A 充电器']);
+  });
+
+  it('改类目默认：已有产品固化旧清单且不刷新更新时间，新默认只给之后新建的产品', async () => {
+    const { app, repositories, settingsService } = await createFixture();
+    settingsService.saveCategoryAccessoryPrices('电锤', [{ name: '9 件套筒', price: 6 }]);
+
+    const existing = await createProduct(app, '电锤-老款', { category: '电锤' });
+    expect(existing.accessoryPricesCustomized).toBe(false);
+    const beforeUpdatedAt = (repositories.getProduct(existing.id) as { updated_at?: string } | undefined)?.updated_at;
+
+    // 改写默认：老产品固化的是「它现在看到的」旧清单，而不是新模板。
+    settingsService.saveCategoryAccessoryPrices('电锤', [
+      { name: '9 件套筒', price: 6 },
+      { name: '链条', price: 5 },
+    ]);
+    const frozen = repositories.getProduct(existing.id);
+    expect(frozen?.accessoryPricesCustomized).toBe(true);
+    expect(frozen?.accessoryPrices.map((item) => item.name)).toEqual(['9 件套筒']);
+    expect((frozen as { updated_at?: string } | undefined)?.updated_at).toBe(beforeUpdatedAt);
+
+    // 改完之后新建的产品仍是「未固化」，详情会带出最新的类目默认。
+    const fresh = await createProduct(app, '电锤-新款', { category: '电锤' });
+    expect(fresh.accessoryPricesCustomized).toBe(false);
+
+    // 别的类目不受影响。
+    const other = await createProduct(app, '圆锯-7寸');
+    settingsService.saveCategoryAccessoryPrices('电锤', [{ name: '钻头', price: 3 }]);
+    expect(repositories.getProduct(other.id)?.accessoryPricesCustomized).toBe(false);
   });
 
   it('类目配件表：按分类分开存取，互不覆盖', async () => {
