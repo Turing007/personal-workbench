@@ -14,8 +14,8 @@ export interface SiteFilings {
 
 export const SITE_FILINGS: SiteFilings = {
   icp: '鄂ICP备2026056865号',
-  publicSecurity: '',
-  publicSecurityCode: '',
+  publicSecurity: '苏公网安备32068102810696号',
+  publicSecurityCode: '32068102810696',
 };
 
 export interface BeianFooterItem {
