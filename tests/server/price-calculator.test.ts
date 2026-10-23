@@ -11,6 +11,7 @@ import {
   planMargin,
   planSalePrice,
   planTotalCost,
+  priceInclusionLabel,
   pricePlanMarkup,
   round2,
 } from '../../src/shared/price-calculator';
@@ -25,6 +26,19 @@ import {
 } from '../../src/shared/battery-prices';
 
 describe('售价计算（纯函数）', () => {
+  it('复制价签口径：按实际计入的运费与税，给出含税运说明', () => {
+    // 运费和税都没计入 → 不含税运
+    expect(priceInclusionLabel(0, 0)).toBe('不含税运');
+    // 只计入运费 → 含运不含税
+    expect(priceInclusionLabel(1.88, 0)).toBe('含运不含税');
+    // 只计入税 → 含税不含运
+    expect(priceInclusionLabel(0, 13)).toBe('含税不含运');
+    // 两者都计入 → 含税运
+    expect(priceInclusionLabel(1.88, 13)).toBe('含税运');
+    // 异常值按未计入处理
+    expect(priceInclusionLabel(Number.NaN, Number.NaN)).toBe('不含税运');
+  });
+
   it('行金额 = 数量 × 单价，合计到分，售价按加价率折算', () => {
     expect(planItemAmount(2, 8.5)).toBe(17);
     expect(planItemAmount(3, 1.11)).toBe(3.33);

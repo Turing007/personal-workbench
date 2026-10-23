@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { Check, Eye, EyeOff, Image as ImageIcon, Save, Trash2 } from 'lucide-react';
+import { BatteryCharging, Check, Eye, EyeOff, Image as ImageIcon, Save, Trash2 } from 'lucide-react';
 import Modal from './Modal';
 import {
   deletePricePlan,
@@ -13,7 +13,7 @@ import { copyText } from '../copy-text';
 import { thumbUrl } from '../image-urls';
 import type { ProductRecord } from './ProductEditor';
 import type { AccessoryPrice } from '../../shared/accessory-prices';
-import { BATTERY_COMBO_VARIANTS, batteryMatrixVisible, batteryUnitPriceOf, type BatteryPriceMatrix } from '../../shared/battery-prices';
+import { BATTERY_COMBO_VARIANTS, batteryCellPrice, batteryMatrixVisible, batteryUnitPriceOf, type BatteryPriceMatrix } from '../../shared/battery-prices';
 import {
   autoShippingCost,
   batteryComboName,
@@ -21,6 +21,7 @@ import {
   comboTotalCost,
   DEFAULT_SHIPPING_UNIT_PRICE,
   planSalePrice,
+  priceInclusionLabel,
   round2,
   type PricePlanParams,
   type PriceShippingMode,
@@ -86,6 +87,8 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const [message, setMessage] = useState('');
   const [copiedKey, setCopiedKey] = useState('');
   const [costsVisible, setCostsVisible] = useState(true);
+  /** 电池价格查询浮层：只读展示当前生效的「容量 × 节数 → 单价」。 */
+  const [batteryPricesOpen, setBatteryPricesOpen] = useState(false);
 
   useEffect(() => {
     if (!open || !product) return;
@@ -105,6 +108,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     setMessage('');
     setCopiedKey('');
     setCostsVisible(true);
+    setBatteryPricesOpen(false);
     setPlans([]);
     setBatteryMatrix(null);
     setChargerPrices([]);
@@ -176,12 +180,13 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const comboValues = (capacity: number, packCount: number, batteryCount: number) => {
     const unit = batteryUnitPriceOf(visibleMatrix!, capacity, packCount);
     if (unit == null) return null;
+    const shipping = shippingFor(packCount, batteryCount, true);
     const cost = comboTotalCost({
       baseCost: base, packaging: pack, taxPercent: tax,
-      shipping: shippingFor(packCount, batteryCount, true),
+      shipping,
       batteryUnitPrice: unit, batteryCount, chargerPrice,
     });
-    return { cost, sale: planSalePrice(cost, markupValue) };
+    return { cost, sale: planSalePrice(cost, markupValue), shipping };
   };
 
   /** 切到手动：先把当前自动值填进去，避免切过去变 0 让人以为算错。 */
@@ -263,7 +268,8 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     }
   };
 
-  return <Modal open={open} title={`售价计算 · ${product.name || product.sku || '产品'}`} onClose={onClose} width={1100}>
+  return <>
+    <Modal open={open} title={`售价计算 · ${product.name || product.sku || '产品'}`} onClose={onClose} width={1100}>
     {/* 产品图 + 名称：截图发客户时一眼看清是哪个产品；右侧小眼睛隐藏全部成本。 */}
     <div className="price-calc2-head">
       {image
@@ -273,14 +279,23 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
         <strong>{product.name || product.sku || '未命名产品'}</strong>
         <em>{[product.sku, (product.category ?? '').trim()].filter(Boolean).join(' · ')}</em>
       </span>
-      <button
-        className="icon-button price-calc2-eye"
-        type="button"
-        aria-pressed={!costsVisible}
-        aria-label={costsVisible ? '隐藏成本（发客户截图用）' : '显示成本'}
-        title={costsVisible ? '隐藏成本（发客户截图用）' : '显示成本'}
-        onClick={() => setCostsVisible((current) => !current)}
-      >{costsVisible ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+      <span className="price-calc2-head-actions">
+        {costsVisible && <button
+          className="button button-secondary button-sm price-calc2-battery-prices"
+          type="button"
+          disabled={!batteryMatrix}
+          title="查询电池单价（容量 × 节数）"
+          onClick={() => setBatteryPricesOpen(true)}
+        ><BatteryCharging size={14} />电池价格</button>}
+        <button
+          className="icon-button price-calc2-eye"
+          type="button"
+          aria-pressed={!costsVisible}
+          aria-label={costsVisible ? '隐藏成本（发客户截图用）' : '显示成本'}
+          title={costsVisible ? '隐藏成本（发客户截图用）' : '显示成本'}
+          onClick={() => setCostsVisible((current) => !current)}
+        >{costsVisible ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+      </span>
     </div>
     <div className="price-calc2">
       <div className="price-calc2-params">
@@ -314,7 +329,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
             type="button"
             title="点击复制售价"
             aria-label={`复制裸机售价 ${formatHalf(bareSale)}元`}
-            onClick={() => void copySalePrice(`裸机 ${formatHalf(bareSale)}元`, 'bare')}
+            onClick={() => void copySalePrice(`裸机 ${formatHalf(bareSale)}元（${priceInclusionLabel(bareShip, tax)}）`, 'bare')}
           >{copiedKey === 'bare' ? <Check size={13} /> : null}售价 {formatMoney(bareSale)}</button>
           {costsVisible && <span className="price-calc2-bare-profit">毛利 {formatMoney(round2(bareSale - bareCost))}</span>}
         </div>
@@ -354,7 +369,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
                         type="button"
                         title="点击复制售价（自带名称）"
                         aria-label={`复制售价 ${copyName} ${formatHalf(values.sale)}元`}
-                        onClick={() => void copySalePrice(`${copyName} ${formatHalf(values.sale)}元`, key)}
+                        onClick={() => void copySalePrice(`${copyName} ${formatHalf(values.sale)}元（${priceInclusionLabel(values.shipping, tax)}）`, key)}
                       >{copiedKey === key ? <Check size={13} /> : null}{formatHalf(values.sale)}</button>
                       : '—'}</td>
                     {costsVisible && <td className="battery-price-profit">{values ? formatHalf(round2(values.sale - values.cost)) : '—'}</td>}
@@ -390,5 +405,29 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
         </div>;
       })}</div> : <div className="empty-state">还没有保存过方案。上面算好后点「保存为方案」。</div>}
     </div>}
-  </Modal>;
+    </Modal>
+    {/* 电池价格查询：只读，按当前可见的容量 × 节数展示单价；成本隐藏时入口也一起收起。 */}
+    <Modal open={batteryPricesOpen} title="电池价格" onClose={() => setBatteryPricesOpen(false)} width={620} layer={22}>
+      <div className="battery-query">
+        <p className="battery-query-hint">单价 = 一块电池包的价格（元）；未定价的组合显示 —。只显示当前对所有产品可见的行/列。</p>
+        {visibleMatrix && visibleMatrix.capacities.length && visibleMatrix.packCounts.length ? (
+          <div className="battery-query-scroll">
+            <table className="battery-query-table">
+              <thead><tr>
+                <th className="battery-query-corner">容量 \ 节数</th>
+                {visibleMatrix.packCounts.map((packCount) => <th key={packCount}>{packCount} 节</th>)}
+              </tr></thead>
+              <tbody>{visibleMatrix.capacities.map((capacity, rowIndex) => <tr key={capacity}>
+                <th>{capacity} mAh</th>
+                {visibleMatrix.packCounts.map((packCount, colIndex) => {
+                  const price = batteryCellPrice(visibleMatrix, rowIndex, colIndex);
+                  return <td key={packCount}>{price > 0 ? `¥${round2(price)}` : '—'}</td>;
+                })}
+              </tr>)}</tbody>
+            </table>
+          </div>
+        ) : <div className="empty-state">当前没有可查询的电池价格。</div>}
+      </div>
+    </Modal>
+  </>;
 }

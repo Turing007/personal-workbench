@@ -5451,7 +5451,21 @@ select {
 .price-calc2-title { display: grid; gap: 2px; min-width: 0; }
 .price-calc2-title strong { font-size: var(--text-sm); color: var(--color-text-strong); }
 .price-calc2-title em { font-style: normal; font-size: var(--text-2xs); color: var(--color-text-muted); }
-.price-calc2-eye { margin-left: auto; }
+.price-calc2-head-actions { display: flex; flex: none; align-items: center; gap: 6px; margin-left: auto; }
+.price-calc2-battery-prices { white-space: nowrap; }
+/* 电池价格查询：只读矩阵，和设置页的编辑矩阵区分开。 */
+.battery-query { display: grid; gap: 10px; }
+.battery-query-hint { margin: 0; color: var(--color-text-muted); font-size: 12px; line-height: 1.5; }
+.battery-query-scroll { overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.battery-query-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.battery-query-table th,
+.battery-query-table td { padding: 7px 10px; border-bottom: 1px solid var(--color-divider); text-align: center; white-space: nowrap; }
+.battery-query-table thead th { background: var(--color-surface-subtle); color: var(--color-text-secondary); font-weight: var(--weight-semibold); }
+.battery-query-table tbody th { position: sticky; left: 0; z-index: 1; background: var(--color-surface); color: var(--color-text-strong); font-weight: var(--weight-semibold); text-align: left; }
+.battery-query-table tbody tr:last-child th,
+.battery-query-table tbody tr:last-child td { border-bottom: 0; }
+.battery-query-table td { color: var(--tone-accent-text); font-variant-numeric: tabular-nums; }
+.battery-query-corner { text-align: left; }
 .price-calc2-bare { display: grid; gap: 4px; margin-top: 4px; padding: 9px 11px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-subtle); font-size: var(--text-xs); color: var(--color-text-secondary); }
 .price-calc2-bare strong { color: var(--color-text-strong); }
 .price-calc2-bare-title { font-weight: var(--weight-semibold); color: var(--color-text-strong); }

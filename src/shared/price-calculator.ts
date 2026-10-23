@@ -41,6 +41,19 @@ export function planSalePrice(totalCost: number, markupPercent: number): number 
   return round2(totalCost * (1 + markupPercent / 100));
 }
 
+/**
+ * 复制售价时附带的计价口径：这笔价格里到底含不含运费、含不含税。
+ * 按实际计入金额判断（自动运费算出来是 0 也算不含运），避免只填了 0 或空值被误标。
+ */
+export function priceInclusionLabel(shipping: number, taxPercent: number): '不含税运' | '含运不含税' | '含税不含运' | '含税运' {
+  const hasShipping = Number.isFinite(shipping) && shipping > 0;
+  const hasTax = Number.isFinite(taxPercent) && taxPercent > 0;
+  if (hasShipping && hasTax) return '含税运';
+  if (hasShipping) return '含运不含税';
+  if (hasTax) return '含税不含运';
+  return '不含税运';
+}
+
 /** 实得毛利率（%）：售价填了才算；售价为 0 时无意义，返回 null。 */
 export function planMargin(salePrice: number, totalCost: number): number | null {
   if (!Number.isFinite(salePrice) || salePrice <= 0) return null;

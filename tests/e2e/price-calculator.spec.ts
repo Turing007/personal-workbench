@@ -61,6 +61,18 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     await expect(dialog.locator('.price-calc2-thumb')).toBeVisible();
     await expect(dialog.locator('.price-calc2-head')).toContainText(`E2E矩阵算价${stamp}`);
 
+    // 电池价格查询：只读矩阵，价格与设置一致；没定价的格子显示 —。
+    await dialog.getByRole('button', { name: '电池价格' }).click();
+    const priceDialog = page.getByRole('dialog', { name: '电池价格' });
+    await expect(priceDialog).toBeVisible();
+    await expect(priceDialog.locator('.battery-query-table thead')).toContainText('5 节');
+    await expect(priceDialog.locator('.battery-query-table tbody tr', { hasText: '1300 mAh' }).locator('td'))
+      .toHaveText(['¥8', '¥14', '—', '—']);
+    await expect(priceDialog.locator('.battery-query-table tbody tr', { hasText: '1500 mAh' }).locator('td').first())
+      .toHaveText('¥9');
+    await priceDialog.locator('.modal-close').click();
+    await expect(priceDialog).toHaveCount(0);
+
     // 左参数：采购价从默认档自动带出；毛利率改 15。
     // 运费默认自动：裸机 = 内盒重量 0.9kg × 单价 1.5 = 1.35 → 成本 101.5 / 售价 116.5 / 毛利 15。
     await expect(dialog.getByLabel('采购价')).toHaveValue('100');
@@ -104,14 +116,14 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     await expect(saleCell('复制售价 5节1300mah 一电一充 132元')).toHaveText('132');
     await dialog.getByLabel('充电器').selectOption({ label: 'E2E小线充 ¥2' });
 
-    // 点售价复制：自动带上配置名与「元」，剪贴板内容一致。
+    // 点售价复制：自动带上配置名、「元」与含税运口径，剪贴板内容一致。
     await saleCell('复制售价 5节1300mah 一电一充 128.5元').click();
-    await expect(dialog.locator('.price-calc-message')).toContainText('已复制：5节1300mah 一电一充 128.5元');
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('5节1300mah 一电一充 128.5元');
+    await expect(dialog.locator('.price-calc-message')).toContainText('已复制：5节1300mah 一电一充 128.5元（含运不含税）');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('5节1300mah 一电一充 128.5元（含运不含税）');
 
     // 裸机售价也能复制。
     await dialog.getByLabel('复制裸机售价 116.5元').click();
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('裸机 116.5元');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('裸机 116.5元（含运不含税）');
 
     // 小眼睛：隐藏全部成本后只剩售价——成本列、毛利列、参数区、方案区收起，产品名与图仍在，售价仍可复制。
     await dialog.getByRole('button', { name: '隐藏成本（发客户截图用）' }).click();
@@ -120,14 +132,16 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     await expect(dialog.locator('.battery-price-profit')).toHaveCount(0);
     await expect(dialog.getByLabel('采购价')).toHaveCount(0);
     await expect(dialog.getByRole('button', { name: '保存为方案' })).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: '电池价格' })).toHaveCount(0);
     await expect(dialog.locator('.price-calc2-head')).toContainText(`E2E矩阵算价${stamp}`);
     await expect(dialog.locator('.price-calc2-thumb')).toBeVisible();
     await saleCell('复制售价 5节1300mah 一电一充 128.5元').click();
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('5节1300mah 一电一充 128.5元');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('5节1300mah 一电一充 128.5元（含运不含税）');
     // 再点回来恢复显示（每次打开也默认显示）。
     await dialog.getByRole('button', { name: '显示成本' }).click();
     await expect(dialog.getByLabel('采购价')).toHaveValue('100');
     await expect(dialog.getByRole('button', { name: '保存为方案' })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: '电池价格' })).toBeVisible();
 
     // 运费预估：默认自动、单价 1.5、运费只读显示裸机值 1.35、跟随计费重量提示。
     await expect(dialog.getByLabel('运费单价')).toHaveValue('1.5');
@@ -177,6 +191,25 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     page.on('dialog', (nativeDialog) => void nativeDialog.accept());
     await dialog.locator('.price-calc-plan', { hasText: '两电一充方案' }).getByRole('button', { name: /删除方案/ }).click();
     await expect(dialog.locator('.price-calc-plan', { hasText: '两电一充方案' })).toHaveCount(0);
+
+    // 复制价签口径：含运/含税的四种组合都要标对。
+    const bareCopy = dialog.locator('.price-calc2-bare .price-calc2-sale');
+    // 当前：自动运费 1.35 > 0、税 0 → 含运不含税
+    await bareCopy.click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('（含运不含税）');
+    // 加 13% 税、保留运费 → 含税运
+    await dialog.getByLabel('税').fill('13');
+    await bareCopy.click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('（含税运）');
+    // 手动运费填 0、税仍 13 → 含税不含运
+    await dialog.getByRole('button', { name: '手动', exact: true }).click();
+    await dialog.getByLabel('运费金额').fill('0');
+    await bareCopy.click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('（含税不含运）');
+    // 税也清 0 → 不含税运
+    await dialog.getByLabel('税').fill('0');
+    await bareCopy.click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('（不含税运）');
   } finally {
     await page.request.delete(`/api/products/${product.id}`);
   }
