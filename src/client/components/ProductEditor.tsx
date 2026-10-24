@@ -276,7 +276,7 @@ function CategoryAccessoryDefaultsModal({ open, category, onClose, onSaved }: {
     return () => { cancelled = true; };
   }, [open, category]);
 
-  const update = (id: string, patch: Partial<Pick<AccessoryPrice, 'name' | 'price'>>) => {
+  const update = (id: string, patch: Partial<Pick<AccessoryPrice, 'name' | 'price' | 'weight'>>) => {
     setItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
     setDirty(true);
   };
@@ -310,13 +310,16 @@ function CategoryAccessoryDefaultsModal({ open, category, onClose, onSaved }: {
       {loading && <div className="table-state">正在加载...</div>}
       {!loading && !!items.length && <div className="packaging-table-shell">
         <table className="packaging-table accessory-prices-table">
-          <thead><tr>{['名称', '价格', ''].map((title, index) => <th key={index}>{title}</th>)}</tr></thead>
+          <thead><tr>{['名称', '价格', '重量 kg', ''].map((title, index) => <th key={index}>{title}</th>)}</tr></thead>
           <tbody>{items.map((item, index) => <tr key={item.id || index}>
             <td className="packaging-table-col-size">
               <input className="input packaging-table-input" aria-label={`类目默认配件${index + 1}名称`} value={item.name} placeholder="如：9 件套筒" onChange={(event) => update(item.id, { name: event.target.value })} />
             </td>
             <td className="packaging-table-col-price">
               <input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label={`类目默认配件${index + 1}价格`} value={item.price} placeholder="元" onChange={(event) => update(item.id, { price: Number(event.target.value) || 0 })} />
+            </td>
+            <td className="packaging-table-col-weight">
+              <input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label={`类目默认配件${index + 1}重量`} value={item.weight ?? ''} placeholder="kg" onChange={(event) => update(item.id, { weight: Number(event.target.value) || 0 })} />
             </td>
             <td className="packaging-table-col-actions">
               <button className="icon-button danger" type="button" title="移除这条默认配件" aria-label={`移除第 ${index + 1} 条默认配件`} onClick={() => { setItems((current) => current.filter((entry) => entry.id !== item.id)); setDirty(true); }}><Trash2 size={14} /></button>
@@ -331,9 +334,10 @@ function CategoryAccessoryDefaultsModal({ open, category, onClose, onSaved }: {
 }
 
 /**
- * 本产品的配件价格：随产品一起保存（「保存产品」时固化到本产品，不再写类目共享清单）。
- * 产品没动过这份清单时，第一次打开自动把类目默认连价格带出来；动过并保存后即以本产品为准。
+ * 本产品的配件：随产品一起保存（「保存产品」时固化到本产品，不再写类目共享清单）。
+ * 产品没动过这份清单时，第一次打开自动把类目默认连价格、重量带出来；动过并保存后即以本产品为准。
  * 类目默认只作预填模板，维护入口是「类目默认 ›」弹层；电池、充电器这类全局件仍放设置页。
+ * 价格与重量都会进售价计算器：价格计入成本，重量计入实重与运费。
  */
 function CategoryAccessoryPricesEditor({ category, value, customized, onSeed, onEdit, onDefaultsSaved }: {
   category: string;
@@ -370,7 +374,7 @@ function CategoryAccessoryPricesEditor({ category, value, customized, onSeed, on
     return () => { cancelled = true; };
   }, [customized, key]);
 
-  const update = (id: string, patch: Partial<Pick<AccessoryPrice, 'name' | 'price'>>) => {
+  const update = (id: string, patch: Partial<Pick<AccessoryPrice, 'name' | 'price' | 'weight'>>) => {
     touchedRef.current = true;
     onEdit(value.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   };
@@ -385,17 +389,17 @@ function CategoryAccessoryPricesEditor({ category, value, customized, onSeed, on
 
   // 与左侧采购报价同款：共用 packaging-table-section（无灰底无边框），并排时两边视觉一致。
   return <section className="packaging-table-section accessory-prices-section">
-    <div className="section-box-header"><span className="section-box-title">配件价格</span>
+    <div className="section-box-header"><span className="section-box-title">配件</span>
       {!!key && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
         <button className="link-button muted" type="button" title="维护该类目的默认配件：只对以后新建的产品生效；已有产品的配件不会被改动" onClick={() => setDefaultsOpen(true)}>类目默认 ›</button>
-        <button className="link-button packaging-table-add" type="button" title="添加一条配件价格" onClick={add}><Plus size={14} />添加</button>
+        <button className="link-button packaging-table-add" type="button" title="添加一条配件" onClick={add}><Plus size={14} />添加</button>
       </span>}
     </div>
     {key ? <>
       {loading && <div className="table-state">正在加载...</div>}
       {!loading && !!value.length && <div className="packaging-table-shell">
         <table className="packaging-table accessory-prices-table">
-          <thead><tr>{['名称', '价格', ''].map((title, index) => <th key={index}>{title}</th>)}</tr></thead>
+          <thead><tr>{['名称', '价格', '重量 kg', ''].map((title, index) => <th key={index}>{title}</th>)}</tr></thead>
           <tbody>{value.map((item, index) => <tr key={item.id || index}>
             <td className="packaging-table-col-size">
               <input className="input packaging-table-input" aria-label={`产品配件${index + 1}名称`} value={item.name} placeholder="如：9 件套筒" onChange={(event) => update(item.id, { name: event.target.value })} />
@@ -403,13 +407,16 @@ function CategoryAccessoryPricesEditor({ category, value, customized, onSeed, on
             <td className="packaging-table-col-price">
               <input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label={`产品配件${index + 1}价格`} value={item.price} placeholder="元" onChange={(event) => update(item.id, { price: Number(event.target.value) || 0 })} />
             </td>
+            <td className="packaging-table-col-weight">
+              <input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label={`产品配件${index + 1}重量`} value={item.weight ?? ''} placeholder="kg" onChange={(event) => update(item.id, { weight: Number(event.target.value) || 0 })} />
+            </td>
             <td className="packaging-table-col-actions">
-              <button className="icon-button danger" type="button" title="移除这条配件价格" aria-label={`移除第 ${index + 1} 条产品配件`} onClick={() => remove(item.id)}><Trash2 size={14} /></button>
+              <button className="icon-button danger" type="button" title="移除这条配件" aria-label={`移除第 ${index + 1} 条产品配件`} onClick={() => remove(item.id)}><Trash2 size={14} /></button>
             </td>
           </tr>)}</tbody>
         </table>
       </div>}
-      {!loading && !value.length && <div className="empty-state">本产品还没有配件价格，点右上角「添加」。</div>}
+      {!loading && !value.length && <div className="empty-state">本产品还没有配件，点右上角「添加」。</div>}
       <CategoryAccessoryDefaultsModal open={defaultsOpen} category={key} onClose={() => setDefaultsOpen(false)} onSaved={onDefaultsSaved} />
     </> : <span className="label-hint">先在上方填写「产品分类」；填好后会自动带出该类目的默认配件（可增删改，随产品一起保存）。</span>}
   </section>;

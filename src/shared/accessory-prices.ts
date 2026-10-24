@@ -8,15 +8,25 @@ export interface AccessoryPrice {
   name: string;
   /** 单价（元），≥ 0，保留两位。 */
   price: number;
+  /** 单件重量（kg），≥ 0，保留两位；缺省/0 = 未填。运费预估用。 */
+  weight?: number;
 }
 
 export const ACCESSORY_PRICE_LIST_LIMIT = 80;
 export const ACCESSORY_PRICE_NAME_LIMIT = 60;
+export const ACCESSORY_WEIGHT_LIMIT = 1000;
 
 export function accessoryPriceValue(value: unknown): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return 0;
   return Math.round(parsed * 100) / 100;
+}
+
+/** 配件重量：≥ 0、两位小数、上限 1000kg（防手误输入把运费算飞）。 */
+export function accessoryWeightValue(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.min(Math.round(parsed * 100) / 100, ACCESSORY_WEIGHT_LIMIT);
 }
 
 /** 清洗一行：名称为空视为无效（返回 null，由调用方丢弃）。 */
@@ -25,7 +35,8 @@ export function normalizeAccessoryPrice(value: unknown, fallbackId = ''): Access
   const name = typeof record.name === 'string' ? record.name.trim().slice(0, ACCESSORY_PRICE_NAME_LIMIT) : '';
   if (!name) return null;
   const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : fallbackId;
-  return { id, name, price: accessoryPriceValue(record.price) };
+  const weight = accessoryWeightValue(record.weight);
+  return { id, name, price: accessoryPriceValue(record.price), ...(weight > 0 ? { weight } : {}) };
 }
 
 /** 整表清洗：丢弃无效行、按上限截断、补齐缺失 id。 */
@@ -58,7 +69,7 @@ export function parseLegacyAccessoriesText(text: string): AccessoryPrice[] {
   return result;
 }
 
-/** 同名合并（迁移跨产品去重）：保留先出现的条目，价格为空且新值有价时补上价格。 */
+/** 同名合并（迁移跨产品去重）：保留先出现的条目，价格/重量为空且新值有值时补上。 */
 export function mergeAccessoryPrices(base: AccessoryPrice[], incoming: AccessoryPrice[]): AccessoryPrice[] {
   const result = base.map((item) => ({ ...item }));
   const byName = new Map(result.map((item) => [item.name, item]));
@@ -71,6 +82,14 @@ export function mergeAccessoryPrices(base: AccessoryPrice[], incoming: Accessory
       continue;
     }
     if (existing.price <= 0 && item.price > 0) existing.price = item.price;
+    if (!existing.weight && item.weight) existing.weight = item.weight;
   }
   return result;
+}
+
+/** 配件总价与总重（按产品当前的配件清单累加）。 */
+export function accessoryTotals(items: AccessoryPrice[]): { price: number; weight: number } {
+  const price = items.reduce((sum, item) => sum + accessoryPriceValue(item.price), 0);
+  const weight = items.reduce((sum, item) => sum + accessoryWeightValue(item.weight), 0);
+  return { price: Math.round(price * 100) / 100, weight: Math.round(weight * 100) / 100 };
 }

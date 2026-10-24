@@ -200,6 +200,18 @@ export async function registerSettingsRoutes(app: FastifyInstance, options: Sett
     }, reply),
   );
 
+  app.get('/api/settings/volume-divisor', async (_request, reply) =>
+    safeRoute(() => sendSuccess(reply, { divisor: options.service.getVolumeDivisor() }), reply),
+  );
+
+  app.put('/api/settings/volume-divisor', async (request, reply) =>
+    safeRoute(() => {
+      const body = asRecord(request.body);
+      if (body.divisor == null) throw new ApiError(400, 'VALIDATION_ERROR', '缺少体积参数', 'divisor');
+      return sendSuccess(reply, { divisor: options.service.saveVolumeDivisor(body.divisor) });
+    }, reply),
+  );
+
   app.get('/api/settings/charger-prices', async (_request, reply) =>
     safeRoute(() => sendSuccess(reply, { items: options.service.getChargerPrices() }), reply),
   );

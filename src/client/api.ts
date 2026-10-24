@@ -847,6 +847,15 @@ export function saveBatteryPriceMatrix(matrix: BatteryPriceMatrix): Promise<Batt
   return request<BatteryPriceMatrix>('/api/settings/battery-price-matrix', { method: 'PUT', body: JSON.stringify(matrix) });
 }
 
+/** 体积重参数（cm³/kg）：运费自动预估用，所有产品共用，默认 8000。 */
+export function getVolumeDivisor(): Promise<number> {
+  return request<{ divisor: number }>('/api/settings/volume-divisor').then((result) => result.divisor);
+}
+
+export function saveVolumeDivisor(divisor: number): Promise<number> {
+  return request<{ divisor: number }>('/api/settings/volume-divisor', { method: 'PUT', body: JSON.stringify({ divisor }) }).then((result) => result.divisor);
+}
+
 /** 充电器价格清单（设置页维护；名称 + 单价）。 */
 export function getChargerPrices(): Promise<AccessoryPrice[]> {
   return request<{ items: AccessoryPrice[] }>('/api/settings/charger-prices').then((result) => result.items);

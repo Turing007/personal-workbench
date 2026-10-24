@@ -4478,6 +4478,23 @@ select {
   gap: var(--space-2);
 }
 
+/* 运费体积参数：和包装尺寸同区维护，计算器里也能改（同一份全局设置）。 */
+.volume-setting-box {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--color-divider);
+  border-radius: 9px;
+  padding: 10px 12px;
+  background: var(--color-surface-subtle);
+}
+.volume-setting-head { display: flex; align-items: baseline; gap: 6px; }
+.volume-setting-head strong { color: var(--color-text-strong); font-size: 12.5px; }
+.volume-setting-head em { color: var(--color-text-muted); font-size: 11px; font-style: normal; }
+.volume-setting-row { display: flex; align-items: center; gap: 8px; }
+.volume-setting-row .input { width: 120px; }
+.volume-setting-hint { margin: 0; color: var(--color-text-muted); font-size: 11.5px; line-height: 1.5; }
+.volume-setting-message { margin: 0; color: var(--tone-accent-text); font-size: 11.5px; }
+
 /* 表头与数据行是两个独立 grid，最后一列必须写死宽度：写 auto 时表头那格是空的（0px）、
    数据行是 92px 的操作按钮，两边 fr 列分到的宽度就不一样，整排表头会往右偏。
    92px = 3 个 28px 图标按钮 + 2 个 4px 间距。 */
@@ -4797,10 +4814,12 @@ select {
 .purchase-quotes-table th:nth-child(4),
 .purchase-quotes-table td:nth-child(4) { width: 40px; }
 
-/* 配件价格：与采购报价同款表格风格（同一套 packaging-table 样式）；三列窄表不横滑。 */
+/* 配件：与采购报价同款表格风格（同一套 packaging-table 样式）；四列窄表不横滑。 */
 .accessory-prices-table { min-width: 0; }
 .accessory-prices-table th:nth-child(1),
-.accessory-prices-table td:nth-child(1) { width: 190px; }
+.accessory-prices-table td:nth-child(1) { width: 150px; }
+.accessory-prices-table th:nth-child(3),
+.accessory-prices-table td:nth-child(3) { width: 84px; }
 
 /* 窄屏时报价表压成一行；「默认档」列已并入供应商高亮，共四列：
    供应商与价格定宽、「名目 / 款式」吃掉剩余空间、末列删除。
@@ -5442,7 +5461,23 @@ select {
 .price-calc2-shipmode { display: flex; align-items: center; gap: 6px; font-size: var(--text-2xs); }
 .price-calc2-shipmode button { border: 1px solid var(--color-border-control); border-radius: var(--radius-control); padding: 2px 9px; background: var(--color-surface); color: var(--color-text-secondary); font: inherit; font-size: var(--text-2xs); cursor: pointer; }
 .price-calc2-shipmode button.is-on { border-color: var(--color-accent-border); background: var(--color-accent-soft); color: var(--tone-accent-text); font-weight: var(--weight-semibold); }
-.price-calc2-shiphint { margin-left: auto; color: var(--color-text-muted); }
+/* 运费：实重/抛重放在输入框前面（桌面与手机一致）。 */
+.price-calc2-shipping-field > .price-calc2-shipping-label { display: grid; flex: 1 1 auto; gap: 1px; min-width: 0; }
+.price-calc2-shipweight { color: var(--color-text-muted); font-size: 10.5px; line-height: 1.35; white-space: normal; }
+/* 自动运费金额框：点它打开体积参数弹窗，给一个可点的提示。 */
+.price-calc2-field .input.is-volume-trigger { cursor: pointer; }
+/* 产品配件：只读汇总（增删改在产品编辑器）。 */
+.price-calc2-accessories { display: grid; gap: 3px; border: 1px solid var(--color-divider); border-radius: 6px; padding: 5px 7px; color: var(--color-text-secondary); background: var(--color-surface-subtle); font-size: 11px; }
+.price-calc2-accessories.is-empty { color: var(--color-text-muted); }
+.price-calc2-accessories-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.price-calc2-accessories-head em { color: var(--tone-accent-text); font-style: normal; font-variant-numeric: tabular-nums; }
+.price-calc2-accessories-list { display: flex; flex-wrap: wrap; gap: 2px 8px; color: var(--color-text-muted); font-size: 10.5px; }
+.volume-settings { display: grid; gap: 10px; }
+.volume-settings-hint,
+.volume-settings-meta { margin: 0; color: var(--color-text-muted); font-size: 12px; line-height: 1.55; }
+.volume-settings-meta { color: var(--color-text-secondary); }
+.volume-settings-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.volume-settings-message { margin: 0; color: var(--tone-danger-text); font-size: 12px; }
 .price-calc2-warn { margin: 0; color: var(--color-warning-text); font-size: var(--text-2xs); line-height: 1.5; }
 /* 顶部产品图 + 名称 + 小眼睛（隐藏全部成本，留一张干净价格表给客户截图）。 */
 .price-calc2-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }

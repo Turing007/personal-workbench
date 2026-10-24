@@ -146,7 +146,8 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     // 运费预估：默认自动、单价 1.5、运费只读显示裸机值 1.35、跟随计费重量提示。
     await expect(dialog.getByLabel('运费单价')).toHaveValue('1.5');
     await expect(dialog.getByLabel('运费金额')).toHaveValue('1.35');
-    await expect(dialog.locator('.price-calc2-shiphint')).toContainText('裸机 0.9kg');
+    await expect(dialog.locator('.price-calc2-shipweight')).toContainText('实重 0.9kg');
+    await expect(dialog.locator('.price-calc2-shipweight')).toContainText('抛重 —');
     // 改单价为 2 → 裸机运费 1.8、成本 102 / 售价 117。
     await dialog.getByLabel('运费单价').fill('2');
     await expect(dialog.getByLabel('运费金额')).toHaveValue('1.8');

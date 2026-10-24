@@ -117,7 +117,7 @@ describe('售价计算器：算价方案', () => {
     expect(saved.params).toEqual({
       baseCost: 105, packaging: 0, shipping: 0, taxPercent: 7.7,
       chargerName: '小线充（欧/美规）-0.5A', chargerPrice: 2.3,
-      shippingMode: 'manual', shippingUnitPrice: 1.5,
+      shippingMode: 'manual', shippingUnitPrice: 1.5, volumeDivisor: 8000,
     });
     // 读列表同样带回参数快照。
     const list = await app.inject({ method: 'GET', url: `/api/products/${product.id}/price-plans` });
@@ -131,7 +131,7 @@ describe('售价计算器：算价方案', () => {
     });
     expect((dirty.json().data as { params: Record<string, unknown> }).params).toEqual({
       baseCost: 0, packaging: 0, shipping: 0, taxPercent: 0, chargerName: '', chargerPrice: 0,
-      shippingMode: 'manual', shippingUnitPrice: 1.5,
+      shippingMode: 'manual', shippingUnitPrice: 1.5, volumeDivisor: 8000,
     });
 
     // 旧客户端不带 params：存空对象、读回 null（按旧方案处理）。
@@ -258,6 +258,15 @@ describe('售价计算器：产品「配件与价格」', () => {
     const other = await createProduct(app, '圆锯-7寸');
     settingsService.saveCategoryAccessoryPrices('电锤', [{ name: '钻头', price: 3 }]);
     expect(repositories.getProduct(other.id)?.accessoryPricesCustomized).toBe(false);
+  });
+
+  it('体积重参数：默认 8000，保存后读回，越界自动夹紧', async () => {
+    const { settingsRepository } = await createFixture();
+    expect(settingsRepository.readVolumeDivisor()).toBe(8000);
+    expect(settingsRepository.saveVolumeDivisor(6000)).toBe(6000);
+    expect(settingsRepository.readVolumeDivisor()).toBe(6000);
+    expect(settingsRepository.saveVolumeDivisor(0)).toBe(1000);
+    expect(settingsRepository.saveVolumeDivisor('abc')).toBe(8000);
   });
 
   it('类目配件表：按分类分开存取，互不覆盖', async () => {

@@ -89,6 +89,15 @@ export class SettingsService {
     return this.settings.saveBatteryPriceMatrix(value);
   }
 
+  /** 体积重参数（cm³/kg）：售价计算器自动预估运费时共用，默认 8000。 */
+  getVolumeDivisor(): number {
+    return this.settings.readVolumeDivisor();
+  }
+
+  saveVolumeDivisor(value: unknown): number {
+    return this.settings.saveVolumeDivisor(value);
+  }
+
   /** 充电器价格清单（名称 + 单价）。 */
   getChargerPrices(): AccessoryPrice[] {
     return this.settings.readChargerPrices();

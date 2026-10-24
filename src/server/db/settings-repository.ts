@@ -12,6 +12,7 @@ import {
   normalizeBatteryMatrix,
   type BatteryPriceMatrix,
 } from '../../shared/battery-prices.js';
+import { DEFAULT_VOLUME_DIVISOR, normalizeVolumeDivisor } from '../../shared/price-calculator.js';
 import {
   cloneDefaultContractTemplate,
   normalizeContractTemplate,
@@ -31,6 +32,7 @@ const BATTERY_PRICE_MATRIX_KEY = 'battery_price_matrix';
 const CHARGER_PRICES_KEY = 'charger_prices';
 const CATEGORY_ACCESSORY_PRICES_KEY = 'category_accessory_prices';
 const PRODUCT_OPTION_PRESETS_KEY = 'product_option_presets';
+const VOLUME_DIVISOR_KEY = 'volume_divisor';
 
 export interface AutoBackupSettingsRecord {
   /** 自定义备份目录；空字符串 = 默认目录（数据目录/backups）。 */
@@ -199,6 +201,28 @@ export class SettingsRepository {
       )
       .run(BATTERY_PRICE_MATRIX_KEY, JSON.stringify(matrix), new Date().toISOString());
     return matrix;
+  }
+
+  /** 体积重参数（cm³/kg）：未配置时用默认 8000，所有产品的运费预估共用。 */
+  readVolumeDivisor(): number {
+    const row = this.database.prepare('SELECT value FROM settings WHERE key = ?').get(VOLUME_DIVISOR_KEY) as { value?: string } | undefined;
+    if (!row?.value) return DEFAULT_VOLUME_DIVISOR;
+    try {
+      return normalizeVolumeDivisor(JSON.parse(row.value));
+    } catch {
+      return DEFAULT_VOLUME_DIVISOR;
+    }
+  }
+
+  saveVolumeDivisor(value: unknown): number {
+    const divisor = normalizeVolumeDivisor(value);
+    this.database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(VOLUME_DIVISOR_KEY, JSON.stringify(divisor), new Date().toISOString());
+    return divisor;
   }
 
   /** null = 从未写入过，由服务层按现有产品统计；空清单是用户自己清的，不再重算。 */

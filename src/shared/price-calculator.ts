@@ -96,6 +96,8 @@ export interface PricePlanParams {
   shippingMode: PriceShippingMode;
   /** 自动预估的运费单价（元/kg）。 */
   shippingUnitPrice: number;
+  /** 体积重参数（cm³/kg），默认 8000；旧方案缺省按默认值。 */
+  volumeDivisor?: number;
 }
 
 /** 清洗参数快照：全部按金额口径处理（≥0、两位小数），缺省为 0 与空名。 */
@@ -111,6 +113,7 @@ export function normalizePricePlanParams(value: unknown): PricePlanParams {
     // 旧方案没存过这两个字段：按 manual 回显既有运费值，单价补默认值，行为与改版前一致。
     shippingMode: record.shippingMode === 'auto' ? 'auto' : 'manual',
     shippingUnitPrice: record.shippingUnitPrice == null ? DEFAULT_SHIPPING_UNIT_PRICE : pricePlanAmount(record.shippingUnitPrice),
+    volumeDivisor: normalizeVolumeDivisor(record.volumeDivisor),
   };
 }
 
@@ -130,6 +133,48 @@ export const DEFAULT_SHIPPING_UNIT_PRICE = 1.5;
 
 export type PriceShippingMode = 'auto' | 'manual';
 
+/** 体积重参数默认值（cm³/kg）：国际快递常用 5000，国内陆运/快递常用 8000。 */
+export const DEFAULT_VOLUME_DIVISOR = 8000;
+
+/** 体积重参数合法范围：太小会把运费算飞，太大等于不按体积计费。 */
+export const VOLUME_DIVISOR_MIN = 1000;
+export const VOLUME_DIVISOR_MAX = 20000;
+
+/** 清洗体积重参数：非数字/越界时回落到默认 8000。 */
+export function normalizeVolumeDivisor(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_VOLUME_DIVISOR;
+  return Math.min(Math.max(Math.round(parsed), VOLUME_DIVISOR_MIN), VOLUME_DIVISOR_MAX);
+}
+
+/** 解析包装尺寸文本：支持「40×30×25」「40x30x25 cm」「40*30*25」，返回 cm 数值；解析不出返回 null。 */
+export function parsePackagingVolumeCm3(value: string | null | undefined): number | null {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  const matched = text.match(/^\s*([\d.]+)\s*[×x*]\s*([\d.]+)\s*[×x*]\s*([\d.]+)\s*(?:cm|厘米)?\s*$/i);
+  if (!matched) return null;
+  const [length, width, height] = matched.slice(1, 4).map((part) => Number(part));
+  if (![length, width, height].every((part) => Number.isFinite(part) && part > 0)) return null;
+  return round2(length * width * height);
+}
+
+/**
+ * 单台体积重（kg）= 单台体积（cm³）÷ 体积参数。
+ * 单台体积 = 外箱体积 ÷ 装箱数；包装里没有装箱数时按 1 台算。
+ * 没有体积数据时返回 0，计费重量就仍按实重，老产品结果不变。
+ */
+export function volumetricWeightKg(parcelVolumeCm3: number | null | undefined, divisor: unknown, unitsPerCarton = 1): number {
+  const volume = Number(parcelVolumeCm3);
+  if (!Number.isFinite(volume) || volume <= 0) return 0;
+  const units = Number.isFinite(unitsPerCarton) && unitsPerCarton > 0 ? Math.trunc(unitsPerCarton) : 1;
+  return round2(volume / units / normalizeVolumeDivisor(divisor));
+}
+
+/** 计费重量：实重与体积重取较大者（物流通用口径）。 */
+export function chargeableWeightKg(actualWeightKg: number, volumeWeightKgValue: number): number {
+  return round2(Math.max(0, actualWeightKg, volumeWeightKgValue));
+}
+
 /**
  * 单个电池包的重量（kg）：已知档位查表；表里没有的节数按同一斜率线性外推
  * （5 节 0.3kg 起、每 5 节 +0.2kg），保证设置里出现新档位时仍算得出重量而不是卡住。
@@ -141,18 +186,20 @@ export function batteryPackWeightKg(packCount: number): number {
 }
 
 /**
- * 一格组合的计费重量（kg）= 产品重量（包装首行内盒重量）+ 电池包重量 × 电数 + 充电器重量。
- * 裸机就是电池与充电器都为 0 的同一口径。
+ * 一格组合的实重（kg）= 产品重量（包装首行内盒重量）+ 配件重量 + 电池包重量 × 电数 + 充电器重量。
+ * 裸机就是电池与充电器都为 0 的同一口径；配件是每台都带，所有组合都计入。
  */
 export function comboShippingWeightKg(input: {
   productWeightKg: number;
+  accessoryWeightKg?: number;
   batteryPackCount?: number;
   batteryCount?: number;
   hasCharger?: boolean;
 }): number {
+  const accessory = Math.max(0, input.accessoryWeightKg ?? 0);
   const battery = input.batteryCount ? batteryPackWeightKg(input.batteryPackCount ?? 0) * input.batteryCount : 0;
   const charger = input.hasCharger ? CHARGER_WEIGHT_KG : 0;
-  return round2(Math.max(0, input.productWeightKg) + battery + charger);
+  return round2(Math.max(0, input.productWeightKg) + accessory + battery + charger);
 }
 
 /** 按重量预估运费：重量 × 单价，两位小数 —— 界面显示与实际入账用同一个值。 */
@@ -161,7 +208,7 @@ export function autoShippingCost(weightKg: number, unitPrice: number): number {
 }
 
 /**
- * 一格组合的总成本 = (采购价 + 包材配件 + 运费 + 电池单价×电数 + 充电器单价) × (1 + 税%/100)。
+ * 一格组合的总成本 = (采购价 + 包材 + 配件 + 运费 + 电池单价×电数 + 充电器单价) × (1 + 税%/100)。
  * 裸机就是电池与充电器都为 0 的同一口径，整张表因此只有一个公式。
  */
 export function comboTotalCost(input: {
@@ -169,12 +216,13 @@ export function comboTotalCost(input: {
   packaging: number;
   shipping: number;
   taxPercent: number;
+  accessoryPrice?: number;
   batteryUnitPrice?: number;
   batteryCount?: number;
   chargerPrice?: number;
 }): number {
   const batteryCost = (input.batteryUnitPrice ?? 0) * (input.batteryCount ?? 0);
-  const direct = input.baseCost + input.packaging + input.shipping + batteryCost + (input.chargerPrice ?? 0);
+  const direct = input.baseCost + input.packaging + (input.accessoryPrice ?? 0) + input.shipping + batteryCost + (input.chargerPrice ?? 0);
   return round2(direct * (1 + input.taxPercent / 100));
 }
 

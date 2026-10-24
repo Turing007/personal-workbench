@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   autoShippingCost,
   batteryPackWeightKg,
+  chargeableWeightKg,
   CHARGER_WEIGHT_KG,
   comboShippingWeightKg,
+  comboTotalCost,
   DEFAULT_SHIPPING_UNIT_PRICE,
+  DEFAULT_VOLUME_DIVISOR,
   normalizePricePlanItems,
   normalizePricePlanParams,
+  normalizeVolumeDivisor,
+  parsePackagingVolumeCm3,
   planItemAmount,
   planMargin,
   planSalePrice,
@@ -14,8 +19,11 @@ import {
   priceInclusionLabel,
   pricePlanMarkup,
   round2,
+  volumetricWeightKg,
+  VOLUME_DIVISOR_MAX,
+  VOLUME_DIVISOR_MIN,
 } from '../../src/shared/price-calculator';
-import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesText } from '../../src/shared/accessory-prices';
+import { accessoryTotals, mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesText } from '../../src/shared/accessory-prices';
 import {
   batteryMatrixOptions,
   batteryMatrixVisible,
@@ -105,11 +113,47 @@ describe('运费预估（按计费重量 × 单价）', () => {
     expect(comboShippingWeightKg({ productWeightKg: 0.9, batteryPackCount: 10, batteryCount: 2, hasCharger: true })).toBe(1.95);
     // 充电器按 0.05kg 计。
     expect(CHARGER_WEIGHT_KG).toBe(0.05);
+    // 产品配件是每台都带：所有组合都加进实重。
+    expect(comboShippingWeightKg({ productWeightKg: 0.9, accessoryWeightKg: 0.4 })).toBe(1.3);
+    expect(comboShippingWeightKg({ productWeightKg: 0.9, accessoryWeightKg: 0.4, batteryPackCount: 5, batteryCount: 1, hasCharger: true })).toBe(1.65);
+    // 配件价计入成本，再整体乘税；不传配件时与旧口径一致。
+    expect(comboTotalCost({ baseCost: 100, packaging: 2, shipping: 1.35, taxPercent: 10 })).toBe(113.69);
+    expect(comboTotalCost({ baseCost: 100, packaging: 2, shipping: 1.35, taxPercent: 10, accessoryPrice: 10 })).toBe(124.69);
+    expect(comboTotalCost({ baseCost: 100, packaging: 2, shipping: 1.35, taxPercent: 0, accessoryPrice: 10 })).toBe(113.35);
   });
 
   it('无电池组合不带充电器重量；产品重量为负按 0 兜底', () => {
     expect(comboShippingWeightKg({ productWeightKg: 1.2, batteryPackCount: 5, batteryCount: 0 })).toBe(1.2);
     expect(comboShippingWeightKg({ productWeightKg: -1 })).toBe(0);
+  });
+
+  it('体积重：外箱体积 ÷ 装箱数 ÷ 参数；实重与体积重取较大者', () => {
+    // 包装尺寸文本解析：× / x / * 都认，带 cm 也认；缺一维或非数字返回 null。
+    expect(parsePackagingVolumeCm3('40×30×25')).toBe(30000);
+    expect(parsePackagingVolumeCm3('40x30x25')).toBe(30000);
+    expect(parsePackagingVolumeCm3('40*30*25 cm')).toBe(30000);
+    expect(parsePackagingVolumeCm3(' 47 × 48 × 36 ')).toBe(81216);
+    expect(parsePackagingVolumeCm3('40×30')).toBeNull();
+    expect(parsePackagingVolumeCm3('')).toBeNull();
+    expect(parsePackagingVolumeCm3('abc')).toBeNull();
+
+    // 单台体积重 = 外箱体积 ÷ 装箱数 ÷ 参数；没体积数据时为 0（只按实重）。
+    expect(volumetricWeightKg(120000, 8000, 10)).toBe(1.5);
+    expect(volumetricWeightKg(120000, 8000, 1)).toBe(15);
+    expect(volumetricWeightKg(30000, 6000, 10)).toBe(0.5);
+    expect(volumetricWeightKg(null, 8000, 10)).toBe(0);
+
+    // 计费重量取大者。
+    expect(chargeableWeightKg(0.5, 1.5)).toBe(1.5);
+    expect(chargeableWeightKg(2, 1.5)).toBe(2);
+    expect(chargeableWeightKg(0.9, 0)).toBe(0.9);
+
+    // 参数清洗：默认 8000，越界夹紧，非法值回落。
+    expect(DEFAULT_VOLUME_DIVISOR).toBe(8000);
+    expect(normalizeVolumeDivisor(6000)).toBe(6000);
+    expect(normalizeVolumeDivisor(0)).toBe(VOLUME_DIVISOR_MIN);
+    expect(normalizeVolumeDivisor(99999)).toBe(VOLUME_DIVISOR_MAX);
+    expect(normalizeVolumeDivisor('abc')).toBe(DEFAULT_VOLUME_DIVISOR);
   });
 
   it('运费 = 重量 × 单价，保留两位小数；默认单价 1.5', () => {
@@ -123,14 +167,17 @@ describe('运费预估（按计费重量 × 单价）', () => {
     const params = normalizePricePlanParams({
       baseCost: 100, packaging: 2, shipping: 1.88, taxPercent: 0,
       chargerName: '小线充', chargerPrice: 2, shippingMode: 'auto', shippingUnitPrice: 1.5,
+      volumeDivisor: 6000,
     });
     expect(params.shippingMode).toBe('auto');
     expect(params.shippingUnitPrice).toBe(1.5);
-    // 旧方案（没有这两个字段）：模式回落到手动、运费保持原值、单价补默认。
+    expect(params.volumeDivisor).toBe(6000);
+    // 旧方案（没有这些字段）：模式回落到手动、运费保持原值、单价与体积参数补默认。
     const legacy = normalizePricePlanParams({ baseCost: 100, shipping: 7.5 });
     expect(legacy.shippingMode).toBe('manual');
     expect(legacy.shipping).toBe(7.5);
     expect(legacy.shippingUnitPrice).toBe(DEFAULT_SHIPPING_UNIT_PRICE);
+    expect(legacy.volumeDivisor).toBe(DEFAULT_VOLUME_DIVISOR);
     // 非法模式值一律按手动。
     expect(normalizePricePlanParams({ shippingMode: 'weird' }).shippingMode).toBe('manual');
   });
@@ -150,6 +197,24 @@ describe('配件与价格清洗', () => {
     ]);
     const many = Array.from({ length: 100 }, (_, index) => ({ name: `配件${index}`, price: index }));
     expect(normalizeAccessoryPrices(many)).toHaveLength(80);
+  });
+
+  it('配件重量：保留两位、非法/负数归零、0 不写出；合计价格与重量', () => {
+    expect(normalizeAccessoryPrices([
+      { name: '套筒', price: 10, weight: 0.456 },
+      { name: '扳手', price: 5, weight: -1 },
+      { name: '钻头', price: 3, weight: 0 },
+      { name: '锯片', price: 2, weight: 99999 },
+    ])).toEqual([
+      { id: 'acc-0', name: '套筒', price: 10, weight: 0.46 },
+      { id: 'acc-1', name: '扳手', price: 5 },
+      { id: 'acc-2', name: '钻头', price: 3 },
+      { id: 'acc-3', name: '锯片', price: 2, weight: 1000 },
+    ]);
+    expect(accessoryTotals([
+      { id: '1', name: '套筒', price: 10, weight: 0.46 },
+      { id: '2', name: '扳手', price: 5.5, weight: 0.2 },
+    ])).toEqual({ price: 15.5, weight: 0.66 });
   });
 
   it('电池矩阵播种：默认模板打底，旧条目「5 节 1300」按行列填入价格', () => {
