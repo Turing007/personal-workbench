@@ -61,6 +61,20 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     await expect(dialog.locator('.price-calc2-thumb')).toBeVisible();
     await expect(dialog.locator('.price-calc2-head')).toContainText(`E2E矩阵算价${stamp}`);
 
+    // 桌面布局：左边录入区、右边包装/配件；前三个输入同一行。
+    const layout = await dialog.locator('.price-calc2-params').evaluate((root) => {
+      const inputs = root.querySelector('.price-calc2-inputs')!.getBoundingClientRect();
+      const pickers = root.querySelector('.price-calc2-pickers')!.getBoundingClientRect();
+      const tops = ['采购价', '毛利率', '其他费用'].map((label) => {
+        const field = Array.from(root.querySelectorAll<HTMLElement>('.price-calc2-field')).find((el) => (el.querySelector('span')?.textContent ?? '').startsWith(label));
+        return field ? Math.round(field.getBoundingClientRect().top) : null;
+      });
+      return { inputsTop: Math.round(inputs.top), pickersTop: Math.round(pickers.top), inputsRight: Math.round(inputs.right), pickersLeft: Math.round(pickers.left), tops };
+    });
+    expect(new Set(layout.tops).size).toBe(1);
+    expect(layout.pickersLeft).toBeGreaterThan(layout.inputsRight);
+    expect(Math.abs(layout.pickersTop - layout.inputsTop)).toBeLessThanOrEqual(2);
+
     // 电池价格查询：只读矩阵，价格与设置一致；没定价的格子显示 —。
     await dialog.getByRole('button', { name: '电池价格' }).click();
     const priceDialog = page.getByRole('dialog', { name: '电池价格' });

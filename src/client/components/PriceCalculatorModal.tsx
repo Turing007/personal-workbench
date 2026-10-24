@@ -451,9 +451,49 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     <div className="price-calc2">
       <div className="price-calc2-params">
         {costsVisible && <>
+        <div className="price-calc2-inputs">
         <label className="price-calc2-field"><span>采购价</span><input className="input" type="number" min={0} step="0.01" aria-label="采购价" value={baseCost} onChange={(event) => setBaseCost(event.target.value)} /></label>
         <label className="price-calc2-field"><span>毛利率 %</span><input className="input" type="number" min={0} aria-label="毛利率" value={markup} onChange={(event) => setMarkup(event.target.value)} /></label>
         <label className="price-calc2-field"><span>其他费用</span><input className="input" type="number" min={0} step="0.01" aria-label="其他费用" value={otherFees} onChange={(event) => setOtherFees(event.target.value)} title="包材费按所选包装自动带出；这里填额外的其他费用" /></label>
+        {/* 运费：自动按「计费重量 × 单价」预估，手动则手填固定值。单价放运费前面。 */}
+        <label className="price-calc2-field"><span>运费单价 /kg</span><input className="input" type="number" min={0} step="0.01" aria-label="运费单价" value={shippingUnitPrice} disabled={!autoMode} onChange={(event) => { setShippingUnitPrice(event.target.value); rememberShippingUnitPrice(event.target.value); }} /></label>
+        {/* 当前是自动还是手动由下方两个按钮显示，这里不再重复标「自动」。
+            自动模式下点运费金额打开体积参数弹窗（全局设置，所有产品共用）。
+            实重/体积重放在输入框前面：桌面和手机都能直接看到运费是按哪个重量算的。 */}
+        <label className="price-calc2-field price-calc2-shipping-field">
+          <span className="price-calc2-shipping-label">运费
+            {autoMode && <span
+              className="price-calc2-shipweight"
+              title={`实重 ${bareActualWeight}kg；体积重 ${parcelVolumeCm3 ? `${volumeWeightKg}kg（÷${volumeDivisor}）` : '未填外箱尺寸'}；计费 ${bareChargeableWeight}kg`}
+            >实重 {bareActualWeight}kg / 体积重 {parcelVolumeCm3 ? `${volumeWeightKg}kg` : '—'}</span>}
+          </span>
+          <input
+            className={`input${autoMode ? ' is-volume-trigger' : ''}`}
+            type="number"
+            min={0}
+            step="0.01"
+            aria-label="运费金额"
+            value={autoMode ? String(bareShip) : shipping}
+            readOnly={autoMode}
+            title={autoMode ? `点击设置体积参数（计费 ${bareChargeableWeight}kg）` : undefined}
+            onClick={() => { if (autoMode) openVolumeDialog(); }}
+            onChange={(event) => setShipping(event.target.value)}
+          />
+        </label>
+        <div className="price-calc2-shipmode">
+          <button type="button" className={autoMode ? 'is-on' : ''} aria-pressed={autoMode} onClick={() => setShippingMode('auto')}>自动</button>
+          <button type="button" className={!autoMode ? 'is-on' : ''} aria-pressed={!autoMode} onClick={switchToManual}>手动</button>
+        </div>
+        {autoMode && weightMissing && <p className="price-calc2-warn" role="status">所选包装没填内盒重量，产品部分按 0 算（电池与充电器重量照常计）；去产品库补重量或切手动。</p>}
+        <label className="price-calc2-field"><span>税 %</span><input className="input" type="number" min={0} step="0.01" aria-label="税" value={taxPercent} onChange={(event) => setTaxPercent(event.target.value)} /></label>
+        <label className="price-calc2-field"><span>充电器</span>
+          <select className="toolbar-select price-calc2-charger" aria-label="充电器" value={chargerId} disabled={!chargerPrices.length} onChange={(event) => setChargerId(event.target.value)}>
+            {chargerPrices.map((item) => <option key={item.id} value={item.id}>{item.name} ¥{formatHalf(item.price)}</option>)}
+            {!chargerPrices.length && <option value="">无（去设置里添加）</option>}
+          </select>
+        </label>
+        </div>
+        <div className="price-calc2-pickers">
         {/* 包装：运费按所选包装的内盒重量、外箱尺寸/装箱数计算；包材费取该包装的采购价。 */}
         <div ref={packagingAnchorRef} className={`price-calc2-packaging${packagingRows.length ? '' : ' is-empty'}`}>
           <div className="price-calc2-packaging-head">
@@ -582,43 +622,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
             {!accessoryNames.length && <p className="price-calc2-accessory-empty">本产品还没有配件。去产品编辑页的「配件」里添加后，这里就能勾选。</p>}
           </PickerCurtain>
         </div>
-        {/* 运费：自动按「计费重量 × 单价」预估，手动则手填固定值。单价放运费前面。 */}
-        <label className="price-calc2-field"><span>运费单价 /kg</span><input className="input" type="number" min={0} step="0.01" aria-label="运费单价" value={shippingUnitPrice} disabled={!autoMode} onChange={(event) => { setShippingUnitPrice(event.target.value); rememberShippingUnitPrice(event.target.value); }} /></label>
-        {/* 当前是自动还是手动由下方两个按钮显示，这里不再重复标「自动」。
-            自动模式下点运费金额打开体积参数弹窗（全局设置，所有产品共用）。
-            实重/体积重放在输入框前面：桌面和手机都能直接看到运费是按哪个重量算的。 */}
-        <label className="price-calc2-field price-calc2-shipping-field">
-          <span className="price-calc2-shipping-label">运费
-            {autoMode && <span
-              className="price-calc2-shipweight"
-              title={`实重 ${bareActualWeight}kg；体积重 ${parcelVolumeCm3 ? `${volumeWeightKg}kg（÷${volumeDivisor}）` : '未填外箱尺寸'}；计费 ${bareChargeableWeight}kg`}
-            >实重 {bareActualWeight}kg / 体积重 {parcelVolumeCm3 ? `${volumeWeightKg}kg` : '—'}</span>}
-          </span>
-          <input
-            className={`input${autoMode ? ' is-volume-trigger' : ''}`}
-            type="number"
-            min={0}
-            step="0.01"
-            aria-label="运费金额"
-            value={autoMode ? String(bareShip) : shipping}
-            readOnly={autoMode}
-            title={autoMode ? `点击设置体积参数（计费 ${bareChargeableWeight}kg）` : undefined}
-            onClick={() => { if (autoMode) openVolumeDialog(); }}
-            onChange={(event) => setShipping(event.target.value)}
-          />
-        </label>
-        <div className="price-calc2-shipmode">
-          <button type="button" className={autoMode ? 'is-on' : ''} aria-pressed={autoMode} onClick={() => setShippingMode('auto')}>自动</button>
-          <button type="button" className={!autoMode ? 'is-on' : ''} aria-pressed={!autoMode} onClick={switchToManual}>手动</button>
         </div>
-        {autoMode && weightMissing && <p className="price-calc2-warn" role="status">所选包装没填内盒重量，产品部分按 0 算（电池与充电器重量照常计）；去产品库补重量或切手动。</p>}
-        <label className="price-calc2-field"><span>税 %</span><input className="input" type="number" min={0} step="0.01" aria-label="税" value={taxPercent} onChange={(event) => setTaxPercent(event.target.value)} /></label>
-        <label className="price-calc2-field"><span>充电器</span>
-          <select className="toolbar-select price-calc2-charger" aria-label="充电器" value={chargerId} disabled={!chargerPrices.length} onChange={(event) => setChargerId(event.target.value)}>
-            {chargerPrices.map((item) => <option key={item.id} value={item.id}>{item.name} ¥{formatHalf(item.price)}</option>)}
-            {!chargerPrices.length && <option value="">无（去设置里添加）</option>}
-          </select>
-        </label>
         </>}
         <div className="price-calc2-bare">
           <span className="price-calc2-bare-title">裸机</span>

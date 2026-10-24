@@ -5462,7 +5462,10 @@ select {
 /* 售价计算器 v2：上下结构——参数区在上横向铺开，电池组合矩阵整宽在下，
    保存方案与已存方案在底部；手机端参数区单列。 */
 .price-calc2 { display: grid; gap: 14px; }
-.price-calc2-params { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 16px; align-content: start; }
+.price-calc2-params { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px 18px; align-items: start; }
+/* 左边是录入区（3 列铺开），右边放包装与配件选择，符合“先填数、再选配”的顺序。 */
+.price-calc2-inputs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px 14px; align-content: start; }
+.price-calc2-pickers { display: grid; gap: 8px; align-content: start; }
 .price-calc2-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--text-xs); color: var(--color-text-secondary); }
 .price-calc2-field > span { flex: none; }
 .price-calc2-field .input { width: 104px; }
@@ -5476,9 +5479,9 @@ select {
 .price-calc2-shipweight { color: var(--color-text-muted); font-size: 10.5px; line-height: 1.35; white-space: normal; }
 /* 自动运费金额框：点它打开体积参数弹窗，给一个可点的提示。 */
 .price-calc2-field .input.is-volume-trigger { cursor: pointer; }
-/* 包装与配件：两块并排在下拉里选；选中的包装/配件才计入成本与实重。 */
+/* 包装与配件：两块排在录入区右侧；选中的包装/配件才计入成本与实重。 */
 .price-calc2-packaging,
-.price-calc2-accessories { position: relative; grid-column: span 2; display: grid; gap: 4px; border: 1px solid var(--color-divider); border-radius: 6px; padding: 5px 7px; color: var(--color-text-secondary); background: var(--color-surface-subtle); font-size: 11px; }
+.price-calc2-accessories { position: relative; display: grid; gap: 4px; border: 1px solid var(--color-divider); border-radius: 6px; padding: 5px 7px; color: var(--color-text-secondary); background: var(--color-surface-subtle); font-size: 11px; }
 .price-calc2-packaging.is-empty,
 .price-calc2-accessories.is-empty { color: var(--color-text-muted); }
 .price-calc2-packaging-head,
@@ -5583,13 +5586,14 @@ select {
 .price-calc-plan-main strong { font-size: 13px; }
 .price-calc-plan-main span { font-size: 11.5px; color: var(--color-text-muted); }
 .price-calc-plan-actions { display: flex; gap: 4px; align-items: center; flex: none; }
-@media (max-width: 1100px) {
-  .price-calc2-params { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
 @media (max-width: 900px) {
   /* 手机上颜色/插脚保持并排，电压单独占下一行，避免三列挤到横向滚动。 */
   .product-editor-options-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .product-editor-options-row .product-editor-option-field:nth-child(3) { grid-column: 1 / -1; }
+  /* 计算器：窄屏时录入区与选配区上下排，录入区先两列、手机再单列。 */
+  .price-calc2-params { grid-template-columns: 1fr; }
+  .price-calc2-inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .price-calc2-pickers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .price-calc2-field .input { width: 128px; }
   .price-calc2-field .price-calc2-charger { max-width: none; }
   .battery-price-table { font-size: 11px; }
@@ -5598,8 +5602,8 @@ select {
 }
 @media (max-width: 640px) {
   .price-calc2-params { grid-template-columns: 1fr; }
-  .price-calc2-packaging,
-  .price-calc2-accessories { grid-column: 1 / -1; }
+  .price-calc2-inputs,
+  .price-calc2-pickers { grid-template-columns: 1fr; }
 }
 
 /* ===== 侧栏账号区 ===== */
