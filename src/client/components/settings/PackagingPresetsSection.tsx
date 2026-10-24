@@ -169,7 +169,7 @@ export default function PackagingPresetsSection() {
         />
         <button className="button button-primary button-sm" type="button" disabled={volumeBusy || normalizeVolumeDivisor(volumeInput) === volumeDivisor} onClick={() => void saveVolume()}>{volumeBusy ? '保存中...' : '保存'}</button>
       </div>
-      <p className="volume-setting-hint">售价计算器自动预估运费时使用：单台抛重 = 外箱长×宽×高 ÷ 参数 ÷ 装箱数，实重与抛重取较大者。默认 8000；在计算器点运费金额也能改，保存后所有产品共用。</p>
+      <p className="volume-setting-hint">售价计算器自动预估运费时使用：单台体积重 = 外箱长×宽×高 ÷ 参数 ÷ 装箱数，实重与体积重取较大者。默认 8000；在计算器点运费金额也能改，保存后所有产品共用。</p>
       {!!volumeMessage && <p className="volume-setting-message" role="status">{volumeMessage}</p>}
     </section>
     {loading && <div className="table-state">正在加载包装管理...</div>}

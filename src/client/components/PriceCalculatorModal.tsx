@@ -73,8 +73,8 @@ export interface PriceCalculatorModalProps {
 }
 
 /**
- * 产品售价计算器（矩阵口径）：左边填采购价/毛利率/包材配件/运费/税并选充电器，
- * 右边按「电池容量 × 节数 × 一电一充/两电一充」整表出成本与售价；
+ * 产品售价计算器（矩阵口径）：上方填采购价/毛利率/其他费用并选包装、配件、运费、税、充电器，
+ * 下方按「电池容量 × 节数 × 一电一充/两电一充」整表出成本与售价；
  * 点任意售价即复制「5节1300mah 一电一充 138.12元」，可直接发给客户。
  * 顶部有产品图与名称；「小眼睛」一键隐藏全部成本（含参数、成本列、毛利与方案区），
  * 留在屏幕上的是干净的价格表，方便直接截图发客户。默认每次打开都显示成本。
@@ -82,7 +82,12 @@ export interface PriceCalculatorModalProps {
  */
 export default function PriceCalculatorModal({ open, product, onClose }: PriceCalculatorModalProps) {
   const [baseCost, setBaseCost] = useState('');
-  const [packaging, setPackaging] = useState('0');
+  /** 其他费用：包材费按所选包装自动取采购价，这里只填额外摊进去的费用。 */
+  const [otherFees, setOtherFees] = useState('0');
+  /** 本次计算用哪一行包装：实重/体积重/装箱数/包材费都跟它走。 */
+  const [packagingId, setPackagingId] = useState('');
+  const [packagingPickerOpen, setPackagingPickerOpen] = useState(false);
+  const packagingAnchorRef = useRef<HTMLDivElement>(null);
   const [shipping, setShipping] = useState('0');
   const [shippingMode, setShippingMode] = useState<PriceShippingMode>('auto');
   const [shippingUnitPrice, setShippingUnitPrice] = useState(String(DEFAULT_SHIPPING_UNIT_PRICE));
@@ -115,11 +120,13 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   useEffect(() => {
     if (!open || !product) return;
     let cancelled = false;
-    // 采购价：默认档报价 → 镜像列兜底；包材配件：第一条包装的采购价。
+    // 采购价：默认档报价 → 镜像列兜底；其他费用从 0 起填，包材费按所选包装自动带。
     const quotes = product.purchaseQuotes ?? [];
     const defaultQuote = quotes.find((quote) => quote.isDefault) ?? quotes[0];
     setBaseCost((defaultQuote?.price ?? '').trim() || product.purchasePrice || '0');
-    setPackaging(product.packaging[0]?.purchasePrice?.trim() || '0');
+    setOtherFees('0');
+    setPackagingId(product.packaging[0]?.id ?? '');
+    setPackagingPickerOpen(false);
     setShipping('0');
     // 每次打开回到自动预估：这是默认口径，手动是临时覆盖。
     setShippingMode('auto');
@@ -169,7 +176,13 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
 
   const image = product.images[0];
   const base = amountInput(baseCost);
-  const pack = amountInput(packaging);
+  const packagingRows = product.packaging ?? [];
+  const packagingRow = packagingRows.find((row) => row.id === packagingId) ?? packagingRows[0];
+  /** 包材费：取所选包装的采购价；产品没填就是 0。 */
+  const packagingCost = round2(Number(packagingRow?.purchasePrice) || 0);
+  const otherCost = amountInput(otherFees);
+  /** 计成本的包材合计 = 包装采购价 + 其他费用。 */
+  const pack = round2(packagingCost + otherCost);
   const tax = amountInput(taxPercent);
   const markupValue = amountInput(markup);
   const charger = chargerPrices.find((item) => item.id === chargerId);
@@ -212,14 +225,14 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const selectedAccessoryNamesForSave = selectedAccessoryOptions.map((item) => item.name);
 
   // 产品重量取包装第一行的内盒重量（单台重量，与矩阵每台成本口径一致）。
-  const productWeightKg = Number(product.packaging[0]?.innerWeight) || 0;
+  // 产品重量与体积都取所选包装这一行（不再是固定第一条）。
+  const productWeightKg = Number(packagingRow?.innerWeight) || 0;
   const weightMissing = productWeightKg <= 0;
   const unitPriceValue = amountInput(shippingUnitPrice);
   const autoMode = shippingMode === 'auto';
   // 自动模式下运费按计费重量现算；手动模式用输入框里的固定值。
   const manualShip = amountInput(shipping);
 
-  const packagingRow = product.packaging[0];
   // 体积重按「外箱体积 ÷ 装箱数」折成单台；没填外箱时退回内盒，两者都没有就只按实重。
   const outerVolumeCm3 = parsePackagingVolumeCm3(packagingRow?.outerSize);
   const parcelVolumeCm3 = outerVolumeCm3 ?? parsePackagingVolumeCm3(packagingRow?.innerSize);
@@ -312,12 +325,16 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
       const accessoryItems = accessoryPrice > 0 ? [{ name: '配件', qty: 1, unitPrice: accessoryPrice }] : [];
       const taxAmount = round2(bareCost - base - pack - bareShip - accessoryPrice);
       const params: PricePlanParams = {
-        baseCost: base, packaging: pack, shipping: bareShip, taxPercent: tax,
+        baseCost: base, packaging: packagingCost, shipping: bareShip, taxPercent: tax,
         chargerName: charger?.name ?? '', chargerPrice,
         shippingMode, shippingUnitPrice: unitPriceValue,
         volumeDivisor,
         // 记下这次计入的配件名称：载入方案时照着还原勾选，不会被后来改的清单带偏。
         accessoryNames: selectedAccessoryNamesForSave,
+        // 记住这次勾选的包装：载入时按 id/名称找回来，重算仍在同一口径上。
+        packagingId: packagingRow?.id ?? '',
+        packagingName: packagingRow?.name ?? '',
+        otherCost,
       };
       const plan = await savePricePlan(product.id, {
         name: planName,
@@ -325,7 +342,8 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
         targetPrice: null,
         items: [
           { name: '采购价', qty: 1, unitPrice: base },
-          { name: '包材配件', qty: 1, unitPrice: pack },
+          { name: '包材', qty: 1, unitPrice: packagingCost },
+          { name: '其他费用', qty: 1, unitPrice: otherCost },
           ...accessoryItems,
           { name: '运费', qty: 1, unitPrice: bareShip },
           { name: '税', qty: 1, unitPrice: taxAmount },
@@ -346,7 +364,19 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     const params = plan.params;
     if (params) {
       setBaseCost(String(params.baseCost));
-      setPackaging(String(params.packaging));
+      // 包装按方案快照还原：优先 id，其次名称；都找不到就回到第一条。
+      const savedPackaging = (params.packagingId ? packagingRows.find((row) => row.id === params.packagingId) : undefined)
+        ?? (params.packagingName ? packagingRows.find((row) => row.name === params.packagingName) : undefined)
+        ?? packagingRows[0];
+      setPackagingId(savedPackaging?.id ?? '');
+      if (params.otherCost == null) {
+        // 旧方案没有「其他费用」字段：当时 packaging 是手填的包材配件总额，
+        // 扣掉现在所选包装的采购价后作为其他费用，保证总成本仍是当时的结果。
+        const savedPackagingCost = round2(Number(savedPackaging?.purchasePrice) || 0);
+        setOtherFees(String(Math.max(0, round2(params.packaging - savedPackagingCost))));
+      } else {
+        setOtherFees(String(params.otherCost));
+      }
       setShipping(String(params.shipping));
       setShippingMode(params.shippingMode);
       setShippingUnitPrice(String(params.shippingUnitPrice));
@@ -364,7 +394,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
       // 旧格式方案（没存参数）：按明细里能认出来的行尽量回显。
       const byName = new Map(plan.items.map((item) => [item.name, item.unitPrice]));
       setBaseCost(String(byName.get('产品成本') ?? base));
-      setPackaging(String(byName.get('包装') ?? 0));
+      setOtherFees(String(byName.get('其他费用') ?? byName.get('包材配件') ?? byName.get('包材') ?? 0));
       setShipping(String(byName.get('运费') ?? 0));
       setMessage('旧方案只回显了采购价等部分参数');
     }
@@ -421,7 +451,62 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
         {costsVisible && <>
         <label className="price-calc2-field"><span>采购价</span><input className="input" type="number" min={0} step="0.01" aria-label="采购价" value={baseCost} onChange={(event) => setBaseCost(event.target.value)} /></label>
         <label className="price-calc2-field"><span>毛利率 %</span><input className="input" type="number" min={0} aria-label="毛利率" value={markup} onChange={(event) => setMarkup(event.target.value)} /></label>
-        <label className="price-calc2-field"><span>包材配件</span><input className="input" type="number" min={0} step="0.01" aria-label="包材配件" value={packaging} onChange={(event) => setPackaging(event.target.value)} /></label>
+        <label className="price-calc2-field"><span>其他费用</span><input className="input" type="number" min={0} step="0.01" aria-label="其他费用" value={otherFees} onChange={(event) => setOtherFees(event.target.value)} title="包材费按所选包装自动带出；这里填额外的其他费用" /></label>
+        {/* 包装：运费按所选包装的内盒重量、外箱尺寸/装箱数计算；包材费取该包装的采购价。 */}
+        <div ref={packagingAnchorRef} className={`price-calc2-packaging${packagingRows.length ? '' : ' is-empty'}`}>
+          <div className="price-calc2-packaging-head">
+            <span>包装</span>
+            <em>{packagingRows.length ? `包材 ¥${round2(packagingCost)}` : '无'}</em>
+          </div>
+          <button
+            className="toolbar-select price-calc2-packaging-trigger"
+            type="button"
+            aria-label="选择包装"
+            aria-haspopup="dialog"
+            aria-expanded={packagingPickerOpen}
+            onClick={() => setPackagingPickerOpen((current) => !current)}
+          >
+            <span className="price-calc2-packaging-trigger-label">{packagingRow?.name?.trim() || (packagingRows.length ? '未命名包装' : '无包装')}</span>
+            <ChevronDown size={13} />
+          </button>
+          {packagingRow && <div className="price-calc2-packaging-meta">
+            {[packagingRow.packSize ? `${packagingRow.packSize} 台/箱` : '', packagingRow.innerWeight ? `内盒 ${packagingRow.innerWeight}kg` : '', packagingRow.outerSize ? `外箱 ${packagingRow.outerSize}` : ''].filter(Boolean).join(' · ')}
+          </div>}
+          <PickerCurtain
+            open={packagingPickerOpen}
+            onClose={() => setPackagingPickerOpen(false)}
+            anchorRef={packagingAnchorRef}
+            ariaLabel="选择包装"
+            className="price-calc2-packaging-curtain"
+          >
+            <div className="search-history-head">
+              <span>选择计算运费用的包装</span>
+              <button
+                type="button"
+                className="search-history-clear"
+                onClick={() => setPackagingPickerOpen(false)}
+              >完成</button>
+            </div>
+            {!!packagingRows.length && <div className="search-history-chips">
+              {packagingRows.map((row) => {
+                const selected = row.id === packagingRow?.id;
+                return <button
+                  key={row.id}
+                  type="button"
+                  className={`category-chip${selected ? ' is-selected' : ''}`}
+                  aria-pressed={selected}
+                  onClick={() => { setPackagingId(row.id); setPackagingPickerOpen(false); }}
+                >
+                  {row.name?.trim() || '未命名包装'}
+                  {row.packSize ? ` ${row.packSize}台/箱` : ''}
+                  {row.innerWeight ? ` · ${row.innerWeight}kg` : ''}
+                </button>;
+              })}
+            </div>}
+            {!packagingRows.length && <p className="price-calc2-accessory-empty">本产品还没有包装。去产品编辑页的「包装」里添加后，这里就能选。</p>}
+            {!!packagingRows.length && <p className="price-calc2-accessory-empty">运费按所选包装的装箱数与尺寸计算；包材费取该包装的采购价。包装明细在产品编辑页维护。</p>}
+          </PickerCurtain>
+        </div>
         {/* 配件：只列本产品自己的清单（类目默认只在新建时预填，不在这里出现）；
             用下拉幕布勾选本次要计入的配件，选中的价格进成本、重量进实重与运费。 */}
         <div ref={accessoryAnchorRef} className={`price-calc2-accessories${accessories.length ? '' : ' is-empty'}`}>
@@ -499,13 +584,13 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
         <label className="price-calc2-field"><span>运费单价 /kg</span><input className="input" type="number" min={0} step="0.01" aria-label="运费单价" value={shippingUnitPrice} disabled={!autoMode} onChange={(event) => { setShippingUnitPrice(event.target.value); rememberShippingUnitPrice(event.target.value); }} /></label>
         {/* 当前是自动还是手动由下方两个按钮显示，这里不再重复标「自动」。
             自动模式下点运费金额打开体积参数弹窗（全局设置，所有产品共用）。
-            实重/抛重放在输入框前面：桌面和手机都能直接看到运费是按哪个重量算的。 */}
+            实重/体积重放在输入框前面：桌面和手机都能直接看到运费是按哪个重量算的。 */}
         <label className="price-calc2-field price-calc2-shipping-field">
           <span className="price-calc2-shipping-label">运费
             {autoMode && <span
               className="price-calc2-shipweight"
-              title={`实重 ${bareActualWeight}kg；抛重 ${parcelVolumeCm3 ? `${volumeWeightKg}kg（÷${volumeDivisor}）` : '未填外箱尺寸'}；计费 ${bareChargeableWeight}kg`}
-            >实重 {bareActualWeight}kg / 抛重 {parcelVolumeCm3 ? `${volumeWeightKg}kg` : '—'}</span>}
+              title={`实重 ${bareActualWeight}kg；体积重 ${parcelVolumeCm3 ? `${volumeWeightKg}kg（÷${volumeDivisor}）` : '未填外箱尺寸'}；计费 ${bareChargeableWeight}kg`}
+            >实重 {bareActualWeight}kg / 体积重 {parcelVolumeCm3 ? `${volumeWeightKg}kg` : '—'}</span>}
           </span>
           <input
             className={`input${autoMode ? ' is-volume-trigger' : ''}`}
@@ -524,7 +609,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
           <button type="button" className={autoMode ? 'is-on' : ''} aria-pressed={autoMode} onClick={() => setShippingMode('auto')}>自动</button>
           <button type="button" className={!autoMode ? 'is-on' : ''} aria-pressed={!autoMode} onClick={switchToManual}>手动</button>
         </div>
-        {autoMode && weightMissing && <p className="price-calc2-warn" role="status">该产品包装第一行没填内盒重量，产品部分按 0 算（电池与充电器重量照常计）；去产品库补重量或切手动。</p>}
+        {autoMode && weightMissing && <p className="price-calc2-warn" role="status">所选包装没填内盒重量，产品部分按 0 算（电池与充电器重量照常计）；去产品库补重量或切手动。</p>}
         <label className="price-calc2-field"><span>税 %</span><input className="input" type="number" min={0} step="0.01" aria-label="税" value={taxPercent} onChange={(event) => setTaxPercent(event.target.value)} /></label>
         <label className="price-calc2-field"><span>充电器</span>
           <select className="toolbar-select price-calc2-charger" aria-label="充电器" value={chargerId} disabled={!chargerPrices.length} onChange={(event) => setChargerId(event.target.value)}>
@@ -659,11 +744,11 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
             onChange={(event) => setVolumeInput(event.target.value)}
           />
         </label>
-        <p className="volume-settings-hint">单台抛重 = 外箱长×宽×高 ÷ 体积参数 ÷ 装箱数；实重和抛重取较大者计费。默认 8000。</p>
+        <p className="volume-settings-hint">单台体积重 = 外箱长×宽×高 ÷ 体积参数 ÷ 装箱数；实重和体积重取较大者计费。默认 8000。</p>
         <p className="volume-settings-meta">
           {parcelVolumeCm3
-            ? `本产品：${volumeFromOuter ? '外箱' : '内盒（未填外箱，退回内盒）'} ${parcelVolumeCm3}cm³ ÷ ${unitsPerCarton} 台/箱 → 抛重 ${volumetricWeightKg(parcelVolumeCm3, normalizeVolumeDivisor(volumeInput), unitsPerCarton)}kg`
-            : '本产品包装没有外箱/内盒尺寸，暂按实重计费；补尺寸后自动按抛重比较。'}
+            ? `本产品：${volumeFromOuter ? '外箱' : '内盒（未填外箱，退回内盒）'} ${parcelVolumeCm3}cm³ ÷ ${unitsPerCarton} 台/箱 → 体积重 ${volumetricWeightKg(parcelVolumeCm3, normalizeVolumeDivisor(volumeInput), unitsPerCarton)}kg`
+            : '本产品所选包装没有外箱/内盒尺寸，暂按实重计费；补尺寸后自动按体积重比较。'}
         </p>
         <div className="volume-settings-actions">
           <button className="button button-secondary" type="button" disabled={volumeBusy} onClick={() => setVolumeDialogOpen(false)}>取消</button>

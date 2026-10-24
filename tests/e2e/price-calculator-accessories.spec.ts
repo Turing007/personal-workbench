@@ -20,7 +20,7 @@ test('配件默认不选：勾选后价格进成本、重量进实重，方案�
       status: 'active',
       category: '电锤',
       purchaseQuotes: [{ supplier: 'E2E供应商', variant: '', price: 100, isDefault: true }],
-      // 产品 0.5kg + 配件 0.5kg = 实重 1kg；外箱 120000cm³ ÷ 10 台 ÷ 8000 = 抛重 1.5kg → 按 1.5kg 计运费。
+      // 产品 0.5kg + 配件 0.5kg = 实重 1kg；外箱 120000cm³ ÷ 10 台 ÷ 8000 = 体积重 1.5kg → 按 1.5kg 计运费。
       packaging: [{ name: '彩盒包装', packCount: 10, innerWeight: 0.5, outerSize: '60×50×40', purchasePrice: 0 }],
       accessoryPrices: [
         { name: '套筒', price: 10.25, weight: 0.4 },
@@ -46,7 +46,7 @@ test('配件默认不选：勾选后价格进成本、重量进实重，方案�
     await expect(editor).toHaveCount(0);
 
     // 计算器：配件默认不选（成本只含采购价与运费）。
-    // 实重 0.5kg < 抛重 1.5kg → 运费 1.5 × 1.5 = 2.25；成本 102.25（界面按 0.5 取整显示 102.5）。
+    // 实重 0.5kg < 体积重 1.5kg → 运费 1.5 × 1.5 = 2.25；成本 102.25（界面按 0.5 取整显示 102.5）。
     await page.locator('.price-calc-entry:visible').first().click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toContainText('售价计算');
@@ -55,11 +55,11 @@ test('配件默认不选：勾选后价格进成本、重量进实重，方案�
     await expect(dialog.locator('.price-calc2-accessories-head')).toContainText('未选');
     await expect(dialog.locator('.price-calc2-accessories-list')).toHaveCount(0);
     await expect(dialog.locator('.price-calc2-shipweight')).toContainText('实重 0.5kg');
-    await expect(dialog.locator('.price-calc2-shipweight')).toContainText('抛重 1.5kg');
+    await expect(dialog.locator('.price-calc2-shipweight')).toContainText('体积重 1.5kg');
     await expect(dialog.getByLabel('运费金额')).toHaveValue('2.25');
     await expect(dialog.locator('.price-calc2-bare')).toContainText('成本 ¥102.5');
 
-    // 下拉幕布里全选：配件价与重量一起计入；实重 1kg、抛重 1.5kg，运费仍是 2.25。
+    // 下拉幕布里全选：配件价与重量一起计入；实重 1kg、体积重 1.5kg，运费仍是 2.25。
     await accessoryTrigger.click();
     const curtain = dialog.getByRole('group', { name: '选择配件' });
     await expect(curtain).toContainText('选择配件（价格与重量一起计入）');
@@ -74,7 +74,7 @@ test('配件默认不选：勾选后价格进成本、重量进实重，方案�
     await expect(dialog.locator('.price-calc2-bare')).toContainText('成本 ¥112.5');
 
     // 取消「套筒」：只剩说明书 0.1kg，配件价归零。
-    // 实重 0.6kg < 抛重 1.5kg，运费仍是 2.25；成本 = 100 + 2.25 = 102.25（界面按 0.5 取整显示 102.5）。
+    // 实重 0.6kg < 体积重 1.5kg，运费仍是 2.25；成本 = 100 + 2.25 = 102.25（界面按 0.5 取整显示 102.5）。
     await curtain.getByRole('button', { name: /^套筒/ }).click();
     await expect(accessoryTrigger).toContainText('已选 1/2 项');
     await expect(dialog.locator('.price-calc2-accessories-head')).toContainText('¥0 · 0.1kg');

@@ -83,8 +83,16 @@ export function pricePlanMarkup(value: unknown): number {
 export interface PricePlanParams {
   /** 采购价（裸机）。 */
   baseCost: number;
-  /** 包材配件。 */
+  /**
+   * 包材费（所选包装的采购价快照）。
+   * 旧方案里这个字段是「包材配件」手填总额，载入时见 otherCost 缺省的处理。
+   */
   packaging: number;
+  /** 其他费用（手填，元）；旧方案缺省时按 packaging 折算，保持当时的总成本。 */
+  otherCost?: number;
+  /** 本次所选包装的 id / 名称快照；旧方案缺省按第一条包装。 */
+  packagingId?: string;
+  packagingName?: string;
   /** 运费。 */
   shipping: number;
   /** 税（%）。 */
@@ -125,7 +133,7 @@ function normalizePlanAccessoryNames(value: unknown): string[] | undefined {
 export function normalizePricePlanParams(value: unknown): PricePlanParams {
   const record = (value ?? {}) as Record<string, unknown>;
   const accessoryNames = normalizePlanAccessoryNames(record.accessoryNames);
-  return {
+  const params: PricePlanParams = {
     baseCost: pricePlanAmount(record.baseCost),
     packaging: pricePlanAmount(record.packaging),
     shipping: pricePlanAmount(record.shipping),
@@ -139,6 +147,11 @@ export function normalizePricePlanParams(value: unknown): PricePlanParams {
     // 旧方案没有这个字段：不写出，载入时按「全部配件」处理。
     ...(accessoryNames === undefined ? {} : { accessoryNames }),
   };
+  // 以下字段只在确实存过时写出：旧方案缺省时，载入端会按老口径折算，保持结果不变。
+  if (record.otherCost !== undefined && record.otherCost !== null) params.otherCost = pricePlanAmount(record.otherCost);
+  if (typeof record.packagingId === 'string') params.packagingId = record.packagingId.trim().slice(0, 80);
+  if (typeof record.packagingName === 'string') params.packagingName = record.packagingName.trim().slice(0, 80);
+  return params;
 }
 
 /* ===== 运费预估：按计费重量 × 单价 ===== */

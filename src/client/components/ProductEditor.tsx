@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent } from 'react';
 import { getCategoryAccessoryPrices, listCatalogs, saveCategoryAccessoryPrices, type CatalogSummary } from '../api';
 import type { AccessoryPrice } from '../../shared/accessory-prices';
-import { Download, ExternalLink, FilePlus2, ClipboardPaste, Play, Plus, Save, Trash2, Video } from 'lucide-react';
+import { Download, ExternalLink, FilePlus2, ClipboardPaste, PackagePlus, Play, Plus, Save, Tags, Trash2, Video } from 'lucide-react';
 import ImagePasteUpload, { type ImageAttachment } from './ImagePasteUpload';
 import VideoPlayerModal from './VideoPlayerModal';
 import { canPickFilesNatively, pickFilesNatively } from '../app-bridge';
@@ -98,7 +98,7 @@ export interface ProductEditorProps {
   onClose: () => void;
   /** options.addToCatalogId：「添加到产品图册」勾选后的目标图册，随保存请求带给服务端追加。 */
   onSave: (product: ProductRecord, mode: 'draft' | 'active', options?: { addToCatalogId?: number }) => void;
-  /** 类目默认配件被改动后静默刷新产品列表：已有产品的固化标记需要跟着更新，详情才不会继续跟随新默认。 */
+  /** 类目配件被改动后静默刷新产品列表：已有产品的固化标记需要跟着更新，详情才不会继续跟随新默认。 */
   onCategoryDefaultsSaved?: () => Promise<void> | void;
 }
 
@@ -245,7 +245,7 @@ function ProductVideoSection({ value, onChange }: { value: ProductVideo[]; onCha
 }
 
 /**
- * 「类目默认配件」弹层：只维护新产品的预填模板（服务端按类目存一份）。
+ * 「类目配件」弹层：只维护新产品的预填模板（服务端按类目存一份）。
  * 保存模板时服务端先把旧模板固化给仍在跟随它的已有产品，所以已有产品保持原样，
  * 新模板只对之后新建的产品生效。
  */
@@ -271,7 +271,7 @@ function CategoryAccessoryDefaultsModal({ open, category, onClose, onSaved }: {
     setDirty(false);
     getCategoryAccessoryPrices(category)
       .then((list) => { if (!cancelled) setItems(list); })
-      .catch(() => { if (!cancelled) { setItems([]); setMessageKind('error'); setMessage('类目默认加载失败'); } })
+      .catch(() => { if (!cancelled) { setItems([]); setMessageKind('error'); setMessage('类目配件加载失败'); } })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [open, category]);
@@ -289,22 +289,22 @@ function CategoryAccessoryDefaultsModal({ open, category, onClose, onSaved }: {
       // 刷新产品列表让「已固化」标记生效；刷新失败不影响模板已经保存成功。
       try { await onSaved?.(); } catch { /* 忽略 */ }
       setMessageKind('success');
-      setMessage(`已保存「${category}」的类目默认配件`);
+      setMessage(`已保存「${category}」的类目配件`);
     } catch (error) {
       setMessageKind('error');
-      setMessage((error as { message?: string })?.message ?? '类目默认保存失败');
+      setMessage((error as { message?: string })?.message ?? '类目配件保存失败');
     } finally {
       setBusy(false);
     }
   };
 
-  return <Modal open={open} title={`类目默认配件 · ${category}`} onClose={onClose} width={560} footer={<>
+  return <Modal open={open} title={`类目配件 · ${category}`} onClose={onClose} width={560} footer={<>
     <button className="button button-secondary" type="button" onClick={onClose}>关闭</button>
-    <button className="button button-primary" type="button" disabled={busy || loading || !dirty} onClick={() => void save()}>{busy ? '保存中...' : '保存类目默认'}</button>
+    <button className="button button-primary" type="button" disabled={busy || loading || !dirty} onClick={() => void save()}>{busy ? '保存中...' : '保存类目配件'}</button>
   </>}>
     <div style={{ display: 'grid', gap: 10 }}>
-      <p className="label-hint" style={{ margin: 0 }}>保存后只对以后新建的产品生效；已有产品的配件清单保持原样，不会被改动。</p>
-      <div className="section-box-header"><span className="section-box-title">默认清单</span>
+      <p className="label-hint" style={{ margin: 0 }}>保存类目配件只影响以后新建的产品；已有产品的配件清单保持原样，不会被改动。</p>
+      <div className="section-box-header"><span className="section-box-title">类目配件清单</span>
         <button className="link-button packaging-table-add" type="button" disabled={loading || busy} onClick={() => { setItems((current) => [...current, { id: `def-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: '', price: 0 }]); setDirty(true); }}><Plus size={14} />添加</button>
       </div>
       {loading && <div className="table-state">正在加载...</div>}
@@ -313,13 +313,13 @@ function CategoryAccessoryDefaultsModal({ open, category, onClose, onSaved }: {
           <thead><tr>{['名称', '价格', '重量 kg', ''].map((title, index) => <th key={index}>{title}</th>)}</tr></thead>
           <tbody>{items.map((item, index) => <tr key={item.id || index}>
             <td className="packaging-table-col-size">
-              <input className="input packaging-table-input" aria-label={`类目默认配件${index + 1}名称`} value={item.name} placeholder="如：9 件套筒" onChange={(event) => update(item.id, { name: event.target.value })} />
+              <input className="input packaging-table-input" aria-label={`类目配件${index + 1}名称`} value={item.name} placeholder="如：9 件套筒" onChange={(event) => update(item.id, { name: event.target.value })} />
             </td>
             <td className="packaging-table-col-price">
-              <input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label={`类目默认配件${index + 1}价格`} value={item.price} placeholder="元" onChange={(event) => update(item.id, { price: Number(event.target.value) || 0 })} />
+              <input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label={`类目配件${index + 1}价格`} value={item.price} placeholder="元" onChange={(event) => update(item.id, { price: Number(event.target.value) || 0 })} />
             </td>
             <td className="packaging-table-col-weight">
-              <input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label={`类目默认配件${index + 1}重量`} value={item.weight ?? ''} placeholder="kg" onChange={(event) => update(item.id, { weight: Number(event.target.value) || 0 })} />
+              <input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label={`类目配件${index + 1}重量`} value={item.weight ?? ''} placeholder="kg" onChange={(event) => update(item.id, { weight: Number(event.target.value) || 0 })} />
             </td>
             <td className="packaging-table-col-actions">
               <button className="icon-button danger" type="button" title="移除这条默认配件" aria-label={`移除第 ${index + 1} 条默认配件`} onClick={() => { setItems((current) => current.filter((entry) => entry.id !== item.id)); setDirty(true); }}><Trash2 size={14} /></button>
@@ -335,28 +335,33 @@ function CategoryAccessoryDefaultsModal({ open, category, onClose, onSaved }: {
 
 /**
  * 本产品的配件：随产品一起保存（「保存产品」时固化到本产品，不再写类目共享清单）。
- * 产品没动过这份清单时，第一次打开自动把类目默认连价格、重量带出来；动过并保存后即以本产品为准。
- * 类目默认只作预填模板，维护入口是「类目默认 ›」弹层；电池、充电器这类全局件仍放设置页。
+ * 产品没动过这份清单时，第一次打开自动把类目配件连价格、重量带出来；动过并保存后即以本产品为准。
+ * 「类目配件」按钮维护该类目的预填清单，「加入本产品」把类目里本产品还没有的条目录进来。
  * 价格与重量都会进售价计算器：价格计入成本，重量计入实重与运费。
  */
 function CategoryAccessoryPricesEditor({ category, value, customized, onSeed, onEdit, onDefaultsSaved }: {
   category: string;
   value: AccessoryPrice[];
   customized: boolean;
-  /** 自动带出类目默认（不改「动过」标记）：产品还没固化过清单时才发生。 */
+  /** 自动带出类目配件（不改「动过」标记）：产品还没固化过清单时才发生。 */
   onSeed: (next: AccessoryPrice[]) => void;
   /** 用户增/删/改：保存产品时会把这时的清单固化为本产品自己的。 */
   onEdit: (next: AccessoryPrice[]) => void;
-  /** 类目默认模板保存后：静默刷新产品列表，让已有产品的固化状态立即生效。 */
+  /** 类目配件模板保存后：静默刷新产品列表，让已有产品的固化状态立即生效。 */
   onDefaultsSaved?: () => Promise<void> | void;
 }) {
   const key = category.trim();
   const [defaultsOpen, setDefaultsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerItems, setPickerItems] = useState<AccessoryPrice[]>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerMessage, setPickerMessage] = useState('');
+  const [seedMessage, setSeedMessage] = useState('');
   const seededRef = useRef<string | null>(null);
   const touchedRef = useRef(false);
 
-  // 第一次打开（产品还没固化过清单）：把类目默认连价格一起带出来；用户动过之后就不再覆盖。
+  // 第一次打开（产品还没固化过清单）：把类目配件连价格一起带出来；用户动过之后就不再覆盖。
   useEffect(() => {
     if (customized || !key || seededRef.current === key) return;
     let cancelled = false;
@@ -376,25 +381,57 @@ function CategoryAccessoryPricesEditor({ category, value, customized, onSeed, on
 
   const update = (id: string, patch: Partial<Pick<AccessoryPrice, 'name' | 'price' | 'weight'>>) => {
     touchedRef.current = true;
+    setSeedMessage('');
     onEdit(value.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   };
   const add = () => {
     touchedRef.current = true;
+    setSeedMessage('');
     onEdit([...value, { id: `acc-${Date.now()}-${Math.random().toString(16).slice(2)}`, name: '', price: 0 }]);
   };
   const remove = (id: string) => {
     touchedRef.current = true;
+    setSeedMessage('');
     onEdit(value.filter((item) => item.id !== id));
+  };
+
+  /** 打开「从类目配件加入」：逐个勾选，需要哪个加哪个。 */
+  const openCategoryPicker = async () => {
+    if (!key) return;
+    setPickerOpen(true);
+    setPickerLoading(true);
+    setPickerMessage('');
+    try {
+      const items = (await getCategoryAccessoryPrices(key)).filter((item) => item.name.trim());
+      setPickerItems(items);
+    } catch (error) {
+      setPickerItems([]);
+      setPickerMessage((error as { message?: string })?.message ?? '类目配件加载失败，请稍后再试');
+    } finally {
+      setPickerLoading(false);
+    }
+  };
+
+  /** 加入单条类目配件：同名已在产品里时跳过，保留本产品现有价格与重量。 */
+  const addOneFromCategory = (item: AccessoryPrice) => {
+    const name = item.name.trim();
+    if (!name || value.some((entry) => entry.name.trim() === name)) return;
+    touchedRef.current = true;
+    setSeedMessage('');
+    onEdit([...value, { ...item, id: `acc-${Date.now()}-${Math.random().toString(16).slice(2)}` }]);
+    setPickerMessage(`已加入「${name}」，保存产品后生效`);
   };
 
   // 与左侧采购报价同款：共用 packaging-table-section（无灰底无边框），并排时两边视觉一致。
   return <section className="packaging-table-section accessory-prices-section">
     <div className="section-box-header"><span className="section-box-title">配件</span>
-      {!!key && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-        <button className="link-button muted" type="button" title="维护该类目的默认配件：只对以后新建的产品生效；已有产品的配件不会被改动" onClick={() => setDefaultsOpen(true)}>类目默认 ›</button>
+      {!!key && <span className="product-accessory-actions">
+        <button className="button button-secondary button-sm" type="button" title="查看/维护该类目的预填配件（只对以后新建的产品生效）" onClick={() => setDefaultsOpen(true)}><Tags size={14} />类目配件</button>
+        <button className="button button-secondary button-sm" type="button" title="打开类目配件清单，需要哪个就加入哪个" onClick={() => void openCategoryPicker()}><PackagePlus size={14} />从类目加入</button>
         <button className="link-button packaging-table-add" type="button" title="添加一条配件" onClick={add}><Plus size={14} />添加</button>
       </span>}
     </div>
+    {!!seedMessage && <p className="label-hint product-accessory-message" role="status">{seedMessage}</p>}
     {key ? <>
       {loading && <div className="table-state">正在加载...</div>}
       {!loading && !!value.length && <div className="packaging-table-shell">
@@ -416,9 +453,35 @@ function CategoryAccessoryPricesEditor({ category, value, customized, onSeed, on
           </tr>)}</tbody>
         </table>
       </div>}
-      {!loading && !value.length && <div className="empty-state">本产品还没有配件，点右上角「添加」。</div>}
+      {!loading && !value.length && <div className="empty-state">本产品还没有配件，点右上角「添加」，或从「类目配件」加入本产品。</div>}
       <CategoryAccessoryDefaultsModal open={defaultsOpen} category={key} onClose={() => setDefaultsOpen(false)} onSaved={onDefaultsSaved} />
-    </> : <span className="label-hint">先在上方填写「产品分类」；填好后会自动带出该类目的默认配件（可增删改，随产品一起保存）。</span>}
+      <Modal open={pickerOpen} title="从类目配件加入" onClose={() => setPickerOpen(false)} width={560} footer={<>
+        <button className="button button-secondary" type="button" onClick={() => setPickerOpen(false)}>关闭</button>
+      </>}>
+        <div className="category-accessory-picker">
+          <p className="label-hint" style={{ margin: 0 }}>需要哪个就加入哪个；同名配件已在产品里时显示「已加入」。加入的条目随「保存产品」一起固化。</p>
+          {pickerLoading && <div className="table-state">正在加载...</div>}
+          {!pickerLoading && !pickerItems.length && <div className="empty-state">该类目的「类目配件」还是空的。</div>}
+          {!pickerLoading && !!pickerItems.length && <div className="category-accessory-picker-list">
+            {pickerItems.map((item) => {
+              const added = value.some((entry) => entry.name.trim() === item.name.trim());
+              const meta = [item.price > 0 ? `¥${item.price}` : '', item.weight ? `${item.weight}kg` : ''].filter(Boolean).join(' · ');
+              return <div className="category-accessory-picker-row" key={item.id || item.name}>
+                <span className="category-accessory-picker-name">{item.name}</span>
+                <span className="category-accessory-picker-meta">{meta || '—'}</span>
+                <button
+                  className="button button-secondary button-sm"
+                  type="button"
+                  disabled={added}
+                  onClick={() => addOneFromCategory(item)}
+                >{added ? '已加入' : '加入'}</button>
+              </div>;
+            })}
+          </div>}
+          {!!pickerMessage && <p className="label-hint" role="status">{pickerMessage}</p>}
+        </div>
+      </Modal>
+    </> : <span className="label-hint">先在上方填写「产品分类」；填好后会自动带出该类目的配件（可增删改，随产品一起保存）。</span>}
   </section>;
 }
 

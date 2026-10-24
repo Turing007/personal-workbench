@@ -147,7 +147,7 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     await expect(dialog.getByLabel('运费单价')).toHaveValue('1.5');
     await expect(dialog.getByLabel('运费金额')).toHaveValue('1.35');
     await expect(dialog.locator('.price-calc2-shipweight')).toContainText('实重 0.9kg');
-    await expect(dialog.locator('.price-calc2-shipweight')).toContainText('抛重 —');
+    await expect(dialog.locator('.price-calc2-shipweight')).toContainText('体积重 —');
     // 改单价为 2 → 裸机运费 1.8、成本 102 / 售价 117。
     await dialog.getByLabel('运费单价').fill('2');
     await expect(dialog.getByLabel('运费金额')).toHaveValue('1.8');
@@ -211,6 +211,83 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     await dialog.getByLabel('税').fill('0');
     await bareCopy.click();
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('（不含税运）');
+  } finally {
+    await page.request.delete(`/api/products/${product.id}`);
+  }
+});
+
+test('包装选择：按所选包装算包材、实重与体积重，方案记住所选包装', async ({ page }) => {
+  const stamp = Date.now();
+  const created = await page.request.post('/api/products', {
+    data: {
+      name: `E2E包装选择${stamp}`,
+      supplier: 'E2E算价供应商',
+      status: 'active',
+      category: '电动工具',
+      purchaseQuotes: [{ supplier: 'E2E算价供应商', variant: '', price: 100, isDefault: true }],
+      packaging: [
+        // 彩盒：0.5kg、120000cm³ ÷ 10 台 ÷ 8000 = 体积重 1.5kg → 计费 1.5、包材 0。
+        { name: '彩盒', packCount: 10, innerWeight: 0.5, outerSize: '60×50×40', purchasePrice: 0 },
+        // 大箱：1.2kg、24000cm³ ÷ 5 台 ÷ 8000 = 体积重 0.6kg → 计费 1.2、包材 3.2。
+        { name: '大箱', packCount: 5, innerWeight: 1.2, outerSize: '40×30×20', purchasePrice: 3.2 },
+      ],
+    },
+  });
+  expect(created.ok()).toBe(true);
+  const product = (await created.json()).data as { id: number };
+
+  try {
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+    await page.locator('.products-page .page-toolbar .search-control input').fill(`E2E包装选择${stamp}`);
+    await expect(page.locator('.products-page .table-state')).toHaveCount(0);
+    await page.locator('.products-page .price-calc-entry').first().click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('售价计算');
+
+    const packagingTrigger = dialog.getByRole('button', { name: '选择包装' });
+    const shipWeight = dialog.locator('.price-calc2-shipweight');
+    // 默认第一条「彩盒」：包材 0、计费按体积重 1.5kg → 运费 2.25；成本 102.25（显示 102.5）。
+    await expect(packagingTrigger).toContainText('彩盒');
+    await expect(dialog.locator('.price-calc2-packaging-head')).toContainText('包材 ¥0');
+    await expect(shipWeight).toContainText('实重 0.5kg');
+    await expect(shipWeight).toContainText('体积重 1.5kg');
+    await expect(dialog.getByLabel('运费金额')).toHaveValue('2.25');
+    await expect(dialog.locator('.price-calc2-bare')).toContainText('成本 ¥102.5');
+
+    // 切到「大箱」：包材 3.2、实重 1.2kg 大于体积重 0.6kg → 运费 1.8；成本 = 100 + 3.2 + 1.8 = 105。
+    await packagingTrigger.click();
+    const packagingCurtain = dialog.getByRole('group', { name: '选择包装' });
+    await packagingCurtain.getByRole('button', { name: /^大箱/ }).click();
+    await expect(packagingTrigger).toContainText('大箱');
+    await expect(dialog.locator('.price-calc2-packaging-head')).toContainText('包材 ¥3.2');
+    await expect(shipWeight).toContainText('实重 1.2kg');
+    await expect(shipWeight).toContainText('体积重 0.6kg');
+    await expect(dialog.getByLabel('运费金额')).toHaveValue('1.8');
+    await expect(dialog.locator('.price-calc2-packaging-meta')).toContainText('5 台/箱');
+    await expect(dialog.locator('.price-calc2-bare')).toContainText('成本 ¥105');
+
+    // 其他费用单独加：填 10 → 成本 115。
+    await dialog.getByLabel('其他费用').fill('10');
+    await expect(dialog.locator('.price-calc2-bare')).toContainText('成本 ¥115');
+
+    // 保存方案（毛利率 0）→ 卡片 115；再切回彩盒并把其他费用清零，载入方案应恢复大箱 + 10。
+    await dialog.getByLabel('毛利率').fill('0');
+    await dialog.getByLabel('方案名').fill('包装选择方案');
+    await dialog.getByRole('button', { name: '保存为方案' }).click();
+    const planCard = dialog.locator('.price-calc-plan', { hasText: '包装选择方案' });
+    await expect(planCard).toContainText('裸机 ¥115');
+
+    await packagingTrigger.click();
+    await packagingCurtain.getByRole('button', { name: /^彩盒/ }).click();
+    await dialog.getByLabel('其他费用').fill('0');
+    await expect(dialog.locator('.price-calc2-bare')).toContainText('成本 ¥102.5');
+
+    await planCard.getByRole('button', { name: '载入' }).click();
+    await expect(packagingTrigger).toContainText('大箱');
+    await expect(dialog.getByLabel('其他费用')).toHaveValue('10');
+    await expect(dialog.getByLabel('运费金额')).toHaveValue('1.8');
+    await expect(dialog.locator('.price-calc2-bare')).toContainText('成本 ¥115');
   } finally {
     await page.request.delete(`/api/products/${product.id}`);
   }

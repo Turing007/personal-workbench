@@ -41,7 +41,7 @@ test('运费按体积重计费：点运费可改全局体积参数并立即重�
 
     const hint = dialog.locator('.price-calc2-shipweight');
     await expect(hint).toContainText('实重 0.5kg');
-    await expect(hint).toContainText('抛重 1.5kg');
+    await expect(hint).toContainText('体积重 1.5kg');
     // 默认单价 1.5 元/kg → 1.5 × 1.5 = 2.25。
     await expect(dialog.getByLabel('运费金额')).toHaveValue('2.25');
 
@@ -50,13 +50,13 @@ test('运费按体积重计费：点运费可改全局体积参数并立即重�
     const volumeDialog = page.getByRole('dialog', { name: '运费体积参数' });
     await expect(volumeDialog).toBeVisible();
     await expect(volumeDialog.getByLabel('体积参数')).toHaveValue('8000');
-    await expect(volumeDialog).toContainText('抛重 1.5kg');
+    await expect(volumeDialog).toContainText('体积重 1.5kg');
 
     // 改成 6000 并保存：所有产品共用，本次计算立即按 2kg 计费 → 3 元。
     await volumeDialog.getByLabel('体积参数').fill('6000');
     await volumeDialog.getByRole('button', { name: /保存/ }).click();
     await expect(volumeDialog).toHaveCount(0);
-    await expect(hint).toContainText('抛重 2kg');
+    await expect(hint).toContainText('体积重 2kg');
     await expect(dialog.getByLabel('运费金额')).toHaveValue('3');
     expect((await (await page.request.get('/api/settings/volume-divisor')).json()).data.divisor).toBe(6000);
 

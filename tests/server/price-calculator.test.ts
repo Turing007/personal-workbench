@@ -182,6 +182,24 @@ describe('运费预估（按计费重量 × 单价）', () => {
     expect(normalizePricePlanParams({ shippingMode: 'weird' }).shippingMode).toBe('manual');
   });
 
+  it('参数快照记包装与其他费用：旧方案不带这些字段时保持缺省', () => {
+    const params = normalizePricePlanParams({
+      packaging: 3.2,
+      otherCost: 10,
+      packagingId: ' pack-2 ',
+      packagingName: ' 大箱 ',
+    });
+    expect(params.packaging).toBe(3.2);
+    expect(params.otherCost).toBe(10);
+    expect(params.packagingId).toBe('pack-2');
+    expect(params.packagingName).toBe('大箱');
+    // 旧方案没存过：不凭空写出字段，载入端按老口径折算。
+    const legacy = normalizePricePlanParams({ packaging: 5 });
+    expect('otherCost' in legacy).toBe(false);
+    expect('packagingId' in legacy).toBe(false);
+    expect('packagingName' in legacy).toBe(false);
+  });
+
   it('参数快照记配件选择：按名称去空去重；旧方案不带该字段', () => {
     const params = normalizePricePlanParams({
       baseCost: 100,

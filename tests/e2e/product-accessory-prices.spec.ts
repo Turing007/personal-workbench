@@ -109,7 +109,7 @@ test('配件价格按产品独立：首次自动带出类目默认，增删改�
   }
 });
 
-test('类目默认弹层：改默认不动已有产品，只给之后新建的产品带出', async ({ page }) => {
+test('类目配件弹层：改默认不动已有产品，只给之后新建的产品带出', async ({ page }) => {
   await page.request.put('/api/settings/category-accessory-prices', {
     data: { category: CATEGORY, items: [{ name: DEFAULT_A, price: 6 }] },
   });
@@ -125,13 +125,13 @@ test('类目默认弹层：改默认不动已有产品，只给之后新建的�
     await expect(section.getByLabel('产品配件1名称')).toHaveValue(DEFAULT_A);
 
     // 在「类目默认 ›」里加一条并保存：当前产品（已经建好）的草稿不能被同步改动。
-    await section.getByRole('button', { name: '类目默认 ›' }).click();
-    const defaultsDialog = page.getByRole('dialog', { name: /类目默认配件/ });
+    await section.getByRole('button', { name: '类目配件' }).click();
+    const defaultsDialog = page.getByRole('dialog', { name: /类目配件/ });
     await expect(defaultsDialog).toBeVisible();
     await defaultsDialog.getByRole('button', { name: '添加' }).click();
-    await defaultsDialog.getByLabel('类目默认配件2名称').fill('链条');
-    await defaultsDialog.getByLabel('类目默认配件2价格').fill('5');
-    await defaultsDialog.getByRole('button', { name: '保存类目默认' }).click();
+    await defaultsDialog.getByLabel('类目配件2名称').fill('链条');
+    await defaultsDialog.getByLabel('类目配件2价格').fill('5');
+    await defaultsDialog.getByRole('button', { name: '保存类目配件' }).click();
     await expect(defaultsDialog).toContainText('已保存');
     // X 按钮的 aria-label 也是「关闭」，取页脚那个（DOM 里靠后）。
     await defaultsDialog.getByRole('button', { name: '关闭' }).last().click();
@@ -162,5 +162,61 @@ test('类目默认弹层：改默认不动已有产品，只给之后新建的�
     await page.request.put('/api/settings/category-accessory-prices', { data: { category: CATEGORY, items: [] } });
     await page.request.delete(`/api/products/${existing.id}`);
     if (createdAfter) await page.request.delete(`/api/products/${createdAfter.id}`);
+  }
+});
+
+test('类目配件可逐条加入本产品：需要哪个加哪个，同名保留现有价格', async ({ page }) => {
+  await page.request.put('/api/settings/category-accessory-prices', {
+    data: { category: CATEGORY, items: [{ name: DEFAULT_A, price: 6 }, { name: DEFAULT_B, price: 3 }] },
+  });
+  const created = await page.request.post('/api/products', {
+    data: {
+      name: `E2E加入类目配件${stamp}`,
+      category: CATEGORY,
+      status: 'active',
+      packaging: [{ name: '彩盒包装', packCount: 10 }],
+      accessoryPrices: [{ name: DEFAULT_A, price: 9 }],
+    },
+  });
+  expect(created.ok()).toBe(true);
+  const product = (await created.json()).data as { id: number };
+
+  try {
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+    const editor = await searchAndOpenEditor(page, `E2E加入类目配件${stamp}`);
+    const section = editor.locator('.accessory-prices-section');
+    await expect(section.locator('tbody tr')).toHaveCount(1);
+
+    // 从类目加入：逐条列出，只把需要的「钻头 8mm」加进来；同名「9 件套筒」显示已加入。
+    await section.getByRole('button', { name: '从类目加入' }).click();
+    const picker = page.getByRole('dialog', { name: '从类目配件加入' });
+    await expect(picker).toBeVisible();
+    const ownRow = picker.locator('.category-accessory-picker-row', { hasText: DEFAULT_A });
+    await expect(ownRow.getByRole('button', { name: '已加入' })).toBeDisabled();
+    const categoryRow = picker.locator('.category-accessory-picker-row', { hasText: DEFAULT_B });
+    await categoryRow.getByRole('button', { name: '加入', exact: true }).click();
+    await expect(picker.locator('.label-hint[role="status"]')).toContainText('已加入「钻头 8mm」');
+    await expect(categoryRow.getByRole('button', { name: '已加入' })).toBeDisabled();
+    // 顶部 X 也是「关闭」，取页脚那个（DOM 里靠后）。
+    await picker.getByRole('button', { name: '关闭' }).last().click();
+    await expect(picker).toHaveCount(0);
+
+    await expect(section.locator('tbody tr')).toHaveCount(2);
+    await expect(section.getByLabel('产品配件1名称')).toHaveValue(DEFAULT_A);
+    await expect(section.getByLabel('产品配件1价格')).toHaveValue('9');
+    await expect(section.getByLabel('产品配件2名称')).toHaveValue(DEFAULT_B);
+    await expect(section.getByLabel('产品配件2价格')).toHaveValue('3');
+
+    await editor.getByRole('button', { name: '保存产品' }).click();
+    await expect(editor).toBeHidden();
+
+    const detail = await searchAndOpenDetail(page, `E2E加入类目配件${stamp}`);
+    await expect(detail.locator('.product-detail-accessory-lines')).toContainText(DEFAULT_A);
+    await expect(detail.locator('.product-detail-accessory-lines')).toContainText(DEFAULT_B);
+    await detail.locator('.modal-close').click();
+  } finally {
+    await page.request.put('/api/settings/category-accessory-prices', { data: { category: CATEGORY, items: [] } });
+    await page.request.delete(`/api/products/${product.id}`);
   }
 });
