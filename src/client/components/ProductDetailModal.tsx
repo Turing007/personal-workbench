@@ -1,4 +1,4 @@
-import { Calculator, Check, Copy, Download, ExternalLink, FileText, Image, Package, Play, Video } from 'lucide-react';
+import { Calculator, Check, Copy, Download, ExternalLink, FileText, Image, Package, Pencil, Play, Video } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import Modal from './Modal';
@@ -30,6 +30,8 @@ export interface ProductDetailModalProps {
   pendingImages?: UploadFileSnapshot[];
   onClose: () => void;
   onOpenImages: (product: ProductRecord) => void;
+  /** 详情里直接进编辑（关闭详情后打开同一个产品的编辑器）；未传则不显示按钮。 */
+  onEdit?: (product: ProductRecord) => void;
   /** 售价计算入口（看详情时顺手算）；未传则不显示按钮。 */
   onOpenCalculator?: (product: ProductRecord) => void;
   /** 停售 / 恢复在售；未传则不显示按钮。 */
@@ -61,7 +63,7 @@ function DetailItem({ label, children, fullWidth = false }: { label: string; chi
   );
 }
 
-export default function ProductDetailModal({ open, product, showSensitive = false, pendingImages = [], onClose, onOpenImages, onOpenCalculator, onUpdateSaleStatus, onDelete }: ProductDetailModalProps) {
+export default function ProductDetailModal({ open, product, showSensitive = false, pendingImages = [], onClose, onOpenImages, onEdit, onOpenCalculator, onUpdateSaleStatus, onDelete }: ProductDetailModalProps) {
   const [copied, setCopied] = useState(false);
   const [copiedSku, setCopiedSku] = useState(false);
   const [copiedPackagingId, setCopiedPackagingId] = useState<string>();
@@ -136,6 +138,7 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
   // 停售与删除只放在详情弹窗里：列表点开的概率高，误操作的机会也多。
   const detailTitle = product.name || product.sku || '未命名产品';
   const footer = <>
+    {onEdit && <button className="button button-primary" type="button" title="打开产品编辑器修改资料" onClick={() => onEdit(product)}><Pencil size={14} />编辑产品</button>}
     {onOpenCalculator && <button className="button button-secondary" type="button" title="算这款产品的成本与建议售价" onClick={() => onOpenCalculator(product)}><Calculator size={14} />售价计算</button>}
     {product.status === 'discontinued'
       ? onUpdateSaleStatus && <button className="button button-primary" type="button" onClick={() => { onUpdateSaleStatus(product, 'active'); onClose(); }}>恢复在售</button>
