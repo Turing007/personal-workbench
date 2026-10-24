@@ -62,11 +62,13 @@ describe('电池电压与图册报价', () => {
     expect(table!.columns.map((column) => `${column.packCount}-${column.batteryCount}`)).toEqual(['3-1', '3-2']);
     // 一电一充：100 + 3.2 + 2 + 10 = 115.2 → ×1.2 = 138.24 → 139
     // 两电一充：100 + 3.2 + 2 + 20 = 125.2 → ×1.2 = 150.24 → 151
+    // 裸机：(100 + 3.2) × 1.2 = 123.84 → 124
     expect(table!.prices).toEqual([[139, 151]]);
-    expect(table!.minPrice).toBe(139);
+    expect(table!.barePrice).toBe(124);
+    expect(table!.minPrice).toBe(124);
   });
 
-  it('21V 只出 5 节及以上；没有匹配节数时不出价格表', () => {
+  it('21V 只出 5 节及以上；16.8V 没有 4 节时仍显示裸机价', () => {
     const table = buildCatalogPriceTable(product({ batteryVoltage: '21V' }), {
       batteryMatrix: matrix,
       chargerPrices: [],
@@ -75,14 +77,18 @@ describe('电池电压与图册报价', () => {
     expect(table!.columns.map((column) => column.packCount)).toEqual([5, 5, 10, 10]);
     // 5 节一电：103.2 + 8 = 111.2 × 1.1 = 122.32 → 123；两电：119.2 × 1.1 = 131.12 → 132
     expect(table!.prices[0].slice(0, 2)).toEqual([123, 132]);
-    expect(table!.minPrice).toBe(123);
+    expect(table!.barePrice).toBe(114); // 103.2 × 1.1 = 113.52 → 114
+    expect(table!.minPrice).toBe(114);
 
-    // 表里没有 4 节列时，16.8V 产品没有可售组合。
-    expect(buildCatalogPriceTable(product({ batteryVoltage: '16.8V' }), {
+    // 表里没有 4 节列时，16.8V 产品仍显示裸机价，只是没有电池配置。
+    const noBattery = buildCatalogPriceTable(product({ batteryVoltage: '16.8V' }), {
       batteryMatrix: matrix,
       chargerPrices: [],
       markupPercent: 20,
-    })).toBeNull();
+    });
+    expect(noBattery).not.toBeNull();
+    expect(noBattery!.columns).toHaveLength(0);
+    expect(noBattery!.barePrice).toBe(124);
   });
 
   it('毛利率 <= 0 或没有采购价时不出报价', () => {

@@ -68,6 +68,7 @@ function renderPriceButton(product: PublicCatalogProduct, showPrices: boolean): 
     capacities: table.capacities,
     columns: table.columns,
     prices: table.prices,
+    barePrice: table.barePrice,
     minPrice: table.minPrice,
   }));
   return `<button class="card-price" type="button" data-price="${data}" title="查看全部配置价格"><span>价格</span><strong>¥${table.minPrice} 起</strong></button>`;
@@ -169,11 +170,20 @@ export function renderPublicCatalogPage(data: PublicCatalogPageData): string {
   .pricebox-head h3 { margin: 0; font-size: 16px; line-height: 1.35; }
   .pricebox-head p { margin: 4px 0 0; font-size: 12px; color: #8b929a; }
   .pricebox-close { flex: none; margin-left: auto; width: 34px; height: 34px; border: 0; border-radius: 50%; background: #f2f5f6; color: #3d434a; font-size: 20px; line-height: 1; cursor: pointer; }
-  .pricebox-scroll { overflow: auto; padding: 12px 16px; }
+  .pricebox-scroll { overflow: auto; padding: 8px 0; }
+  .pricebox-bare { display: flex; align-items: baseline; gap: 8px; padding: 9px 16px; border-bottom: 1px solid #eef0f2; background: #f7fafb; color: #3d434a; font-size: 12px; }
+  .pricebox-bare span { font-weight: 600; }
+  .pricebox-bare strong { color: #0f766e; font-size: 18px; font-variant-numeric: tabular-nums; }
+  .pricebox-bare em { color: #8b929a; font-style: normal; font-size: 11px; }
   .pricebox-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   .pricebox-table th, .pricebox-table td { padding: 7px 10px; border-bottom: 1px solid #eef0f2; text-align: center; white-space: nowrap; }
-  .pricebox-table thead th { position: sticky; top: 0; z-index: 1; background: #f7fafb; color: #3d434a; font-weight: 600; }
-  .pricebox-table tbody th { position: sticky; left: 0; z-index: 1; background: #fff; color: #15181c; font-weight: 600; text-align: left; }
+  .pricebox-table thead th { background: #f7fafb; color: #3d434a; font-weight: 600; }
+  .pricebox-table th.pricebox-group-start,
+  .pricebox-table td.pricebox-group-start { border-left: 1px solid #99f6e4; }
+  .pricebox-table .pricebox-corner,
+  .pricebox-table .pricebox-capacity { position: sticky; left: 0; box-shadow: 1px 0 0 #e8ebee; text-align: left; }
+  .pricebox-table .pricebox-corner { z-index: 3; background: #f7fafb; }
+  .pricebox-table .pricebox-capacity { z-index: 1; background: #fff; color: #15181c; font-weight: 600; }
   .pricebox-table tbody tr:last-child th, .pricebox-table tbody tr:last-child td { border-bottom: 0; }
   .pricebox-table td { color: #0f766e; font-variant-numeric: tabular-nums; }
   .pricebox-table td.is-empty { color: #b3b9bf; }
@@ -260,8 +270,9 @@ ${filingsHtml ? `<div class="site-filings">${filingsHtml}</div>` : ''}
       </div>
       <button class="pricebox-close" type="button" aria-label="关闭价格">×</button>
     </div>
+    <div class="pricebox-bare" id="pricebox-bare"></div>
     <div class="pricebox-scroll" id="pricebox-scroll"></div>
-    <p class="pricebox-note">价格含整机、包装与一个充电器；不含税费与运费。</p>
+    <p class="pricebox-note">套装价含整机、包装与一个充电器；裸机价不含电池与充电器；均不含税费与运费。</p>
   </div>
 </div>
 ${data.company.wechatQrRelativePath ? `<div class="qr-zoom" id="qr-zoom" hidden><img src="/c/${data.catalog.token}/qr" alt="微信二维码"><span>扫码加微信 · 点击任意处关闭</span></div>` : ''}
@@ -391,65 +402,101 @@ ${data.company.wechatQrRelativePath ? `<div class="qr-zoom" id="qr-zoom" hidden>
     var priceTitle = document.getElementById('pricebox-title');
     var priceSub = document.getElementById('pricebox-sub');
     var priceScroll = document.getElementById('pricebox-scroll');
+    var priceBare = document.getElementById('pricebox-bare');
     function openPrice(trigger) {
       var data = {};
       try { data = JSON.parse(trigger.getAttribute('data-price') || '{}'); } catch (error) { data = {}; }
       priceTitle.textContent = data.name || '';
       priceSub.textContent = '';
       priceScroll.textContent = '';
-      if (data.inquiry || !data.capacities || !data.capacities.length) {
-        var empty = document.createElement('div');
-        empty.className = 'pricebox-empty';
-        empty.textContent = '该产品暂未配置报价，请联系我们。';
-        priceScroll.appendChild(empty);
+      priceBare.textContent = '';
+      if (data.inquiry) {
+        var inquiry = document.createElement('div');
+        inquiry.className = 'pricebox-empty';
+        inquiry.textContent = '该产品暂未配置报价，请联系我们。';
+        priceScroll.appendChild(inquiry);
       } else {
-        priceSub.textContent = (data.voltage || '') + ' 电池 · 价格含整机、包装与一个充电器';
-        var table = document.createElement('table');
-        table.className = 'pricebox-table';
-        var thead = document.createElement('thead');
-        var groups = [];
-        (data.columns || []).forEach(function (column) {
-          var last = groups[groups.length - 1];
-          if (last && last.packCount === column.packCount) last.columns.push(column);
-          else groups.push({ packCount: column.packCount, columns: [column] });
-        });
-        var headGroup = document.createElement('tr');
-        var corner = document.createElement('th');
-        corner.rowSpan = 2;
-        corner.textContent = '电池容量';
-        headGroup.appendChild(corner);
-        groups.forEach(function (group) {
-          var th = document.createElement('th');
-          th.colSpan = group.columns.length;
-          th.textContent = group.packCount + ' 节';
-          headGroup.appendChild(th);
-        });
-        var headVariant = document.createElement('tr');
-        (data.columns || []).forEach(function (column) {
-          var th = document.createElement('th');
-          th.textContent = column.label;
-          headVariant.appendChild(th);
-        });
-        thead.appendChild(headGroup);
-        thead.appendChild(headVariant);
-        table.appendChild(thead);
-        var tbody = document.createElement('tbody');
-        (data.capacities || []).forEach(function (capacity, rowIndex) {
-          var tr = document.createElement('tr');
-          var th = document.createElement('th');
-          th.textContent = capacity + ' mAh';
-          tr.appendChild(th);
-          (data.columns || []).forEach(function (_column, colIndex) {
-            var td = document.createElement('td');
-            var price = data.prices && data.prices[rowIndex] ? data.prices[rowIndex][colIndex] : null;
-            if (price == null) { td.textContent = '—'; td.className = 'is-empty'; }
-            else td.textContent = '¥' + price;
-            tr.appendChild(td);
+        // 裸机价固定在上方，不随表格横向滚动。
+        var bareLabel = document.createElement('span');
+        bareLabel.textContent = '裸机价';
+        var bareValue = document.createElement('strong');
+        bareValue.textContent = '¥' + data.barePrice;
+        var bareHint = document.createElement('em');
+        bareHint.textContent = '不含电池与充电器';
+        priceBare.appendChild(bareLabel);
+        priceBare.appendChild(bareValue);
+        priceBare.appendChild(bareHint);
+
+        var columns = data.columns || [];
+        if (!columns.length) {
+          priceSub.textContent = (data.voltage || '') + ' 电池 · 暂无电池配置报价';
+          var noBattery = document.createElement('div');
+          noBattery.className = 'pricebox-empty';
+          noBattery.textContent = '该电压暂时没有电池配置报价，请联系我们。';
+          priceScroll.appendChild(noBattery);
+        } else {
+          priceSub.textContent = (data.voltage || '') + ' 电池 · 一电一充 / 两电一充';
+          var table = document.createElement('table');
+          table.className = 'pricebox-table';
+          var thead = document.createElement('thead');
+          var groups = [];
+          var groupStart = {};
+          var columnOffset = 0;
+          columns.forEach(function (column) {
+            var last = groups[groups.length - 1];
+            if (last && last.packCount === column.packCount) {
+              last.columns.push(column);
+            } else {
+              groupStart[columnOffset] = true;
+              groups.push({ packCount: column.packCount, columns: [column] });
+            }
+            columnOffset += 1;
           });
-          tbody.appendChild(tr);
-        });
-        table.appendChild(tbody);
-        priceScroll.appendChild(table);
+          var headGroup = document.createElement('tr');
+          var corner = document.createElement('th');
+          corner.rowSpan = 2;
+          corner.className = 'pricebox-corner';
+          corner.textContent = '电池容量';
+          headGroup.appendChild(corner);
+          groups.forEach(function (group) {
+            var th = document.createElement('th');
+            th.colSpan = group.columns.length;
+            th.className = 'pricebox-group-start';
+            th.textContent = group.packCount + ' 节';
+            headGroup.appendChild(th);
+          });
+          var headVariant = document.createElement('tr');
+          columns.forEach(function (column, colIndex) {
+            var th = document.createElement('th');
+            if (groupStart[colIndex]) th.className = 'pricebox-group-start';
+            th.textContent = column.label;
+            headVariant.appendChild(th);
+          });
+          thead.appendChild(headGroup);
+          thead.appendChild(headVariant);
+          table.appendChild(thead);
+          var tbody = document.createElement('tbody');
+          (data.capacities || []).forEach(function (capacity, rowIndex) {
+            var tr = document.createElement('tr');
+            var th = document.createElement('th');
+            th.className = 'pricebox-capacity';
+            th.textContent = capacity + ' mAh';
+            tr.appendChild(th);
+            columns.forEach(function (_column, colIndex) {
+              var td = document.createElement('td');
+              var price = data.prices && data.prices[rowIndex] ? data.prices[rowIndex][colIndex] : null;
+              var classes = [];
+              if (groupStart[colIndex]) classes.push('pricebox-group-start');
+              if (price == null) { td.textContent = '—'; classes.push('is-empty'); }
+              else td.textContent = '¥' + price;
+              if (classes.length) td.className = classes.join(' ');
+              tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+          });
+          table.appendChild(tbody);
+          priceScroll.appendChild(table);
+        }
       }
       priceBox.classList.add('is-open');
     }

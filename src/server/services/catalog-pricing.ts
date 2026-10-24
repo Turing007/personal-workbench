@@ -19,15 +19,18 @@ export interface CatalogPriceTable {
   columns: CatalogPriceColumn[];
   /** prices[容量行][列] = 向上取整后的售价；null = 该组合未定价。 */
   prices: Array<Array<number | null>>;
-  /** 全部组合里的最低价；没有可售组合时为 null。 */
-  minPrice: number | null;
+  /** 裸机价（不含电池与充电器，含包装）；向上取整。 */
+  barePrice: number;
+  /** 裸机与全部电池组合里的最低价。 */
+  minPrice: number;
 }
 
 /**
  * 图册售价 = 成本 ×（1 + 毛利率），向上取整到元。
- * 成本 = 产品默认采购价 + 第一条包装采购价 + 第一个充电器价 + 电池单价 × 电数；
- * 不含税、不含运费（用户口径），配件与其他费用也不计入。
- * 只使用「与产品电压匹配」的节数列；所有容量行都参与。
+ * 套装成本 = 产品默认采购价 + 第一条包装采购价 + 第一个充电器价 + 电池单价 × 电数；
+ * 裸机价 = 产品默认采购价 + 第一条包装采购价（不含电池与充电器）。
+ * 两种情况都不含税、不含运费，配件与其他费用也不计入。
+ * 电池矩阵只使用「与产品电压匹配」的节数列；裸机价始终有。
  */
 export function buildCatalogPriceTable(
   product: MappedProduct,
@@ -50,24 +53,26 @@ export function buildCatalogPriceTable(
   const voltage = normalizeBatteryVoltage(product.batteryVoltage);
   const matrix = options.batteryMatrix;
   const packCounts = matrix.packCounts.filter((packCount) => packCountMatchesVoltage(packCount, voltage));
-  if (!matrix.capacities.length || !packCounts.length) return null;
+
+  // 裸机价：只含整机与包装，不含电池/充电器；向上取整。
+  const barePrice = Math.ceil(round2((baseCost + packagingCost) * (1 + markup / 100)));
+  let minPrice = barePrice;
 
   const columns: CatalogPriceColumn[] = packCounts.flatMap((packCount) => BATTERY_COMBO_VARIANTS.map((variant) => ({
     packCount,
     batteryCount: variant.batteryCount as 1 | 2,
     label: variant.label,
   })));
+  const prices = columns.length
+    ? matrix.capacities.map((capacity) => columns.map((column) => {
+      const unit = batteryUnitPriceOf(matrix, capacity, column.packCount);
+      if (unit == null || unit <= 0) return null;
+      const cost = round2(baseCost + packagingCost + chargerCost + unit * column.batteryCount);
+      const sale = Math.ceil(round2(cost * (1 + markup / 100)));
+      if (sale < minPrice) minPrice = sale;
+      return sale;
+    }))
+    : [];
 
-  let minPrice: number | null = null;
-  const prices = matrix.capacities.map((capacity) => columns.map((column) => {
-    const unit = batteryUnitPriceOf(matrix, capacity, column.packCount);
-    if (unit == null || unit <= 0) return null;
-    const cost = round2(baseCost + packagingCost + chargerCost + unit * column.batteryCount);
-    const sale = Math.ceil(round2(cost * (1 + markup / 100)));
-    if (minPrice == null || sale < minPrice) minPrice = sale;
-    return sale;
-  }));
-
-  if (minPrice == null) return null;
-  return { voltage, capacities: matrix.capacities, columns, prices, minPrice };
+  return { voltage, capacities: columns.length ? matrix.capacities : [], columns, prices, barePrice, minPrice };
 }

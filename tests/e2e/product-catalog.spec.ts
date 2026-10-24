@@ -305,9 +305,9 @@ test('在线图册价格：按图册毛利率算矩阵，只出匹配电压的�
     const guest = await anonymous.newPage();
     await guest.goto(`/c/${catalog.token}`);
 
-    // 12V：成本 100 + 3.2 + 充电器 2 + 电池 10 = 115.2，×1.2 = 138.24 → 139 起。
+    // 12V：裸机 (100 + 3.2) ×1.2 = 123.84 → 124，比电池套装低，卡片显示 124 起。
     const cardA = guest.locator('.card', { hasText: `E2E图册价-12V${stamp}` }).first();
-    await expect(cardA.locator('.card-price')).toContainText('¥139 起');
+    await expect(cardA.locator('.card-price')).toContainText('¥124 起');
     await cardA.locator('.card-price').click();
     const priceboxA = guest.locator('#pricebox');
     await expect(priceboxA).toBeVisible();
@@ -316,24 +316,33 @@ test('在线图册价格：按图册毛利率算矩阵，只出匹配电压的�
     await expect(priceboxA.locator('.pricebox-table thead')).toContainText('3 节');
     await expect(priceboxA.locator('.pricebox-table thead')).not.toContainText('5 节');
     await expect(priceboxA.locator('.pricebox-table tbody td')).toHaveText(['¥139', '¥151']);
+    await expect(priceboxA.locator('#pricebox-bare')).toContainText('裸机价');
+    await expect(priceboxA.locator('#pricebox-bare')).toContainText('¥124');
+    await expect(priceboxA.locator('#pricebox-bare')).toContainText('不含电池与充电器');
     await expect(priceboxA).toContainText('不含税费与运费');
+    // 表头/容量列固定，横向滑动不跟着走；组与组之间有分隔线。
+    await expect(priceboxA.locator('.pricebox-table .pricebox-capacity').first()).toHaveCSS('position', 'sticky');
+    await expect(priceboxA.locator('.pricebox-table th.pricebox-corner')).toHaveCSS('position', 'sticky');
+    await expect(priceboxA.locator('.pricebox-group-start').first()).toBeVisible();
     await priceboxA.locator('.pricebox-close').click();
     await expect(priceboxA).toBeHidden();
 
-    // 21V：只出 5/10 节；5 节一电一充 113.2 ×1.2 = 135.84 → 136 起。
+    // 21V：只出 5/10 节；5 节一电一充 135.84 → 136，比裸机 124 高，所以最低仍是 124。
     const cardB = guest.locator('.card', { hasText: `E2E图册价-21V${stamp}` }).first();
-    await expect(cardB.locator('.card-price')).toContainText('¥136 起');
+    await expect(cardB.locator('.card-price')).toContainText('¥124 起');
     await cardB.locator('.card-price').click();
     const priceboxB = guest.locator('#pricebox');
     await expect(priceboxB.locator('.pricebox-table thead')).toContainText('5 节');
     await expect(priceboxB.locator('.pricebox-table thead')).toContainText('10 节');
     await expect(priceboxB.locator('.pricebox-table thead')).not.toContainText('3 节');
     await expect(priceboxB.locator('.pricebox-table tbody tr').first().locator('td')).toHaveText(['¥136', '¥146', '¥144', '¥160']);
+    await expect(priceboxB.locator('#pricebox-bare')).toContainText('¥124');
+    await expect(priceboxB.locator('.pricebox-group-start')).toHaveCount(6);
     await priceboxB.locator('.pricebox-close').click();
 
     // 客户页面只出现售价，不出现采购价/包材成本。
     const html = (await (await page.request.get(`/c/${catalog.token}`)).text());
-    expect(html).toContain('¥139 起');
+    expect(html).toContain('¥124 起');
     expect(html).not.toContain('3.2');
     expect(html).not.toContain('E2E图册供应商');
 
