@@ -108,7 +108,7 @@ describe('售价计算器：算价方案', () => {
       method: 'POST',
       url: `/api/products/${product.id}/price-plans`,
       payload: planPayload({
-        params: { baseCost: 105, packaging: 0, shipping: 0, taxPercent: 7.7, chargerName: ' 小线充（欧/美规）-0.5A ', chargerPrice: 2.3, junk: 'x', baseCostJunk: 'nope' },
+        params: { baseCost: 105, packaging: 0, shipping: 0, taxPercent: 7.7, chargerName: ' 小线充（欧/美规）-0.5A ', chargerPrice: 2.3, accessoryNames: [' 套筒 ', '说明书', ''], junk: 'x', baseCostJunk: 'nope' },
       }),
     });
     expect(withParams.statusCode).toBe(201);
@@ -118,6 +118,7 @@ describe('售价计算器：算价方案', () => {
       baseCost: 105, packaging: 0, shipping: 0, taxPercent: 7.7,
       chargerName: '小线充（欧/美规）-0.5A', chargerPrice: 2.3,
       shippingMode: 'manual', shippingUnitPrice: 1.5, volumeDivisor: 8000,
+      accessoryNames: ['套筒', '说明书'],
     });
     // 读列表同样带回参数快照。
     const list = await app.inject({ method: 'GET', url: `/api/products/${product.id}/price-plans` });

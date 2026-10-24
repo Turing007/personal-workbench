@@ -181,6 +181,18 @@ describe('运费预估（按计费重量 × 单价）', () => {
     // 非法模式值一律按手动。
     expect(normalizePricePlanParams({ shippingMode: 'weird' }).shippingMode).toBe('manual');
   });
+
+  it('参数快照记配件选择：按名称去空去重；旧方案不带该字段', () => {
+    const params = normalizePricePlanParams({
+      baseCost: 100,
+      accessoryNames: [' 套筒 ', '', '套筒', 42, '说明书'],
+    });
+    expect(params.accessoryNames).toEqual(['套筒', '说明书']);
+    // 明确「一个都不选」存空数组；旧方案没这个字段时保持缺省（载入按全选）。
+    expect(normalizePricePlanParams({ accessoryNames: [] }).accessoryNames).toEqual([]);
+    expect('accessoryNames' in normalizePricePlanParams({ baseCost: 100 })).toBe(false);
+    expect('accessoryNames' in normalizePricePlanParams({ accessoryNames: '套筒' })).toBe(false);
+  });
 });
 
 describe('配件与价格清洗', () => {

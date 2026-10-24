@@ -98,11 +98,33 @@ export interface PricePlanParams {
   shippingUnitPrice: number;
   /** 体积重参数（cm³/kg），默认 8000；旧方案缺省按默认值。 */
   volumeDivisor?: number;
+  /**
+   * 本次计入的配件名称快照。用名称而不是 id：类目默认配件的 id 可能随维护变化，
+   * 名称更稳定。空数组 = 明确一个都没选；缺省 = 旧方案，载入时按「全部计入」回显。
+   */
+  accessoryNames?: string[];
+}
+
+/** 方案里的配件名称：去空白、截断超长名、去重、去掉空项；非数组视为「没存过」。 */
+function normalizePlanAccessoryNames(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (names.length >= 80) break;
+    if (typeof entry !== 'string') continue;
+    const name = entry.trim().slice(0, 60);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
+  return names;
 }
 
 /** 清洗参数快照：全部按金额口径处理（≥0、两位小数），缺省为 0 与空名。 */
 export function normalizePricePlanParams(value: unknown): PricePlanParams {
   const record = (value ?? {}) as Record<string, unknown>;
+  const accessoryNames = normalizePlanAccessoryNames(record.accessoryNames);
   return {
     baseCost: pricePlanAmount(record.baseCost),
     packaging: pricePlanAmount(record.packaging),
@@ -114,6 +136,8 @@ export function normalizePricePlanParams(value: unknown): PricePlanParams {
     shippingMode: record.shippingMode === 'auto' ? 'auto' : 'manual',
     shippingUnitPrice: record.shippingUnitPrice == null ? DEFAULT_SHIPPING_UNIT_PRICE : pricePlanAmount(record.shippingUnitPrice),
     volumeDivisor: normalizeVolumeDivisor(record.volumeDivisor),
+    // 旧方案没有这个字段：不写出，载入时按「全部配件」处理。
+    ...(accessoryNames === undefined ? {} : { accessoryNames }),
   };
 }
 

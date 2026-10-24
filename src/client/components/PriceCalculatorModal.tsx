@@ -1,10 +1,10 @@
-import { Fragment, useEffect, useState } from 'react';
-import { BatteryCharging, Check, Eye, EyeOff, Image as ImageIcon, Save, Trash2 } from 'lucide-react';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import { BatteryCharging, Check, ChevronDown, Eye, EyeOff, Image as ImageIcon, Save, Trash2 } from 'lucide-react';
 import Modal from './Modal';
+import PickerCurtain from './PickerCurtain';
 import {
   deletePricePlan,
   getBatteryPriceMatrix,
-  getCategoryAccessoryPrices,
   getChargerPrices,
   getVolumeDivisor,
   listPricePlans,
@@ -99,8 +99,11 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const [costsVisible, setCostsVisible] = useState(true);
   /** 电池价格查询浮层：只读展示当前生效的「容量 × 节数 → 单价」。 */
   const [batteryPricesOpen, setBatteryPricesOpen] = useState(false);
-  /** 产品没固化配件清单时，与详情一致地沿用类目默认配件。 */
-  const [categoryAccessories, setCategoryAccessories] = useState<AccessoryPrice[]>([]);
+  /** 配件下拉幕布：多选，只把选中的配件计入成本与实重。 */
+  const [accessoryPickerOpen, setAccessoryPickerOpen] = useState(false);
+  /** 选中的配件名称；null = 全选（默认口径，打开计算器不会突然少算配件）。 */
+  const [selectedAccessoryNames, setSelectedAccessoryNames] = useState<string[] | null>(null);
+  const accessoryAnchorRef = useRef<HTMLDivElement>(null);
   /** 体积重参数（cm³/kg）：默认取全局设置，载入方案时按方案快照覆盖。 */
   const [volumeDivisor, setVolumeDivisor] = useState(DEFAULT_VOLUME_DIVISOR);
   /** 点运费金额打开的体积参数弹窗。 */
@@ -135,13 +138,8 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     setBatteryMatrix(null);
     setChargerPrices([]);
     setChargerId('');
-    setCategoryAccessories([]);
-    // 配件与详情同一口径：产品固化过清单（含删空）就以自己为准，否则沿用类目默认。
-    if (!product.accessoryPricesCustomized && product.category?.trim()) {
-      getCategoryAccessoryPrices(product.category.trim())
-        .then((items) => { if (!cancelled) setCategoryAccessories(items); })
-        .catch(() => { if (!cancelled) setCategoryAccessories([]); });
-    }
+    setAccessoryPickerOpen(false);
+    setSelectedAccessoryNames(null);
     if (/^\d+$/.test(product.id)) {
       listPricePlans(product.id)
         .then((items) => { if (!cancelled) setPlans(items); })
@@ -177,12 +175,49 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const charger = chargerPrices.find((item) => item.id === chargerId);
   const chargerPrice = charger?.price ?? 0;
 
-  // 配件与详情同一口径：产品自己的清单优先（含删空），否则用类目默认；价格进成本，重量进实重。
-  const accessories = (product.accessoryPricesCustomized ? (product.accessoryPrices ?? []) : categoryAccessories)
-    .filter((item) => item.name.trim());
+  // 配件只取「本产品自己的清单」：类目默认只是新建产品时的预填模板，不在计算器里混进来。
+  // 本产品没维护过配件就是空，显示「无配件」，不会把同类的其他配件一起列出来。
+  const allAccessories = (product.accessoryPrices ?? []).filter((item) => item.name.trim());
+  // 按名称归组：方案快照按名称记录选择。同名多行一起勾选、金额一起累加，
+  // 不会因为只取第一行而少算钱；界面上合并成一个胶囊显示合计。
+  const accessoryGroups = new Map<string, AccessoryPrice[]>();
+  for (const item of allAccessories) {
+    const group = accessoryGroups.get(item.name);
+    if (group) group.push(item);
+    else accessoryGroups.set(item.name, [item]);
+  }
+  const accessoryNames = Array.from(accessoryGroups.keys());
+  const accessoryOptions = accessoryNames.map((name) => {
+    const totals = accessoryTotals(accessoryGroups.get(name)!);
+    return { name, price: totals.price, weight: totals.weight };
+  });
+  // null = 全选（默认口径：打开计算器不会突然少算配件）；数组 = 只计入这些名称。
+  const selectedNameSet = selectedAccessoryNames == null ? null : new Set(selectedAccessoryNames);
+  const selectedAccessoryOptions = accessoryOptions
+    .filter((option) => selectedNameSet == null || selectedNameSet.has(option.name));
+  const accessories = accessoryNames
+    .filter((name) => selectedNameSet == null || selectedNameSet.has(name))
+    .flatMap((name) => accessoryGroups.get(name)!);
   const accessoryTotalsValue = accessoryTotals(accessories);
   const accessoryPrice = accessoryTotalsValue.price;
   const accessoryWeight = accessoryTotalsValue.weight;
+  const allAccessoriesSelected = selectedNameSet == null && accessoryNames.length > 0;
+
+  /** 选择变化：选满就回到 null（默认全选），不存一份与「全选」等效的清单。 */
+  const applyAccessorySelection = (names: string[]) => {
+    setSelectedAccessoryNames(names.length >= accessoryNames.length ? null : names);
+  };
+  /** 点胶囊切换单项：当前是全选时，先展开成显式清单再剔除这一项。 */
+  const toggleAccessory = (name: string) => {
+    if (selectedNameSet == null) {
+      applyAccessorySelection(accessoryNames.filter((item) => item !== name));
+      return;
+    }
+    applyAccessorySelection(selectedNameSet.has(name)
+      ? accessoryNames.filter((item) => selectedNameSet.has(item) && item !== name)
+      : accessoryNames.filter((item) => item === name || selectedNameSet.has(item)));
+  };
+  const selectedAccessoryNamesForSave = selectedAccessoryOptions.map((item) => item.name);
 
   // 产品重量取包装第一行的内盒重量（单台重量，与矩阵每台成本口径一致）。
   const productWeightKg = Number(product.packaging[0]?.innerWeight) || 0;
@@ -289,6 +324,8 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
         chargerName: charger?.name ?? '', chargerPrice,
         shippingMode, shippingUnitPrice: unitPriceValue,
         volumeDivisor,
+        // 记下这次计入的配件名称：载入方案时照着还原勾选，不会被后来改的清单带偏。
+        accessoryNames: selectedAccessoryNamesForSave,
       };
       const plan = await savePricePlan(product.id, {
         name: planName,
@@ -326,6 +363,17 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
       setTaxPercent(String(params.taxPercent));
       const matched = chargerPrices.find((item) => item.name === params.chargerName);
       if (matched) setChargerId(matched.id);
+      // 配件选择按名称还原；清单里已经删掉的名称自动忽略。
+      if (params.accessoryNames) {
+        const saved = Array.from(new Set(params.accessoryNames));
+        // 存的就是当前全部配件 → 回到「全选」默认态；空数组 = 明确一个都不计。
+        // 配件清单还没加载完时（accessoryNames 为空）保留显式清单，等清单到了再按名称套用。
+        const covered = accessoryNames.filter((name) => saved.includes(name)).length;
+        setSelectedAccessoryNames(accessoryNames.length > 0 && covered >= accessoryNames.length ? null : saved);
+      } else {
+        // 旧方案没记配件（那时是全部自动计入）：按全选回显。
+        setSelectedAccessoryNames(null);
+      }
       setMessage('');
     } else {
       // 旧格式方案（没存参数）：按明细里能认出来的行尽量回显。
@@ -389,19 +437,78 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
         <label className="price-calc2-field"><span>采购价</span><input className="input" type="number" min={0} step="0.01" aria-label="采购价" value={baseCost} onChange={(event) => setBaseCost(event.target.value)} /></label>
         <label className="price-calc2-field"><span>毛利率 %</span><input className="input" type="number" min={0} aria-label="毛利率" value={markup} onChange={(event) => setMarkup(event.target.value)} /></label>
         <label className="price-calc2-field"><span>包材配件</span><input className="input" type="number" min={0} step="0.01" aria-label="包材配件" value={packaging} onChange={(event) => setPackaging(event.target.value)} /></label>
-        {/* 产品配件：只读汇总，实际增删改在产品编辑器；价格进成本，重量进实重与运费。 */}
-        <div className={`price-calc2-accessories${accessories.length ? '' : ' is-empty'}`}>
+        {/* 配件：只列本产品自己的清单（类目默认只在新建时预填，不在这里出现）；
+            用下拉幕布勾选本次要计入的配件，选中的价格进成本、重量进实重与运费。 */}
+        <div ref={accessoryAnchorRef} className={`price-calc2-accessories${accessories.length ? '' : ' is-empty'}`}>
           <div className="price-calc2-accessories-head">
             <span>配件</span>
-            <em>{accessories.length ? `¥${round2(accessoryPrice)} · ${accessoryWeight}kg` : '无'}</em>
+            <em>{!accessoryNames.length ? '无' : !accessories.length ? '未选' : `¥${round2(accessoryPrice)} · ${accessoryWeight}kg`}</em>
           </div>
-          {!!accessories.length && <div className="price-calc2-accessories-list">
-            {accessories.map((item) => <span key={item.id || item.name}>
-              {item.name}
-              {item.price > 0 ? ` ¥${round2(item.price)}` : ''}
-              {item.weight ? ` · ${item.weight}kg` : ''}
-            </span>)}
+          <button
+            className="toolbar-select price-calc2-accessory-trigger"
+            type="button"
+            aria-label="选择配件"
+            aria-haspopup="dialog"
+            aria-expanded={accessoryPickerOpen}
+            onClick={() => setAccessoryPickerOpen((current) => !current)}
+          >
+            <span className="price-calc2-accessory-trigger-label">{!accessoryNames.length
+              ? '无配件'
+              : allAccessoriesSelected ? `全部 ${accessoryNames.length} 项` : `已选 ${selectedAccessoryOptions.length}/${accessoryNames.length} 项`}</span>
+            <ChevronDown size={13} />
+          </button>
+          {/* 选中的配件只留一行名称（超出省略），价格/重量的明细在幕布里看；
+              配件多时不会把参数列撑成一长串。 */}
+          {!!selectedAccessoryOptions.length && <div className="price-calc2-accessories-list" title={selectedAccessoryOptions.map((item) => item.name).join('、')}>
+            {selectedAccessoryOptions.map((item) => item.name).join('、')}
           </div>}
+          <PickerCurtain
+            open={accessoryPickerOpen}
+            onClose={() => setAccessoryPickerOpen(false)}
+            anchorRef={accessoryAnchorRef}
+            ariaLabel="选择配件"
+            className="price-calc2-accessory-curtain"
+          >
+            <div className="search-history-head">
+              <span>选择配件（价格与重量一起计入）</span>
+              <span className="price-calc2-accessory-curtain-actions">
+                {!!accessoryNames.length && <>
+                  <button
+                    type="button"
+                    className="search-history-clear"
+                    onClick={() => setSelectedAccessoryNames(null)}
+                  >全选</button>
+                  <button
+                    type="button"
+                    className="search-history-clear"
+                    onClick={() => setSelectedAccessoryNames([])}
+                  >清空</button>
+                </>}
+                <button
+                  type="button"
+                  className="search-history-clear"
+                  onClick={() => setAccessoryPickerOpen(false)}
+                >完成</button>
+              </span>
+            </div>
+            {!!accessoryNames.length && <div className="search-history-chips">
+              {accessoryOptions.map((item) => {
+                const selected = selectedNameSet == null || selectedNameSet.has(item.name);
+                return <button
+                  key={item.name}
+                  type="button"
+                  className={`category-chip${selected ? ' is-selected' : ''}`}
+                  aria-pressed={selected}
+                  onClick={() => toggleAccessory(item.name)}
+                >
+                  {item.name}
+                  {item.price > 0 ? ` ¥${round2(item.price)}` : ''}
+                  {item.weight ? ` · ${item.weight}kg` : ''}
+                </button>;
+              })}
+            </div>}
+            {!accessoryNames.length && <p className="price-calc2-accessory-empty">本产品还没有配件。去产品编辑页的「配件」里添加后，这里就能勾选。</p>}
+          </PickerCurtain>
         </div>
         {/* 运费：自动按「计费重量 × 单价」预估，手动则手填固定值。单价放运费前面。 */}
         <label className="price-calc2-field"><span>运费单价 /kg</span><input className="input" type="number" min={0} step="0.01" aria-label="运费单价" value={shippingUnitPrice} disabled={!autoMode} onChange={(event) => { setShippingUnitPrice(event.target.value); rememberShippingUnitPrice(event.target.value); }} /></label>
