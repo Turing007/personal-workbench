@@ -293,7 +293,7 @@ test('包装选择：按所选包装算包材、实重与体积重，方案记�
   }
 });
 
-test('电池价格查询：列出全部容量与节数，包括设置里关掉眼睛的行列', async ({ page }) => {
+test('电池价格查询：参考表列出全部节数，主矩阵按产品电压过滤', async ({ page }) => {
   const stamp = Date.now();
   const created = await page.request.post('/api/products', {
     data: {
@@ -301,21 +301,15 @@ test('电池价格查询：列出全部容量与节数，包括设置里关掉�
       supplier: 'E2E算价供应商',
       status: 'active',
       category: '电动工具',
+      batteryVoltage: '21V',
       purchaseQuotes: [{ supplier: 'E2E算价供应商', variant: '', price: 100, isDefault: true }],
       packaging: [{ name: '彩盒包装', packCount: 24, innerWeight: 0.9, purchasePrice: 0 }],
     },
   });
   expect(created.ok()).toBe(true);
   const product = (await created.json()).data as { id: number };
-  // 1500 行与 20 节列在设置里关掉眼睛：计算器不显示，但参考表要能查到价格。
   expect((await page.request.put('/api/settings/battery-price-matrix', {
-    data: {
-      capacities: [1300, 1500],
-      packCounts: [5, 20],
-      prices: [[8, 30], [9, 42]],
-      capacityHidden: [false, true],
-      packCountHidden: [false, true],
-    },
+    data: { capacities: [1300, 1500], packCounts: [3, 5, 20], prices: [[7, 8, 30], [8, 9, 42]] },
   })).ok()).toBe(true);
 
   try {
@@ -327,19 +321,22 @@ test('电池价格查询：列出全部容量与节数，包括设置里关掉�
     const dialog = page.getByRole('dialog');
     await expect(dialog).toContainText('售价计算');
 
-    // 主矩阵遵守小眼睛：1500 行与 20 节列都不出现。
-    await expect(dialog.locator('.battery-price-table .battery-price-capacity')).toHaveText(['1300mAh']);
-    await expect(dialog.locator('.battery-price-table thead')).not.toContainText('20节');
+    // 产品是 21V：主矩阵只出 5 节及以上，3 节列不出现。
+    await expect(dialog.locator('.battery-price-table .battery-price-capacity')).toHaveText(['1300mAh', '1500mAh']);
+    await expect(dialog.locator('.battery-price-table thead')).toContainText('5节');
+    await expect(dialog.locator('.battery-price-table thead')).toContainText('20节');
+    await expect(dialog.locator('.battery-price-table thead')).not.toContainText('3节');
 
-    // 电池价格参考表不受小眼睛影响：全部行列都在（隐藏的行列也照常给价）。
+    // 电池价格参考表不受电压过滤：3/5/20 节全部列出。
     await dialog.getByRole('button', { name: '电池价格' }).click();
     const priceDialog = page.getByRole('dialog', { name: '电池价格' });
+    await expect(priceDialog.locator('.battery-query-table thead')).toContainText('3 节');
     await expect(priceDialog.locator('.battery-query-table thead')).toContainText('5 节');
     await expect(priceDialog.locator('.battery-query-table thead')).toContainText('20 节');
     await expect(priceDialog.locator('.battery-query-table tbody tr', { hasText: '1500 mAh' }).locator('td'))
-      .toHaveText(['¥9', '¥42']);
+      .toHaveText(['¥8', '¥9', '¥42']);
     await expect(priceDialog.locator('.battery-query-table tbody tr', { hasText: '1300 mAh' }).locator('td'))
-      .toHaveText(['¥8', '¥30']);
+      .toHaveText(['¥7', '¥8', '¥30']);
   } finally {
     await page.request.put('/api/settings/battery-price-matrix', {
       data: { capacities: [1300, 1500, 2000], packCounts: [5, 10, 15, 20], prices: [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]] },

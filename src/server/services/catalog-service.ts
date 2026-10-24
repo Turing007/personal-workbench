@@ -5,6 +5,8 @@ import { pickCatalogImage } from '../documents/product-catalog-template.js';
 import type { CatalogRepository, CatalogSummaryRecord } from '../db/catalog-repository.js';
 import type { SettingsRepository } from '../db/settings-repository.js';
 import { mapProduct, toCatalogProduct, type MappedProduct } from './product-record-mapper.js';
+import { BATTERY_MATRIX_DEFAULTS } from '../../shared/battery-prices.js';
+import { buildCatalogPriceTable, type CatalogPriceTable } from './catalog-pricing.js';
 
 const MAX_NAME_LENGTH = 40;
 /** 公开链接的 token：URL 安全字符，长度足够长不可猜。 */
@@ -16,13 +18,16 @@ export class CatalogServiceError extends Error {
   }
 }
 
-/** 公开页数据：只有客户版字段，供应商与价格在服务端就被剥离。 */
+/** 公开页产品：客户版字段 + 按图册毛利率算好的售价表（不含成本）。 */
+export type PublicCatalogProduct = CatalogProduct & { priceTable: CatalogPriceTable | null };
+
+/** 公开页数据：只有客户版字段，供应商与成本价在服务端就被剥离。 */
 export interface PublicCatalog {
-  catalog: { id: number; name: string; token: string };
+  catalog: { id: number; name: string; token: string; markupPercent: number };
   company: CompanySnapshot;
-  groups: Array<{ category: string; products: CatalogProduct[] }>;
+  groups: Array<{ category: string; products: PublicCatalogProduct[] }>;
   /** 从起算日（2026-10-10 北京时间）之后加入图册的新品（新加的排前）；空数组时页面不排「新品」分区。 */
-  newArrivals: CatalogProduct[];
+  newArrivals: PublicCatalogProduct[];
 }
 
 /** 新品起算：2026-10-10 起「新加入图册」的才算新品；建册时的批量存量不算，之后不设到期。 */
@@ -34,8 +39,8 @@ interface CatalogServiceOptions {
   settingsRepository: SettingsRepository;
 }
 
-function groupByCategory(products: CatalogProduct[]): PublicCatalog['groups'] {
-  const groups = new Map<string, CatalogProduct[]>();
+function groupByCategory(products: PublicCatalogProduct[]): PublicCatalog['groups'] {
+  const groups = new Map<string, PublicCatalogProduct[]>();
   for (const product of products) {
     const key = product.category?.trim() || '未分类';
     const list = groups.get(key);
@@ -60,20 +65,21 @@ export class CatalogService {
     return { ...this.require(id), productIds: this.repository.listItemProductIds(id) };
   }
 
-  create(input: { name: unknown; productIds: unknown }): CatalogSummaryRecord {
+  create(input: { name: unknown; productIds: unknown; markupPercent?: unknown }): CatalogSummaryRecord {
     const name = this.requireName(input.name);
     const productIds = this.requireProductIds(input.productIds);
     const token = randomBytes(16).toString('base64url');
-    const id = this.repository.create({ token, name, productIds });
+    const id = this.repository.create({ token, name, productIds, markupPercent: this.requireMarkup(input.markupPercent) });
     return this.require(id);
   }
 
-  update(id: number, input: { name?: unknown; enabled?: unknown; productIds?: unknown }): CatalogSummaryRecord {
+  update(id: number, input: { name?: unknown; enabled?: unknown; productIds?: unknown; markupPercent?: unknown }): CatalogSummaryRecord {
     if (!this.repository.get(id)) throw new CatalogServiceError('CATALOG_NOT_FOUND', '图册不存在');
-    const changes: { name?: string; enabled?: boolean; productIds?: number[] } = {};
+    const changes: { name?: string; enabled?: boolean; productIds?: number[]; markupPercent?: number } = {};
     if (input.name !== undefined) changes.name = this.requireName(input.name);
     if (input.enabled !== undefined) changes.enabled = Boolean(input.enabled);
     if (input.productIds !== undefined) changes.productIds = this.requireProductIds(input.productIds);
+    if (input.markupPercent !== undefined) changes.markupPercent = this.requireMarkup(input.markupPercent);
     this.repository.update(id, changes);
     return this.require(id);
   }
@@ -93,16 +99,20 @@ export class CatalogService {
     if (!catalog || !catalog.enabled) return undefined;
     this.repository.recordView(catalog.id);
     const byId = new Map(this.mappedProducts().map((product) => [product.id, product] as const));
+    const batteryMatrix = this.options.settingsRepository.readBatteryPriceMatrix() ?? BATTERY_MATRIX_DEFAULTS;
+    const chargerPrices = this.options.settingsRepository.readChargerPrices();
     const resolved = this.repository.listItems(catalog.id).flatMap((item) => {
       const product = byId.get(item.productId);
-      return product ? [{ product: toCatalogProduct(product), addedAt: item.addedAt }] : [];
+      if (!product) return [];
+      const priceTable = buildCatalogPriceTable(product, { batteryMatrix, chargerPrices, markupPercent: catalog.markupPercent });
+      return [{ product: { ...toCatalogProduct(product), priceTable }, addedAt: item.addedAt }];
     });
     const newArrivals = resolved
       .filter((entry) => entry.addedAt != null && Date.parse(entry.addedAt) >= NEW_ARRIVAL_START_AT)
       .sort((a, b) => Date.parse(b.addedAt ?? '') - Date.parse(a.addedAt ?? ''))
       .map((entry) => entry.product);
     return {
-      catalog: { id: catalog.id, name: catalog.name, token },
+      catalog: { id: catalog.id, name: catalog.name, token, markupPercent: catalog.markupPercent },
       company: this.options.settingsRepository.getCompanyProfile(),
       groups: groupByCategory(resolved.map((entry) => entry.product)),
       newArrivals,
@@ -150,6 +160,15 @@ export class CatalogService {
       throw new CatalogServiceError('CATALOG_NAME_TOO_LONG', `图册名称不能超过 ${MAX_NAME_LENGTH} 个字`);
     }
     return name;
+  }
+
+  /** 毛利率：0–1000%，最多一位小数；0 = 图册不显示价格。 */
+  private requireMarkup(value: unknown): number {
+    const parsed = Number(value ?? 0);
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1000) {
+      throw new CatalogServiceError('CATALOG_MARKUP_INVALID', '毛利率需要在 0–1000% 之间');
+    }
+    return Math.round(parsed * 10) / 10;
   }
 
   private requireProductIds(value: unknown): number[] {

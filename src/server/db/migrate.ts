@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 36;
+const CURRENT_SCHEMA_VERSION = 37;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -625,7 +625,8 @@ type MigratedTable =
   | 'sales_documents'
   | 'sales_document_items'
   | 'payment_proofs'
-  | 'finance_receipts';
+  | 'finance_receipts'
+  | 'catalogs';
 
 interface MigrationPreflight {
   schemaVersion: number;
@@ -1399,6 +1400,17 @@ function migrateVersionThirtySix(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '36', now);
 }
 
+/**
+ * 在线图册报价与产品电池电压：
+ * - products.battery_voltage：12V / 16.8V / 21V，决定计算器与图册显示哪些节数列（3 节/4 节/5 节及以上）。
+ * - catalogs.markup_percent：每本图册自己的毛利率，公开图册按成本 ×（1 + 毛利率）向上取整报价。
+ */
+function migrateVersionThirtySeven(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'products', 'battery_voltage', "TEXT NOT NULL DEFAULT '21V'");
+  addColumnIfMissing(database, 'catalogs', 'markup_percent', 'REAL NOT NULL DEFAULT 0');
+  upsertSetting(database, 'schema_version', '37', now);
+}
+
 export function migrateDatabase(database: DatabaseSync): void {
   if (database.isTransaction) {
     throw new Error('Database migration cannot run inside an active transaction');
@@ -1461,6 +1473,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionThirtyFour(transactionDatabase, now);
     migrateVersionThirtyFive(transactionDatabase, now);
     migrateVersionThirtySix(transactionDatabase, now);
+    migrateVersionThirtySeven(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

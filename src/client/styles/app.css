@@ -3618,7 +3618,7 @@ select {
 /* 颜色 / 插脚同一行两块：两列等宽，手机上也不拆行。
    胶囊排不下就在本格内换行，不把另一块挤下去。 */
 .product-editor-options-row {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: start;
 }
 
@@ -5439,6 +5439,7 @@ select {
 
 /* 设置页：电池价格矩阵（行=容量、列=节数）。 */
 .accessory-module-title { margin: 16px 0 8px; font-size: 14px; }
+.battery-matrix-scroll { overflow-x: auto; padding-bottom: 2px; }
 .battery-matrix { display: grid; gap: 6px; align-items: center; }
 .battery-matrix-corner { font-size: 12px; color: var(--color-text-muted); }
 .battery-matrix-headcol { display: grid; gap: 3px; justify-items: center; font-size: 12px; color: var(--color-text-muted); }
@@ -5451,12 +5452,8 @@ select {
 .battery-matrix-rowhead .input { width: 76px; padding: 4px 6px; }
 .battery-matrix .input { font-size: 12.5px; }
 
-/* 行首/列头：眼睛 = 全局隐藏开关；箭头 = 调整行列顺序。 */
+/* 电池矩阵：节数由产品电压过滤；行首/列头只剩排序与删除。 */
 .battery-scope-hint { margin: 0 0 8px; font-size: 12px; color: var(--color-text-muted); }
-.battery-scope-eye { display: inline-grid; flex: none; width: 20px; height: 20px; place-items: center; border: 0; border-radius: 4px; padding: 0; color: var(--color-text-muted); background: transparent; cursor: pointer; }
-.battery-scope-eye:hover:not(:disabled) { color: var(--color-text-strong); background: var(--color-surface-subtle); }
-.battery-scope-eye.is-hidden { color: var(--tone-accent-text); background: var(--color-accent-soft); }
-.battery-scope-eye:disabled { cursor: not-allowed; opacity: .45; }
 .battery-move-button { display: inline-grid; flex: none; width: 17px; height: 17px; place-items: center; border: 0; border-radius: 4px; padding: 0; color: var(--color-text-muted); background: transparent; cursor: pointer; }
 .battery-move-button:hover:not(:disabled) { color: var(--color-text-strong); background: var(--color-surface-subtle); }
 .battery-move-button.is-danger:hover:not(:disabled) { color: var(--tone-danger-text); background: var(--color-danger-soft); }
@@ -5590,6 +5587,9 @@ select {
   .price-calc2-params { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 900px) {
+  /* 手机上颜色/插脚保持并排，电压单独占下一行，避免三列挤到横向滚动。 */
+  .product-editor-options-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .product-editor-options-row .product-editor-option-field:nth-child(3) { grid-column: 1 / -1; }
   .price-calc2-field .input { width: 128px; }
   .price-calc2-field .price-calc2-charger { max-width: none; }
   .battery-price-table { font-size: 11px; }

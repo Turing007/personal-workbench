@@ -43,7 +43,7 @@ async function openSettingsOptions(page: Page) {
   return section;
 }
 
-test('编辑器：颜色与插脚只剩预设胶囊，两个字段并排一行', async ({ page }) => {
+test('编辑器：颜色与插脚只剩预设胶囊，三个字段并排一行', async ({ page }) => {
   const editor = await openEditor(page);
 
   // 不再有自定义输入框。
@@ -51,10 +51,11 @@ test('编辑器：颜色与插脚只剩预设胶囊，两个字段并排一行',
 
   const row = editor.locator('.product-editor-options-row');
   await expect(row).toHaveCount(1);
-  await expect(row.locator('.product-editor-option-field')).toHaveCount(2);
+  await expect(row.locator('.product-editor-option-field')).toHaveCount(3);
   const colorChips = row.locator('.product-editor-option-field').nth(0).locator('.chip');
   await expect(colorChips).toHaveText(SEED_COLORS);
   await expect(row.locator('.product-editor-option-field').nth(1).locator('.chip')).toHaveText(SEED_PLUGS);
+  await expect(row.locator('.product-editor-option-field').nth(2).locator('.chip')).toHaveText(['12V', '16.8V', '21V']);
 
   const positions = await row.locator('.product-editor-option-field').evaluateAll((nodes) => nodes.map((node) => {
     const rect = node.getBoundingClientRect();
@@ -63,8 +64,9 @@ test('编辑器：颜色与插脚只剩预设胶囊，两个字段并排一行',
   // 同一行、左右并列，右侧不越出这一行。
   expect(new Set(positions.map((item) => item.top)).size).toBe(1);
   expect(positions[1].left).toBeGreaterThan(positions[0].left);
+  expect(positions[2].left).toBeGreaterThan(positions[1].left);
   const rowRight = await row.evaluate((node) => Math.round(node.getBoundingClientRect().right));
-  expect(positions[1].right).toBeLessThanOrEqual(rowRight + 1);
+  expect(positions[2].right).toBeLessThanOrEqual(rowRight + 1);
 
   // 点一下即选中，再点取消；选中的值能随产品保存。
   await colorChips.nth(0).click();
@@ -113,7 +115,9 @@ test.describe('手机端', () => {
       const rect = node.getBoundingClientRect();
       return { top: Math.round(rect.top), right: Math.round(rect.right) };
     }));
-    expect(new Set(positions.map((item) => item.top)).size).toBe(1);
+    // 颜色与插脚仍并排；电压在下一行独占。
+    expect(positions[0].top).toBe(positions[1].top);
+    expect(positions[2].top).toBeGreaterThan(positions[1].top);
 
     const metrics = await page.evaluate(() => {
       const scroller = document.querySelector('.app-content') as HTMLElement;

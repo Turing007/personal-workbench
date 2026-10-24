@@ -26,7 +26,6 @@ import {
 import { accessoryTotals, mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesText } from '../../src/shared/accessory-prices';
 import {
   batteryMatrixOptions,
-  batteryMatrixVisible,
   buildBatteryMatrixSeed,
   moveBatteryCapacity,
   moveBatteryPackCount,
@@ -268,72 +267,40 @@ describe('配件与价格清洗', () => {
     ).toEqual([{ id: 'cell-0-0', name: '5 节 1300 电池', price: 11 }]);
   });
 
-  it('电池矩阵隐藏开关：关掉的行列对所有产品隐藏，恢复后重新出现', () => {
-    const matrix = normalizeBatteryMatrix({
+  it('电池矩阵：旧版行/列隐藏字段读取时直接丢弃（眼睛功能已移除）', () => {
+    const cleaned = normalizeBatteryMatrix({
       capacities: [1100, 1300],
       packCounts: [3, 5],
       prices: [[7, 8], [9, 10]],
-      capacityHidden: [true, false],
-      packCountHidden: [false, true],
-    });
-    expect(matrix.capacityHidden).toEqual([true, false]);
-    expect(matrix.packCountHidden).toEqual([false, true]);
-    expect(batteryMatrixVisible(matrix)).toMatchObject({
-      capacities: [1300],
-      packCounts: [3],
-      prices: [[9]],
-    });
-    // 全部可见：老形状不变，计算器拿到完整矩阵。
-    expect(batteryMatrixVisible(normalizeBatteryMatrix({ capacities: [1100], packCounts: [3], prices: [[7]] }))).toMatchObject({
-      capacities: [1100], packCounts: [3], prices: [[7]],
-    });
-  });
-
-  it('电池矩阵隐藏开关：清洗非法值；老「按类目限定」数据按关闭眼睛迁移', () => {
-    const cleaned = normalizeBatteryMatrix({
-      capacities: [1100, 1300],
-      packCounts: [3],
-      prices: [[1], [2]],
       capacityHidden: ['yes', true],
-    });
-    expect(cleaned.capacityHidden).toEqual([false, true]);
-
-    // 上一版把「限定分类」存成非空范围；现在眼睛是全局开关，非空范围按关闭迁移。
-    const migrated = normalizeBatteryMatrix({
-      capacities: [1100, 1300],
-      packCounts: [3, 5],
-      prices: [[1, 2], [3, 4]],
+      packCountHidden: [false, true],
       capacityScopes: [['电钻'], []],
       packCountScopes: [[], ['扳手']],
     });
-    expect(migrated.capacityHidden).toEqual([true, false]);
-    expect(migrated.packCountHidden).toEqual([false, true]);
-
-    // 没有隐藏项时不写出字段，老数据读回来的形状不变。
-    expect(Object.keys(normalizeBatteryMatrix({ capacities: [1300], packCounts: [5], prices: [[1]] }))).toEqual(['capacities', 'packCounts', 'prices']);
-    expect(Object.keys(normalizeBatteryMatrix({ capacities: [1300], packCounts: [5], prices: [[1]], capacityHidden: [false] }))).toEqual(['capacities', 'packCounts', 'prices']);
+    expect(cleaned).toEqual({
+      capacities: [1100, 1300],
+      packCounts: [3, 5],
+      prices: [[7, 8], [9, 10]],
+    });
+    expect(Object.keys(cleaned)).toEqual(['capacities', 'packCounts', 'prices']);
   });
 
-  it('电池矩阵排序：移动容量行/节数列时价格与隐藏标记一起走', () => {
+  it('电池矩阵排序：移动容量行/节数列时价格跟着走', () => {
     const matrix = normalizeBatteryMatrix({
       capacities: [1100, 1300, 1500],
       packCounts: [3, 5, 10],
       prices: [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
-      capacityHidden: [false, true, false],
-      packCountHidden: [false, false, true],
     });
 
     // 把 10 节列从最后移到最前：每一行的价格跟着列走。
     const movedColumn = moveBatteryPackCount(matrix, 2, 0);
     expect(movedColumn.packCounts).toEqual([10, 3, 5]);
     expect(movedColumn.prices).toEqual([[3, 1, 2], [6, 4, 5], [9, 7, 8]]);
-    expect(movedColumn.packCountHidden).toEqual([true, false, false]);
 
-    // 容量行同理：整行价格与隐藏标记一起移动。
+    // 容量行同理：整行价格一起移动。
     const movedRow = moveBatteryCapacity(movedColumn, 1, 2);
     expect(movedRow.capacities).toEqual([1100, 1500, 1300]);
     expect(movedRow.prices).toEqual([[3, 1, 2], [9, 7, 8], [6, 4, 5]]);
-    expect(movedRow.capacityHidden).toEqual([false, false, true]);
 
     // 越界不动。
     expect(moveBatteryCapacity(matrix, 0, -1)).toBe(matrix);

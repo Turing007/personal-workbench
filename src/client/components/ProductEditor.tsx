@@ -10,6 +10,7 @@ import { ATTACHMENT_ACCEPT, normalizeUploadAttachment, attachmentFilesFromClipbo
 import { useFileDrop } from '../use-file-drop';
 import { PRODUCT_IMAGE_CATEGORY_OPTIONS } from '../../shared/product-image-categories';
 import { DEFAULT_PRODUCT_COLORS, DEFAULT_PRODUCT_PLUGS } from '../../shared/product-options';
+import { BATTERY_VOLTAGE_OPTIONS, DEFAULT_BATTERY_VOLTAGE, type BatteryVoltage } from '../../shared/battery-voltage';
 import Modal from './Modal';
 import PackagingTable from './PackagingTable';
 import PurchaseQuotesTable from './PurchaseQuotesTable';
@@ -31,6 +32,8 @@ export interface ProductRecord extends CustomerProduct {
   status?: ProductStatus;
   colors: string[];
   batteryPlugs: string[];
+  /** 电池电压：决定计算器/图册显示哪些节数的电池（3 节=12V、4 节=16.8V、5 节及以上=21V）。 */
+  batteryVoltage?: BatteryVoltage;
   images: ImageAttachment[];
   /** 产品视频：已保存的带 url；本次新选的带 file，保存后进后台上传队列。 */
   videos?: ProductVideo[];
@@ -109,7 +112,7 @@ function withFirstQuoteRow(record: ProductRecord): ProductRecord {
 }
 
 function blankProduct(): ProductRecord {
-  return { id: `product-${Date.now()}`, name: '', sku: '', specification: '', packCount: 1, parameters: '', packaging: [blankPackagingRow()], remark: '', category: '', purchasePrice: '', supplier: '', purchaseQuotes: [], colors: [], batteryPlugs: [], images: [], videos: [], accessories: '', attachments: [], accessoryPrices: [] };
+  return { id: `product-${Date.now()}`, name: '', sku: '', specification: '', packCount: 1, parameters: '', packaging: [blankPackagingRow()], remark: '', category: '', purchasePrice: '', supplier: '', purchaseQuotes: [], colors: [], batteryPlugs: [], batteryVoltage: DEFAULT_BATTERY_VOLTAGE, images: [], videos: [], accessories: '', attachments: [], accessoryPrices: [] };
 }
 
 const attachmentCategories: Array<{ value: ProductAttachmentCategory; label: string }> = [
@@ -637,6 +640,16 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
         <div className="field product-editor-option-field">
           <span className="field-label">电池插脚（多选）{onManageProductOptions && <button type="button" className="link-button product-option-manage" onClick={onManageProductOptions}>管理 ›</button>}</span>
           <div className="product-editor-chips">{plugChoices.map((plug) => <button type="button" key={plug} className={`chip${draft.batteryPlugs.includes(plug) ? ' is-selected' : ''}`} onClick={() => toggle('batteryPlugs', plug)}>{plug}</button>)}</div>
+        </div>
+        <div className="field product-editor-option-field">
+          <span className="field-label">电池电压（单选）</span>
+          <div className="product-editor-chips">{BATTERY_VOLTAGE_OPTIONS.map((option) => <button
+            type="button"
+            key={option.value}
+            className={`chip${(draft.batteryVoltage ?? DEFAULT_BATTERY_VOLTAGE) === option.value ? ' is-selected' : ''}`}
+            title={option.hint}
+            onClick={() => set('batteryVoltage', option.value)}
+          >{option.label}</button>)}</div>
         </div>
       </div>
       {/* 采购报价与配件价格并排：左报价、右配件价格。 */}

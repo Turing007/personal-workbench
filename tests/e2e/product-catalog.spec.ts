@@ -267,3 +267,89 @@ test('导出 PDF：浏览器回退下载；App 壳里分块交给原生保存并
     await page.request.delete(`/api/products/${product.id}`);
   }
 });
+
+test('在线图册价格：按图册毛利率算矩阵，只出匹配电压的节数', async ({ page, browser }) => {
+  const stamp = Date.now();
+  const previousMatrix = (await (await page.request.get('/api/settings/battery-price-matrix')).json()).data;
+  const previousChargers = (await (await page.request.get('/api/settings/charger-prices')).json()).data.items;
+  expect((await page.request.put('/api/settings/battery-price-matrix', {
+    data: { capacities: [1300], packCounts: [3, 5, 10], prices: [[10, 8, 14]] },
+  })).ok()).toBe(true);
+  expect((await page.request.put('/api/settings/charger-prices', {
+    data: { items: [{ name: 'E2E图册充电器', price: 2 }] },
+  })).ok()).toBe(true);
+  const seed = async (name: string, voltage: string) => {
+    const created = await page.request.post('/api/products', {
+      data: {
+        name,
+        status: 'active',
+        batteryVoltage: voltage,
+        purchaseQuotes: [{ supplier: 'E2E图册供应商', variant: '', price: 100, isDefault: true }],
+        packaging: [{ name: '彩盒包装', packCount: 10, innerWeight: 0.5, outerSize: '60×50×40', purchasePrice: 3.2 }],
+      },
+    });
+    expect(created.ok()).toBe(true);
+    return (await created.json()).data as { id: number };
+  };
+  const productA = await seed(`E2E图册价-12V${stamp}`, '12V');
+  const productB = await seed(`E2E图册价-21V${stamp}`, '21V');
+  const createdCatalog = await page.request.post('/api/catalogs', {
+    data: { name: `E2E图册报价${stamp}`, productIds: [productA.id, productB.id], markupPercent: 20 },
+  });
+  expect(createdCatalog.ok()).toBe(true);
+  const catalog = (await createdCatalog.json()).data as { id: number; token: string };
+  let anonymous: Awaited<ReturnType<typeof browser.newContext>> | undefined;
+
+  try {
+    anonymous = await browser.newContext();
+    const guest = await anonymous.newPage();
+    await guest.goto(`/c/${catalog.token}`);
+
+    // 12V：成本 100 + 3.2 + 充电器 2 + 电池 10 = 115.2，×1.2 = 138.24 → 139 起。
+    const cardA = guest.locator('.card', { hasText: `E2E图册价-12V${stamp}` }).first();
+    await expect(cardA.locator('.card-price')).toContainText('¥139 起');
+    await cardA.locator('.card-price').click();
+    const priceboxA = guest.locator('#pricebox');
+    await expect(priceboxA).toBeVisible();
+    await expect(priceboxA.locator('#pricebox-title')).toHaveText(`E2E图册价-12V${stamp}`);
+    await expect(priceboxA.locator('#pricebox-sub')).toContainText('12V');
+    await expect(priceboxA.locator('.pricebox-table thead')).toContainText('3 节');
+    await expect(priceboxA.locator('.pricebox-table thead')).not.toContainText('5 节');
+    await expect(priceboxA.locator('.pricebox-table tbody td')).toHaveText(['¥139', '¥151']);
+    await expect(priceboxA).toContainText('不含税费与运费');
+    await priceboxA.locator('.pricebox-close').click();
+    await expect(priceboxA).toBeHidden();
+
+    // 21V：只出 5/10 节；5 节一电一充 113.2 ×1.2 = 135.84 → 136 起。
+    const cardB = guest.locator('.card', { hasText: `E2E图册价-21V${stamp}` }).first();
+    await expect(cardB.locator('.card-price')).toContainText('¥136 起');
+    await cardB.locator('.card-price').click();
+    const priceboxB = guest.locator('#pricebox');
+    await expect(priceboxB.locator('.pricebox-table thead')).toContainText('5 节');
+    await expect(priceboxB.locator('.pricebox-table thead')).toContainText('10 节');
+    await expect(priceboxB.locator('.pricebox-table thead')).not.toContainText('3 节');
+    await expect(priceboxB.locator('.pricebox-table tbody tr').first().locator('td')).toHaveText(['¥136', '¥146', '¥144', '¥160']);
+    await priceboxB.locator('.pricebox-close').click();
+
+    // 客户页面只出现售价，不出现采购价/包材成本。
+    const html = (await (await page.request.get(`/c/${catalog.token}`)).text());
+    expect(html).toContain('¥139 起');
+    expect(html).not.toContain('3.2');
+    expect(html).not.toContain('E2E图册供应商');
+
+    // 管理页的毛利率输入框随图册回显；卡片上显示徽标。
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '产品图册', exact: true }).click();
+    const card = page.locator('.catalog-page article', { hasText: `E2E图册报价${stamp}` });
+    await expect(card).toContainText('毛利率 20%');
+    await card.getByRole('button', { name: '选品编辑' }).click();
+    await expect(page.getByLabel('图册毛利率')).toHaveValue('20');
+  } finally {
+    await page.request.put('/api/settings/battery-price-matrix', { data: previousMatrix });
+    await page.request.put('/api/settings/charger-prices', { data: { items: previousChargers } });
+    await page.request.delete(`/api/catalogs/${catalog.id}`);
+    await page.request.delete(`/api/products/${productA.id}`);
+    await page.request.delete(`/api/products/${productB.id}`);
+    await anonymous?.close();
+  }
+});

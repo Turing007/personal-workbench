@@ -37,6 +37,7 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
   const [view, setView] = useState<'list' | 'edit'>('list');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [name, setName] = useState('');
+  const [markup, setMarkup] = useState('20');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'active' | 'all'>('active');
@@ -107,10 +108,12 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
         const detail = await getCatalog(catalog.id);
         setEditingId(catalog.id);
         setName(detail.name);
+        setMarkup(String(detail.markupPercent ?? 0));
         setSelectedIds(new Set(detail.productIds.map(String)));
       } else {
         setEditingId(null);
         setName('');
+        setMarkup('20');
         setSelectedIds(new Set());
       }
       setQuery('');
@@ -170,11 +173,12 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
     setBusy(true);
     try {
       const productIds = [...selectedIds].map(Number);
+      const markupPercent = Math.max(0, Math.min(1000, Number(markup) || 0));
       if (editingId == null) {
-        await createCatalog({ name: trimmed, productIds });
+        await createCatalog({ name: trimmed, productIds, markupPercent });
         onNotify('图册已创建，链接已生成', 'success');
       } else {
-        await updateCatalog(editingId, { name: trimmed, productIds });
+        await updateCatalog(editingId, { name: trimmed, productIds, markupPercent });
         onNotify('已保存，链接内容立即更新', 'success');
       }
       await refresh();
@@ -210,9 +214,15 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
         <strong>{editingId == null ? '新建图册' : '选品编辑'}</strong>
       </div>
       <section className="table-panel" style={{ padding: 12, display: 'grid', gap: 10 }}>
-        <label className="label" style={{ maxWidth: 360 }}>图册名称
-          <input className="input" disabled={busy} value={name} maxLength={40} placeholder="如：2026 主推图册 / 给王总的报价图册" onChange={(event) => setName(event.target.value)} />
-        </label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-start' }}>
+          <label className="label" style={{ flex: '1 1 280px', maxWidth: 420 }}>图册名称
+            <input className="input" disabled={busy} value={name} maxLength={40} placeholder="如：2026 主推图册 / 给王总的报价图册" onChange={(event) => setName(event.target.value)} />
+          </label>
+          <label className="label" style={{ flex: '0 1 170px' }}>毛利率 %
+            <input className="input" type="number" min={0} max={1000} step={0.1} aria-label="图册毛利率" disabled={busy} value={markup} onChange={(event) => setMarkup(event.target.value)} />
+          </label>
+        </div>
+        <p className="label-hint" style={{ margin: 0 }}>图册报价 = 成本 ×（1 + 毛利率），人民币向上取整；成本含默认采购价、第一条包装与一个充电器，不含税运。填 0 或留空时不显示价格按钮；有毛利率但产品缺少采购价/电池价时显示「询价」。</p>
         <div className="page-toolbar table-toolbar" style={{ padding: 0 }}>
           <SearchInput value={query} onChange={setQuery} placeholder="搜品名、SKU、供应商、分类" />
           <select className="toolbar-select" aria-label="图册选品状态筛选" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'active' | 'all')}>
@@ -270,6 +280,7 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
           <strong style={{ fontSize: 14 }}>{catalog.name}</strong>
           <span className={catalog.enabled ? 'badge badge-success' : 'badge badge-neutral'}>{catalog.enabled ? '在用' : '已停用'}</span>
           <span className="badge badge-neutral">{catalog.itemCount} 个产品</span>
+          <span className={catalog.markupPercent > 0 ? 'badge badge-success' : 'badge badge-neutral'}>{catalog.markupPercent > 0 ? `毛利率 ${catalog.markupPercent}%` : '未报价'}</span>
           <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--tone-text-faint)' }}>打开 {catalog.viewCount} 次 · {formatViewedAt(catalog.lastViewedAt)}</span>
         </div>
         <code style={{ fontSize: 12, color: 'var(--tone-accent-text)', overflowWrap: 'anywhere', background: 'var(--tone-surface-frost)', border: '1px solid var(--tone-border-soft)', borderRadius: 5, padding: '5px 8px' }}>{publicUrl(catalog)}</code>

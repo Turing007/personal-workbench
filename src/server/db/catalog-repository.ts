@@ -6,6 +6,8 @@ export interface CatalogRecord {
   token: string;
   name: string;
   enabled: boolean;
+  /** 该图册的报价毛利率（%）；0 = 不向客户显示价格。 */
+  markupPercent: number;
   viewCount: number;
   lastViewedAt: string | null;
   createdAt: string;
@@ -23,6 +25,7 @@ function mapCatalog(row: Record<string, unknown> | undefined): CatalogRecord | u
     token: String(row.token),
     name: String(row.name),
     enabled: Number(row.enabled ?? 1) === 1,
+    markupPercent: Number(row.markup_percent ?? 0),
     viewCount: Number(row.view_count ?? 0),
     lastViewedAt: row.last_viewed_at == null ? null : String(row.last_viewed_at),
     createdAt: String(row.created_at),
@@ -55,12 +58,12 @@ export class CatalogRepository {
     return mapCatalog(this.database.prepare('SELECT * FROM catalogs WHERE token = ?').get(token) as Record<string, unknown> | undefined);
   }
 
-  create(input: { token: string; name: string; productIds: number[] }): number {
+  create(input: { token: string; name: string; productIds: number[]; markupPercent?: number }): number {
     const now = new Date().toISOString();
     return withTransaction(this.database, (database) => {
       const result = database
-        .prepare('INSERT INTO catalogs (token, name, enabled, view_count, created_at, updated_at) VALUES (?, ?, 1, 0, ?, ?)')
-        .run(input.token, input.name, now, now);
+        .prepare('INSERT INTO catalogs (token, name, enabled, markup_percent, view_count, created_at, updated_at) VALUES (?, ?, 1, ?, 0, ?, ?)')
+        .run(input.token, input.name, input.markupPercent ?? 0, now, now);
       const id = Number(result.lastInsertRowid);
       const insertItem = database.prepare('INSERT OR IGNORE INTO catalog_items (catalog_id, product_id, sort_order, created_at) VALUES (?, ?, ?, ?)');
       input.productIds.forEach((productId, index) => insertItem.run(id, productId, index, now));
@@ -68,16 +71,17 @@ export class CatalogRepository {
     });
   }
 
-  update(id: number, changes: { name?: string; enabled?: boolean; productIds?: number[] }): void {
+  update(id: number, changes: { name?: string; enabled?: boolean; productIds?: number[]; markupPercent?: number }): void {
     const now = new Date().toISOString();
     withTransaction(this.database, (database) => {
       const current = database.prepare('SELECT * FROM catalogs WHERE id = ?').get(id) as Record<string, unknown> | undefined;
       if (!current) return;
       const name = changes.name ?? String(current.name);
       const enabled = changes.enabled === undefined ? Number(current.enabled ?? 1) === 1 : changes.enabled;
+      const markupPercent = changes.markupPercent ?? Number(current.markup_percent ?? 0);
       database
-        .prepare('UPDATE catalogs SET name = ?, enabled = ?, updated_at = ? WHERE id = ?')
-        .run(name, enabled ? 1 : 0, now, id);
+        .prepare('UPDATE catalogs SET name = ?, enabled = ?, markup_percent = ?, updated_at = ? WHERE id = ?')
+        .run(name, enabled ? 1 : 0, markupPercent, now, id);
       if (changes.productIds !== undefined) {
         // 保留仍在册产品的「加入时间」：整表重建不会把老品洗成新品；是否算「新品」由服务层按起算日判定。
         const existing = database

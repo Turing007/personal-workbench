@@ -2,17 +2,18 @@ import { escapeHtml } from './quotation-template.js';
 import { parseParameterRows, packagingDetailBlock, type CatalogProduct, type PackagingDetailBlock } from './product-catalog-template.js';
 import type { CompanySnapshot } from '../../shared/documents.js';
 import { SITE_FILINGS, beianFooterItems } from '../../shared/site-filings.js';
+import type { PublicCatalogProduct } from '../services/catalog-service.js';
 
 /**
  * 在线图册（客户打开的样子）：独立轻量页，不加载工作台登录包。
  * 客户版口径与 PDF 完全一致：只有品名/SKU/参数/颜色插脚/包装，供应商与价格根本不出现在这份 HTML 里。
  */
 export interface PublicCatalogPageData {
-  catalog: { name: string; token: string };
+  catalog: { name: string; token: string; markupPercent: number };
   company: CompanySnapshot;
-  groups: Array<{ category: string; products: CatalogProduct[] }>;
+  groups: Array<{ category: string; products: PublicCatalogProduct[] }>;
   /** 起算日之后加入图册的新品；空数组时页面不排「新品」分区。 */
-  newArrivals: CatalogProduct[];
+  newArrivals: PublicCatalogProduct[];
 }
 
 interface CardDetail {
@@ -53,10 +54,29 @@ function renderCover(data: PublicCatalogPageData): string {
   <div class="catalog-caption">${escapeHtml(catalog.name)}<span>点产品卡片看大图与详细参数</span></div>`;
 }
 
-function renderCard(product: CatalogProduct, token: string, isNew = false): string {
+/** 卡片底部的价格按钮：有报价显示「¥xx 起」，没报价显示「询价」；点开看全部配置。 */
+function renderPriceButton(product: PublicCatalogProduct, showPrices: boolean): string {
+  if (!showPrices) return '';
+  if (!product.priceTable) {
+    const data = escapeHtml(JSON.stringify({ name: product.name, inquiry: true }));
+    return `<button class="card-price is-inquiry" type="button" data-price="${data}">询价</button>`;
+  }
+  const table = product.priceTable;
+  const data = escapeHtml(JSON.stringify({
+    name: product.name,
+    voltage: table.voltage,
+    capacities: table.capacities,
+    columns: table.columns,
+    prices: table.prices,
+    minPrice: table.minPrice,
+  }));
+  return `<button class="card-price" type="button" data-price="${data}" title="查看全部配置价格"><span>价格</span><strong>¥${table.minPrice} 起</strong></button>`;
+}
+
+function renderCard(product: PublicCatalogProduct, token: string, isNew = false, showPrices = false): string {
   const image = `/c/${token}/img/${product.id}`;
   const detail = escapeHtml(JSON.stringify(cardDetail(product)));
-  // 卡片只展示名称与 SKU；全部参数、颜色插脚与包装都在点开的大图层里看。
+  // 卡片只展示名称、SKU 与价格按钮；全部参数、颜色插脚与包装都在点开的大图层里看。
   return `<article class="card" data-large="${image}?size=960" data-detail="${detail}" data-search="${escapeHtml(`${product.name} ${product.sku ?? ''}`.toLowerCase())}" title="点开看大图与详细参数">
     ${isNew ? '<span class="card-badge">新品</span>' : ''}
     <div class="card-image">
@@ -64,6 +84,7 @@ function renderCard(product: CatalogProduct, token: string, isNew = false): stri
     </div>
     <h3>${escapeHtml(product.name)}</h3>
     ${product.sku ? `<div class="card-sku">${escapeHtml(product.sku)}</div>` : ''}
+    ${renderPriceButton(product, showPrices)}
   </article>`;
 }
 
@@ -71,17 +92,19 @@ export function renderPublicCatalogPage(data: PublicCatalogPageData): string {
   const token = data.catalog.token;
   const { groups, newArrivals } = data;
   const newIds = new Set(newArrivals.map((product) => product.id));
+  // 图册毛利率为 0 = 这本图册不报价：不渲染价格按钮，已有链接保持原样。
+  const showPrices = Number(data.catalog.markupPercent) > 0;
   const categoryOptions = [
     newArrivals.length ? '<option value="new-arrivals">新品</option>' : '',
     ...groups.map((group, index) => `<option value="cat-${index}">${escapeHtml(group.category)}（${group.products.length}）</option>`),
   ].join('');
   const newSection = newArrivals.length ? `<section class="cat" id="new-arrivals">
     <h2>新品<span>${newArrivals.length} 款</span></h2>
-    <div class="grid">${newArrivals.map((product) => renderCard(product, token, true)).join('')}</div>
+    <div class="grid">${newArrivals.map((product) => renderCard(product, token, true, showPrices)).join('')}</div>
   </section>` : '';
   const sections = groups.map((group, index) => `<section class="cat" id="cat-${index}">
     <h2>${escapeHtml(group.category)}<span>${group.products.length} 款</span></h2>
-    <div class="grid">${group.products.map((product) => renderCard(product, token, newIds.has(product.id))).join('')}</div>
+    <div class="grid">${group.products.map((product) => renderCard(product, token, newIds.has(product.id), showPrices)).join('')}</div>
   </section>`).join('');
   const footerName = data.company.name.trim() || data.catalog.name;
   const footer = [escapeHtml(footerName), data.company.phone ? escapeHtml(data.company.phone.trim()) : ''].filter(Boolean).join(' · ');
@@ -132,6 +155,30 @@ export function renderPublicCatalogPage(data: PublicCatalogPageData): string {
   .card-image img { width: 100%; height: 100%; object-fit: contain; display: block; }
   .card h3 { margin: 4px 0 0; font-size: 14px; line-height: 1.35; }
   .card-sku { font-size: 12px; color: #2f6f6a; font-weight: 600; }
+  /* 卡片底部价格按钮：有报价显示最低价「¥xx 起」，没报价显示询价。 */
+  .card-price { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; border: 1px solid #0f766e; border-radius: 999px; padding: 6px 8px; background: #f0fdfa; color: #0f766e; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .card-price span { font-weight: 400; opacity: .85; }
+  .card-price strong { font-size: 14px; font-variant-numeric: tabular-nums; }
+  .card-price:active { opacity: .85; }
+  .card-price.is-inquiry { border-color: #dbe3ea; background: #f7f9fa; color: #3d434a; font-weight: 500; }
+  /* 价格弹层：容量 × 节数矩阵，只显示最终售价；窄屏内部横向滚动。 */
+  .pricebox { position: fixed; inset: 0; z-index: 21; display: none; place-items: center; padding: 14px; background: rgba(10,14,18,.72); }
+  .pricebox.is-open { display: grid; }
+  .pricebox-panel { width: min(100%, 900px); max-height: min(88vh, 780px); display: flex; flex-direction: column; overflow: hidden; border-radius: 12px; background: #fff; }
+  .pricebox-head { display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px 10px; border-bottom: 1px solid #eef0f2; }
+  .pricebox-head h3 { margin: 0; font-size: 16px; line-height: 1.35; }
+  .pricebox-head p { margin: 4px 0 0; font-size: 12px; color: #8b929a; }
+  .pricebox-close { flex: none; margin-left: auto; width: 34px; height: 34px; border: 0; border-radius: 50%; background: #f2f5f6; color: #3d434a; font-size: 20px; line-height: 1; cursor: pointer; }
+  .pricebox-scroll { overflow: auto; padding: 12px 16px; }
+  .pricebox-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .pricebox-table th, .pricebox-table td { padding: 7px 10px; border-bottom: 1px solid #eef0f2; text-align: center; white-space: nowrap; }
+  .pricebox-table thead th { position: sticky; top: 0; z-index: 1; background: #f7fafb; color: #3d434a; font-weight: 600; }
+  .pricebox-table tbody th { position: sticky; left: 0; z-index: 1; background: #fff; color: #15181c; font-weight: 600; text-align: left; }
+  .pricebox-table tbody tr:last-child th, .pricebox-table tbody tr:last-child td { border-bottom: 0; }
+  .pricebox-table td { color: #0f766e; font-variant-numeric: tabular-nums; }
+  .pricebox-table td.is-empty { color: #b3b9bf; }
+  .pricebox-note { margin: 0; padding: 10px 16px 14px; border-top: 1px solid #eef0f2; color: #8b929a; font-size: 11.5px; line-height: 1.5; }
+  .pricebox-empty { padding: 32px 16px; text-align: center; color: #8b929a; font-size: 13px; }
   .empty { padding: 48px 16px; text-align: center; color: #8b929a; }
   /* 底部固定条：新品角标（.card-badge）是带 z-index 的定位元素，滚动经过时会浮在普通流上方——
      底栏必须显式抬到更高层级才能压住它们；不透明底色保证任何内容不透出。安全区 + .wrap 底部留白，页尾不遮内容。
@@ -203,6 +250,19 @@ ${filingsHtml ? `<div class="site-filings">${filingsHtml}</div>` : ''}
     </div>
   </div>
   <button class="lightbox-close" type="button" aria-label="关闭">×</button>
+</div>
+<div class="pricebox" id="pricebox">
+  <div class="pricebox-panel">
+    <div class="pricebox-head">
+      <div>
+        <h3 id="pricebox-title"></h3>
+        <p id="pricebox-sub"></p>
+      </div>
+      <button class="pricebox-close" type="button" aria-label="关闭价格">×</button>
+    </div>
+    <div class="pricebox-scroll" id="pricebox-scroll"></div>
+    <p class="pricebox-note">价格含整机、包装与一个充电器；不含税费与运费。</p>
+  </div>
 </div>
 ${data.company.wechatQrRelativePath ? `<div class="qr-zoom" id="qr-zoom" hidden><img src="/c/${data.catalog.token}/qr" alt="微信二维码"><span>扫码加微信 · 点击任意处关闭</span></div>` : ''}
 <script>
@@ -326,6 +386,75 @@ ${data.company.wechatQrRelativePath ? `<div class="qr-zoom" id="qr-zoom" hidden>
     }
     function close() { box.classList.remove('is-open'); image.removeAttribute('src'); }
 
+    // 价格弹层：卡片按钮点开后按容量 × 节数（一电一充/两电一充）列出全部售价。
+    var priceBox = document.getElementById('pricebox');
+    var priceTitle = document.getElementById('pricebox-title');
+    var priceSub = document.getElementById('pricebox-sub');
+    var priceScroll = document.getElementById('pricebox-scroll');
+    function openPrice(trigger) {
+      var data = {};
+      try { data = JSON.parse(trigger.getAttribute('data-price') || '{}'); } catch (error) { data = {}; }
+      priceTitle.textContent = data.name || '';
+      priceSub.textContent = '';
+      priceScroll.textContent = '';
+      if (data.inquiry || !data.capacities || !data.capacities.length) {
+        var empty = document.createElement('div');
+        empty.className = 'pricebox-empty';
+        empty.textContent = '该产品暂未配置报价，请联系我们。';
+        priceScroll.appendChild(empty);
+      } else {
+        priceSub.textContent = (data.voltage || '') + ' 电池 · 价格含整机、包装与一个充电器';
+        var table = document.createElement('table');
+        table.className = 'pricebox-table';
+        var thead = document.createElement('thead');
+        var groups = [];
+        (data.columns || []).forEach(function (column) {
+          var last = groups[groups.length - 1];
+          if (last && last.packCount === column.packCount) last.columns.push(column);
+          else groups.push({ packCount: column.packCount, columns: [column] });
+        });
+        var headGroup = document.createElement('tr');
+        var corner = document.createElement('th');
+        corner.rowSpan = 2;
+        corner.textContent = '电池容量';
+        headGroup.appendChild(corner);
+        groups.forEach(function (group) {
+          var th = document.createElement('th');
+          th.colSpan = group.columns.length;
+          th.textContent = group.packCount + ' 节';
+          headGroup.appendChild(th);
+        });
+        var headVariant = document.createElement('tr');
+        (data.columns || []).forEach(function (column) {
+          var th = document.createElement('th');
+          th.textContent = column.label;
+          headVariant.appendChild(th);
+        });
+        thead.appendChild(headGroup);
+        thead.appendChild(headVariant);
+        table.appendChild(thead);
+        var tbody = document.createElement('tbody');
+        (data.capacities || []).forEach(function (capacity, rowIndex) {
+          var tr = document.createElement('tr');
+          var th = document.createElement('th');
+          th.textContent = capacity + ' mAh';
+          tr.appendChild(th);
+          (data.columns || []).forEach(function (_column, colIndex) {
+            var td = document.createElement('td');
+            var price = data.prices && data.prices[rowIndex] ? data.prices[rowIndex][colIndex] : null;
+            if (price == null) { td.textContent = '—'; td.className = 'is-empty'; }
+            else td.textContent = '¥' + price;
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        priceScroll.appendChild(table);
+      }
+      priceBox.classList.add('is-open');
+    }
+    function closePrice() { priceBox.classList.remove('is-open'); }
+
     // 二维码点击放大：手机不方便直接扫 54px 的小图，点开接近全屏宽。
     var qrZoom = document.getElementById('qr-zoom');
     var coverQr = document.querySelector('.cover-qr');
@@ -335,13 +464,17 @@ ${data.company.wechatQrRelativePath ? `<div class="qr-zoom" id="qr-zoom" hidden>
     }
 
     document.addEventListener('click', function (event) {
+      var priceTrigger = event.target.closest('.card-price');
+      if (priceTrigger) { event.preventDefault(); openPrice(priceTrigger); return; }
       var trigger = event.target.closest('[data-detail]');
       if (trigger) { open(trigger); return; }
+      if (event.target === priceBox || event.target.closest('.pricebox-close')) { closePrice(); return; }
       if (event.target === box || event.target === panel || event.target.closest('.lightbox-close')) close();
     });
     document.addEventListener('keydown', function (event) {
       if (event.key !== 'Escape') return;
       close();
+      closePrice();
       if (qrZoom) qrZoom.hidden = true;
     });
   })();

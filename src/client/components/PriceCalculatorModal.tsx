@@ -16,7 +16,8 @@ import { copyText } from '../copy-text';
 import { thumbUrl } from '../image-urls';
 import type { ProductRecord } from './ProductEditor';
 import { accessoryTotals, type AccessoryPrice } from '../../shared/accessory-prices';
-import { BATTERY_COMBO_VARIANTS, batteryCellPrice, batteryMatrixVisible, batteryUnitPriceOf, type BatteryPriceMatrix } from '../../shared/battery-prices';
+import { packCountMatchesVoltage } from '../../shared/battery-voltage';
+import { BATTERY_COMBO_VARIANTS, batteryCellPrice, batteryUnitPriceOf, type BatteryPriceMatrix } from '../../shared/battery-prices';
 import {
   autoShippingCost,
   batteryComboName,
@@ -259,12 +260,13 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const bareCost = comboTotalCost({ baseCost: base, packaging: pack, shipping: bareShip, taxPercent: tax, accessoryPrice });
   const bareSale = planSalePrice(bareCost, markupValue);
 
-  // 设置里关掉眼睛的行/列对所有产品全局隐藏，不进入计算器。
-  const visibleMatrix = batteryMatrix ? batteryMatrixVisible(batteryMatrix) : null;
-  const capacities = visibleMatrix?.capacities ?? [];
+  // 电池矩阵只按产品电压过滤节数：12V=3 节、16.8V=4 节、21V=5 节及以上。
+  const capacities = batteryMatrix?.capacities ?? [];
   // 列 = 每个节数 × 两种成套口径；顺序跟随设置里的节数顺序。
-  const combos = visibleMatrix
-    ? visibleMatrix.packCounts.flatMap((packCount) => BATTERY_COMBO_VARIANTS.map((variant) => ({ packCount, batteryCount: variant.batteryCount, label: variant.label })))
+  const combos = batteryMatrix
+    ? batteryMatrix.packCounts
+      .filter((packCount) => packCountMatchesVoltage(packCount, product.batteryVoltage))
+      .flatMap((packCount) => BATTERY_COMBO_VARIANTS.map((variant) => ({ packCount, batteryCount: variant.batteryCount, label: variant.label })))
     : [];
 
   const copySalePrice = async (text: string, key: string) => {
@@ -276,7 +278,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
 
   /** 一格组合的成本/售价：矩阵里该单元格没定价时返回 null（显示 —）。 */
   const comboValues = (capacity: number, packCount: number, batteryCount: number) => {
-    const unit = batteryUnitPriceOf(visibleMatrix!, capacity, packCount);
+    const unit = batteryUnitPriceOf(batteryMatrix!, capacity, packCount);
     if (unit == null) return null;
     const shipping = shippingFor(packCount, batteryCount, true);
     const cost = comboTotalCost({
@@ -634,9 +636,12 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
 
       <div className="price-calc2-matrix">
         {!batteryMatrix && <div className="table-state">正在加载电池价格…</div>}
-        {/* 只有矩阵真的没建过时才提示。行/列被眼睛关掉属于主动隐藏，不再提醒「都关掉了」。 */}
+        {/* 只有矩阵真的没建过时才提示。 */}
         {batteryMatrix && !batteryMatrix.capacities.length && !batteryMatrix.packCounts.length && (
           <div className="table-state">电池价格矩阵还是空的：去「设置 → 电池与充电器」加容量与节数。</div>
+        )}
+        {batteryMatrix && !!batteryMatrix.capacities.length && !!batteryMatrix.packCounts.length && !combos.length && (
+          <div className="table-state">该产品是 {product.batteryVoltage ?? '21V'}，电池矩阵里没有匹配的节数：12V 对应 3 节、16.8V 对应 4 节、21V 对应 5 节及以上。</div>
         )}
         {batteryMatrix && !!capacities.length && <div className="price-calc2-scroll">
           <table className="battery-price-table">
@@ -703,11 +708,10 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
       })}</div> : <div className="empty-state">还没有保存过方案。上面算好后点「保存为方案」。</div>}
     </div>}
     </Modal>
-    {/* 电池价格查询：参考表列出完整矩阵（含行/列眼睛关掉的项），不受小眼睛影响；
-        成本隐藏时入口一起收起，避免发客户截图时暴露进价。 */}
+    {/* 电池价格查询：参考表列出完整矩阵，不受产品电压过滤；成本隐藏时入口一起收起，避免发客户截图时暴露进价。 */}
     <Modal open={batteryPricesOpen} title="电池价格" onClose={() => setBatteryPricesOpen(false)} width={620} layer={22}>
       <div className="battery-query">
-        <p className="battery-query-hint">单价 = 一块电池包的价格（元）；未定价的组合显示 —。这里列出全部容量与节数，行/列眼睛关掉的也照常显示价格（只是不进计算器）。</p>
+        <p className="battery-query-hint">单价 = 一块电池包的价格（元）；未定价的组合显示 —。这里列出全部容量与节数，不受产品电压过滤（计算器里只显示适配电压的节数）。</p>
         {batteryMatrix && batteryMatrix.capacities.length && batteryMatrix.packCounts.length ? (
           <div className="battery-query-scroll">
             <table className="battery-query-table">

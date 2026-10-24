@@ -1,4 +1,5 @@
 import type { CatalogProduct } from '../documents/product-catalog-template.js';
+import { normalizeBatteryVoltage } from '../../shared/battery-voltage.js';
 
 /**
  * 产品行 → 前端/图册用的产品结构。原先散在 products 路由里，图册模块（在线链接版）
@@ -48,6 +49,7 @@ export function mapProduct(row: Record<string, unknown> | undefined) {
     supplier: String(row.supplier),
     colors: Array.isArray(row.colors) ? row.colors : [],
     batteryPlugs: Array.isArray(row.batteryPlugs) ? row.batteryPlugs : [],
+    batteryVoltage: normalizeBatteryVoltage(row.batteryVoltage ?? row.battery_voltage),
     accessories: String(row.accessories),
     /** 产品专有的「配件与价格」（售价计算器用）；客户版口径会剥掉，见 toCatalogProduct。 */
     accessoryPrices: Array.isArray(row.accessoryPrices) ? row.accessoryPrices : [],

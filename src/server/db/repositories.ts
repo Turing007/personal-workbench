@@ -39,6 +39,8 @@ export interface ProductInput {
   supplier?: string;
   colors?: string[];
   batteryPlugs?: string[];
+  /** 12V / 16.8V / 21V；缺省保持原值（新建默认 21V）。 */
+  batteryVoltage?: string;
   accessories?: string;
   remark?: string;
   /** 草稿产品允许信息不完整，在售与停售都要求品名必填。 */
@@ -378,7 +380,8 @@ export class DatabaseRepositories {
         database
           .prepare(
             `UPDATE products SET name = ?, specification = ?, category = ?, purchase_price = ?,
-              parameters = ?, supplier = ?, colors_json = ?, battery_plugs_json = ?, accessories = ?, remark = ?, status = ?,
+              parameters = ?, supplier = ?, colors_json = ?, battery_plugs_json = ?, battery_voltage = COALESCE(?, battery_voltage),
+              accessories = ?, remark = ?, status = ?,
               accessory_prices = COALESCE(?, accessory_prices),
               accessory_prices_customized = CASE WHEN ? THEN 1 ELSE accessory_prices_customized END,
               updated_at = ?
@@ -393,6 +396,7 @@ export class DatabaseRepositories {
             mirrorSupplier,
             json(input.colors),
             json(input.batteryPlugs),
+            input.batteryVoltage ?? null,
             input.accessories ?? '',
             input.remark ?? '',
             input.status ?? 'active',
@@ -408,8 +412,8 @@ export class DatabaseRepositories {
           database
             .prepare(
               `INSERT INTO products
-                (name, sku, specification, parameters, category, purchase_price, supplier, colors_json, battery_plugs_json, accessories, accessory_prices, accessory_prices_customized, remark, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                (name, sku, specification, parameters, category, purchase_price, supplier, colors_json, battery_plugs_json, battery_voltage, accessories, accessory_prices, accessory_prices_customized, remark, status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
             .run(
               input.name.trim(),
@@ -421,6 +425,7 @@ export class DatabaseRepositories {
               mirrorSupplier,
               json(input.colors),
               json(input.batteryPlugs),
+              input.batteryVoltage ?? '21V',
               input.accessories ?? '',
               json(accessoryPrices),
               accessoryPricesProvided ? 1 : 0,

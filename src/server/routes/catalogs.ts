@@ -29,7 +29,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, options: { ser
   app.post('/api/catalogs', async (request, reply) => {
     try {
       const body = asRecord(request.body);
-      return sendSuccess(reply, service.create({ name: body.name, productIds: body.productIds }), 201);
+      return sendSuccess(reply, service.create({ name: body.name, productIds: body.productIds, markupPercent: body.markupPercent }), 201);
     } catch (error) {
       return sendFailure(reply, mapCatalogError(error));
     }
@@ -39,7 +39,7 @@ export async function registerCatalogRoutes(app: FastifyInstance, options: { ser
     try {
       const body = asRecord(request.body);
       const id = parseId((request.params as { id?: string }).id);
-      return sendSuccess(reply, service.update(id, { name: body.name, enabled: body.enabled, productIds: body.productIds }));
+      return sendSuccess(reply, service.update(id, { name: body.name, enabled: body.enabled, productIds: body.productIds, markupPercent: body.markupPercent }));
     } catch (error) {
       return sendFailure(reply, mapCatalogError(error));
     }

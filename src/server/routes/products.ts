@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import sharp from 'sharp';
 import type { DatabaseRepositories, PackagingInput, ProductImportInput, ProductInput } from '../db/repositories.js';
 import { normalizeProductStatus } from '../../shared/product-status.js';
+import { normalizeBatteryVoltage } from '../../shared/battery-voltage.js';
 import { FileStore, FileStoreError } from '../files/file-store.js';
 import {
   ApiError,
@@ -333,6 +334,8 @@ function parseProductInput(value: unknown): ProductInput {
     supplier: optionalText(body.supplier, 'supplier', '供应商'),
     colors: parseStringArray(body.colors, 'colors', '颜色', DEFAULT_COLORS),
     batteryPlugs: parseStringArray(body.batteryPlugs, 'batteryPlugs', '电池插脚', DEFAULT_BATTERY_PLUGS),
+    // 电池电压：12V / 16.8V / 21V；没带（如 Excel 导入）保持原值。
+    batteryVoltage: body.batteryVoltage === undefined ? undefined : normalizeBatteryVoltage(body.batteryVoltage),
     accessories: optionalText(body.accessories, 'accessories', '配件'),
     remark: optionalText(body.remark, 'remark', '备注'),
     status,
