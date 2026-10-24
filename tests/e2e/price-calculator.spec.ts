@@ -72,7 +72,6 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
       .toHaveText('¥9');
     await priceDialog.locator('.modal-close').click();
     await expect(priceDialog).toHaveCount(0);
-
     // 左参数：采购价从默认档自动带出；毛利率改 15。
     // 运费默认自动：裸机 = 内盒重量 0.9kg × 单价 1.5 = 1.35 → 成本 101.5 / 售价 116.5 / 毛利 15。
     await expect(dialog.getByLabel('采购价')).toHaveValue('100');
@@ -132,6 +131,7 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     await expect(dialog.locator('.battery-price-profit')).toHaveCount(0);
     await expect(dialog.getByLabel('采购价')).toHaveCount(0);
     await expect(dialog.getByRole('button', { name: '保存为方案' })).toHaveCount(0);
+    // 入口随成本一起收起（发客户截图时不暴露电池进价），打开后的参考表仍列全部价格（另有用例覆盖）。
     await expect(dialog.getByRole('button', { name: '电池价格' })).toHaveCount(0);
     await expect(dialog.locator('.price-calc2-head')).toContainText(`E2E矩阵算价${stamp}`);
     await expect(dialog.locator('.price-calc2-thumb')).toBeVisible();
@@ -212,6 +212,61 @@ test('售价计算器：矩阵算价、点售价复制、保存方案与载入�
     await bareCopy.click();
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('（不含税运）');
   } finally {
+    await page.request.delete(`/api/products/${product.id}`);
+  }
+});
+
+test('电池价格查询：列出全部容量与节数，包括设置里关掉眼睛的行列', async ({ page }) => {
+  const stamp = Date.now();
+  const created = await page.request.post('/api/products', {
+    data: {
+      name: `E2E电池参考表${stamp}`,
+      supplier: 'E2E算价供应商',
+      status: 'active',
+      category: '电动工具',
+      purchaseQuotes: [{ supplier: 'E2E算价供应商', variant: '', price: 100, isDefault: true }],
+      packaging: [{ name: '彩盒包装', packCount: 24, innerWeight: 0.9, purchasePrice: 0 }],
+    },
+  });
+  expect(created.ok()).toBe(true);
+  const product = (await created.json()).data as { id: number };
+  // 1500 行与 20 节列在设置里关掉眼睛：计算器不显示，但参考表要能查到价格。
+  expect((await page.request.put('/api/settings/battery-price-matrix', {
+    data: {
+      capacities: [1300, 1500],
+      packCounts: [5, 20],
+      prices: [[8, 30], [9, 42]],
+      capacityHidden: [false, true],
+      packCountHidden: [false, true],
+    },
+  })).ok()).toBe(true);
+
+  try {
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+    await page.locator('.products-page .page-toolbar .search-control input').fill(`E2E电池参考表${stamp}`);
+    await expect(page.locator('.products-page .table-state')).toHaveCount(0);
+    await page.locator('.products-page .price-calc-entry').first().click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('售价计算');
+
+    // 主矩阵遵守小眼睛：1500 行与 20 节列都不出现。
+    await expect(dialog.locator('.battery-price-table .battery-price-capacity')).toHaveText(['1300mAh']);
+    await expect(dialog.locator('.battery-price-table thead')).not.toContainText('20节');
+
+    // 电池价格参考表不受小眼睛影响：全部行列都在（隐藏的行列也照常给价）。
+    await dialog.getByRole('button', { name: '电池价格' }).click();
+    const priceDialog = page.getByRole('dialog', { name: '电池价格' });
+    await expect(priceDialog.locator('.battery-query-table thead')).toContainText('5 节');
+    await expect(priceDialog.locator('.battery-query-table thead')).toContainText('20 节');
+    await expect(priceDialog.locator('.battery-query-table tbody tr', { hasText: '1500 mAh' }).locator('td'))
+      .toHaveText(['¥9', '¥42']);
+    await expect(priceDialog.locator('.battery-query-table tbody tr', { hasText: '1300 mAh' }).locator('td'))
+      .toHaveText(['¥8', '¥30']);
+  } finally {
+    await page.request.put('/api/settings/battery-price-matrix', {
+      data: { capacities: [1300, 1500, 2000], packCounts: [5, 10, 15, 20], prices: [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]] },
+    });
     await page.request.delete(`/api/products/${product.id}`);
   }
 });

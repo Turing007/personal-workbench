@@ -11,7 +11,7 @@ test.beforeEach(async ({ context }) => {
   await injectSession(context, sessionCookie);
 });
 
-test('配件带重量：编辑器可维护，计算器自动计入配件价格与实重', async ({ page }) => {
+test('配件默认不选：勾选后价格进成本、重量进实重，方案保存与载入还原选择', async ({ page }) => {
   expect((await page.request.put('/api/settings/volume-divisor', { data: { divisor: 8000 } })).ok()).toBe(true);
   const stamp = Date.now();
   const created = await page.request.post('/api/products', {
@@ -45,25 +45,36 @@ test('配件带重量：编辑器可维护，计算器自动计入配件价格�
     await editor.getByRole('button', { name: '取消' }).click();
     await expect(editor).toHaveCount(0);
 
-    // 计算器：配件默认全选，汇总带价格与重量；实重 1kg、抛重 1.5kg，运费 1.5 × 1.5 = 2.25。
+    // 计算器：配件默认不选（成本只含采购价与运费）。
+    // 实重 0.5kg < 抛重 1.5kg → 运费 1.5 × 1.5 = 2.25；成本 102.25（界面按 0.5 取整显示 102.5）。
     await page.locator('.price-calc-entry:visible').first().click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toContainText('售价计算');
     const accessoryTrigger = dialog.getByRole('button', { name: '选择配件' });
+    await expect(accessoryTrigger).toContainText('未选择');
+    await expect(dialog.locator('.price-calc2-accessories-head')).toContainText('未选');
+    await expect(dialog.locator('.price-calc2-accessories-list')).toHaveCount(0);
+    await expect(dialog.locator('.price-calc2-shipweight')).toContainText('实重 0.5kg');
+    await expect(dialog.locator('.price-calc2-shipweight')).toContainText('抛重 1.5kg');
+    await expect(dialog.getByLabel('运费金额')).toHaveValue('2.25');
+    await expect(dialog.locator('.price-calc2-bare')).toContainText('成本 ¥102.5');
+
+    // 下拉幕布里全选：配件价与重量一起计入；实重 1kg、抛重 1.5kg，运费仍是 2.25。
+    await accessoryTrigger.click();
+    const curtain = dialog.getByRole('group', { name: '选择配件' });
+    await expect(curtain).toContainText('选择配件（价格与重量一起计入）');
+    await expect(curtain.getByRole('button', { name: /^套筒/ })).toHaveAttribute('aria-pressed', 'false');
+    await curtain.getByRole('button', { name: '全选' }).click();
     await expect(accessoryTrigger).toContainText('全部 2 项');
     await expect(dialog.locator('.price-calc2-accessories-head')).toContainText('¥10.25 · 0.5kg');
     await expect(dialog.locator('.price-calc2-accessories-list')).toContainText('套筒、说明书');
     await expect(dialog.locator('.price-calc2-shipweight')).toContainText('实重 1kg');
-    await expect(dialog.locator('.price-calc2-shipweight')).toContainText('抛重 1.5kg');
     await expect(dialog.getByLabel('运费金额')).toHaveValue('2.25');
     // 成本 = 采购 100 + 配件 10.25 + 运费 2.25 = 112.5（毛利默认 0）。
     await expect(dialog.locator('.price-calc2-bare')).toContainText('成本 ¥112.5');
 
-    // 下拉幕布里取消「套筒」：只剩说明书 0.1kg，配件价归零。
+    // 取消「套筒」：只剩说明书 0.1kg，配件价归零。
     // 实重 0.6kg < 抛重 1.5kg，运费仍是 2.25；成本 = 100 + 2.25 = 102.25（界面按 0.5 取整显示 102.5）。
-    await accessoryTrigger.click();
-    const curtain = dialog.getByRole('group', { name: '选择配件' });
-    await expect(curtain).toContainText('选择配件（价格与重量一起计入）');
     await curtain.getByRole('button', { name: /^套筒/ }).click();
     await expect(accessoryTrigger).toContainText('已选 1/2 项');
     await expect(dialog.locator('.price-calc2-accessories-head')).toContainText('¥0 · 0.1kg');
@@ -82,8 +93,8 @@ test('配件带重量：编辑器可维护，计算器自动计入配件价格�
 
     // 载入方案：配件选择按名称还原（方案里存的是「只要说明书」），结果与保存时一致。
     await accessoryTrigger.click();
-    await curtain.getByRole('button', { name: '全选' }).click();
-    await expect(accessoryTrigger).toContainText('全部 2 项');
+    await curtain.getByRole('button', { name: '清空' }).click();
+    await expect(accessoryTrigger).toContainText('未选择');
     await curtain.getByRole('button', { name: '完成' }).click();
     await planCard.getByRole('button', { name: '载入' }).click();
     await expect(accessoryTrigger).toContainText('已选 1/2 项');

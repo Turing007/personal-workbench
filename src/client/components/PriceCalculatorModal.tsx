@@ -101,8 +101,8 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const [batteryPricesOpen, setBatteryPricesOpen] = useState(false);
   /** 配件下拉幕布：多选，只把选中的配件计入成本与实重。 */
   const [accessoryPickerOpen, setAccessoryPickerOpen] = useState(false);
-  /** 选中的配件名称；null = 全选（默认口径，打开计算器不会突然少算配件）。 */
-  const [selectedAccessoryNames, setSelectedAccessoryNames] = useState<string[] | null>(null);
+  /** 选中的配件名称；默认空 = 本次不选任何配件，需要时自己勾选。 */
+  const [selectedAccessoryNames, setSelectedAccessoryNames] = useState<string[]>([]);
   const accessoryAnchorRef = useRef<HTMLDivElement>(null);
   /** 体积重参数（cm³/kg）：默认取全局设置，载入方案时按方案快照覆盖。 */
   const [volumeDivisor, setVolumeDivisor] = useState(DEFAULT_VOLUME_DIVISOR);
@@ -139,7 +139,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     setChargerPrices([]);
     setChargerId('');
     setAccessoryPickerOpen(false);
-    setSelectedAccessoryNames(null);
+    setSelectedAccessoryNames([]);
     if (/^\d+$/.test(product.id)) {
       listPricePlans(product.id)
         .then((items) => { if (!cancelled) setPlans(items); })
@@ -191,31 +191,23 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     const totals = accessoryTotals(accessoryGroups.get(name)!);
     return { name, price: totals.price, weight: totals.weight };
   });
-  // null = 全选（默认口径：打开计算器不会突然少算配件）；数组 = 只计入这些名称。
-  const selectedNameSet = selectedAccessoryNames == null ? null : new Set(selectedAccessoryNames);
+  // 默认什么都不选：配件成本与重量只在明确勾选后才计入，不用先取消一轮。
+  const selectedNameSet = new Set(selectedAccessoryNames);
   const selectedAccessoryOptions = accessoryOptions
-    .filter((option) => selectedNameSet == null || selectedNameSet.has(option.name));
+    .filter((option) => selectedNameSet.has(option.name));
   const accessories = accessoryNames
-    .filter((name) => selectedNameSet == null || selectedNameSet.has(name))
+    .filter((name) => selectedNameSet.has(name))
     .flatMap((name) => accessoryGroups.get(name)!);
   const accessoryTotalsValue = accessoryTotals(accessories);
   const accessoryPrice = accessoryTotalsValue.price;
   const accessoryWeight = accessoryTotalsValue.weight;
-  const allAccessoriesSelected = selectedNameSet == null && accessoryNames.length > 0;
+  const allAccessoriesSelected = accessoryNames.length > 0 && accessories.length === accessoryNames.length;
 
-  /** 选择变化：选满就回到 null（默认全选），不存一份与「全选」等效的清单。 */
-  const applyAccessorySelection = (names: string[]) => {
-    setSelectedAccessoryNames(names.length >= accessoryNames.length ? null : names);
-  };
-  /** 点胶囊切换单项：当前是全选时，先展开成显式清单再剔除这一项。 */
+  /** 点胶囊切换单项。 */
   const toggleAccessory = (name: string) => {
-    if (selectedNameSet == null) {
-      applyAccessorySelection(accessoryNames.filter((item) => item !== name));
-      return;
-    }
-    applyAccessorySelection(selectedNameSet.has(name)
-      ? accessoryNames.filter((item) => selectedNameSet.has(item) && item !== name)
-      : accessoryNames.filter((item) => item === name || selectedNameSet.has(item)));
+    setSelectedAccessoryNames((current) => current.includes(name)
+      ? current.filter((item) => item !== name)
+      : accessoryNames.filter((item) => item === name || current.includes(item)));
   };
   const selectedAccessoryNamesForSave = selectedAccessoryOptions.map((item) => item.name);
 
@@ -364,16 +356,9 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
       const matched = chargerPrices.find((item) => item.name === params.chargerName);
       if (matched) setChargerId(matched.id);
       // 配件选择按名称还原；清单里已经删掉的名称自动忽略。
-      if (params.accessoryNames) {
-        const saved = Array.from(new Set(params.accessoryNames));
-        // 存的就是当前全部配件 → 回到「全选」默认态；空数组 = 明确一个都不计。
-        // 配件清单还没加载完时（accessoryNames 为空）保留显式清单，等清单到了再按名称套用。
-        const covered = accessoryNames.filter((name) => saved.includes(name)).length;
-        setSelectedAccessoryNames(accessoryNames.length > 0 && covered >= accessoryNames.length ? null : saved);
-      } else {
-        // 旧方案没记配件（那时是全部自动计入）：按全选回显。
-        setSelectedAccessoryNames(null);
-      }
+      // 旧方案没记配件（那时是全部自动计入）：按全选回显，保持当时的算法结果。
+      const saved = params.accessoryNames ?? accessoryNames;
+      setSelectedAccessoryNames(Array.from(new Set(saved)).filter((name) => accessoryNames.includes(name)));
       setMessage('');
     } else {
       // 旧格式方案（没存参数）：按明细里能认出来的行尽量回显。
@@ -454,7 +439,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
           >
             <span className="price-calc2-accessory-trigger-label">{!accessoryNames.length
               ? '无配件'
-              : allAccessoriesSelected ? `全部 ${accessoryNames.length} 项` : `已选 ${selectedAccessoryOptions.length}/${accessoryNames.length} 项`}</span>
+              : allAccessoriesSelected ? `全部 ${accessoryNames.length} 项` : selectedAccessoryOptions.length ? `已选 ${selectedAccessoryOptions.length}/${accessoryNames.length} 项` : '未选择'}</span>
             <ChevronDown size={13} />
           </button>
           {/* 选中的配件只留一行名称（超出省略），价格/重量的明细在幕布里看；
@@ -476,7 +461,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
                   <button
                     type="button"
                     className="search-history-clear"
-                    onClick={() => setSelectedAccessoryNames(null)}
+                    onClick={() => setSelectedAccessoryNames(accessoryNames)}
                   >全选</button>
                   <button
                     type="button"
@@ -493,7 +478,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
             </div>
             {!!accessoryNames.length && <div className="search-history-chips">
               {accessoryOptions.map((item) => {
-                const selected = selectedNameSet == null || selectedNameSet.has(item.name);
+                const selected = selectedNameSet.has(item.name);
                 return <button
                   key={item.name}
                   type="button"
@@ -633,24 +618,27 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
       })}</div> : <div className="empty-state">还没有保存过方案。上面算好后点「保存为方案」。</div>}
     </div>}
     </Modal>
-    {/* 电池价格查询：只读，按当前可见的容量 × 节数展示单价；成本隐藏时入口也一起收起。 */}
+    {/* 电池价格查询：参考表列出完整矩阵（含行/列眼睛关掉的项），不受小眼睛影响；
+        成本隐藏时入口一起收起，避免发客户截图时暴露进价。 */}
     <Modal open={batteryPricesOpen} title="电池价格" onClose={() => setBatteryPricesOpen(false)} width={620} layer={22}>
       <div className="battery-query">
-        <p className="battery-query-hint">单价 = 一块电池包的价格（元）；未定价的组合显示 —。只显示当前对所有产品可见的行/列。</p>
-        {visibleMatrix && visibleMatrix.capacities.length && visibleMatrix.packCounts.length ? (
+        <p className="battery-query-hint">单价 = 一块电池包的价格（元）；未定价的组合显示 —。这里列出全部容量与节数，行/列眼睛关掉的也照常显示价格（只是不进计算器）。</p>
+        {batteryMatrix && batteryMatrix.capacities.length && batteryMatrix.packCounts.length ? (
           <div className="battery-query-scroll">
             <table className="battery-query-table">
               <thead><tr>
                 <th className="battery-query-corner">容量 \ 节数</th>
-                {visibleMatrix.packCounts.map((packCount) => <th key={packCount}>{packCount} 节</th>)}
+                {batteryMatrix.packCounts.map((packCount) => <th key={packCount}>{packCount} 节</th>)}
               </tr></thead>
-              <tbody>{visibleMatrix.capacities.map((capacity, rowIndex) => <tr key={capacity}>
-                <th>{capacity} mAh</th>
-                {visibleMatrix.packCounts.map((packCount, colIndex) => {
-                  const price = batteryCellPrice(visibleMatrix, rowIndex, colIndex);
-                  return <td key={packCount}>{price > 0 ? `¥${round2(price)}` : '—'}</td>;
-                })}
-              </tr>)}</tbody>
+              <tbody>{batteryMatrix.capacities.map((capacity, rowIndex) => (
+                <tr key={capacity}>
+                  <th>{capacity} mAh</th>
+                  {batteryMatrix.packCounts.map((packCount, colIndex) => {
+                    const price = batteryCellPrice(batteryMatrix, rowIndex, colIndex);
+                    return <td key={packCount}>{price > 0 ? `¥${round2(price)}` : '—'}</td>;
+                  })}
+                </tr>
+              ))}</tbody>
             </table>
           </div>
         ) : <div className="empty-state">当前没有可查询的电池价格。</div>}
