@@ -188,19 +188,23 @@ test('类目配件可逐条加入本产品：需要哪个加哪个，同名保�
     const section = editor.locator('.accessory-prices-section');
     await expect(section.locator('tbody tr')).toHaveCount(1);
 
-    // 从类目加入：逐条列出，只把需要的「钻头 8mm」加进来；同名「9 件套筒」显示已加入。
-    await section.getByRole('button', { name: '从类目加入' }).click();
-    const picker = page.getByRole('dialog', { name: '从类目配件加入' });
-    await expect(picker).toBeVisible();
-    const ownRow = picker.locator('.category-accessory-picker-row', { hasText: DEFAULT_A });
-    await expect(ownRow.getByRole('button', { name: '已加入' })).toBeDisabled();
-    const categoryRow = picker.locator('.category-accessory-picker-row', { hasText: DEFAULT_B });
-    await categoryRow.getByRole('button', { name: '加入', exact: true }).click();
-    await expect(picker.locator('.label-hint[role="status"]')).toContainText('已加入「钻头 8mm」');
-    await expect(categoryRow.getByRole('button', { name: '已加入' })).toBeDisabled();
+    // 类目配件弹层里逐条加入：只把需要的「钻头 8mm」加进来；同名「9 件套筒」的加号置灰。
+    await section.getByRole('button', { name: '类目配件' }).click();
+    const defaults = page.getByRole('dialog', { name: /类目配件 ·/ });
+    await expect(defaults).toBeVisible();
+    const ownRow = defaults.locator('tbody tr').nth(0);
+    await expect(ownRow.getByLabel('类目配件1名称')).toHaveValue(DEFAULT_A);
+    await expect(ownRow.getByRole('button', { name: `「${DEFAULT_A}」已在当前产品` })).toBeDisabled();
+    const categoryRow = defaults.locator('tbody tr').nth(1);
+    await expect(categoryRow.getByLabel('类目配件2名称')).toHaveValue(DEFAULT_B);
+    await categoryRow.getByRole('button', { name: `把「${DEFAULT_B}」加入当前产品` }).click();
+    await expect(defaults.locator('.product-accessory-message')).toContainText(`已把「${DEFAULT_B}」加入当前产品`);
+    await expect(categoryRow.getByRole('button', { name: `「${DEFAULT_B}」已在当前产品` })).toBeDisabled();
+    // 点加号只动当前产品草稿，不算修改类目模板。
+    await expect(defaults.getByRole('button', { name: '保存类目配件' })).toBeDisabled();
     // 顶部 X 也是「关闭」，取页脚那个（DOM 里靠后）。
-    await picker.getByRole('button', { name: '关闭' }).last().click();
-    await expect(picker).toHaveCount(0);
+    await defaults.getByRole('button', { name: '关闭' }).last().click();
+    await expect(defaults).toHaveCount(0);
 
     await expect(section.locator('tbody tr')).toHaveCount(2);
     await expect(section.getByLabel('产品配件1名称')).toHaveValue(DEFAULT_A);
