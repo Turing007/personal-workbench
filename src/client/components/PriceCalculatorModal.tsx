@@ -5,6 +5,7 @@ import PickerCurtain from './PickerCurtain';
 import {
   deletePricePlan,
   getBatteryPriceMatrix,
+  getCategoryAccessoryPrices,
   getChargerPrices,
   getVolumeDivisor,
   listPricePlans,
@@ -109,6 +110,8 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const [accessoryPickerOpen, setAccessoryPickerOpen] = useState(false);
   /** 选中的配件名称；默认空 = 本次不选任何配件，需要时自己勾选。 */
   const [selectedAccessoryNames, setSelectedAccessoryNames] = useState<string[]>([]);
+  /** 产品没维护自有配件清单时，与详情/编辑器一致沿用该类目的配件。 */
+  const [categoryAccessories, setCategoryAccessories] = useState<AccessoryPrice[]>([]);
   const accessoryAnchorRef = useRef<HTMLDivElement>(null);
   /** 体积重参数（cm³/kg）：默认取全局设置，载入方案时按方案快照覆盖。 */
   const [volumeDivisor, setVolumeDivisor] = useState(DEFAULT_VOLUME_DIVISOR);
@@ -148,6 +151,14 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     setChargerId('');
     setAccessoryPickerOpen(false);
     setSelectedAccessoryNames([]);
+    setCategoryAccessories([]);
+    // 自有清单为空且没固化过：沿用类目配件（和产品编辑器的预填口径一致）。
+    const hasOwnAccessories = (product.accessoryPrices ?? []).some((item) => item.name.trim());
+    if (!hasOwnAccessories && !product.accessoryPricesCustomized && product.category?.trim()) {
+      getCategoryAccessoryPrices(product.category.trim())
+        .then((items) => { if (!cancelled) setCategoryAccessories(items.filter((item) => item.name.trim())); })
+        .catch(() => { if (!cancelled) setCategoryAccessories([]); });
+    }
     if (/^\d+$/.test(product.id)) {
       listPricePlans(product.id)
         .then((items) => { if (!cancelled) setPlans(items); })
@@ -189,9 +200,12 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const charger = chargerPrices.find((item) => item.id === chargerId);
   const chargerPrice = charger?.price ?? 0;
 
-  // 配件只取「本产品自己的清单」：类目默认只是新建产品时的预填模板，不在计算器里混进来。
-  // 本产品没维护过配件就是空，显示「无配件」，不会把同类的其他配件一起列出来。
-  const allAccessories = (product.accessoryPrices ?? []).filter((item) => item.name.trim());
+  // 配件口径与产品编辑器一致：有自有清单（含明确清空）就用自有；
+  // 从没维护过（自有为空且未固化）才沿用类目配件，避免“编辑器里明明有、计算器选不了”。
+  const ownAccessories = (product.accessoryPrices ?? []).filter((item) => item.name.trim());
+  const allAccessories = ownAccessories.length || product.accessoryPricesCustomized
+    ? ownAccessories
+    : categoryAccessories;
   // 按名称归组：方案快照按名称记录选择。同名多行一起勾选、金额一起累加，
   // 不会因为只取第一行而少算钱；界面上合并成一个胶囊显示合计。
   const accessoryGroups = new Map<string, AccessoryPrice[]>();

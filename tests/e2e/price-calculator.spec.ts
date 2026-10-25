@@ -272,6 +272,11 @@ test('包装选择：按所选包装算包材、实重与体积重，方案记�
     // 切到「大箱」：包材 3.2、实重 1.2kg 大于体积重 0.6kg → 运费 1.8；成本 = 100 + 3.2 + 1.8 = 105。
     await packagingTrigger.click();
     const packagingCurtain = dialog.getByRole('group', { name: '选择包装' });
+    // 包装幕布靠右对齐，必须完整落在计算器弹窗内，不能被弹窗裁掉。
+    const [panelBox, curtainBox] = await Promise.all([dialog.boundingBox(), packagingCurtain.boundingBox()]);
+    expect(panelBox && curtainBox).toBeTruthy();
+    expect(curtainBox!.x).toBeGreaterThanOrEqual(panelBox!.x);
+    expect(curtainBox!.x + curtainBox!.width).toBeLessThanOrEqual(panelBox!.x + panelBox!.width);
     await packagingCurtain.getByRole('button', { name: /^大箱/ }).click();
     await expect(packagingTrigger).toContainText('大箱');
     await expect(dialog.locator('.price-calc2-packaging-head')).toContainText('包材 ¥3.2');

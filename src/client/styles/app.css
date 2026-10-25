@@ -5495,7 +5495,7 @@ select {
 .price-calc2-packaging-trigger-label,
 .price-calc2-accessory-trigger-label { overflow: hidden; text-overflow: ellipsis; }
 .price-calc2-packaging-curtain,
-.price-calc2-accessory-curtain { left: 0; right: auto; width: min(420px, calc(100vw - 60px)); max-width: none; max-height: min(320px, 45vh); overflow-y: auto; overscroll-behavior-y: contain; }
+.price-calc2-accessory-curtain { right: 0; left: auto; width: min(420px, calc(100vw - 60px)); max-width: none; max-height: min(320px, 45vh); overflow-y: auto; overscroll-behavior-y: contain; }
 .price-calc2-accessory-curtain .search-history-chips { gap: 5px; }
 /* 包装/配件胶囊带价格与重量，字略小一点，一行能多放一个。 */
 .price-calc2-packaging-curtain .category-chip,

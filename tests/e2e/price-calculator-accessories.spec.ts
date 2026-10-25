@@ -106,12 +106,11 @@ test('配件默认不选：勾选后价格进成本、重量进实重，方案�
   }
 });
 
-test('计算器只列本产品自己的配件：同类目默认配件不混进来', async ({ page }) => {
+test('没有自有配件清单时沿用类目配件，计算器里能选', async ({ page }) => {
   const stamp = Date.now();
   const category = `E2E配件类目${stamp}`;
-  // 类目默认配件只用于新建产品时的预填，不该出现在没维护过配件的产品的计算器里。
   expect((await page.request.put('/api/settings/category-accessory-prices', {
-    data: { category, items: [{ name: '类目默认套筒', price: 6 }, { name: '类目默认锯片', price: 8 }] },
+    data: { category, items: [{ name: '类目默认套筒', price: 6, weight: 0.1 }, { name: '类目默认锯片', price: 8, weight: 0.2 }] },
   })).ok()).toBe(true);
   const created = await page.request.post('/api/products', {
     data: {
@@ -134,20 +133,21 @@ test('计算器只列本产品自己的配件：同类目默认配件不混进�
     const dialog = page.getByRole('dialog');
     await expect(dialog).toContainText('售价计算');
 
+    // 产品没维护过自有清单：沿用类目配件，未选择时仍为空。
     const accessoryTrigger = dialog.getByRole('button', { name: '选择配件' });
-    await expect(accessoryTrigger).toContainText('无配件');
-    await expect(dialog.locator('.price-calc2-accessories-head')).toContainText('无');
-    // 打开幕布也看不到类目默认那两条。
+    await expect(accessoryTrigger).toContainText('未选择');
     await accessoryTrigger.click();
     const curtain = dialog.getByRole('group', { name: '选择配件' });
-    await expect(curtain).toContainText('本产品还没有配件');
-    await expect(curtain).not.toContainText('类目默认套筒');
-    await expect(curtain).not.toContainText('类目默认锯片');
+    await expect(curtain).toContainText('类目默认套筒');
+    await expect(curtain).toContainText('类目默认锯片');
+    await curtain.getByRole('button', { name: '全选' }).click();
+    await expect(dialog.locator('.price-calc2-accessories-head')).toContainText('¥14 · 0.3kg');
     await curtain.getByRole('button', { name: '完成' }).click();
 
-    // 没配件时成本只含采购价与运费：0.5kg × 1.5 = 0.75。
-    await expect(dialog.getByLabel('运费金额')).toHaveValue('0.75');
-    await expect(dialog.locator('.price-calc2-bare')).toContainText('成本 ¥51');
+    // 实重 0.5 + 0.3 = 0.8kg → 运费 1.2；成本 = 50 + 14 + 1.2 = 65.2（显示 65）。
+    await expect(dialog.locator('.price-calc2-shipweight')).toContainText('实重 0.8kg');
+    await expect(dialog.getByLabel('运费金额')).toHaveValue('1.2');
+    await expect(dialog.locator('.price-calc2-bare')).toContainText('成本 ¥65');
   } finally {
     await page.request.put('/api/settings/category-accessory-prices', { data: { category, items: [] } });
     await page.request.delete(`/api/products/${product.id}`);
