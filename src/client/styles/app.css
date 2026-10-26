@@ -4428,14 +4428,16 @@ select {
   background: var(--color-accent-soft);
 }
 
-.packaging-preset-matched-badge {
+/* 命中标记用填充主色；选择器要压过上面的 .packaging-preset span，否则白字会被染成深灰。 */
+.packaging-preset span.packaging-preset-matched-badge {
   justify-self: start;
   margin-top: 2px;
-  padding: 1px 6px;
+  padding: 1px 7px;
   border-radius: 999px;
-  background: var(--color-accent);
+  background: var(--color-accent-fill);
   color: #fff;
-  font-size: 10px;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
   line-height: 1.5;
 }
 
@@ -4446,12 +4448,20 @@ select {
 
 .packaging-preset span {
   color: var(--color-text-secondary);
-  font-size: var(--text-2xs);
+  font-size: var(--text-xs);
   line-height: 1.45;
 }
 
-.packaging-preset-price {
-  color: var(--color-text-muted);
+/* 采购价是决策信息，不能和规格行一样淡。 */
+.packaging-preset .packaging-preset-price {
+  color: var(--color-text);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 装箱数是一个整体，别让「台/箱」被折成两行。 */
+.packaging-preset .packaging-preset-packsize {
+  white-space: nowrap;
 }
 
 .packaging-preset-more {

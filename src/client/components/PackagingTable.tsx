@@ -49,6 +49,7 @@ export default function PackagingTable({ value, onChange, compact = false, showP
         <div className="packaging-preset-list">
           {shownPresets.map((preset) => {
             const matched = packagingPresetMatches({ activeCategories, preset });
+            const specs = [preset.innerSize && `内盒 ${preset.innerSize}`, preset.outerSize && `外箱 ${preset.outerSize}`].filter(Boolean);
             return <button
               key={preset.id || `${preset.name}-${preset.innerSize}-${preset.outerSize}`}
               type="button"
@@ -57,7 +58,7 @@ export default function PackagingTable({ value, onChange, compact = false, showP
               onClick={() => onChange(applyPackagingPreset(value, preset))}
             >
               <strong>{preset.name || '未命名包装'}</strong>
-              <span>{[preset.innerSize && `内盒 ${preset.innerSize}`, preset.outerSize && `外箱 ${preset.outerSize}`, `${preset.packSize} 台/箱`].filter(Boolean).join(' · ')}</span>
+              <span>{specs.join(' · ')}{specs.length ? ' · ' : ''}<span className="packaging-preset-packsize">{preset.packSize} 台/箱</span></span>
               {!!preset.purchasePrice && <span className="packaging-preset-price">包装采购价 ¥{preset.purchasePrice}</span>}
               {matched && <span className="packaging-preset-matched-badge">适用本类</span>}
             </button>;
