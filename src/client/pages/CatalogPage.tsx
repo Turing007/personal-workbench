@@ -281,12 +281,12 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
   };
 
   if (view === 'edit') {
-    return <div className="page-shell catalog-page" style={{ gap: 12, minHeight: '100%' }}>
+    return <div className="page-shell catalog-page catalog-edit-page">
       <div className="page-toolbar">
         <button className="button button-secondary" type="button" disabled={busy} onClick={() => setView('list')}><ArrowLeft size={15} />返回图册列表</button>
         <strong>{editingId == null ? '新建图册' : '选品编辑'}</strong>
       </div>
-      <section className="table-panel" style={{ padding: 12, display: 'grid', gap: 10 }}>
+      <section className="table-panel catalog-edit-panel">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-start' }}>
           <label className="label" style={{ flex: '1 1 280px', maxWidth: 420 }}>图册名称
             <input className="input" disabled={busy} value={name} maxLength={40} placeholder="如：2026 主推图册 / 给王总的报价图册" onChange={(event) => setName(event.target.value)} />
@@ -394,7 +394,8 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
       {supplierCatalogs !== null && !filteredSupplierCatalogs.length && <div className="table-state">
         {supplierQuery.trim() ? '没有符合条件的供应商图册' : '还没有供应商图册：点右上角「上传供应商图册」，把供应商发来的 PDF / 图片存进来。'}
       </div>}
-      {filteredSupplierCatalogs.map((catalog) => <article className="supplier-catalog-card" key={catalog.id}>
+      <div className="supplier-catalog-grid">
+        {filteredSupplierCatalogs.map((catalog) => <article className="supplier-catalog-card" key={catalog.id}>
         <div className="supplier-catalog-card-head">
           <span className="badge badge-neutral supplier-catalog-supplier">{catalog.supplier}</span>
           <strong className="supplier-catalog-card-name">{catalog.name}</strong>
@@ -417,6 +418,7 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
           </div>)}
         </div> : <div className="empty-state">这条图册还没有文件。</div>}
       </article>)}
+      </div>
     </section>}
     <Modal
       open={Boolean(exportTarget)}

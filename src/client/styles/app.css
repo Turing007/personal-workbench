@@ -915,7 +915,7 @@ select {
   display: grid;
   gap: 5px;
   min-width: 0;
-  padding: 8px;
+  padding: 7px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface);
@@ -1017,6 +1017,50 @@ select {
   color: var(--tone-accent-text);
 }
 
+/* 选品编辑：占满一屏，产品图用尽剩余高度；底部保存栏固定在这一屏里。 */
+.catalog-edit-page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--env-banner-h));
+  height: calc(100dvh - var(--env-banner-h));
+  min-height: 560px;
+}
+
+/* 编辑页头部已有一行返回条，上下留白压紧一点，把高度让给产品图区。 */
+.page-shell.catalog-edit-page {
+  padding-top: 14px;
+  padding-bottom: 8px;
+  gap: 8px;
+}
+
+.catalog-edit-page > .page-toolbar { flex: 0 0 auto; }
+
+.catalog-edit-panel {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 8px;
+  min-height: 0;
+  padding: 10px;
+}
+
+.catalog-edit-panel .catalog-pick-grid {
+  max-height: none;
+  min-height: 0;
+}
+
+@media (max-width: 900px) {
+  /* 手机端有底部 Tab 栏，回到普通文档流，图区仍按 56vh 内部滚动。 */
+  .catalog-edit-page {
+    display: grid;
+    height: auto;
+    min-height: calc(100vh - var(--env-banner-h));
+  }
+
+  .catalog-edit-panel { flex: none; }
+  .catalog-edit-panel .catalog-pick-grid { max-height: 56vh; }
+}
+
 /* ===== 供应商产品图册：内部资料库 ===== */
 .catalog-tabs {
   display: inline-flex;
@@ -1073,10 +1117,19 @@ select {
 .supplier-catalog-card {
   display: grid;
   gap: 8px;
+  min-width: 0;
   padding: 12px;
   border: 1px solid var(--tone-border-soft);
   border-radius: 8px;
   background: var(--color-surface);
+}
+
+/* 供应商图册以卡片网格展示：桌面按可用宽度铺 2~3 列，手机自然收成一列。 */
+.supplier-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  align-items: start;
+  gap: 12px;
 }
 
 .supplier-catalog-card-head {
