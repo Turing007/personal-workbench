@@ -37,8 +37,6 @@ interface SupplierCatalogEditorModalProps {
   open: boolean;
   /** 传入表示编辑已有记录；不传表示新建。 */
   catalog?: SupplierCatalog | null;
-  /** 现有产品里出现过的供应商名，点一下填入，不新建供应商档案。 */
-  supplierOptions: string[];
   onClose: () => void;
   /** 任一步写入成功后静默刷新列表（弹窗可能继续开着重试上传）。 */
   onChanged: () => Promise<void> | void;
@@ -88,7 +86,7 @@ function fileBaseName(name: string): string {
 }
 
 /** 供应商产品图册的编辑弹窗：元数据 + 多文件，支持点选、拖入、Ctrl+V 粘贴。 */
-export default function SupplierCatalogEditorModal({ open, catalog, supplierOptions, onClose, onChanged, onNotify }: SupplierCatalogEditorModalProps) {
+export default function SupplierCatalogEditorModal({ open, catalog, onClose, onChanged, onNotify }: SupplierCatalogEditorModalProps) {
   const [supplier, setSupplier] = useState('');
   const [name, setName] = useState('');
   const [receivedAt, setReceivedAt] = useState(todayValue());
@@ -288,10 +286,6 @@ export default function SupplierCatalogEditorModal({ open, catalog, supplierOpti
           <input className="input" value={remark} maxLength={500} disabled={busy} placeholder="如：只含电钻 / 2026 春季报价" onChange={(event) => setRemark(event.target.value)} />
         </label>
       </div>
-      {!!supplierOptions.length && <div className="supplier-catalog-supplier-chips">
-        <span>常用供应商</span>
-        {supplierOptions.map((option) => <button key={option} type="button" className="chip" disabled={busy} onClick={() => setSupplier(option)}>{option}</button>)}
-      </div>}
 
       <section
         className={`supplier-catalog-drop${dragging ? ' is-drop-target' : ''}`}

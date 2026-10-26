@@ -43,7 +43,7 @@ async function openSupplierTab(page: Page) {
   await expect(page.locator('.supplier-catalog-panel')).toBeVisible();
 }
 
-test('供应商图册：供应商胶囊、粘贴 PDF、点选图片、搜索、删文件与删整条', async ({ page }) => {
+test('供应商图册：粘贴 PDF、点选图片、搜索、删文件与删整条', async ({ page }) => {
   test.setTimeout(120_000);
   const createdProduct = await page.request.post('/api/products', {
     data: {
@@ -62,9 +62,7 @@ test('供应商图册：供应商胶囊、粘贴 PDF、点选图片、搜索、�
     const modal = page.getByRole('dialog', { name: '上传供应商图册' });
     await expect(modal).toBeVisible();
 
-    // 供应商名可以点现有产品的供应商胶囊填入。
-    await modal.getByRole('button', { name: SUPPLIER }).click();
-    await expect(modal.getByLabel('供应商名称')).toHaveValue(SUPPLIER);
+    await modal.getByLabel('供应商名称').fill(SUPPLIER);
     await modal.getByLabel('图册名称').fill(CATALOG_NAME);
     await modal.getByLabel('收到日期').fill('2026-10-20');
     await modal.getByLabel('备注（可选）').fill('总册 + 细节图');
@@ -82,7 +80,8 @@ test('供应商图册：供应商胶囊、粘贴 PDF、点选图片、搜索、�
     const card = page.locator('.supplier-catalog-card', { hasText: CATALOG_NAME });
     await expect(card).toBeVisible();
     await expect(card).toContainText(SUPPLIER);
-    await expect(card).toContainText('收到 2026-10-20');
+    await expect(card).toContainText('2026-10-20');
+    await expect(card).not.toContainText('收到 2026-10-20');
     await expect(card).toContainText(PDF_NAME);
 
     // 服务端保存的是按扩展名回写的 PDF MIME，而不是空类型。
@@ -100,7 +99,7 @@ test('供应商图册：供应商胶囊、粘贴 PDF、点选图片、搜索、�
     await editModal.getByRole('button', { name: '保存（2 个文件）' }).click();
     await expect(editModal).toBeHidden();
     await expect(card).toContainText(PNG_NAME);
-    await expect(card).toContainText('2 个文件');
+    await expect(card.locator('.supplier-catalog-card-files .supplier-catalog-file-row')).toHaveCount(2);
 
     // 搜索供应商 / 文件名都能命中。
     const search = page.locator('.supplier-catalog-panel .search-control input');
@@ -116,7 +115,7 @@ test('供应商图册：供应商胶囊、粘贴 PDF、点选图片、搜索、�
     await card.getByRole('button', { name: `删除 ${PDF_NAME}` }).click();
     await expect(card).not.toContainText(PDF_NAME);
     await expect(card).toContainText(PNG_NAME);
-    await expect(card).toContainText('1 个文件');
+    await expect(card.locator('.supplier-catalog-card-files .supplier-catalog-file-row')).toHaveCount(1);
 
     // 删除整条记录。
     page.once('dialog', (dialog) => void dialog.accept());

@@ -97,8 +97,6 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, supplierCatalogs]);
 
-  const supplierOptions = useMemo(() => [...new Set(products.map((product) => product.supplier.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN')), [products]);
-
   const filteredSupplierCatalogs = useMemo(() => {
     const needle = supplierQuery.trim().toLowerCase();
     if (!needle) return supplierCatalogs ?? [];
@@ -395,29 +393,35 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
         {supplierQuery.trim() ? '没有符合条件的供应商图册' : '还没有供应商图册：点右上角「上传供应商图册」，把供应商发来的 PDF / 图片存进来。'}
       </div>}
       <div className="supplier-catalog-grid">
-        {filteredSupplierCatalogs.map((catalog) => <article className="supplier-catalog-card" key={catalog.id}>
-        <div className="supplier-catalog-card-head">
-          <span className="badge badge-neutral supplier-catalog-supplier">{catalog.supplier}</span>
-          <strong className="supplier-catalog-card-name">{catalog.name}</strong>
-          <span className="supplier-catalog-received">收到 {catalog.receivedAt}</span>
-          <span className="toolbar-count">{catalog.files.length} 个文件 · {formatFileSize(catalog.files.reduce((sum, file) => sum + file.size, 0))}</span>
-          <div className="row-actions">
-            <button className="button button-secondary button-sm" type="button" disabled={supplierBusy} onClick={() => setSupplierEditor(catalog)}><Pencil size={14} />编辑</button>
-            <button className="button button-danger button-sm" type="button" disabled={supplierBusy} onClick={() => void deleteSupplier(catalog)}><Trash2 size={14} />删除</button>
-          </div>
-        </div>
-        {!!catalog.remark && <p className="supplier-catalog-remark-text">{catalog.remark}</p>}
-        {catalog.files.length ? <div className="supplier-catalog-card-files">
-          {catalog.files.map((file) => <div className="supplier-catalog-file-row" key={file.id}>
-            <span className="supplier-catalog-file-icon">{file.mimeType === 'application/pdf' ? <FileText size={16} /> : <ImageIcon size={16} />}</span>
-            <span className="supplier-catalog-file-name" title={file.originalName}>{file.originalName}</span>
-            <span className="supplier-catalog-file-meta">{formatFileSize(file.size)}</span>
-            <a className="icon-button" href={file.url} target="_blank" rel="noreferrer" title="打开文件" aria-label={`打开 ${file.originalName}`}><ExternalLink size={14} /></a>
-            <a className="icon-button" href={file.url} download={file.originalName} title="下载文件" aria-label={`下载 ${file.originalName}`}><Download size={14} /></a>
-            <button className="icon-button danger" type="button" disabled={supplierBusy} title="删除文件" aria-label={`删除 ${file.originalName}`} onClick={() => void deleteSupplierFile(catalog, file)}><Trash2 size={14} /></button>
-          </div>)}
-        </div> : <div className="empty-state">这条图册还没有文件。</div>}
-      </article>)}
+          {filteredSupplierCatalogs.map((catalog) => {
+          const totalSize = catalog.files.reduce((sum, file) => sum + file.size, 0);
+          return <article className="supplier-catalog-card" key={catalog.id}>
+            <div className="supplier-catalog-card-head">
+              <span className="badge badge-neutral supplier-catalog-supplier">{catalog.supplier}</span>
+              <strong className="supplier-catalog-card-name" title={catalog.name}>{catalog.name}</strong>
+            </div>
+            <div className="supplier-catalog-card-meta">
+              <span>{catalog.receivedAt}</span>
+              <span aria-hidden="true">·</span>
+              <span>{formatFileSize(totalSize)}</span>
+              <div className="row-actions">
+                <button className="button button-secondary button-sm" type="button" disabled={supplierBusy} onClick={() => setSupplierEditor(catalog)}><Pencil size={14} />编辑</button>
+                <button className="button button-danger button-sm" type="button" disabled={supplierBusy} onClick={() => void deleteSupplier(catalog)}><Trash2 size={14} />删除</button>
+              </div>
+            </div>
+            {!!catalog.remark && <p className="supplier-catalog-remark-text">{catalog.remark}</p>}
+            {catalog.files.length ? <div className="supplier-catalog-card-files">
+              {catalog.files.map((file) => <div className="supplier-catalog-file-row" key={file.id}>
+                <span className="supplier-catalog-file-icon">{file.mimeType === 'application/pdf' ? <FileText size={16} /> : <ImageIcon size={16} />}</span>
+                <span className="supplier-catalog-file-name" title={file.originalName}>{file.originalName}</span>
+                <span className="supplier-catalog-file-meta">{formatFileSize(file.size)}</span>
+                <a className="icon-button" href={file.url} target="_blank" rel="noreferrer" title="打开文件" aria-label={`打开 ${file.originalName}`}><ExternalLink size={14} /></a>
+                <a className="icon-button" href={file.url} download={file.originalName} title="下载文件" aria-label={`下载 ${file.originalName}`}><Download size={14} /></a>
+                <button className="icon-button danger" type="button" disabled={supplierBusy} title="删除文件" aria-label={`删除 ${file.originalName}`} onClick={() => void deleteSupplierFile(catalog, file)}><Trash2 size={14} /></button>
+              </div>)}
+            </div> : <div className="empty-state">这条图册还没有文件。</div>}
+          </article>;
+        })}
       </div>
     </section>}
     <Modal
@@ -444,7 +448,6 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
     <SupplierCatalogEditorModal
       open={supplierEditor !== undefined}
       catalog={supplierEditor ?? null}
-      supplierOptions={supplierOptions}
       onClose={() => setSupplierEditor(undefined)}
       onChanged={refreshSupplierCatalogs}
       onNotify={onNotify}

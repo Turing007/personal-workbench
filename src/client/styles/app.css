@@ -1114,6 +1114,15 @@ select {
   color: var(--tone-accent-text);
 }
 
+/* 供应商图册以卡片网格展示：桌面按可用宽度铺 2~3 列，手机自然收成一列。
+   同一行卡片等高，避免文件数量不同把下一行拉得参差不齐。 */
+.supplier-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  align-items: stretch;
+  gap: 12px;
+}
+
 .supplier-catalog-card {
   display: grid;
   gap: 8px;
@@ -1124,40 +1133,44 @@ select {
   background: var(--color-surface);
 }
 
-/* 供应商图册以卡片网格展示：桌面按可用宽度铺 2~3 列，手机自然收成一列。 */
-.supplier-catalog-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  align-items: start;
-  gap: 12px;
-}
-
 .supplier-catalog-card-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .supplier-catalog-supplier {
-  max-width: 220px;
+  flex: 0 0 auto;
+  max-width: 45%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .supplier-catalog-card-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
   color: var(--color-text-strong);
   font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.supplier-catalog-received {
+/* 第二行：日期 · 文件总大小；操作按钮靠右。 */
+.supplier-catalog-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 28px;
   color: var(--color-text-secondary);
   font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
 }
 
-.supplier-catalog-card-head .row-actions { margin-left: auto; }
+.supplier-catalog-card-meta .row-actions { margin-left: auto; }
 
 .supplier-catalog-remark-text {
   margin: 0;
@@ -1244,22 +1257,6 @@ select {
 
 .supplier-catalog-remark { grid-column: 1 / -1; }
 
-.supplier-catalog-supplier-chips {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  max-height: 72px;
-  overflow: auto;
-  padding: 2px 0;
-}
-
-.supplier-catalog-supplier-chips > span {
-  margin-right: 2px;
-  color: var(--color-text-muted);
-  font-size: var(--text-2xs);
-}
-
 .supplier-catalog-drop {
   display: grid;
   gap: 8px;
@@ -1322,8 +1319,8 @@ select {
   .catalog-tabs { width: 100%; }
   .catalog-tab { flex: 1; }
   .supplier-catalog-fields { grid-template-columns: 1fr; }
-  .supplier-catalog-card-head .row-actions { width: 100%; margin-left: 0; }
-  .supplier-catalog-card-head .supplier-catalog-supplier { max-width: 100%; }
+  .supplier-catalog-card-meta .row-actions { margin-left: 0; }
+  .supplier-catalog-supplier { max-width: 45%; }
 }
 
 /* ===== 产品库分页：显示层翻页 + 每页条数选择 ===== */
