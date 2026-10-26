@@ -1,8 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Check, Copy, ExternalLink, FileDown, Images, Image as ImageIcon, Plus, Power } from 'lucide-react';
+import { ArrowLeft, Check, Copy, Download, ExternalLink, FileDown, FileText, Images, Image as ImageIcon, Pencil, Plus, Power, Trash2, Upload } from 'lucide-react';
 import SearchInput from '../components/SearchInput';
 import Modal from '../components/Modal';
-import { createCatalog, generateProductCatalog, getCatalog, listCatalogs, updateCatalog, type CatalogSummary } from '../api';
+import SupplierCatalogEditorModal, { formatFileSize } from '../components/SupplierCatalogEditorModal';
+import {
+  createCatalog,
+  deleteSupplierCatalog,
+  deleteSupplierCatalogFile,
+  generateProductCatalog,
+  getCatalog,
+  listCatalogs,
+  listSupplierCatalogs,
+  updateCatalog,
+  type CatalogSummary,
+  type SupplierCatalog,
+  type SupplierCatalogFile,
+} from '../api';
 import { thumbUrl } from '../image-urls';
 import { CATALOG_DENSITY_OPTIONS, DEFAULT_CATALOG_DENSITY, type CatalogDensity } from '../../shared/product-catalog';
 import { compareProductByName } from '../product-sort';
@@ -43,6 +56,12 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
   const [statusFilter, setStatusFilter] = useState<'active' | 'all'>('active');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [selectedOnly, setSelectedOnly] = useState(false);
+  const [tab, setTab] = useState<'mine' | 'supplier'>('mine');
+  const [supplierCatalogs, setSupplierCatalogs] = useState<SupplierCatalog[] | null>(null);
+  const [supplierQuery, setSupplierQuery] = useState('');
+  /** undefined = 未打开；null = 新建；对象 = 编辑已有记录。 */
+  const [supplierEditor, setSupplierEditor] = useState<SupplierCatalog | null | undefined>(undefined);
+  const [supplierBusy, setSupplierBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [exportTarget, setExportTarget] = useState<CatalogSummary | null>(null);
@@ -62,6 +81,57 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const refreshSupplierCatalogs = async () => {
+    try {
+      setSupplierCatalogs(await listSupplierCatalogs());
+    } catch (error) {
+      onNotify(errorText(error, '供应商图册加载失败'), 'error');
+      setSupplierCatalogs([]);
+    }
+  };
+
+  // 供应商图册按需加载：没切到该页签就不请求。
+  useEffect(() => {
+    if (tab === 'supplier' && supplierCatalogs === null) void refreshSupplierCatalogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, supplierCatalogs]);
+
+  const supplierOptions = useMemo(() => [...new Set(products.map((product) => product.supplier.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN')), [products]);
+
+  const filteredSupplierCatalogs = useMemo(() => {
+    const needle = supplierQuery.trim().toLowerCase();
+    if (!needle) return supplierCatalogs ?? [];
+    return (supplierCatalogs ?? []).filter((catalog) => [catalog.supplier, catalog.name, catalog.remark, ...catalog.files.map((file) => file.originalName)].join(' ').toLowerCase().includes(needle));
+  }, [supplierCatalogs, supplierQuery]);
+
+  const deleteSupplierFile = async (catalog: SupplierCatalog, file: SupplierCatalogFile) => {
+    if (!window.confirm(`确定从「${catalog.name}」删除文件「${file.originalName}」吗？文件会一并删除，不能恢复。`)) return;
+    setSupplierBusy(true);
+    try {
+      await deleteSupplierCatalogFile(catalog.id, file.id);
+      await refreshSupplierCatalogs();
+      onNotify('图册文件已删除', 'success');
+    } catch (error) {
+      onNotify(errorText(error, '文件删除失败'), 'error');
+    } finally {
+      setSupplierBusy(false);
+    }
+  };
+
+  const deleteSupplier = async (catalog: SupplierCatalog) => {
+    if (!window.confirm(`确定删除供应商图册「${catalog.name}」吗？记录和全部 ${catalog.files.length} 个文件都会删除，不能恢复。`)) return;
+    setSupplierBusy(true);
+    try {
+      await deleteSupplierCatalog(catalog.id);
+      await refreshSupplierCatalogs();
+      onNotify('供应商图册已删除', 'success');
+    } catch (error) {
+      onNotify(errorText(error, '删除失败'), 'error');
+    } finally {
+      setSupplierBusy(false);
+    }
+  };
 
   const publicUrl = (catalog: CatalogSummary) => `${window.location.origin}/c/${catalog.token}`;
 
@@ -286,10 +356,16 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
   return <div className="page-shell catalog-page" style={{ gap: 12, minHeight: '100%' }}>
     <div className="page-toolbar">
       <strong className="page-title">产品图册</strong>
-      <span className="page-subtitle" style={{ flex: 1 }}>选好产品生成一条网址发给客户；改内容不用换链接</span>
-      <button className="button button-primary" type="button" disabled={busy} onClick={() => void openEditor()}><Plus size={15} />新建图册</button>
+      <span className="page-subtitle" style={{ flex: 1 }}>{tab === 'mine' ? '选好产品生成一条网址发给客户；改内容不用换链接' : '按供应商归档供应商发来的 PDF / 图片，只给自己看'}</span>
+      {tab === 'mine'
+        ? <button className="button button-primary" type="button" disabled={busy} onClick={() => void openEditor()}><Plus size={15} />新建图册</button>
+        : <button className="button button-primary" type="button" onClick={() => setSupplierEditor(null)}><Upload size={15} />上传供应商图册</button>}
     </div>
-    <section className="table-panel" style={{ padding: 12, display: 'grid', gap: 10 }}>
+    <div className="catalog-tabs" role="tablist" aria-label="图册类型">
+      <button className={`catalog-tab${tab === 'mine' ? ' is-active' : ''}`} type="button" role="tab" aria-selected={tab === 'mine'} onClick={() => setTab('mine')}>我的图册 <span>{catalogs?.length ?? 0}</span></button>
+      <button className={`catalog-tab${tab === 'supplier' ? ' is-active' : ''}`} type="button" role="tab" aria-selected={tab === 'supplier'} onClick={() => setTab('supplier')}>供应商图册 <span>{supplierCatalogs?.length ?? '—'}</span></button>
+    </div>
+    {tab === 'mine' ? <section className="table-panel" style={{ padding: 12, display: 'grid', gap: 10 }}>
       {catalogs === null && <div className="table-state">正在加载图册…</div>}
       {catalogs?.length === 0 && <div className="table-state">还没有图册：点右上角「新建图册」，选好产品就能生成一条链接。</div>}
       {catalogs?.map((catalog) => <article key={catalog.id} style={{ border: '1px solid var(--tone-border-soft)', borderRadius: 8, padding: 12, display: 'grid', gap: 8 }}>
@@ -309,7 +385,39 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
           <button className="button button-secondary button-sm" type="button" disabled={busy} onClick={() => void toggleEnabled(catalog)}><Power size={14} />{catalog.enabled ? '停用' : '启用'}</button>
         </div>
       </article>)}
-    </section>
+    </section> : <section className="table-panel supplier-catalog-panel" style={{ padding: 12, display: 'grid', gap: 10 }}>
+      <div className="page-toolbar table-toolbar" style={{ padding: 0 }}>
+        <SearchInput value={supplierQuery} onChange={setSupplierQuery} placeholder="搜供应商、图册名、文件名" />
+        <span className="toolbar-count">共 {filteredSupplierCatalogs.length} 条 · {filteredSupplierCatalogs.reduce((sum, catalog) => sum + catalog.files.length, 0)} 个文件</span>
+      </div>
+      {supplierCatalogs === null && <div className="table-state">正在加载供应商图册…</div>}
+      {supplierCatalogs !== null && !filteredSupplierCatalogs.length && <div className="table-state">
+        {supplierQuery.trim() ? '没有符合条件的供应商图册' : '还没有供应商图册：点右上角「上传供应商图册」，把供应商发来的 PDF / 图片存进来。'}
+      </div>}
+      {filteredSupplierCatalogs.map((catalog) => <article className="supplier-catalog-card" key={catalog.id}>
+        <div className="supplier-catalog-card-head">
+          <span className="badge badge-neutral supplier-catalog-supplier">{catalog.supplier}</span>
+          <strong className="supplier-catalog-card-name">{catalog.name}</strong>
+          <span className="supplier-catalog-received">收到 {catalog.receivedAt}</span>
+          <span className="toolbar-count">{catalog.files.length} 个文件 · {formatFileSize(catalog.files.reduce((sum, file) => sum + file.size, 0))}</span>
+          <div className="row-actions">
+            <button className="button button-secondary button-sm" type="button" disabled={supplierBusy} onClick={() => setSupplierEditor(catalog)}><Pencil size={14} />编辑</button>
+            <button className="button button-danger button-sm" type="button" disabled={supplierBusy} onClick={() => void deleteSupplier(catalog)}><Trash2 size={14} />删除</button>
+          </div>
+        </div>
+        {!!catalog.remark && <p className="supplier-catalog-remark-text">{catalog.remark}</p>}
+        {catalog.files.length ? <div className="supplier-catalog-card-files">
+          {catalog.files.map((file) => <div className="supplier-catalog-file-row" key={file.id}>
+            <span className="supplier-catalog-file-icon">{file.mimeType === 'application/pdf' ? <FileText size={16} /> : <ImageIcon size={16} />}</span>
+            <span className="supplier-catalog-file-name" title={file.originalName}>{file.originalName}</span>
+            <span className="supplier-catalog-file-meta">{formatFileSize(file.size)}</span>
+            <a className="icon-button" href={file.url} target="_blank" rel="noreferrer" title="打开文件" aria-label={`打开 ${file.originalName}`}><ExternalLink size={14} /></a>
+            <a className="icon-button" href={file.url} download={file.originalName} title="下载文件" aria-label={`下载 ${file.originalName}`}><Download size={14} /></a>
+            <button className="icon-button danger" type="button" disabled={supplierBusy} title="删除文件" aria-label={`删除 ${file.originalName}`} onClick={() => void deleteSupplierFile(catalog, file)}><Trash2 size={14} /></button>
+          </div>)}
+        </div> : <div className="empty-state">这条图册还没有文件。</div>}
+      </article>)}
+    </section>}
     <Modal
       open={Boolean(exportTarget)}
       title={exportTarget ? `导出 PDF · ${exportTarget.name}` : '导出 PDF'}
@@ -331,5 +439,13 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
         <span className="field-hint">图册排主图、参数、颜色/插脚与包装尺寸；发给客户的版本不含供应商与价格。数量多时排版会久一些，请耐心等下载。</span>
       </div>
     </Modal>
+    <SupplierCatalogEditorModal
+      open={supplierEditor !== undefined}
+      catalog={supplierEditor ?? null}
+      supplierOptions={supplierOptions}
+      onClose={() => setSupplierEditor(undefined)}
+      onChanged={refreshSupplierCatalogs}
+      onNotify={onNotify}
+    />
   </div>;
 }

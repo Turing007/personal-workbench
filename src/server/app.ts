@@ -16,6 +16,8 @@ import { QuotationRepository } from './db/quotation-repository.js';
 import { SalesDocumentRepository } from './db/sales-document-repository.js';
 import { SettingsRepository } from './db/settings-repository.js';
 import { CatalogRepository } from './db/catalog-repository.js';
+import { SupplierCatalogRepository } from './db/supplier-catalog-repository.js';
+import { registerSupplierCatalogRoutes } from './routes/supplier-catalogs.js';
 import { PricePlanRepository } from './db/price-plan-repository.js';
 import { CatalogService } from './services/catalog-service.js';
 import { registerCatalogRoutes } from './routes/catalogs.js';
@@ -178,6 +180,10 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   });
   await registerCatalogRoutes(app, { service: catalogService });
   await registerPublicCatalogRoutes(app, { service: catalogService, thumbnailService, fileStore: options.fileStore });
+  await registerSupplierCatalogRoutes(app, {
+    repository: new SupplierCatalogRepository(options.database),
+    fileStore: options.fileStore,
+  });
   const customerRepository = new CustomerRepository(options.database);
   const customerProductRepository = new CustomerProductRepository(options.database);
   await registerCustomerProductRoutes(app, {

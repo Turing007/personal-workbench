@@ -632,6 +632,62 @@ export function updateCatalog(id: number, input: { name?: string; enabled?: bool
 export function deleteCatalog(id: number): Promise<{ deleted: boolean }> {
   return request<{ deleted: boolean }>(`/api/catalogs/${id}`, { method: 'DELETE' });
 }
+
+/** 供应商产品图册：收集供应商发来的 PDF / 图片，仅内部可见。 */
+export interface SupplierCatalogFile {
+  id: number;
+  relativePath: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+  url: string;
+}
+
+export interface SupplierCatalog {
+  id: number;
+  supplier: string;
+  name: string;
+  /** 收到日期（YYYY-MM-DD）。 */
+  receivedAt: string;
+  remark: string;
+  createdAt: string;
+  updatedAt: string;
+  files: SupplierCatalogFile[];
+}
+
+export interface SupplierCatalogInput {
+  supplier: string;
+  name: string;
+  receivedAt: string;
+  remark: string;
+}
+
+export function listSupplierCatalogs(): Promise<SupplierCatalog[]> {
+  return request<{ items: SupplierCatalog[] }>('/api/supplier-catalogs').then((result) => result.items);
+}
+
+export function createSupplierCatalog(input: SupplierCatalogInput): Promise<SupplierCatalog> {
+  return request<SupplierCatalog>('/api/supplier-catalogs', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function updateSupplierCatalog(id: number, input: SupplierCatalogInput): Promise<SupplierCatalog> {
+  return request<SupplierCatalog>(`/api/supplier-catalogs/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+}
+
+export function deleteSupplierCatalog(id: number): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(`/api/supplier-catalogs/${id}`, { method: 'DELETE' });
+}
+
+export function uploadSupplierCatalogFile(catalogId: number, file: File): Promise<SupplierCatalogFile> {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  return request<SupplierCatalogFile>(`/api/supplier-catalogs/${catalogId}/files`, { method: 'POST', body: form });
+}
+
+export function deleteSupplierCatalogFile(catalogId: number, fileId: number): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(`/api/supplier-catalogs/${catalogId}/files/${fileId}`, { method: 'DELETE' });
+}
 export async function importProducts(file: File) {
   const form = new FormData();
   form.append('file', file);

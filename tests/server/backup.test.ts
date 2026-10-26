@@ -107,13 +107,22 @@ describe('backup and restore', () => {
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
       .run(productId, 'product-images/original.png', '原始产品.png', 'image/png', 3, new Date().toISOString());
+    database
+      .prepare("INSERT INTO supplier_catalogs (supplier, name, received_at, remark, created_at, updated_at) VALUES ('供应商甲', '图册甲', '2026-10-20', '', '2026-10-20', '2026-10-20')")
+      .run();
+    database
+      .prepare("INSERT INTO supplier_catalog_files (catalog_id, relative_path, original_name, mime_type, size_bytes, sort_order, created_at) VALUES (1, 'supplier-catalogs/catalog.pdf', '图册.pdf', 'application/pdf', 3, 0, '2026-10-20')")
+      .run();
 
     const productDirectory = join(dataDirectory, 'files', 'product-images');
     const paymentDirectory = join(dataDirectory, 'files', 'payment-proofs');
+    const supplierDirectory = join(dataDirectory, 'files', 'supplier-catalogs');
     await mkdir(productDirectory, { recursive: true });
     await mkdir(paymentDirectory, { recursive: true });
+    await mkdir(supplierDirectory, { recursive: true });
     await writeFile(join(productDirectory, 'original.png'), Buffer.from('old'));
     await writeFile(join(paymentDirectory, 'payment.png'), Buffer.from('paid'));
+    await writeFile(join(supplierDirectory, 'catalog.pdf'), Buffer.from('pdf'));
 
     const service = createService(dataDirectory, database);
     const backup = await service.createBackup();
@@ -133,9 +142,12 @@ describe('backup and restore', () => {
     expect(manifest.recordCounts.sales_document_items).toBe(1);
     expect(manifest.recordCounts.sales_receipts).toBe(1);
     expect(manifest.recordCounts.sales_receipt_files).toBe(1);
+    expect(manifest.recordCounts.supplier_catalogs).toBe(1);
+    expect(manifest.recordCounts.supplier_catalog_files).toBe(1);
     expect(manifest.attachments).toEqual([
       'files/payment-proofs/payment.png',
       'files/product-images/original.png',
+      'files/supplier-catalogs/catalog.pdf',
     ]);
 
     insertProduct(database, '后来产品');
@@ -149,10 +161,13 @@ describe('backup and restore', () => {
     expect(database.prepare('SELECT COUNT(*) AS count FROM quotations').get()?.count).toBe(1);
     expect(database.prepare('SELECT COUNT(*) AS count FROM sales_documents').get()?.count).toBe(1);
     expect(database.prepare('SELECT COUNT(*) AS count FROM sales_receipt_files').get()?.count).toBe(1);
+    expect(database.prepare('SELECT COUNT(*) AS count FROM supplier_catalogs').get()?.count).toBe(1);
+    expect(database.prepare('SELECT COUNT(*) AS count FROM supplier_catalog_files').get()?.count).toBe(1);
     expect(database.prepare('SELECT invoice_title, tax_no FROM customers WHERE id = ?').get(customerId))
       .toEqual({ invoice_title: '客户开票抬头', tax_no: '91330200MA2XYZ0C1F' });
     await expect(readFile(join(productDirectory, 'original.png'))).resolves.toEqual(Buffer.from('old'));
     await expect(readFile(join(paymentDirectory, 'payment.png'))).resolves.toEqual(Buffer.from('paid'));
+    await expect(readFile(join(supplierDirectory, 'catalog.pdf'))).resolves.toEqual(Buffer.from('pdf'));
     await expect(readFile(join(productDirectory, 'later.png'))).rejects.toThrow();
     database.close();
     await new Promise((resolve) => setTimeout(resolve, 25));

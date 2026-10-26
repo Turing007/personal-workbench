@@ -54,6 +54,8 @@ const tableNames = [
   'sales_document_items',
   'sales_receipts',
   'sales_receipt_files',
+  'supplier_catalogs',
+  'supplier_catalog_files',
 ] as const;
 
 export interface BackupManifest {

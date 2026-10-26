@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 37;
+const CURRENT_SCHEMA_VERSION = 38;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -1411,6 +1411,39 @@ function migrateVersionThirtySeven(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '37', now);
 }
 
+/**
+ * 供应商产品图册：收集供应商发来的 PDF / 图片资料。
+ * 一条记录可带多个文件；只对登录用户可见，不生成公开链接。
+ */
+function migrateVersionThirtyEight(database: DatabaseSync, now: string): void {
+  database.exec(
+    `CREATE TABLE IF NOT EXISTS supplier_catalogs (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       supplier TEXT NOT NULL,
+       name TEXT NOT NULL,
+       received_at TEXT NOT NULL,
+       remark TEXT NOT NULL DEFAULT '',
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL
+     )`,
+  );
+  database.exec(
+    `CREATE TABLE IF NOT EXISTS supplier_catalog_files (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       catalog_id INTEGER NOT NULL REFERENCES supplier_catalogs(id) ON DELETE CASCADE,
+       relative_path TEXT NOT NULL UNIQUE,
+       original_name TEXT NOT NULL,
+       mime_type TEXT NOT NULL,
+       size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+       sort_order INTEGER NOT NULL DEFAULT 0,
+       created_at TEXT NOT NULL
+     )`,
+  );
+  database.exec('CREATE INDEX IF NOT EXISTS idx_supplier_catalog_files_catalog ON supplier_catalog_files (catalog_id, sort_order, id)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_supplier_catalogs_received ON supplier_catalogs (received_at DESC, id DESC)');
+  upsertSetting(database, 'schema_version', '38', now);
+}
+
 export function migrateDatabase(database: DatabaseSync): void {
   if (database.isTransaction) {
     throw new Error('Database migration cannot run inside an active transaction');
@@ -1474,6 +1507,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionThirtyFive(transactionDatabase, now);
     migrateVersionThirtySix(transactionDatabase, now);
     migrateVersionThirtySeven(transactionDatabase, now);
+    migrateVersionThirtyEight(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

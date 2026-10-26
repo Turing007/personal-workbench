@@ -34,7 +34,8 @@ export type FileKind =
   | 'product-video'
   | 'customer-product-attachment'
   | 'order-item-requirement'
-  | 'finance-invoice';
+  | 'finance-invoice'
+  | 'supplier-catalog';
 
 export type PublicFileDirectory =
   | 'product-images'
@@ -52,7 +53,8 @@ export type PublicFileDirectory =
   | 'product-videos'
   | 'customer-product-attachments'
   | 'order-item-requirements'
-  | 'finance-invoices';
+  | 'finance-invoices'
+  | 'supplier-catalogs';
 
 export interface StoredFile {
   relativePath: string;
@@ -78,6 +80,8 @@ export class FileStoreError extends Error {
       | 'VIDEO_TOO_LARGE'
       | 'UNSUPPORTED_INVOICE_TYPE'
       | 'INVOICE_TOO_LARGE'
+      | 'UNSUPPORTED_SUPPLIER_CATALOG_TYPE'
+      | 'SUPPLIER_CATALOG_TOO_LARGE'
       | 'INVALID_FILE_PATH'
       | 'INVALID_FILE_NAME'
       | 'INVALID_STAGED_FILE',
@@ -105,6 +109,14 @@ const contractExtensionsByMime: Record<string, readonly string[]> = {
   'image/webp': ['.webp'],
 };
 
+/** 供应商图册只收 PDF 与网页能直接打开的图片。 */
+const supplierCatalogExtensionsByMime: Record<string, readonly string[]> = {
+  'application/pdf': ['.pdf'],
+  'image/png': ['.png'],
+  'image/jpeg': ['.jpg', '.jpeg'],
+  'image/webp': ['.webp'],
+};
+
 function assertAllowedInvoiceFile(originalName: string, mime: string): string {
   if (!(ALLOWED_INVOICE_MIME_TYPES as readonly string[]).includes(mime)) {
     throw new FileStoreError('UNSUPPORTED_INVOICE_TYPE', '发票仅支持 PDF、PNG、JPEG 或 WebP 文件');
@@ -114,6 +126,16 @@ function assertAllowedInvoiceFile(originalName: string, mime: string): string {
   const extensions = mime === 'application/pdf' ? ['.pdf'] : mime === 'image/png' ? ['.png'] : mime === 'image/jpeg' ? ['.jpg', '.jpeg'] : ['.webp'];
   if (!(ALLOWED_INVOICE_EXTENSIONS as readonly string[]).includes(extension) || !extensions.includes(extension)) {
     throw new FileStoreError('UNSUPPORTED_INVOICE_TYPE', '发票文件扩展名与文件类型不匹配');
+  }
+  return extension;
+}
+
+function assertAllowedSupplierCatalogFile(originalName: string, mime: string): string {
+  const base = basename(originalName.replaceAll('\\', '/'));
+  const extension = base.toLowerCase().slice(base.lastIndexOf('.'));
+  const extensions = supplierCatalogExtensionsByMime[mime];
+  if (!extensions || !extensions.includes(extension)) {
+    throw new FileStoreError('UNSUPPORTED_SUPPLIER_CATALOG_TYPE', '供应商图册仅支持 PDF、PNG、JPEG 或 WebP 文件');
   }
   return extension;
 }
@@ -135,6 +157,7 @@ const directoryByKind: Record<FileKind, PublicFileDirectory> = {
   'customer-product-attachment': 'customer-product-attachments',
   'order-item-requirement': 'order-item-requirements',
   'finance-invoice': 'finance-invoices',
+  'supplier-catalog': 'supplier-catalogs',
 };
 
 const publicDirectories = new Set<PublicFileDirectory>(Object.values(directoryByKind));
@@ -197,6 +220,7 @@ function tooLargeError(kind: FileKind, maxSize: number): FileStoreError {
   if (kind === 'order-contract') return new FileStoreError('CONTRACT_TOO_LARGE', `合同不能超过 ${maxSize / 1024 / 1024}MB`);
   if (kind === 'finance-invoice') return new FileStoreError('INVOICE_TOO_LARGE', `发票不能超过 ${maxSize / 1024 / 1024}MB`);
   if (kind === 'product-video') return new FileStoreError('VIDEO_TOO_LARGE', `视频不能超过 ${maxSize / 1024 / 1024}MB`);
+  if (kind === 'supplier-catalog') return new FileStoreError('SUPPLIER_CATALOG_TOO_LARGE', `供应商图册文件不能超过 ${maxSize / 1024 / 1024}MB`);
   return new FileStoreError('PRODUCT_ATTACHMENT_TOO_LARGE', `附件不能超过 ${maxSize / 1024 / 1024}MB`);
 }
 
@@ -295,7 +319,7 @@ export class FileStore {
     originalName: string,
     mime: string,
   ): Promise<StagedFile> {
-    if (kind !== 'order-contract' && kind !== 'product-attachment' && kind !== 'product-video' && kind !== 'customer-product-attachment' && kind !== 'order-item-requirement' && kind !== 'finance-invoice') {
+    if (kind !== 'order-contract' && kind !== 'product-attachment' && kind !== 'product-video' && kind !== 'customer-product-attachment' && kind !== 'order-item-requirement' && kind !== 'finance-invoice' && kind !== 'supplier-catalog') {
       throw new FileStoreError('INVALID_FILE_PATH', '通用附件类型无效');
     }
     const safeOriginalName = normalizeOriginalName(originalName);
@@ -303,9 +327,11 @@ export class FileStore {
       ? assertAllowedContractFile(safeOriginalName, mime)
       : kind === 'finance-invoice'
         ? assertAllowedInvoiceFile(safeOriginalName, mime)
-        : kind === 'product-video'
-          ? assertAllowedVideoFile(safeOriginalName)
-          : assertAllowedProductAttachmentFile(safeOriginalName, mime);
+        : kind === 'supplier-catalog'
+          ? assertAllowedSupplierCatalogFile(safeOriginalName, mime)
+          : kind === 'product-video'
+            ? assertAllowedVideoFile(safeOriginalName)
+            : assertAllowedProductAttachmentFile(safeOriginalName, mime);
     const directoryName = targetDirectoryName(kind);
     const stagingDirectory = join(this.rootDirectory, '.staging');
     await mkdir(stagingDirectory, { recursive: true });
