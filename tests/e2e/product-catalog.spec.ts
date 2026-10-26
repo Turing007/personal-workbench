@@ -93,6 +93,55 @@ test('图册模块：建图册 → 未登录打开链接可见 → 加品刷新�
   }
 });
 
+test('选品编辑：产品大图平铺，只看已选只留勾选产品', async ({ page }) => {
+  const stamp = Date.now();
+  const prefix = `E2E选品平铺${stamp}`;
+  const productA = await seedProduct(page, `${prefix}甲`, stamp);
+  const productB = await seedProduct(page, `${prefix}乙`, stamp);
+  const productC = await seedProduct(page, `${prefix}丙`, stamp);
+
+  try {
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '产品图册', exact: true }).click();
+    await page.getByRole('button', { name: '新建图册' }).click();
+    await page.locator('.catalog-page .search-control input').fill(prefix);
+
+    const cards = page.locator('.catalog-pick-card');
+    await expect(cards).toHaveCount(3);
+    const cardA = page.locator('.catalog-pick-card', { hasText: `${prefix}甲` });
+    const cardB = page.locator('.catalog-pick-card', { hasText: `${prefix}乙` });
+    // 大图平铺：前三张在同一行，图区明显大于原来的 36px 缩略图。
+    const [boxA, boxB] = await Promise.all([cardA.boundingBox(), cardB.boundingBox()]);
+    expect(boxA && boxB).toBeTruthy();
+    expect(Math.abs((boxA?.y ?? 0) - (boxB?.y ?? 0))).toBeLessThan(2);
+    expect((boxB?.x ?? 0) - (boxA?.x ?? 0)).toBeGreaterThan(100);
+    const imageBox = await cardA.locator('.catalog-pick-image').boundingBox();
+    expect(imageBox?.width ?? 0).toBeGreaterThan(100);
+    expect(imageBox?.height ?? 0).toBeGreaterThan(75);
+
+    await cardA.locator('input[type="checkbox"]').check();
+    await cardB.locator('input[type="checkbox"]').check();
+    const selectedFilter = page.getByRole('button', { name: /只看已选/ });
+    await expect(selectedFilter).toContainText('2');
+    await selectedFilter.click();
+    await expect(page.locator('.catalog-pick-card')).toHaveCount(2);
+    await expect(page.locator('.catalog-pick-card', { hasText: `${prefix}丙` })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '全选当前结果' })).toBeDisabled();
+
+    // 取消其中一个后，卡片从「只看已选」里消失；关掉筛选又回到全部。
+    // 用 click 而不是 uncheck：卡片会立刻被筛选移出 DOM，uncheck 等不到状态回读会一直重试。
+    await page.locator('.catalog-pick-card', { hasText: `${prefix}甲` }).locator('input[type="checkbox"]').click();
+    await expect(page.locator('.catalog-pick-card')).toHaveCount(1);
+    await expect(page.locator('.catalog-pick-card', { hasText: `${prefix}乙` })).toBeVisible();
+    await selectedFilter.click();
+    await expect(page.locator('.catalog-pick-card')).toHaveCount(3);
+  } finally {
+    await page.request.delete(`/api/products/${productA.id}`);
+    await page.request.delete(`/api/products/${productB.id}`);
+    await page.request.delete(`/api/products/${productC.id}`);
+  }
+});
+
 test('客户页弹窗：大图与参数卡居中（手机竖排 / 桌面横排）', async ({ page, browser }) => {
   const stamp = Date.now();
   const product = await seedProduct(page, `E2E弹窗检查${stamp}`, stamp);

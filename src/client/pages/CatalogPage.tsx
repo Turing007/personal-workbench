@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Check, Copy, ExternalLink, FileDown, Images, Plus, Power } from 'lucide-react';
+import { ArrowLeft, Check, Copy, ExternalLink, FileDown, Images, Image as ImageIcon, Plus, Power } from 'lucide-react';
 import SearchInput from '../components/SearchInput';
 import Modal from '../components/Modal';
 import { createCatalog, generateProductCatalog, getCatalog, listCatalogs, updateCatalog, type CatalogSummary } from '../api';
@@ -42,6 +42,7 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'active' | 'all'>('active');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [selectedOnly, setSelectedOnly] = useState(false);
   const [busy, setBusy] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [exportTarget, setExportTarget] = useState<CatalogSummary | null>(null);
@@ -119,6 +120,7 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
       setQuery('');
       setStatusFilter('active');
       setCategoryFilter('all');
+      setSelectedOnly(false);
       setView('edit');
     } catch (error) {
       onNotify(errorText(error, '图册读取失败'), 'error');
@@ -143,6 +145,7 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
     const needle = query.trim().toLowerCase();
     return products
       .filter((product) => {
+        if (selectedOnly && !selectedIds.has(String(product.id))) return false;
         if (statusFilter !== 'all' && normalizeProductStatus(product.status) !== statusFilter) return false;
         const category = product.category?.trim() ?? '';
         if (categoryFilter === CATEGORY_UNCATEGORIZED) {
@@ -154,7 +157,7 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
         return [product.name, product.sku, product.supplier, product.category].join(' ').toLowerCase().includes(needle);
       })
       .sort(compareProductByName);
-  }, [products, query, statusFilter, categoryFilter]);
+  }, [products, query, statusFilter, categoryFilter, selectedOnly, selectedIds]);
 
   const toggleProduct = (product: ProductRecord) => {
     const key = String(product.id);
@@ -234,26 +237,40 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
             {categoryOptions.named.map((category) => <option key={category} value={category}>{category}</option>)}
             {categoryOptions.hasUncategorized && <option value={CATEGORY_UNCATEGORIZED}>未分类</option>}
           </select>
+          <button
+            className={`button button-secondary button-sm catalog-selected-filter${selectedOnly ? ' is-active' : ''}`}
+            type="button"
+            aria-pressed={selectedOnly}
+            title="只显示已勾选的产品"
+            onClick={() => setSelectedOnly((current) => !current)}
+          ><Check size={14} />只看已选 {selectedIds.size}</button>
           <span className="toolbar-count">共 {filtered.length} 个符合 · 已选 {selectedIds.size} 个</span>
-          <button className="button button-secondary button-sm" type="button" onClick={() => setSelectedIds(new Set(filtered.map((product) => String(product.id))))} disabled={!filtered.length}>全选当前结果</button>
+          <button className="button button-secondary button-sm" type="button" onClick={() => setSelectedIds(new Set(filtered.map((product) => String(product.id))))} disabled={!filtered.length || selectedOnly} title={selectedOnly ? '只看已选时无需再次全选' : undefined}>全选当前结果</button>
           <button className="button button-secondary button-sm" type="button" onClick={() => setSelectedIds(new Set())} disabled={!selectedIds.size}>清空选择</button>
         </div>
-        <div style={{ border: '1px solid var(--tone-border-soft)', borderRadius: 6, maxHeight: '56vh', overflow: 'auto' }}>
+        <div className="catalog-pick-grid">
           {productsLoading && <div className="table-state">正在加载产品…</div>}
-          {!productsLoading && !filtered.length && <div className="table-state">没有符合条件的产品</div>}
+          {!productsLoading && !filtered.length && <div className="table-state">
+            {selectedOnly
+              ? (selectedIds.size ? '当前筛选下没有已选产品，清空搜索或切到「全部」再看看' : '还没有选择产品')
+              : '没有符合条件的产品'}
+          </div>}
           {filtered.map((product) => {
             const key = String(product.id);
             const status = normalizeProductStatus(product.status);
             const image = product.images[0];
-            return <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderTop: '1px solid var(--tone-border-soft)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={selectedIds.has(key)} onChange={() => toggleProduct(product)} />
-              {image
-                ? <img src={thumbUrl(image.url, 240)} alt="" loading="lazy" decoding="async" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--tone-border-soft)', flexShrink: 0 }} />
-                : <span style={{ width: 36, height: 36, borderRadius: 4, border: '1px dashed var(--tone-border-soft)', flexShrink: 0 }} />}
-              <span style={{ flex: 1, minWidth: 0, display: 'grid', gap: 2 }}>
-                <strong style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.name}</strong>
-                <span style={{ fontSize: 11.5, color: 'var(--tone-text-faint)' }}>{[product.sku, product.category?.trim() || '未分类', STATUS_LABELS[status]].filter(Boolean).join(' · ')}</span>
+            const category = product.category?.trim() || '未分类';
+            const checked = selectedIds.has(key);
+            return <label key={key} className={`catalog-pick-card${checked ? ' is-selected' : ''}`}>
+              <span className="catalog-pick-check"><input type="checkbox" checked={checked} onChange={() => toggleProduct(product)} aria-label={`选择 ${product.name}`} /></span>
+              <span className="catalog-pick-image">
+                {image
+                  ? <img src={thumbUrl(image.url, 480)} alt="" loading="lazy" decoding="async" />
+                  : <span className="catalog-pick-placeholder"><ImageIcon size={24} /><em>无图</em></span>}
+                {status !== 'active' && <span className={`catalog-pick-status badge ${status === 'draft' ? 'badge-warning' : 'badge-neutral'}`}>{STATUS_LABELS[status]}</span>}
               </span>
+              <strong className="catalog-pick-name">{product.name}</strong>
+              <span className="catalog-pick-meta">{[product.sku, category].filter(Boolean).join(' · ')}</span>
             </label>;
           })}
         </div>

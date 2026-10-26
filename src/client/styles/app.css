@@ -894,6 +894,129 @@ select {
   border-top: 1px solid var(--color-divider);
 }
 
+/* ===== 产品图册选品：大图平铺，一屏尽量多放产品 ===== */
+.catalog-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  align-content: start;
+  gap: 10px;
+  max-height: 56vh;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--tone-border-soft);
+  border-radius: 6px;
+  background: var(--color-surface-subtle);
+}
+
+.catalog-pick-grid > .table-state { grid-column: 1 / -1; }
+
+.catalog-pick-card {
+  position: relative;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: border-color var(--ease-standard), background var(--ease-standard), box-shadow var(--ease-standard);
+}
+
+.catalog-pick-card:hover {
+  border-color: var(--color-accent-border);
+  box-shadow: var(--shadow-card);
+}
+
+.catalog-pick-card.is-selected {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.catalog-pick-check {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .95);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .2);
+}
+
+.catalog-pick-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--color-accent-fill);
+  cursor: pointer;
+}
+
+.catalog-pick-image {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  border-radius: 5px;
+  background: var(--color-surface-subtle);
+}
+
+.catalog-pick-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.catalog-pick-placeholder {
+  display: grid;
+  place-items: center;
+  gap: 3px;
+  color: var(--color-text-muted);
+  font-size: var(--text-2xs);
+}
+
+.catalog-pick-placeholder em { font-style: normal; }
+
+.catalog-pick-status {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+}
+
+.catalog-pick-name {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--color-text-strong);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.catalog-pick-meta {
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-selected-filter.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--tone-accent-text);
+}
+
 /* ===== 产品库分页：显示层翻页 + 每页条数选择 ===== */
 .products-pagination {
   flex: 0 0 auto;
