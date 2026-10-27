@@ -51,8 +51,12 @@ if [ -n "${SSH_KEY:-}" ]; then
   SCP=(scp -i "$SSH_KEY" -o IdentitiesOnly=yes)
 fi
 
+# 统一的 SSH 选项：全程免交互，已记录的主机不再重复确认，known_hosts 缺失时自动补写。
+# 漏了 BatchMode 时，密钥不对会卡在密码提示上；漏了 accept-new，新主机第一句 yes/no 会把无人值守部署挂死。
+SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o LogLevel=ERROR)
+
 echo "==> [1/5] 检查服务器连通性与 Docker..."
-if ! "${SSH[@]}" -o BatchMode=yes -o ConnectTimeout=15 "$SERVER" 'true' 2>/dev/null; then
+if ! "${SSH[@]}" "${SSH_OPTS[@]}" -o BatchMode=yes -o ConnectTimeout=15 "$SERVER" 'true' 2>/dev/null; then
   echo "!! 连不上 ${SERVER}。请确认：IP 正确、安全组放行 22、已用 SSH_KEY=私钥路径 指定登录密钥（或已配好免密）。" >&2
   exit 1
 fi
@@ -74,8 +78,12 @@ tar -czf /tmp/workbench-deploy.tgz \
 
 echo "==> [3/5] 上传到 ${SERVER}:${REMOTE_DIR} ..."
 "${SSH[@]}" "$SERVER" "mkdir -p ${REMOTE_DIR}"
+# 服务器上的 .gitignore 由「服务器部署仓库」自己维护（它比源码多出一大段：/src/ /tests/ /docs/ 等
+# 一律不入库，只纳管部署配置）。部署包里的 .gitignore 是源码仓库那份，直接解压会把它盖掉 ——
+# 表现为部署后服务器 git status 突然冒出几百个未跟踪的源码文件。所以先备份、解压后还原。
+"${SSH[@]}" "$SERVER" "cd ${REMOTE_DIR} && if [ -f .gitignore ]; then cp .gitignore /tmp/workbench-remote-gitignore.bak; fi"
 "${SCP[@]}" -q /tmp/workbench-deploy.tgz "$SERVER:/tmp/workbench-deploy.tgz"
-"${SSH[@]}" "$SERVER" "tar -xzf /tmp/workbench-deploy.tgz -C ${REMOTE_DIR} && rm /tmp/workbench-deploy.tgz"
+"${SSH[@]}" "$SERVER" "tar -xzf /tmp/workbench-deploy.tgz -C ${REMOTE_DIR} && rm /tmp/workbench-deploy.tgz && cd ${REMOTE_DIR} && if [ -f /tmp/workbench-remote-gitignore.bak ]; then mv /tmp/workbench-remote-gitignore.bak .gitignore; fi"
 rm /tmp/workbench-deploy.tgz
 
 # 快照必须在重新构建之前：迁移是容器启动时自动跑的，一旦写坏，
