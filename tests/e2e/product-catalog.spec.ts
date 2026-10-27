@@ -93,7 +93,7 @@ test('图册模块：建图册 → 未登录打开链接可见 → 加品刷新�
   }
 });
 
-test('选品编辑：产品大图平铺，只看已选只留勾选产品', async ({ page }) => {
+test('选品编辑：产品大图平铺，已选/未选三档筛选', async ({ page }) => {
   const stamp = Date.now();
   const prefix = `E2E选品平铺${stamp}`;
   const productA = await seedProduct(page, `${prefix}甲`, stamp);
@@ -119,21 +119,57 @@ test('选品编辑：产品大图平铺，只看已选只留勾选产品', async
     expect(imageBox?.width ?? 0).toBeGreaterThan(100);
     expect(imageBox?.height ?? 0).toBeGreaterThan(75);
 
+    const pickGroup = page.getByRole('group', { name: '图册选品勾选状态筛选' });
+    const allFilter = pickGroup.getByRole('button', { name: /^全部/ });
+    const selectedFilter = pickGroup.getByRole('button', { name: /^已选/ });
+    const unselectedFilter = pickGroup.getByRole('button', { name: /^未选/ });
+
+    // 三档按钮初始就在，且各自带数量：全部 3 / 已选 0 / 未选 3。
+    await expect(allFilter).toHaveText(/^全部\s*3$/);
+    await expect(selectedFilter).toHaveText(/^已选\s*0$/);
+    await expect(unselectedFilter).toHaveText(/^未选\s*3$/);
+    await expect(allFilter).toHaveAttribute('aria-pressed', 'true');
+
     await cardA.locator('input[type="checkbox"]').check();
     await cardB.locator('input[type="checkbox"]').check();
-    const selectedFilter = page.getByRole('button', { name: /只看已选/ });
-    await expect(selectedFilter).toContainText('2');
+    // 计数常显：不在当前档位也要跟着更新。
+    await expect(selectedFilter).toHaveText(/^已选\s*2$/);
+    await expect(unselectedFilter).toHaveText(/^未选\s*1$/);
+    await expect(allFilter).toHaveText(/^全部\s*3$/);
+
+    // 已选档：只剩勾选的两个。全选按钮按「有没有未选产品」决定可用，跟当前在哪一档无关。
     await selectedFilter.click();
     await expect(page.locator('.catalog-pick-card')).toHaveCount(2);
     await expect(page.locator('.catalog-pick-card', { hasText: `${prefix}丙` })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: '全选当前结果' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: '全选当前结果' })).toBeEnabled();
 
-    // 取消其中一个后，卡片从「只看已选」里消失；关掉筛选又回到全部。
+    // 取消其中一个后，卡片从「已选」里消失；切到全部又回来。
     // 用 click 而不是 uncheck：卡片会立刻被筛选移出 DOM，uncheck 等不到状态回读会一直重试。
     await page.locator('.catalog-pick-card', { hasText: `${prefix}甲` }).locator('input[type="checkbox"]').click();
     await expect(page.locator('.catalog-pick-card')).toHaveCount(1);
     await expect(page.locator('.catalog-pick-card', { hasText: `${prefix}乙` })).toBeVisible();
-    await selectedFilter.click();
+    await allFilter.click();
+    await expect(page.locator('.catalog-pick-card')).toHaveCount(3);
+
+    // 未选档：只留还没勾的产品，数量与「已选」「全部」加起来对得上。
+    await unselectedFilter.click();
+    await expect(page.locator('.catalog-pick-card')).toHaveCount(2);
+    await expect(page.locator('.catalog-pick-card', { hasText: `${prefix}甲` })).toBeVisible();
+    await expect(page.locator('.catalog-pick-card', { hasText: `${prefix}丙` })).toBeVisible();
+    await expect(page.locator('.catalog-pick-card', { hasText: `${prefix}乙` })).toHaveCount(0);
+
+    // 未选档下「全选当前结果」可点，点完这一档就空了，两个已选数合并成 3。
+    const selectAll = page.getByRole('button', { name: '全选当前结果' });
+    await expect(selectAll).toBeEnabled();
+    await selectAll.click();
+    await expect(page.locator('.catalog-pick-card')).toHaveCount(0);
+    await expect(page.locator('.catalog-page')).toContainText('当前筛选下没有未选产品');
+    await expect(selectedFilter).toHaveText(/^已选\s*3$/);
+    await expect(unselectedFilter).toHaveText(/^未选\s*0$/);
+    await expect(selectAll).toBeDisabled();
+
+    // 清空选择后还在未选档：三个产品全回到列表里，已选归零。
+    await page.getByRole('button', { name: '清空选择' }).click();
     await expect(page.locator('.catalog-pick-card')).toHaveCount(3);
   } finally {
     await page.request.delete(`/api/products/${productA.id}`);

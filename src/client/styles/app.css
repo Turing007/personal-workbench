@@ -1011,10 +1011,48 @@ select {
   white-space: nowrap;
 }
 
-.catalog-selected-filter.is-active {
-  border-color: var(--color-accent);
+/* 选品勾选状态三档切换：全部 / 已选 / 未选。
+   做成一整块分段控件（内部无间隙、圆角只留在两端），比三个独立按钮更像单选档位，
+   也避免和右侧「全选当前结果」等按钮混成一片看不出是一组。 */
+.pick-filter-group {
+  display: inline-flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+
+.pick-filter-button {
+  border: 0;
+  border-left: 1px solid var(--color-border-strong);
+  background: transparent;
+  padding: 0 10px;
+  min-height: 30px;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.pick-filter-button:first-child { border-left: 0; }
+
+.pick-filter-button:hover {
+  background: var(--color-surface-raised);
+  color: var(--color-text-strong);
+}
+
+.pick-filter-button.is-active {
   background: var(--color-accent-soft);
   color: var(--tone-accent-text);
+  font-weight: 600;
+}
+
+.pick-filter-button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
 }
 
 /* 选品编辑：占满一屏，产品图用尽剩余高度；底部保存栏固定在这一屏里。 */

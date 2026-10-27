@@ -25,6 +25,11 @@ import type { ProductRecord } from '../components/ProductEditor';
 
 const CATEGORY_UNCATEGORIZED = '__uncategorized__';
 
+/** 选品结果筛选：全部 / 只看已选 / 只看未选。未选档用来找出「还没勾的产品」，补选时不必翻整个列表。 */
+type PickFilter = 'all' | 'selected' | 'unselected';
+
+const PICK_FILTER_LABELS: Record<PickFilter, string> = { all: '全部', selected: '已选', unselected: '未选' };
+
 const STATUS_LABELS: Record<ProductStatus, string> = { active: '在售', draft: '草稿', discontinued: '停售' };
 
 function errorText(error: unknown, fallback: string): string {
@@ -55,7 +60,7 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'active' | 'all'>('active');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [selectedOnly, setSelectedOnly] = useState(false);
+  const [pickFilter, setPickFilter] = useState<PickFilter>('all');
   const [tab, setTab] = useState<'mine' | 'supplier'>('mine');
   const [supplierCatalogs, setSupplierCatalogs] = useState<SupplierCatalog[] | null>(null);
   const [supplierQuery, setSupplierQuery] = useState('');
@@ -188,7 +193,7 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
       setQuery('');
       setStatusFilter('active');
       setCategoryFilter('all');
-      setSelectedOnly(false);
+      setPickFilter('all');
       setView('edit');
     } catch (error) {
       onNotify(errorText(error, '图册读取失败'), 'error');
@@ -213,7 +218,10 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
     const needle = query.trim().toLowerCase();
     return products
       .filter((product) => {
-        if (selectedOnly && !selectedIds.has(String(product.id))) return false;
+        // 三档互斥：先按勾选状态过一道，再叠状态/分类/搜索词。
+        const picked = selectedIds.has(String(product.id));
+        if (pickFilter === 'selected' && !picked) return false;
+        if (pickFilter === 'unselected' && picked) return false;
         if (statusFilter !== 'all' && normalizeProductStatus(product.status) !== statusFilter) return false;
         const category = product.category?.trim() ?? '';
         if (categoryFilter === CATEGORY_UNCATEGORIZED) {
@@ -225,7 +233,27 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
         return [product.name, product.sku, product.supplier, product.category].join(' ').toLowerCase().includes(needle);
       })
       .sort(compareProductByName);
-  }, [products, query, statusFilter, categoryFilter, selectedOnly, selectedIds]);
+  }, [products, query, statusFilter, categoryFilter, pickFilter, selectedIds]);
+
+  // 三档各自的数量：按除勾选状态以外的条件算，这样「已选 5 / 未选 25」不会因为当前在哪一档而变。
+  const pickCounts = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    let selected = 0;
+    let unselected = 0;
+    for (const product of products) {
+      if (statusFilter !== 'all' && normalizeProductStatus(product.status) !== statusFilter) continue;
+      const category = product.category?.trim() ?? '';
+      if (categoryFilter === CATEGORY_UNCATEGORIZED) {
+        if (category) continue;
+      } else if (categoryFilter !== 'all' && category !== categoryFilter) {
+        continue;
+      }
+      if (needle && ![product.name, product.sku, product.supplier, product.category].join(' ').toLowerCase().includes(needle)) continue;
+      if (selectedIds.has(String(product.id))) selected += 1;
+      else unselected += 1;
+    }
+    return { all: selected + unselected, selected, unselected };
+  }, [products, query, statusFilter, categoryFilter, selectedIds]);
 
   const toggleProduct = (product: ProductRecord) => {
     const key = String(product.id);
@@ -305,23 +333,28 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
             {categoryOptions.named.map((category) => <option key={category} value={category}>{category}</option>)}
             {categoryOptions.hasUncategorized && <option value={CATEGORY_UNCATEGORIZED}>未分类</option>}
           </select>
-          <button
-            className={`button button-secondary button-sm catalog-selected-filter${selectedOnly ? ' is-active' : ''}`}
-            type="button"
-            aria-pressed={selectedOnly}
-            title="只显示已勾选的产品"
-            onClick={() => setSelectedOnly((current) => !current)}
-          ><Check size={14} />只看已选 {selectedIds.size}</button>
-          <span className="toolbar-count">共 {filtered.length} 个符合 · 已选 {selectedIds.size} 个</span>
-          <button className="button button-secondary button-sm" type="button" onClick={() => setSelectedIds(new Set(filtered.map((product) => String(product.id))))} disabled={!filtered.length || selectedOnly} title={selectedOnly ? '只看已选时无需再次全选' : undefined}>全选当前结果</button>
+          {/* 三档互斥切换：带数量，切档时不必再去看下面的统计才知道还剩多少没选。 */}
+          <div className="pick-filter-group" role="group" aria-label="图册选品勾选状态筛选">
+            {(['all', 'selected', 'unselected'] as const).map((option) => <button
+              key={option}
+              className={`pick-filter-button${pickFilter === option ? ' is-active' : ''}`}
+              type="button"
+              aria-pressed={pickFilter === option}
+              onClick={() => setPickFilter(option)}
+            >{PICK_FILTER_LABELS[option]} {pickCounts[option]}</button>)}
+          </div>
+          <span className="toolbar-count">共 {pickCounts.all} 个 · 已选 {pickCounts.selected} 个 · 未选 {pickCounts.unselected} 个</span>
+          <button className="button button-secondary button-sm" type="button" onClick={() => setSelectedIds((current) => { const next = new Set(current); for (const product of filtered) next.add(String(product.id)); return next; })} disabled={!pickCounts.unselected} title="把当前筛选结果里还没勾的产品全部勾上">全选当前结果</button>
           <button className="button button-secondary button-sm" type="button" onClick={() => setSelectedIds(new Set())} disabled={!selectedIds.size}>清空选择</button>
         </div>
         <div className="catalog-pick-grid">
           {productsLoading && <div className="table-state">正在加载产品…</div>}
           {!productsLoading && !filtered.length && <div className="table-state">
-            {selectedOnly
+            {pickFilter === 'selected'
               ? (selectedIds.size ? '当前筛选下没有已选产品，清空搜索或切到「全部」再看看' : '还没有选择产品')
-              : '没有符合条件的产品'}
+              : pickFilter === 'unselected'
+                ? '当前筛选下没有未选产品，都已经勾上了'
+                : '没有符合条件的产品'}
           </div>}
           {filtered.map((product) => {
             const key = String(product.id);
