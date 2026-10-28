@@ -665,7 +665,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
           <table className="battery-price-table">
             <thead>
               <tr>
-                <th className="battery-price-corner" rowSpan={2}>电池容量</th>
+                <th className="battery-price-corner" rowSpan={2}>单节电芯容量</th>
                 {combos.map((combo) => <th key={`${combo.packCount}-${combo.batteryCount}`} className="battery-price-group-start" colSpan={costsVisible ? 3 : 1}>{combo.packCount}节{combo.label}</th>)}
               </tr>
               {/* 每组首列打 group-start 标记（隐藏成本时首列是售价），CSS 据此画组分隔线。 */}

@@ -456,7 +456,7 @@ ${data.company.wechatQrRelativePath ? `<div class="qr-zoom" id="qr-zoom" hidden>
           var corner = document.createElement('th');
           corner.rowSpan = 2;
           corner.className = 'pricebox-corner';
-          corner.textContent = '电池容量';
+          corner.textContent = '单节电芯容量';
           headGroup.appendChild(corner);
           groups.forEach(function (group) {
             var th = document.createElement('th');
