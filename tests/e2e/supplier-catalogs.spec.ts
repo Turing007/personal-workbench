@@ -132,3 +132,62 @@ test('供应商图册：粘贴 PDF、点选图片、搜索、删文件与删整�
     await page.request.delete(`/api/products/${product.id}`);
   }
 });
+
+test('供应商图册：超长图册名与文件名不把打开/下载按钮挤出卡片和弹窗', async ({ page }) => {
+  const longName = `2026年春季电动工具全系列供应商报价图册-冲击扳手-角磨机-电锤-电钻-含税含运-第${stamp}版`;
+  const longFile = `2026春季电动工具全系列报价-冲击扳手-角磨机-电锤-电钻-配件齐全-含税含运-批量优惠-${stamp}.pdf`;
+  const created = await page.request.post('/api/supplier-catalogs', {
+    data: { supplier: `超长供应商名称${stamp}有限公司`, name: longName, receivedAt: '2026-10-20', remark: '' },
+  });
+  expect(created.ok()).toBe(true);
+  const catalog = (await created.json()).data as { id: number };
+  expect((await page.request.post(`/api/supplier-catalogs/${catalog.id}/files`, {
+    multipart: { file: { name: longFile, mimeType: 'application/pdf', buffer: PNG_1X1 } },
+  })).ok()).toBe(true);
+
+  /** 每行的打开/下载/删除按钮右缘都不能越过容器右缘，长文件名要按省略号截断。 */
+  const expectIconsInside = async (container: ReturnType<Page['locator']>) => {
+    const result = await container.evaluate((el) => {
+      const containerRight = el.getBoundingClientRect().right;
+      const rows = Array.from(el.querySelectorAll('.supplier-catalog-file-row'));
+      return {
+        containerRight: Math.round(containerRight),
+        rows: rows.map((row) => {
+          const name = row.querySelector('.supplier-catalog-file-name') as HTMLElement;
+          return {
+            nameClipped: name.scrollWidth > name.clientWidth + 1,
+            iconRights: Array.from(row.querySelectorAll('.icon-button')).map((icon) => Math.round(icon.getBoundingClientRect().right)),
+          };
+        }),
+      };
+    });
+    expect(result.rows.length).toBeGreaterThan(0);
+    expect(result.rows[0]!.nameClipped).toBe(true);
+    for (const row of result.rows) {
+      for (const right of row.iconRights) expect(right).toBeLessThanOrEqual(result.containerRight);
+    }
+  };
+
+  try {
+    await openSupplierTab(page);
+    const card = page.locator('.supplier-catalog-card', { hasText: `${stamp}` }).first();
+    await expect(card).toBeVisible();
+
+    // 桌面端卡片只有 320px 下限时列宽也会被长文件名撑开，先验最窄的桌面卡片。
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expectIconsInside(card);
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expectIconsInside(card);
+
+    await card.getByRole('button', { name: '编辑' }).click();
+    const modal = page.getByRole('dialog', { name: '编辑供应商图册' });
+    await expect(modal).toBeVisible();
+    await expectIconsInside(modal);
+  } finally {
+    const items = (await (await page.request.get('/api/supplier-catalogs')).json()).data.items as Array<{ id: number; name: string }>;
+    for (const item of items) {
+      if (item.name === longName) await page.request.delete(`/api/supplier-catalogs/${item.id}`);
+    }
+  }
+});

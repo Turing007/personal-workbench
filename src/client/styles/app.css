@@ -1353,6 +1353,17 @@ select {
 
 .supplier-catalog-message.is-error { color: var(--tone-danger-text); }
 
+/* 以上单列 grid 的隐式 auto 列会按最宽内容（nowrap 的长文件名）算宽度，
+   把文件行右侧的打开/下载按钮顶出卡片与弹窗。锁成 minmax(0, 1fr) 后
+   列宽跟随容器，长名称按 .supplier-catalog-file-name 的省略号截断。 */
+.supplier-catalog-card,
+.supplier-catalog-card-files,
+.supplier-catalog-file-list,
+.supplier-catalog-editor,
+.supplier-catalog-drop {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 @media (max-width: 640px) {
   .catalog-tabs { width: 100%; }
   .catalog-tab { flex: 1; }
