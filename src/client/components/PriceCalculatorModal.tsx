@@ -120,6 +120,8 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   const [volumeInput, setVolumeInput] = useState(String(DEFAULT_VOLUME_DIVISOR));
   const [volumeBusy, setVolumeBusy] = useState(false);
   const [volumeMessage, setVolumeMessage] = useState('');
+  /** 本次计算用的是哪条采购报价；空串 = 采购价手填（与所选报价无关）。 */
+  const [quoteId, setQuoteId] = useState('');
 
   useEffect(() => {
     if (!open || !product) return;
@@ -128,6 +130,8 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     const quotes = product.purchaseQuotes ?? [];
     const defaultQuote = quotes.find((quote) => quote.isDefault) ?? quotes[0];
     setBaseCost((defaultQuote?.price ?? '').trim() || product.purchasePrice || '0');
+    // 默认档没定价时价格来自镜像列，不能算「选中了某条报价」。
+    setQuoteId(defaultQuote?.price?.trim() ? defaultQuote.id : '');
     setOtherFees('0');
     setPackagingId(product.packaging[0]?.id ?? '');
     setPackagingPickerOpen(false);
@@ -188,6 +192,11 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
 
   const image = product.images[0];
   const base = amountInput(baseCost);
+  /** 产品的多档采购报价：本次计算可手动选其中一条，价格填进采购价输入框。 */
+  const quotes = product.purchaseQuotes ?? [];
+  const selectedQuote = quotes.find((quote) => quote.id === quoteId);
+  const quoteText = (quote: { supplier: string; variant: string }) =>
+    [quote.supplier.trim() || '未填供应商', quote.variant.trim()].filter(Boolean).join(' · ');
   const packagingRows = product.packaging ?? [];
   const packagingRow = packagingRows.find((row) => row.id === packagingId) ?? packagingRows[0];
   /** 包材费：取所选包装的采购价；产品没填就是 0。 */
@@ -351,6 +360,10 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
         packagingId: packagingRow?.id ?? '',
         packagingName: packagingRow?.name ?? '',
         otherCost,
+        // 记下用的是哪家哪条报价，载入方案时据此找回来回显；手动价不写。
+        ...(selectedQuote && (selectedQuote.supplier || selectedQuote.variant)
+          ? { quoteSupplier: selectedQuote.supplier, quoteVariant: selectedQuote.variant }
+          : {}),
       };
       const plan = await savePricePlan(product.id, {
         name: planName,
@@ -380,6 +393,11 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     const params = plan.params;
     if (params) {
       setBaseCost(String(params.baseCost));
+      // 报价按供应商 + 名目找回：报价被删或改了名就退回「手动填写」，价格仍按快照。
+      const savedQuote = params.quoteSupplier || params.quoteVariant
+        ? quotes.find((quote) => quote.supplier === (params.quoteSupplier ?? '') && quote.variant === (params.quoteVariant ?? ''))
+        : undefined;
+      setQuoteId(savedQuote?.id ?? '');
       // 包装按方案快照还原：优先 id，其次名称；都找不到就回到第一条。
       const savedPackaging = (params.packagingId ? packagingRows.find((row) => row.id === params.packagingId) : undefined)
         ?? (params.packagingName ? packagingRows.find((row) => row.name === params.packagingName) : undefined)
@@ -410,6 +428,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
       // 旧格式方案（没存参数）：按明细里能认出来的行尽量回显。
       const byName = new Map(plan.items.map((item) => [item.name, item.unitPrice]));
       setBaseCost(String(byName.get('产品成本') ?? base));
+      setQuoteId('');
       setOtherFees(String(byName.get('其他费用') ?? byName.get('包材配件') ?? byName.get('包材') ?? 0));
       setShipping(String(byName.get('运费') ?? 0));
       setMessage('旧方案只回显了采购价等部分参数');
@@ -466,7 +485,31 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
       <div className="price-calc2-params">
         {costsVisible && <>
         <div className="price-calc2-inputs">
-        <label className="price-calc2-field"><span>采购价</span><input className="input" type="number" min={0} step="0.01" aria-label="采购价" value={baseCost} onChange={(event) => setBaseCost(event.target.value)} /></label>
+        {/* 采购价 + 报价下拉：同一产品有多家供应商报价时，下拉里直接显示名称与价格，
+            选一条即把价格填进采购价；手改价格则回到「手动填写」。只有一条报价时不占地方。
+            下拉和输入框都在「采购价」这一格里，不跨列，三列对齐和自动/手动的位置都不受影响。 */}
+        <div className={`price-calc2-field price-calc2-price-field${quotes.length > 1 ? ' has-quote-select' : ''}`}>
+          <span>采购价</span>
+          {quotes.length > 1 && <select
+            className="toolbar-select price-calc2-quote-select"
+            aria-label="采购报价"
+            title="选择本次计算用的采购报价；手改价格即视为手动填写"
+            value={quoteId}
+            onChange={(event) => {
+              const next = quotes.find((quote) => quote.id === event.target.value);
+              setQuoteId(next?.id ?? '');
+              if (next) setBaseCost(next.price);
+            }}
+          >
+            {quotes.map((quote) => {
+              const priced = quote.price.trim().length > 0;
+              const text = priced ? `¥${quote.price} · ${quoteText(quote)}` : `未定价 · ${quoteText(quote)}`;
+              return <option key={quote.id} value={quote.id} disabled={!priced} title={text}>{text}</option>;
+            })}
+            <option value="">手动填写</option>
+          </select>}
+          <input className="input" type="number" min={0} step="0.01" aria-label="采购价" value={baseCost} onChange={(event) => { setBaseCost(event.target.value); setQuoteId(''); }} />
+        </div>
         <label className="price-calc2-field"><span>毛利率 %</span><input className="input" type="number" min={0} aria-label="毛利率" value={markup} onChange={(event) => setMarkup(event.target.value)} /></label>
         <label className="price-calc2-field"><span>其他费用</span><input className="input" type="number" min={0} step="0.01" aria-label="其他费用" value={otherFees} onChange={(event) => setOtherFees(event.target.value)} title="包材费按所选包装自动带出；这里填额外的其他费用" /></label>
         {/* 运费：自动按「计费重量 × 单价」预估，手动则手填固定值。单价放运费前面。 */}

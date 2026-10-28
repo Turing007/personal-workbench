@@ -363,3 +363,97 @@ test('电池价格查询：参考表列出全部节数，主矩阵按产品电�
     await page.request.delete(`/api/products/${product.id}`);
   }
 });
+
+test('采购报价选择：多供应商报价手动切换、手改价格回到手动、方案记住所选报价', async ({ page }) => {
+  const stamp = Date.now();
+  const created = await page.request.post('/api/products', {
+    data: {
+      name: `E2E报价切换${stamp}`,
+      status: 'active',
+      category: '电动工具',
+      purchaseQuotes: [
+        { supplier: '德艺堡', variant: '含配件', price: '100', isDefault: true },
+        { supplier: '宏力', variant: '无刷款', price: '120', isDefault: false },
+        { supplier: '久力', variant: '裸机款', price: '', isDefault: false },
+      ],
+      packaging: [{ name: '彩盒包装', packCount: 24, innerWeight: 0.9, purchasePrice: 0 }],
+    },
+  });
+  expect(created.ok()).toBe(true);
+  const product = (await created.json()).data as { id: number };
+
+  try {
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+    await page.locator('.products-page .page-toolbar .search-control input').fill(`E2E报价切换${stamp}`);
+    await expect(page.locator('.products-page .table-state')).toHaveCount(0);
+    await page.locator('.products-page .price-calc-entry').first().click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('售价计算');
+
+    const quoteSelect = dialog.getByLabel('采购报价');
+    const selectedQuoteText = () => quoteSelect.evaluate((el) => (el as HTMLSelectElement).selectedOptions[0]?.textContent?.trim() ?? '');
+    // 毛利率固定 15%，排除上次记住的值影响售价断言。
+    await dialog.getByLabel('毛利率').fill('15');
+    // 默认进来选中默认档，价格就是该报价。
+    await expect(dialog.getByLabel('采购价')).toHaveValue('100');
+    expect(await selectedQuoteText()).toContain('¥100 · 德艺堡 · 含配件');
+    const bare = dialog.locator('.price-calc2-bare');
+    await expect(bare).toContainText('售价 ¥116.5');
+
+    // 下拉列出全部报价 + 手动填写；未定价的那条禁选。
+    await expect(quoteSelect.locator('option')).toHaveCount(4);
+    await expect(quoteSelect.locator('option', { hasText: '未定价 · 久力 · 裸机款' })).toBeDisabled();
+    await expect(quoteSelect.locator('option', { hasText: '手动填写' })).toBeEnabled();
+
+    // 版面：采购价仍占一格（下拉 + 价格框都在格内），自动/手动与运费同一行，三个字段不被挤到下一行。
+    const layout = await dialog.locator('.price-calc2-inputs').evaluate((root) => {
+      const grid = root.getBoundingClientRect();
+      const price = root.querySelector('.price-calc2-price-field')!.getBoundingClientRect();
+      const select = root.querySelector('.price-calc2-quote-select')!.getBoundingClientRect();
+      const shipping = Array.from(root.querySelectorAll<HTMLElement>('.price-calc2-field'))
+        .find((el) => (el.querySelector('span')?.textContent ?? '').startsWith('运费单价'))!;
+      const mode = root.querySelector('.price-calc2-shipmode')!;
+      return {
+        gridRight: grid.right,
+        priceRight: price.right,
+        selectRight: select.right,
+        shippingTop: Math.round(shipping.getBoundingClientRect().top),
+        modeTop: Math.round(mode.getBoundingClientRect().top),
+      };
+    });
+    expect(layout.priceRight).toBeLessThanOrEqual(layout.gridRight + 1);
+    expect(layout.selectRight).toBeLessThanOrEqual(layout.priceRight + 1);
+    expect(Math.abs(layout.shippingTop - layout.modeTop)).toBeLessThanOrEqual(2);
+
+    // 选 120 的报价：采购价直接带入该报价，整表重算。
+    await quoteSelect.selectOption({ label: '¥120 · 宏力 · 无刷款' });
+    await expect(dialog.getByLabel('采购价')).toHaveValue('120');
+    expect(await selectedQuoteText()).toContain('¥120 · 宏力 · 无刷款');
+    await expect(bare).toContainText('售价 ¥139.5');
+
+    // 保存方案会记下供应商与名目。
+    await dialog.getByLabel('方案名').fill('宏力方案');
+    await dialog.getByRole('button', { name: '保存为方案' }).click();
+    await expect(dialog.locator('.price-calc-plan', { hasText: '宏力方案' })).toBeVisible();
+
+    // 手改采购价：下拉回到「手动填写」，按手动价保存第二份方案。
+    await dialog.getByLabel('采购价').fill('130');
+    expect(await selectedQuoteText()).toBe('手动填写');
+    await dialog.getByLabel('方案名').fill('手动方案');
+    await dialog.getByRole('button', { name: '保存为方案' }).click();
+    await expect(dialog.locator('.price-calc-plan', { hasText: '手动方案' })).toBeVisible();
+
+    // 载入「宏力方案」：价格按快照回显，报价下拉找回并重新选中宏力。
+    await dialog.locator('.price-calc-plan', { hasText: '宏力方案' }).getByRole('button', { name: '载入' }).click();
+    await expect(dialog.getByLabel('采购价')).toHaveValue('120');
+    expect(await selectedQuoteText()).toContain('¥120 · 宏力 · 无刷款');
+
+    // 载入「手动方案」：没有报价快照，下拉是手动填写。
+    await dialog.locator('.price-calc-plan', { hasText: '手动方案' }).getByRole('button', { name: '载入' }).click();
+    await expect(dialog.getByLabel('采购价')).toHaveValue('130');
+    expect(await selectedQuoteText()).toBe('手动填写');
+  } finally {
+    await page.request.delete(`/api/products/${product.id}`);
+  }
+});

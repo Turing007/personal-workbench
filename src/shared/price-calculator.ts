@@ -111,6 +111,12 @@ export interface PricePlanParams {
    * 名称更稳定。空数组 = 明确一个都没选；缺省 = 旧方案，载入时按「全部计入」回显。
    */
   accessoryNames?: string[];
+  /**
+   * 本次计算所选采购报价的供应商与名目快照（手动改价时不写）。
+   * 载入方案时按这两个字段找回报价并回显选中；找不到就按手动价处理。
+   */
+  quoteSupplier?: string;
+  quoteVariant?: string;
 }
 
 /** 方案里的配件名称：去空白、截断超长名、去重、去掉空项；非数组视为「没存过」。 */
@@ -151,6 +157,13 @@ export function normalizePricePlanParams(value: unknown): PricePlanParams {
   if (record.otherCost !== undefined && record.otherCost !== null) params.otherCost = pricePlanAmount(record.otherCost);
   if (typeof record.packagingId === 'string') params.packagingId = record.packagingId.trim().slice(0, 80);
   if (typeof record.packagingName === 'string') params.packagingName = record.packagingName.trim().slice(0, 80);
+  // 报价快照：只有确实存过才写出；供应商与名目都空时没有可匹配的报价，不写。
+  if (typeof record.quoteSupplier === 'string') params.quoteSupplier = record.quoteSupplier.trim().slice(0, 40);
+  if (typeof record.quoteVariant === 'string') params.quoteVariant = record.quoteVariant.trim().slice(0, 40);
+  if (!params.quoteSupplier && !params.quoteVariant) {
+    delete params.quoteSupplier;
+    delete params.quoteVariant;
+  }
   return params;
 }
 
