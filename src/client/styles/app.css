@@ -2016,9 +2016,14 @@ select {
 
 /* 点缩略图或放大镜都打开大图浮层；勾选由底栏圆钮负责，热区互不重叠。 */
 .product-image-thumbnail-preview {
+  position: relative;
   display: grid;
   width: 100%;
   aspect-ratio: 1;
+  /* 固定正方形：按钮的自动最小高度会跟着图片走，竖拍实拍图会把格子撑高，
+     出现一张高一张矮。压掉最小高度并裁剪溢出，卡片高度才统一。 */
+  min-height: 0;
+  overflow: hidden;
   place-items: center;
   border: 0;
   padding: 3px;
@@ -2027,9 +2032,15 @@ select {
 }
 
 .product-image-thumbnail img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+  /* 绝对定位撑满预览框：按钮里的百分比高度不可靠，竖图会按原比例撑高、
+     被 overflow 裁掉。inset 留出 3px 内边距；cover 让每张缩略图都填满
+     同一个正方形（实拍图长宽比不一，contain 会留白显得大小不一），
+     原图不受影响，点开的大图仍是完整的。 */
+  position: absolute;
+  inset: 3px;
+  width: calc(100% - 6px);
+  height: calc(100% - 6px);
+  object-fit: cover;
   /* 手机端在缩略图上滑过连选时，别让浏览器把长按/拖动当成选图或拖图。 */
   -webkit-touch-callout: none;
   -webkit-user-drag: none;
