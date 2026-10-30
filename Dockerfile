@@ -33,9 +33,12 @@ RUN npm ci --omit=dev
 #  3) --with-deps 顺带补齐 Chromium 依赖的系统库（slim 基座没有）；
 #  4) apt 默认的 deb.debian.org 从北京实测只有 ~17KB/s、阿里云公网镜像当天也只有 ~25KB/s，
 #     换清华 TUNA（实测 ~76MB/s，且公网可达，不像 mirrors.cloud.aliyuncs.com 只限 ECS 内网）；
-#  5) 中文字体单独装：图册与单据模板全是中文，缺字体 Chromium 渲染出来是方块。
+#  5) Playwright 官方 CDN 国内下载 Chromium 实测约 20KB/s，会把镜像构建拖到几小时；
+#     改用 npmmirror 的 Playwright 二进制镜像（实测 2-3MB/s），并允许构建时用 ARG 覆盖；
+#  6) 中文字体单独装：图册与单据模板全是中文，缺字体 Chromium 渲染出来是方块。
+ARG PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright
 RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources \
-  && node node_modules/playwright/cli.js install --with-deps chromium \
+  && PLAYWRIGHT_DOWNLOAD_HOST="${PLAYWRIGHT_DOWNLOAD_HOST}" node node_modules/playwright/cli.js install --with-deps chromium \
   && apt-get install -y --no-install-recommends ffmpeg fonts-noto-cjk \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/dist ./dist
