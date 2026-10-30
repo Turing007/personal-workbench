@@ -182,8 +182,8 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
       </div>
     </section>
 
-    <Modal open={confirmMarkOpen} title="标记已备货" onClose={() => setConfirmMarkOpen(false)} width={420}>
-      <div style={{ display: 'grid', gap: 12, fontSize: 13, color: '#334155' }}>
+    <Modal open={confirmMarkOpen} title="标记已备货" onClose={() => setConfirmMarkOpen(false)} width={420} compact>
+      <div style={{ display: 'grid', gap: 12, fontSize: 13, color: 'var(--color-text)' }}>
         <span>将把当前范围内的 <strong>{orderIds.length}</strong> 张待备货订单推进到「已备货」，订单会离开备货表。确认继续？</span>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button className="button button-secondary" type="button" disabled={marking} onClick={() => setConfirmMarkOpen(false)}>取消</button>
@@ -301,14 +301,14 @@ function LinkSystemProductModal({ target, systemProducts, onClose, onLinked, onN
 
   return <Modal open={Boolean(target)} title="关联系统产品" onClose={busy ? () => undefined : onClose} width={560}>
     {target && <div style={{ display: 'grid', gap: 11 }}>
-      <div style={{ color: '#475569', fontSize: 12 }}>订单明细：<strong>{target.displayName}</strong>{target.quantity ? `*${target.quantity}` : ''}</div>
-      <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>搜索系统产品
+      <div style={{ color: 'var(--color-text-secondary)', fontSize: 12 }}>订单明细：<strong>{target.displayName}</strong>{target.quantity ? `*${target.quantity}` : ''}</div>
+      <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>搜索系统产品
         <span style={{ position: 'relative', display: 'block' }}>
-          <input value={query} onChange={(event) => { setQuery(event.target.value); setSelectedId(null); }} placeholder="输入品名、规格、SKU或供应商搜索" style={{ width: '100%', border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)', padding: query ? '8px 28px 8px 9px' : '8px 9px', font: 'inherit', fontSize: 12 }} />
-          {!!query && <button type="button" aria-label="清空搜索" title="清空" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(''); setSelectedId(null); }} style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, border: 0, borderRadius: '50%', padding: 0, color: '#94a3b8', background: 'transparent', cursor: 'pointer' }}><X size={13} /></button>}
+          <input value={query} onChange={(event) => { setQuery(event.target.value); setSelectedId(null); }} placeholder="输入品名、规格、SKU或供应商搜索" style={{ width: '100%', border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', padding: query ? '8px 28px 8px 9px' : '8px 9px', font: 'inherit', fontSize: 12 }} />
+          {!!query && <button type="button" aria-label="清空搜索" title="清空" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(''); setSelectedId(null); }} style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, border: 0, borderRadius: '50%', padding: 0, color: 'var(--color-text-muted)', background: 'transparent', cursor: 'pointer' }}><X size={13} /></button>}
         </span>
       </label>
-      <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 'var(--radius-ui)' }}>
+      <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)' }}>
         {filtered.map((item) => <button
           key={item.id}
           type="button"
@@ -317,14 +317,14 @@ function LinkSystemProductModal({ target, systemProducts, onClose, onLinked, onN
             setSupplierName(item.name || supplierName);
           }}
           disabled={busy}
-          style={{ display: 'block', width: '100%', padding: '8px 10px', border: 0, borderBottom: '1px solid #edf0f2', color: '#334155', background: Number(item.id) === selectedId ? '#f0fdfa' : '#fff', cursor: 'pointer', textAlign: 'left' }}
+          style={{ display: 'block', width: '100%', padding: '8px 10px', border: 0, borderBottom: '1px solid var(--color-border)', color: 'var(--color-text)', background: Number(item.id) === selectedId ? 'var(--color-accent-soft)' : 'var(--color-surface)', cursor: 'pointer', textAlign: 'left' }}
         >
           <SystemProductOptionRow product={item} />
         </button>)}
-        {!filtered.length && <div style={{ padding: 12, color: '#94a3b8', textAlign: 'center', fontSize: 12 }}>没有匹配的系统产品</div>}
+        {!filtered.length && <div style={{ padding: 12, color: 'var(--color-text-muted)', textAlign: 'center', fontSize: 12 }}>没有匹配的系统产品</div>}
       </div>
-      <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>供应商产品名称
-        <input value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder="报给供应商的名称，留空则按系统产品名报供" style={{ width: '100%', border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)', padding: '8px 9px', font: 'inherit', fontSize: 12 }} />
+      <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>供应商产品名称
+        <input value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder="报给供应商的名称，留空则按系统产品名报供" style={{ width: '100%', border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', padding: '8px 9px', font: 'inherit', fontSize: 12 }} />
       </label>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
         <button className="button button-secondary" type="button" disabled={busy} onClick={onClose}>取消</button>

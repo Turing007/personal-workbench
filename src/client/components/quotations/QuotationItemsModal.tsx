@@ -145,14 +145,14 @@ export default function QuotationItemsModal({ open, customerId, items, error, co
     setCustomerEditorLineKey(undefined);
   };
 
-  return <Modal open={open} title="产品明细" width={1240} layer={40} onClose={onClose} footer={
+  return <Modal open={open} title="产品明细" width={1200} layer={40} onClose={onClose} footer={
     <>
-      <span style={{ marginRight: 'auto', color: '#94a3b8', fontSize: 12 }}>共 {items.length} 行产品，修改即时生效</span>
+      <span style={{ marginRight: 'auto', color: 'var(--color-text-muted)', fontSize: 12 }}>共 {items.length} 行产品，修改即时生效</span>
       <button type="button" className="button button-primary" title="完成产品明细编辑" onClick={onClose}>完成</button>
     </>
   }>
     <div style={{ display: 'grid', gap: 10, fontSize: 12 }}>
-      {error && <div role="alert" style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-ui)', padding: '8px 10px' }}>{error}</div>}
+      {error && <div role="alert" style={{ color: 'var(--color-danger)', background: 'var(--color-danger-soft)', border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-ui)', padding: '8px 10px' }}>{error}</div>}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <strong style={{ fontSize: 13 }}>编辑产品行</strong>
         <div style={{ display: 'flex', gap: 6 }}>
@@ -160,19 +160,19 @@ export default function QuotationItemsModal({ open, customerId, items, error, co
           <button type="button" className="button" title="添加临时产品" onClick={() => onChange([...items, emptyLine()])}><Plus size={14} />临时产品</button>
         </div>
       </div>
-      {showColumns && <div style={{ padding: 8, background: '#f8fafc', borderRadius: 'var(--radius-ui)' }}><DocumentColumnSettings kind="quotation" value={columns} onChange={(next) => onColumnsChange(next as QuotationDisplayConfig['columns'])} /></div>}
-      <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(56vh, 480px)', border: '1px solid #e2e8f0', borderRadius: 'var(--radius-ui)' }}>
+      {showColumns && <div style={{ padding: 8, background: 'var(--color-surface-subtle)', borderRadius: 'var(--radius-ui)' }}><DocumentColumnSettings kind="quotation" value={columns} onChange={(next) => onColumnsChange(next as QuotationDisplayConfig['columns'])} /></div>}
+      <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(56vh, 480px)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)' }}>
         <table style={{ width: '100%', minWidth: 1040, borderCollapse: 'collapse' }}>
-          <thead><tr style={{ background: '#f8fafc', color: '#64748b', textAlign: 'left' }}>
+          <thead><tr style={{ background: 'var(--color-surface-subtle)', color: 'var(--color-text-secondary)', textAlign: 'left' }}>
             <th style={{ padding: 7, width: 30 }}>#</th><th style={{ padding: 7, minWidth: 300 }}>产品</th><th style={{ padding: 7, width: 110 }}>规格</th><th style={{ padding: 7, width: 110 }}>单价</th><th style={{ padding: 7, width: 214 }}>数量区间价</th><th style={{ padding: 7, minWidth: 130 }}>备注</th><th style={{ padding: 7, width: 154 }}>操作</th>
           </tr></thead>
           <tbody>{items.map((item, index) => {
             const unitPrice = parseNonNegative(item.unitPrice);
             const imageUrl = item.image.previewUrl ?? (item.image.relativePath ? `/files/${item.image.relativePath}` : undefined);
-            return <tr key={item.clientKey} style={{ borderTop: '1px solid #edf0f2', verticalAlign: 'top' }}>
-              <td style={{ padding: 7, color: '#94a3b8' }}>{index + 1}</td>
+            return <tr key={item.clientKey} style={{ borderTop: '1px solid var(--color-border)', verticalAlign: 'top' }}>
+              <td style={{ padding: 7, color: 'var(--color-text-muted)' }}>{index + 1}</td>
               <td style={{ padding: 7 }}><div style={{ display: 'grid', gridTemplateColumns: '36px minmax(0, 1fr) auto', gap: 5, alignItems: 'center' }}>
-                <button type="button" title={imageUrl ? '更换产品图片' : '添加产品图片'} onClick={() => fileInputs.current[item.clientKey]?.click()} style={{ width: 36, height: 36, padding: 0, border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)', background: '#fff', display: 'grid', placeItems: 'center', overflow: 'hidden', cursor: 'pointer' }}>{imageUrl ? <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={15} color="#94a3b8" />}</button>
+                <button type="button" title={imageUrl ? '更换产品图片' : '添加产品图片'} onClick={() => fileInputs.current[item.clientKey]?.click()} style={{ width: 36, height: 36, padding: 0, border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface)', display: 'grid', placeItems: 'center', overflow: 'hidden', cursor: 'pointer' }}>{imageUrl ? <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={15} color="var(--color-text-muted)" />}</button>
                 <input value={item.name} onChange={(event) => updateLine(item.clientKey, { name: event.target.value, isTemporary: item.productId == null })} style={fieldStyle} placeholder="品名" />
                 <div style={{ display: 'inline-flex', gap: 2 }}>
                   <button type="button" className="icon-button" title="从客户产品库选择" onClick={(event) => toggleCustomerPicker(item.clientKey, event)}><span style={{ fontSize: 11, fontWeight: 700 }}>客</span></button>
@@ -182,17 +182,17 @@ export default function QuotationItemsModal({ open, customerId, items, error, co
               </div>
               </td>
               <td style={{ padding: 7 }}><input value={item.specification} onChange={(event) => updateLine(item.clientKey, { specification: event.target.value })} style={fieldStyle} /></td>
-              <td style={{ padding: 7 }}><input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(event) => updateLine(item.clientKey, { unitPrice: event.target.value })} style={{ ...fieldStyle, borderColor: unitPrice === null ? '#dc2626' : '#dbe3ea' }} /></td>
+              <td style={{ padding: 7 }}><input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(event) => updateLine(item.clientKey, { unitPrice: event.target.value })} style={{ ...fieldStyle, borderColor: unitPrice === null ? 'var(--color-danger-strong)' : 'var(--color-border-control)' }} /></td>
               <td style={{ padding: 7 }}>
                 <div style={{ display: 'grid', gap: 4 }}>
                   {(item.priceTiers ?? []).map((tier, tierIndex) => <div key={tierIndex} style={{ display: 'grid', gridTemplateColumns: '56px 12px 56px 60px 24px', gap: 4, alignItems: 'center' }}>
                     <input type="number" min="0" step="any" aria-label="区间起始数量" placeholder="≥" value={tier.minQuantity} onChange={(event) => updateTier(item.clientKey, tierIndex, { minQuantity: event.target.value })} style={fieldStyle} />
-                    <span style={{ textAlign: 'center', color: '#94a3b8' }}>~</span>
+                    <span style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>~</span>
                     <input type="number" min="0" step="any" aria-label="区间截止数量" placeholder="不限" value={tier.maxQuantity} onChange={(event) => updateTier(item.clientKey, tierIndex, { maxQuantity: event.target.value })} style={fieldStyle} />
                     <input type="number" min="0" step="0.01" aria-label="区间单价（元）" placeholder="单价" value={tier.unitPrice} onChange={(event) => updateTier(item.clientKey, tierIndex, { unitPrice: event.target.value })} style={fieldStyle} />
                     <button type="button" className="icon-button danger" title="删除数量区间" onClick={() => removeTier(item.clientKey, tierIndex)}><X size={13} /></button>
                   </div>)}
-                  <button type="button" title="添加数量区间报价" onClick={() => addTier(item.clientKey)} style={{ justifySelf: 'start', display: 'inline-flex', alignItems: 'center', gap: 3, border: '1px dashed #cbd5e1', borderRadius: 'var(--radius-ui)', background: '#f8fafc', padding: '3px 8px', cursor: 'pointer', color: '#475569', fontSize: 11 }}><Plus size={12} />区间价</button>
+                  <button type="button" title="添加数量区间报价" onClick={() => addTier(item.clientKey)} style={{ justifySelf: 'start', display: 'inline-flex', alignItems: 'center', gap: 3, border: '1px dashed var(--color-border-control)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface-subtle)', padding: '3px 8px', cursor: 'pointer', color: 'var(--color-text-secondary)', fontSize: 11 }}><Plus size={12} />区间价</button>
                 </div>
               </td>
               <td style={{ padding: 7 }}><input value={item.remark} onChange={(event) => updateLine(item.clientKey, { remark: event.target.value })} style={fieldStyle} /></td>
@@ -200,7 +200,7 @@ export default function QuotationItemsModal({ open, customerId, items, error, co
             </tr>;
           })}</tbody>
         </table>
-        {!items.length && <div style={{ padding: 24, textAlign: 'center', color: '#94a3b8' }}>暂无产品，点击“临时产品”添加或从系统产品库调用。</div>}
+        {!items.length && <div style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-muted)' }}>暂无产品，点击“临时产品”添加或从系统产品库调用。</div>}
       </div>
       {customerPicker && (() => {
         const line = items.find((item) => item.clientKey === customerPicker.lineKey);

@@ -770,7 +770,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
     </div>}
     </Modal>
     {/* 电池价格查询：参考表列出完整矩阵，不受产品电压过滤；成本隐藏时入口一起收起，避免发客户截图时暴露进价。 */}
-    <Modal open={batteryPricesOpen} title="电池价格" onClose={() => setBatteryPricesOpen(false)} width={620} layer={22}>
+    <Modal open={batteryPricesOpen} title="电池价格" onClose={() => setBatteryPricesOpen(false)} width={620} layer={22} compact>
       <div className="battery-query">
         <p className="battery-query-hint">单价 = 一块电池包的价格（元）；未定价的组合显示 —。这里列出全部容量与节数，不受产品电压过滤（计算器里只显示适配电压的节数）。</p>
         {batteryMatrix && batteryMatrix.capacities.length && batteryMatrix.packCounts.length ? (
@@ -795,7 +795,7 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
       </div>
     </Modal>
     {/* 体积重参数：点运费金额打开；保存即全局生效，所有产品的自动运费共用。 */}
-    <Modal open={volumeDialogOpen} title="运费体积参数" onClose={() => setVolumeDialogOpen(false)} width={480} layer={22}>
+    <Modal open={volumeDialogOpen} title="运费体积参数" onClose={() => setVolumeDialogOpen(false)} width={480} layer={22} compact>
       <div className="volume-settings">
         <label className="price-calc2-field"><span>体积参数（cm³/kg）</span>
           <input

@@ -22,8 +22,8 @@ export default function DocumentColumnSettings({ kind, value, onChange, showProd
   const columns = kind === 'quotation' ? quotationColumns : salesColumns;
   const coreColumns = new Set<ColumnKey>(kind === 'quotation' ? ['name'] : ['productName', 'amount']);
   const toggle = (key: ColumnKey, checked: boolean) => onChange({ ...value, [key]: checked });
-  return <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, fontSize: 12, color: '#475569' }}>
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: '#64748b', fontWeight: 600 }}><Columns3 size={15} />显示列</span>
+  return <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--color-text-secondary)', fontWeight: 600 }}><Columns3 size={15} />显示列</span>
     {kind === 'sales' && onShowProductImagesChange && <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><input disabled={disabled} type="checkbox" checked={Boolean(showProductImages)} onChange={(event) => onShowProductImagesChange(event.target.checked)} />图片</label>}
     {columns.map(([key, label]) => {
       const core = coreColumns.has(key);

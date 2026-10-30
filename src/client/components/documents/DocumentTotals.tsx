@@ -27,8 +27,8 @@ export default function DocumentTotals({ subtotalCents, taxRateBps = 0, taxCents
     rows.push(['未付款', formatMoney(outstandingCents), true]);
   }
   return <div style={{ minWidth: 280, display: 'grid', gap: 7, justifySelf: 'end' }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2, color: '#64748b', fontSize: 12, fontWeight: 600 }}><CircleDollarSign size={15} />金额合计</div>
-    {rows.map(([label, amount, strong]) => <div key={label} style={{ display: 'grid', gridTemplateColumns: '1fr 118px', gap: 18, alignItems: 'center', fontSize: strong ? 13 : 12, color: strong ? '#17212b' : '#64748b', fontWeight: strong ? 700 : 400 }}><span>{label}</span><span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{amount}</span></div>)}
-    {showOutstanding && <div style={{ paddingTop: 6, borderTop: '1px solid #e2e8f0', textAlign: 'right', color: '#64748b', fontSize: 11 }}>未付款大写：{centsToChineseUppercase(Math.max(0, outstandingCents))}</div>}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2, color: 'var(--color-text-secondary)', fontSize: 12, fontWeight: 600 }}><CircleDollarSign size={15} />金额合计</div>
+    {rows.map(([label, amount, strong]) => <div key={label} style={{ display: 'grid', gridTemplateColumns: '1fr 118px', gap: 18, alignItems: 'center', fontSize: strong ? 13 : 12, color: strong ? 'var(--color-text)' : 'var(--color-text-secondary)', fontWeight: strong ? 700 : 400 }}><span>{label}</span><span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{amount}</span></div>)}
+    {showOutstanding && <div style={{ paddingTop: 6, borderTop: '1px solid var(--color-border)', textAlign: 'right', color: 'var(--color-text-secondary)', fontSize: 11 }}>未付款大写：{centsToChineseUppercase(Math.max(0, outstandingCents))}</div>}
   </div>;
 }

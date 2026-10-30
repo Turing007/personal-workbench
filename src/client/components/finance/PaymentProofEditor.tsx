@@ -177,7 +177,7 @@ export default function PaymentProofEditor({ detail, onRefresh, onNotify }: Paym
     <div className="finance-proof-upload">
       {file && fileUrl ? <a href={fileUrl} target="_blank" rel="noreferrer" className="finance-proof-thumb" title="查看待上传水单原图"><img src={fileUrl} alt={file.name} /></a> : null}
       <label className="finance-file-picker"><Upload size={15} />{file ? file.name : '选择水单图片'}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setProofFile(event.target.files?.[0])} /></label>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#64748b', fontSize: 12, whiteSpace: 'nowrap' }}><ClipboardPaste size={14} />支持 Ctrl+V 粘贴截图</span>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--color-text-secondary)', fontSize: 12, whiteSpace: 'nowrap' }}><ClipboardPaste size={14} />支持 Ctrl+V 粘贴截图</span>
       <input type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} aria-label="付款日期" />
       <input ref={amountRef} type="number" min="0.01" step="0.01" placeholder="付款金额" value={amount} onChange={(event) => setAmount(event.target.value)} />
       <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} aria-label="付款方式">{paymentMethods.map((method) => <option key={method}>{method}</option>)}</select>
@@ -185,7 +185,7 @@ export default function PaymentProofEditor({ detail, onRefresh, onNotify }: Paym
       <input placeholder="交易流水号（可选）" value={transactionNo} onChange={(event) => setTransactionNo(event.target.value)} />
       <button className="button button-primary" type="button" disabled={!file || !amount || busy} onClick={() => void upload()}><Plus size={14} />上传水单</button>
     </div>
-    {(pasteHint || (file && !amount)) && <div style={{ color: '#b45309', fontSize: 12, marginTop: 4 }}>{pasteHint || '已读取待上传水单图片，请填写付款金额后点击「上传水单」'}</div>}
+    {(pasteHint || (file && !amount)) && <div style={{ color: 'var(--color-warning-text)', fontSize: 12, marginTop: 4 }}>{pasteHint || '已读取待上传水单图片，请填写付款金额后点击「上传水单」'}</div>}
     <div className="finance-proof-list">{detail.proofs.length ? detail.proofs.map((proof) => <div className="finance-proof-row" key={proof.id}>
       <a href={proof.url} target="_blank" rel="noreferrer" className="finance-proof-thumb"><img src={thumbUrl(proof.url, 240)} alt={proof.originalName} loading="lazy" decoding="async" /></a>
       <div className="finance-proof-main"><strong>{proof.originalName}</strong><span>{proof.paymentDate || '未填日期'} · {proof.amountCents == null ? '待补金额' : money(proof.amountCents)} · {proof.paymentMethod || '未填方式'}</span>{proof.payerName && <small>付款人：{proof.payerName}</small>}{proof.transactionNo && <small>流水号：{proof.transactionNo}</small>}{proof.note && <small>备注：{proof.note}</small>}{proof.reviewNote && <small className="finance-error-text">审核备注：{proof.reviewNote}</small>}</div>

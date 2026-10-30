@@ -354,7 +354,7 @@ function CategoryAccessoryDefaultsModal({ open, category, onClose, onSaved, adde
       </div>}
       {!loading && !items.length && <div className="empty-state">还没有默认配件，点上方「添加」。</div>}
       {!!addMessage && <p className="label-hint product-accessory-message" role="status">{addMessage}</p>}
-      {!!message && <p role="status" style={{ margin: 0, fontSize: 12, color: messageKind === 'error' ? 'var(--tone-danger-text)' : '#0f766e' }}>{message}</p>}
+      {!!message && <p role="status" style={{ margin: 0, fontSize: 12, color: messageKind === 'error' ? 'var(--tone-danger-text)' : 'var(--color-accent)' }}>{message}</p>}
     </div>
   </Modal>;
 }
@@ -586,7 +586,7 @@ export default function ProductEditor({ open, product, copyMode = false, showPar
   const categoryCandidates = orderCategoriesWithSuggestion(productCategories, categorySuggestion);
   /** 当前产品自身的分类（包装管理「可以装哪些产品」的匹配依据）。 */
   const activeProductCategories = (draft.category ?? '').trim() ? [String(draft.category).trim()] : [];
-  return <Modal open={open} title={copyMode ? '复制产品（新建）' : editingDraft ? '编辑产品（草稿）' : editingExisting ? '编辑产品' : '添加产品'} onClose={onClose} width={900} footer={<div className="product-editor-footer">
+  return <Modal open={open} title={copyMode ? '复制产品（新建）' : editingDraft ? '编辑产品（草稿）' : editingExisting ? '编辑产品' : '添加产品'} onClose={onClose} width={1040} footer={<div className="product-editor-footer">
     {catalogs.length > 0 && <label className="product-editor-catalog-add" title="勾选后点「保存产品」，本产品会加入所选图册；已在图册中不会重复加，移出仍去图册模块操作">
       <input type="checkbox" aria-label="添加到产品图册" checked={addToCatalog} disabled={saving} onChange={(event) => setAddToCatalog(event.target.checked)} />
       <span>添加到产品图册</span>

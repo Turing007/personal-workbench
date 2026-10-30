@@ -56,7 +56,7 @@ export interface CustomerProductAttachmentDraft {
   file?: File;
 }
 
-const inputStyle = { width: '100%', minWidth: 0, border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)', padding: '8px 9px', font: 'inherit', fontSize: 12, background: '#fff' };
+const inputStyle = { width: '100%', minWidth: 0, border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', padding: '8px 9px', font: 'inherit', fontSize: 12, background: 'var(--color-surface)' };
 
 function yuanToCents(value: string): number | null {
   if (!value.trim()) return null;
@@ -314,10 +314,10 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
 
   return <Modal open={open} title={batchMode ? '批量添加客户产品' : copyMode ? '复制客户产品（新建）' : product ? '编辑客户产品' : '添加客户产品'} onClose={busy ? () => undefined : onClose} width={760} layer={layer} footer={<><button type="button" className="button button-secondary" disabled={busy} onClick={onClose}>取消</button><button type="button" className="button button-primary" disabled={busy} onClick={() => { void save(); }}><Save size={14} />{busy ? '保存中…' : batchMode ? `批量创建（${buildBatchPayload().items.length} 个）` : '保存产品'}</button></>}>
     <div style={{ display: 'grid', gap: 11 }}>
-      {error && <div role="alert" style={{ padding: '8px 10px', border: '1px solid #fecaca', borderRadius: 'var(--radius-ui)', background: '#fef2f2', color: '#b91c1c', fontSize: 12 }}>{error}</div>}
-      {copyMode && <div style={{ padding: '8px 10px', borderRadius: 'var(--radius-ui)', background: '#f0fdfa', color: '#0f766e', fontSize: 12 }}>已复制原产品的资料、包装信息和图片，保存后将创建为新的客户产品；附件不会复制。</div>}
-      {onBatchSave && !product && !copyMode && <label style={{ justifySelf: 'start', display: 'inline-flex', alignItems: 'center', gap: 6, color: '#475569', fontSize: 12, cursor: 'pointer' }}><input type="checkbox" checked={batchMode} disabled={busy} onChange={toggleBatchMode} />批量添加：逐行填写品名、规格、SKU 与图片，其余信息共享</label>}
-      {selectableSystemProducts.length > 0 && !product && !copyMode && !batchMode && <label style={{ position: 'relative', display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>选择系统产品（可选）
+      {error && <div role="alert" style={{ padding: '8px 10px', border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-danger-soft)', color: 'var(--color-danger)', fontSize: 12 }}>{error}</div>}
+      {copyMode && <div style={{ padding: '8px 10px', borderRadius: 'var(--radius-ui)', background: 'var(--color-accent-soft)', color: 'var(--color-accent)', fontSize: 12 }}>已复制原产品的资料、包装信息和图片，保存后将创建为新的客户产品；附件不会复制。</div>}
+      {onBatchSave && !product && !copyMode && <label style={{ justifySelf: 'start', display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-text-secondary)', fontSize: 12, cursor: 'pointer' }}><input type="checkbox" checked={batchMode} disabled={busy} onChange={toggleBatchMode} />批量添加：逐行填写品名、规格、SKU 与图片，其余信息共享</label>}
+      {selectableSystemProducts.length > 0 && !product && !copyMode && !batchMode && <label style={{ position: 'relative', display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>选择系统产品（可选）
         <div style={{ position: 'relative' }}>
           <input
             value={systemProductQuery}
@@ -331,24 +331,24 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
             aria-expanded={systemProductPickerOpen}
             aria-controls="customer-product-system-picker"
           />
-          {systemProductId == null && !!systemProductQuery && <button type="button" aria-label="清空搜索" title="清空" onMouseDown={(event) => event.preventDefault()} onClick={() => setSystemProductQuery('')} style={{ position: 'absolute', right: 5, top: '50%', transform: 'translateY(-50%)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, border: 0, borderRadius: '50%', padding: 0, color: '#94a3b8', background: 'transparent', cursor: 'pointer' }}><X size={13} /></button>}
-          {systemProductId != null && <button type="button" onClick={() => chooseSystemProduct('')} disabled={busy} title="改为临时添加" style={{ position: 'absolute', right: 6, top: 5, height: 24, border: 0, color: '#64748b', background: 'transparent', cursor: 'pointer', fontSize: 11 }}>清除</button>}
-          {systemProductPickerOpen && <div id="customer-product-system-picker" role="listbox" style={{ position: 'absolute', zIndex: 20, top: 'calc(100% + 4px)', left: 0, right: 0, maxHeight: 220, overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: 'var(--radius-ui)', background: '#fff', boxShadow: '0 8px 20px rgba(15, 23, 42, .12)' }}>
-            <button type="button" role="option" aria-selected={systemProductId == null} onClick={() => chooseSystemProduct('')} disabled={busy} style={{ display: 'block', width: '100%', padding: '9px 10px', border: 0, borderBottom: '1px solid #edf0f2', color: '#64748b', background: '#fff', cursor: 'pointer', textAlign: 'left', fontSize: 12 }}>临时添加，不关联系统产品</button>
-            {filteredSystemProducts.map((item) => <button key={item.id} type="button" role="option" aria-selected={Number(item.id) === systemProductId} onClick={() => chooseSystemProduct(String(item.id))} disabled={busy} style={{ display: 'block', width: '100%', padding: '8px 10px', border: 0, borderBottom: '1px solid #edf0f2', color: '#334155', background: Number(item.id) === systemProductId ? '#f0fdfa' : '#fff', cursor: 'pointer', textAlign: 'left' }}><SystemProductOptionRow product={item} /></button>)}
-            {!filteredSystemProducts.length && <div style={{ padding: 12, color: '#94a3b8', textAlign: 'center', fontSize: 12 }}>没有匹配的系统产品</div>}
+          {systemProductId == null && !!systemProductQuery && <button type="button" aria-label="清空搜索" title="清空" onMouseDown={(event) => event.preventDefault()} onClick={() => setSystemProductQuery('')} style={{ position: 'absolute', right: 5, top: '50%', transform: 'translateY(-50%)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, border: 0, borderRadius: '50%', padding: 0, color: 'var(--color-text-muted)', background: 'transparent', cursor: 'pointer' }}><X size={13} /></button>}
+          {systemProductId != null && <button type="button" onClick={() => chooseSystemProduct('')} disabled={busy} title="改为临时添加" style={{ position: 'absolute', right: 6, top: 5, height: 24, border: 0, color: 'var(--color-text-secondary)', background: 'transparent', cursor: 'pointer', fontSize: 11 }}>清除</button>}
+          {systemProductPickerOpen && <div id="customer-product-system-picker" role="listbox" style={{ position: 'absolute', zIndex: 20, top: 'calc(100% + 4px)', left: 0, right: 0, maxHeight: 220, overflowY: 'auto', border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface)', boxShadow: '0 8px 20px rgba(15, 23, 42, .12)' }}>
+            <button type="button" role="option" aria-selected={systemProductId == null} onClick={() => chooseSystemProduct('')} disabled={busy} style={{ display: 'block', width: '100%', padding: '9px 10px', border: 0, borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', background: 'var(--color-surface)', cursor: 'pointer', textAlign: 'left', fontSize: 12 }}>临时添加，不关联系统产品</button>
+            {filteredSystemProducts.map((item) => <button key={item.id} type="button" role="option" aria-selected={Number(item.id) === systemProductId} onClick={() => chooseSystemProduct(String(item.id))} disabled={busy} style={{ display: 'block', width: '100%', padding: '8px 10px', border: 0, borderBottom: '1px solid var(--color-border)', color: 'var(--color-text)', background: Number(item.id) === systemProductId ? 'var(--color-accent-soft)' : 'var(--color-surface)', cursor: 'pointer', textAlign: 'left' }}><SystemProductOptionRow product={item} /></button>)}
+            {!filteredSystemProducts.length && <div style={{ padding: 12, color: 'var(--color-text-muted)', textAlign: 'center', fontSize: 12 }}>没有匹配的系统产品</div>}
           </div>}
         </div>
       </label>}
       {batchMode && <section style={{ display: 'grid', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <span style={{ color: '#334155', fontSize: 12, fontWeight: 650 }}>产品清单（每行为一个产品）</span>
+          <span style={{ color: 'var(--color-text)', fontSize: 12, fontWeight: 650 }}>产品清单（每行为一个产品）</span>
           <span style={{ display: 'inline-flex', gap: 6 }}>
             <button type="button" className="button button-secondary" style={{ minHeight: 26, padding: '3px 9px', fontSize: 11 }} disabled={busy} onClick={() => setPasteOpen((current) => !current)}>粘贴导入</button>
             <button type="button" className="button button-secondary" style={{ minHeight: 26, padding: '3px 9px', fontSize: 11 }} disabled={busy} onClick={() => setBatchRows((current) => [...current, createBatchRow()])}><Plus size={12} />添加一行</button>
           </span>
         </div>
-        {pasteOpen && <div style={{ display: 'grid', gap: 6, padding: '8px 9px', border: '1px dashed #cbd5e1', borderRadius: 'var(--radius-ui)', background: '#fbfdff' }}>
+        {pasteOpen && <div style={{ display: 'grid', gap: 6, padding: '8px 9px', border: '1px dashed var(--color-border-control)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface-subtle)' }}>
           <textarea rows={3} value={pasteText} disabled={busy} onChange={(event) => setPasteText(event.target.value)} placeholder={'每行一条：品名，规格，SKU（规格、SKU 可省略），例如：\n迷你风扇-白色, USB款, WS-01\n迷你风扇-黑色'} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} />
           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
             <button type="button" className="button button-secondary" style={{ minHeight: 26, padding: '3px 9px', fontSize: 11 }} disabled={busy} onClick={() => { setPasteOpen(false); setPasteText(''); }}>取消</button>
@@ -372,36 +372,36 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
               onRemove={() => setBatchRows((current) => current.filter((item) => item.id !== row.id))}
             />
           ))}
-          {!batchRows.length && <div style={{ padding: '10px 12px', border: '1px dashed #cbd5e1', borderRadius: 'var(--radius-ui)', color: '#94a3b8', fontSize: 12 }}>暂无产品行，点击“添加一行”或“粘贴导入”开始。</div>}
+          {!batchRows.length && <div style={{ padding: '10px 12px', border: '1px dashed var(--color-border-control)', borderRadius: 'var(--radius-ui)', color: 'var(--color-text-muted)', fontSize: 12 }}>暂无产品行，点击“添加一行”或“粘贴导入”开始。</div>}
         </div>
-        <div style={{ color: '#94a3b8', fontSize: 11 }}>品名必填；规格与 SKU 可逐行填写或留空待完善。装箱数取下方包装方式首行的外箱装箱数，与价格、备注、包装信息为所有产品共用；“品名+规格”重复的行会自动忽略。</div>
+        <div style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>品名必填；规格与 SKU 可逐行填写或留空待完善。装箱数取下方包装方式首行的外箱装箱数，与价格、备注、包装信息为所有产品共用；“品名+规格”重复的行会自动忽略。</div>
       </section>}
-      {!batchMode && <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: 10 }}>
-        <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>品名<input autoFocus value={name} onChange={(event) => setName(event.target.value)} style={inputStyle} /></label>
-        <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>客户 SKU<input value={sku} onChange={(event) => setSku(event.target.value)} style={inputStyle} /></label>
-        <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>规格<input value={specification} onChange={(event) => setSpecification(event.target.value)} style={inputStyle} /></label>
+      {!batchMode && <div className="cpe-form-grid is-identity">
+        <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>品名<input autoFocus value={name} onChange={(event) => setName(event.target.value)} style={inputStyle} /></label>
+        <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>客户 SKU<input value={sku} onChange={(event) => setSku(event.target.value)} style={inputStyle} /></label>
+        <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>规格<input value={specification} onChange={(event) => setSpecification(event.target.value)} style={inputStyle} /></label>
       </div>}
-      {!batchMode && <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>供应商产品名称
+      {!batchMode && <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>供应商产品名称
         <input value={supplierProductName} onChange={(event) => setSupplierProductName(event.target.value)} style={inputStyle} placeholder="报给供应商的名称，留空则按系统产品名报供（备货表使用）" />
       </label>}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-        <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>成本价（元）<input type="number" min={0} step="0.01" value={costPrice} onChange={(event) => setCostPrice(event.target.value)} style={inputStyle} placeholder="待完善" /></label>
-        <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>最终价格（元）<input type="number" min={0} step="0.01" value={finalPrice} onChange={(event) => setFinalPrice(event.target.value)} style={inputStyle} placeholder="待完善" /></label>
-        <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>运费（元/箱）<input type="number" min={0} step="0.01" value={freightPerBox} onChange={(event) => setFreightPerBox(event.target.value)} style={inputStyle} placeholder="可选" /></label>
+      <div className="cpe-form-grid is-price">
+        <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>成本价（元）<input type="number" min={0} step="0.01" value={costPrice} onChange={(event) => setCostPrice(event.target.value)} style={inputStyle} placeholder="待完善" /></label>
+        <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>最终价格（元）<input type="number" min={0} step="0.01" value={finalPrice} onChange={(event) => setFinalPrice(event.target.value)} style={inputStyle} placeholder="待完善" /></label>
+        <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>运费（元/箱）<input type="number" min={0} step="0.01" value={freightPerBox} onChange={(event) => setFreightPerBox(event.target.value)} style={inputStyle} placeholder="可选" /></label>
       </div>
-      <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>箱唛要求（会印在箱面上）<textarea rows={2} value={labelRequirement} onChange={(event) => setLabelRequirement(event.target.value)} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} placeholder="只写要让仓库/工厂照做并印上箱子的话，如：外箱贴条码箱唛、机器套气泡袋" /></label>
-      <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>备注（仅内部可见，不打印）<textarea rows={3} value={remark} onChange={(event) => setRemark(event.target.value)} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} placeholder="价格、税运、结算等内部信息写这里；要印到箱子上的请填上面的「箱唛要求」" /></label>
-      {selectedSystemProduct && <div style={{ color: '#64748b', fontSize: 11 }}>已从系统产品库带入基础信息，可继续修改后保存。</div>}
+      <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>箱唛要求（会印在箱面上）<textarea rows={2} value={labelRequirement} onChange={(event) => setLabelRequirement(event.target.value)} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} placeholder="只写要让仓库/工厂照做并印上箱子的话，如：外箱贴条码箱唛、机器套气泡袋" /></label>
+      <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>备注（仅内部可见，不打印）<textarea rows={3} value={remark} onChange={(event) => setRemark(event.target.value)} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} placeholder="价格、税运、结算等内部信息写这里；要印到箱子上的请填上面的「箱唛要求」" /></label>
+      {selectedSystemProduct && <div style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>已从系统产品库带入基础信息，可继续修改后保存。</div>}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ color: '#64748b', fontSize: 12 }}>装箱数（取包装方式首行的外箱装箱数）</span>
-        <strong style={{ fontSize: 13 }}>{derivedPackCount == null ? <span style={{ color: '#b45309' }}>待完善</span> : `${derivedPackCount} 个/箱`}</strong>
+        <span style={{ color: 'var(--color-text-secondary)', fontSize: 12 }}>装箱数（取包装方式首行的外箱装箱数）</span>
+        <strong style={{ fontSize: 13 }}>{derivedPackCount == null ? <span style={{ color: 'var(--color-warning-text)' }}>待完善</span> : `${derivedPackCount} 个/箱`}</strong>
       </div>
       <PackagingTable value={packaging} onChange={setPackaging} compact showPurchasePrice={false} showImages={false} />
       {!batchMode && <>
         <ImagePasteUpload label="客户产品图片" value={images} onChange={setImages} multiple={false} maxFiles={1} showNotes={false} />
         {enableAttachments && <CustomerProductAttachments value={attachments} onChange={setAttachments} />}
       </>}
-      {product?.latestQuoteCents != null && <div style={{ color: '#64748b', fontSize: 11 }}>最近报价：¥{(product.latestQuoteCents / 100).toFixed(2)}（只读）</div>}
+      {product?.latestQuoteCents != null && <div style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>最近报价：¥{(product.latestQuoteCents / 100).toFixed(2)}（只读）</div>}
     </div>
   </Modal>;
 }
@@ -419,14 +419,14 @@ function BatchRowEditor({ row, index, busy, onChange, onRemove }: {
   onChange: (patch: Partial<BatchRowDraft>) => void;
   onRemove: () => void;
 }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto auto', gap: 6, alignItems: 'center' }}>
+  return <div className="cpe-batch-row">
     <input aria-label={`产品清单第 ${index + 1} 行品名`} placeholder={`第 ${index + 1} 行品名 *`} value={row.name} disabled={busy} autoFocus={index === 0} onChange={(event) => onChange({ name: event.target.value })} style={inputStyle} />
     <input aria-label={`产品清单第 ${index + 1} 行规格`} placeholder="规格（可留空）" value={row.specification} disabled={busy} onChange={(event) => onChange({ specification: event.target.value })} style={inputStyle} />
     <input aria-label={`产品清单第 ${index + 1} 行 SKU`} placeholder="SKU（可留空）" value={row.sku} disabled={busy} onChange={(event) => onChange({ sku: event.target.value })} style={inputStyle} />
     {row.imageUrl ? <span style={{ position: 'relative', width: 34, height: 30 }}>
-      <img src={row.imageUrl} alt="" style={{ width: 34, height: 30, objectFit: 'cover', borderRadius: 'var(--radius-ui)', border: '1px solid #dbe3ea', display: 'block' }} />
-      <button type="button" title="移除该行图片" disabled={busy} onClick={() => onChange({ imageFile: undefined, imageUrl: undefined })} style={{ position: 'absolute', top: -6, right: -6, width: 16, height: 16, borderRadius: 999, border: 0, background: '#334155', color: '#fff', fontSize: 10, lineHeight: '16px', cursor: 'pointer', padding: 0 }}>×</button>
-    </span> : <label className="icon-button" title="选择该行产品图片" style={{ cursor: 'pointer', width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)' }}>
+      <img src={row.imageUrl} alt="" style={{ width: 34, height: 30, objectFit: 'cover', borderRadius: 'var(--radius-ui)', border: '1px solid var(--color-border-control)', display: 'block' }} />
+      <button type="button" title="移除该行图片" disabled={busy} onClick={() => onChange({ imageFile: undefined, imageUrl: undefined })} style={{ position: 'absolute', top: -6, right: -6, width: 16, height: 16, borderRadius: 999, border: 0, background: 'var(--color-text-secondary)', color: '#fff', fontSize: 10, lineHeight: '16px', cursor: 'pointer', padding: 0 }}>×</button>
+    </span> : <label className="icon-button" title="选择该行产品图片" style={{ cursor: 'pointer', width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)' }}>
       <ImagePlus size={14} />
       <input type="file" accept="image/*" hidden disabled={busy} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) onChange({ imageFile: file, imageUrl: URL.createObjectURL(file) }); }} />
     </label>}
@@ -474,9 +474,9 @@ function CustomerProductAttachments({ value, onChange }: { value: CustomerProduc
   const { dragging, handlers } = useFileDrop(appendFiles);
 
   return <section className={dragging ? 'attachment-drop-section is-drop-target' : 'attachment-drop-section'} style={{ display: 'grid', gap: 8 }} onPaste={onPaste} tabIndex={0} {...handlers}>
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}><span style={{ fontSize: 12, fontWeight: 650, color: '#334155' }}>客户产品附件</span><label className="button button-secondary" style={{ minHeight: 28, cursor: 'pointer' }}><FilePlus2 size={14} />添加附件<input type="file" multiple accept={ATTACHMENT_ACCEPT} hidden onChange={addFiles} /></label></div>
-    {value.length ? <div style={{ display: 'grid', gap: 6 }}>{value.map((attachment) => <div key={String(attachment.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, padding: '7px 9px', border: '1px solid #e2e8f0', borderRadius: 'var(--radius-ui)', background: '#fbfdff' }}><div style={{ minWidth: 0, flex: 1 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#334155', fontSize: 12 }} title={attachment.name}>{attachment.name}</div><span style={{ color: '#94a3b8', fontSize: 11 }}>{formatFileSize(attachment.size)}{attachment.createdAt ? ` · ${attachment.createdAt.replace('T', ' ').slice(0, 16)}` : ''}</span></div><select aria-label={`${attachment.name}附件类型`} value={attachment.category} onChange={(event) => onChange(value.map((item) => item.id === attachment.id ? { ...item, category: event.target.value as CustomerProductAttachmentCategory } : item))} style={{ border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)', padding: '5px 6px', color: '#475569', fontSize: 11 }}>{attachmentCategoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{attachment.url && !attachment.file && <><a href={attachment.url} target="_blank" rel="noreferrer" title="打开附件" style={{ color: '#0f766e' }}><ExternalLink size={14} /></a><a href={attachment.url} download={attachment.name} title="下载附件" style={{ color: '#475569' }}><Download size={14} /></a></>}{attachment.file && <span title="待保存" style={{ color: '#0f766e', fontSize: 11 }}>待上传</span>}<button type="button" className="icon-button danger" title="移除附件" onClick={() => onChange(value.filter((item) => item.id !== attachment.id))}><Trash2 size={14} /></button></div>)}</div> : <div style={{ padding: '10px 12px', border: '1px dashed #cbd5e1', borderRadius: 'var(--radius-ui)', color: '#94a3b8', fontSize: 12 }}>暂无附件，可添加说明书、报价文件、包装资料或其他客户专用文件。</div>}
-    {message && <span role="status" aria-live="polite" style={{ color: '#b45309', fontSize: 11 }}>{message}</span>}
-    <span style={{ color: '#94a3b8', fontSize: 11 }}>支持 PDF、Office、图片、压缩包及常见设计源文件，单个附件不超过 20MB；也可直接 Ctrl+V 粘贴或把文件拖进来。</span>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}><span style={{ fontSize: 12, fontWeight: 650, color: 'var(--color-text)' }}>客户产品附件</span><label className="button button-secondary" style={{ minHeight: 28, cursor: 'pointer' }}><FilePlus2 size={14} />添加附件<input type="file" multiple accept={ATTACHMENT_ACCEPT} hidden onChange={addFiles} /></label></div>
+    {value.length ? <div style={{ display: 'grid', gap: 6 }}>{value.map((attachment) => <div key={String(attachment.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, padding: '7px 9px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface-subtle)' }}><div style={{ minWidth: 0, flex: 1 }}><div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text)', fontSize: 12 }} title={attachment.name}>{attachment.name}</div><span style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>{formatFileSize(attachment.size)}{attachment.createdAt ? ` · ${attachment.createdAt.replace('T', ' ').slice(0, 16)}` : ''}</span></div><select aria-label={`${attachment.name}附件类型`} value={attachment.category} onChange={(event) => onChange(value.map((item) => item.id === attachment.id ? { ...item, category: event.target.value as CustomerProductAttachmentCategory } : item))} style={{ border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', padding: '5px 6px', color: 'var(--color-text-secondary)', fontSize: 11 }}>{attachmentCategoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>{attachment.url && !attachment.file && <><a href={attachment.url} target="_blank" rel="noreferrer" title="打开附件" style={{ color: 'var(--color-accent)' }}><ExternalLink size={14} /></a><a href={attachment.url} download={attachment.name} title="下载附件" style={{ color: 'var(--color-text-secondary)' }}><Download size={14} /></a></>}{attachment.file && <span title="待保存" style={{ color: 'var(--color-accent)', fontSize: 11 }}>待上传</span>}<button type="button" className="icon-button danger" title="移除附件" onClick={() => onChange(value.filter((item) => item.id !== attachment.id))}><Trash2 size={14} /></button></div>)}</div> : <div style={{ padding: '10px 12px', border: '1px dashed var(--color-border-control)', borderRadius: 'var(--radius-ui)', color: 'var(--color-text-muted)', fontSize: 12 }}>暂无附件，可添加说明书、报价文件、包装资料或其他客户专用文件。</div>}
+    {message && <span role="status" aria-live="polite" style={{ color: 'var(--color-warning-text)', fontSize: 11 }}>{message}</span>}
+    <span style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>支持 PDF、Office、图片、压缩包及常见设计源文件，单个附件不超过 20MB；也可直接 Ctrl+V 粘贴或把文件拖进来。</span>
   </section>;
 }

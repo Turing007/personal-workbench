@@ -466,6 +466,7 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
       open={Boolean(exportTarget)}
       title={exportTarget ? `导出 PDF · ${exportTarget.name}` : '导出 PDF'}
       width={420}
+      compact
       onClose={() => setExportTarget(null)}
       footer={<>
         <button className="button button-secondary" type="button" disabled={busy} onClick={() => setExportTarget(null)}>取消</button>

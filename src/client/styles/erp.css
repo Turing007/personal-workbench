@@ -71,9 +71,23 @@
   border-radius: var(--erp-radius-control);
 }
 
+/* 底部操作条：固定 56px，按钮垂直居中；左右与正文对齐。 */
+.modal-footer {
+  min-height: 56px;
+  align-items: center;
+}
+
 .modal-panel.drawer-panel {
   border-left-color: var(--erp-border);
   box-shadow: -16px 0 48px -20px rgba(16, 24, 40, .24);
+}
+
+/* 手机端：表单/详情全屏，不保留 94vh 的圆角大弹窗；确认框仍居中悬浮。
+   手机全屏规则放在 erp.css 末尾的 640px 媒体块里，压过 app.css 的旧底栏弹窗。 */
+
+/* 深色模式下原生控件（日期选择器、下拉、滚动条）跟随深色，避免白底白字。 */
+@media (prefers-color-scheme: dark) {
+  :root { color-scheme: dark; }
 }
 
 .order-detail-drawer .modal-body,
@@ -252,15 +266,15 @@
 .orders-page .button-primary,
 .finance-page .button-primary,
 .products-page .button-primary {
-  border-color: #0a5f57;
-  background: #0e7368;
+  border-color: var(--color-accent-hover);
+  background: var(--color-accent-fill);
   box-shadow: none;
 }
 
 .orders-page .button-primary:hover:not(:disabled),
 .finance-page .button-primary:hover:not(:disabled),
 .products-page .button-primary:hover:not(:disabled) {
-  background: #0a5f57;
+  background: var(--color-accent-hover);
   box-shadow: none;
 }
 
@@ -1695,9 +1709,9 @@
     min-height: 34px;
     padding: 6px 12px;
     border: 0;
-    border-bottom: 1px solid #fde68a;
+    border-bottom: 1px solid var(--color-warning-border);
     border-radius: 0;
-    background: #fffbeb;
+    background: var(--color-warning-soft);
     font-size: 11.5px;
   }
 
@@ -1783,7 +1797,7 @@
   .stock-page .stock-stat-grid small { color: var(--erp-muted); font-size: 9.5px; }
 
   .stock-page .stock-toolbar { border-bottom: 0; }
-  .stock-page .stock-warning-bar { border: 1px solid #fde68a; border-radius: var(--radius-ui); font-size: 11px; padding: 6px 8px; }
+  .stock-page .stock-warning-bar { border: 1px solid var(--color-warning-border); border-radius: var(--radius-ui); font-size: 11px; padding: 6px 8px; }
 
   .stock-page .stock-groups-scroll { overflow: visible; }
   .stock-page .stock-group {
@@ -2571,4 +2585,292 @@
   .products-page .product-card {
     background: var(--erp-surface);
   }
+}
+
+/* ============================================================
+   阶段 4 · 统一收尾
+   ============================================================ */
+
+/* 原生控件在深色模式下不要再出现白底白字：只兜底没有显式内联背景的控件。 */
+.modal-panel :where(input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']), textarea, select) {
+  color: var(--color-text);
+  background-color: var(--control-bg);
+}
+
+/* 手机端固定底栏高度（58px）+ 安全区；改版页自己接管了页面 padding，不能只靠 .page-shell。 */
+@media (max-width: 900px) {
+  .catalog-page,
+  .catalog-edit-page,
+  .settings-page,
+  .shipping-page {
+    padding-bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 10px);
+  }
+}
+
+@media (max-width: 640px) {
+  /* 表单/详情全屏：贴着环境提示条往下铺满，不保留 94vh 的浮起圆角弹窗。 */
+  .modal-overlay {
+    align-items: stretch;
+    justify-items: stretch;
+    padding: 0;
+  }
+
+  .modal-panel {
+    width: 100% !important;
+    height: 100%;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .modal-panel .modal-header {
+    min-height: 48px;
+    padding-inline: 16px;
+  }
+
+  .modal-panel .modal-close {
+    width: 36px;
+    height: 36px;
+  }
+
+  .modal-panel .modal-body {
+    padding: 14px 16px 16px;
+  }
+
+  .modal-panel .modal-footer {
+    min-height: 56px;
+    justify-content: flex-end;
+    padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .modal-panel .modal-footer > * {
+    flex: 0 1 auto;
+  }
+
+  /* 确认框 / 小设置框：保持居中卡片，不铺满全屏。 */
+  .modal-panel.modal-panel-compact {
+    align-self: center;
+    justify-self: center;
+    width: calc(100% - 32px) !important;
+    height: auto;
+    max-height: 82dvh;
+    border: 1px solid var(--erp-border);
+    border-radius: var(--radius-ui);
+    box-shadow: var(--erp-shadow-modal);
+  }
+
+  .modal-panel.modal-panel-compact .modal-body {
+    padding-bottom: 12px;
+  }
+
+  .modal-panel.modal-panel-compact .modal-footer {
+    padding-bottom: 10px;
+  }
+}
+
+/* 订单表单底部的保存条：正文再长也固定在滚动区底部，手机上不用滑到底找保存。 */
+.order-form-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--color-divider);
+  background: var(--color-surface);
+}
+
+/* 图册页手机端恢复「标题 + 新建」一行，不能把唯一入口一起隐藏。 */
+@media (max-width: 900px) {
+  .catalog-page .catalog-page-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 36px;
+  }
+  .catalog-page .catalog-heading-copy { display: block; min-width: 0; }
+  .catalog-page .catalog-heading-copy .page-breadcrumb,
+  .catalog-page .catalog-heading-copy .page-subtitle { display: none; }
+  .catalog-page .catalog-heading-copy .page-title { display: block; font-size: 16px; font-weight: 650; line-height: 1.2; }
+  .catalog-page .catalog-head-actions { margin-left: auto; }
+  .catalog-page .catalog-head-actions .button { height: 30px; min-height: 30px; padding: 0 10px; font-size: 12px; }
+}
+
+/* 箱唛编辑器：三栏工作区在桌面并排，手机纵向堆叠（列表横向滑，预览可横向滚动）。 */
+.label-editor-layout {
+  display: grid;
+  grid-template-columns: 205px minmax(400px, 1fr) 390px;
+  gap: 14px;
+  min-height: 510px;
+}
+
+.label-editor-list { display: grid; align-content: start; gap: 6px; }
+.label-editor-list-title { color: var(--color-text); font-size: 12px; font-weight: 650; }
+.label-editor-list-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-ui);
+  background: var(--color-surface);
+}
+.label-editor-list-item.is-active { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.label-editor-list-item > button {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.label-editor-list-item small { margin-left: 5px; color: var(--color-warning-text); }
+.label-editor-merge { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+
+.label-editor-preview {
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-ui);
+  background: var(--color-surface-subtle);
+}
+.label-editor-empty { color: var(--color-text-muted); }
+
+.label-editor-fields { display: grid; align-content: start; gap: 10px; }
+.label-editor-fields-head { display: flex; align-items: center; justify-content: space-between; color: var(--color-text); font-size: 12px; }
+.label-editor-fields-head span { color: var(--color-text-muted); font-size: 11px; }
+.label-editor-lines { display: grid; gap: 9px; }
+.label-editor-line {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 9px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-ui);
+}
+.label-editor-line label { display: grid; gap: 3px; color: var(--color-text-secondary); font-size: 10px; }
+
+@media (max-width: 900px) {
+  .label-editor-layout { grid-template-columns: minmax(0, 1fr); gap: 10px; min-height: 0; }
+  .label-editor-list { display: flex; overflow-x: auto; gap: 6px; padding-bottom: 2px; }
+  .label-editor-list-title { display: none; }
+  .label-editor-list-item { flex: 0 0 auto; min-width: 132px; }
+  .label-editor-merge { flex: 0 0 auto; }
+  .label-editor-preview { place-items: start; padding: 12px; }
+}
+
+/* 报价 / 销售表单底部操作条：固定贴在正文滚动区底部。 */
+.doc-form-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--color-divider);
+  background: var(--color-surface);
+}
+
+/* 报价/销售表单的字段栅格：桌面 2/3 列，手机单列。 */
+.doc-form-grid { display: grid; gap: 8px; }
+.doc-form-grid.is-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.doc-form-grid.is-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+@media (max-width: 640px) {
+  .doc-form-grid.is-two,
+  .doc-form-grid.is-three { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* 客户产品编辑：桌面三列，手机单列；批量行在窄屏改成两行。 */
+.cpe-form-grid { display: grid; gap: 10px; }
+.cpe-form-grid.is-identity { grid-template-columns: 1.2fr 1fr 1fr; }
+.cpe-form-grid.is-price { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 640px) {
+  .cpe-form-grid.is-identity,
+  .cpe-form-grid.is-price { grid-template-columns: minmax(0, 1fr); }
+}
+
+.cpe-batch-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto auto;
+  gap: 6px;
+  align-items: center;
+}
+@media (max-width: 640px) {
+  .cpe-batch-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; }
+  .cpe-batch-row > input:first-child { grid-column: 1 / -1; }
+}
+
+/* 订单详情抽屉：桌面 6 列摘要，手机 2 列；底部动作两列排布。 */
+.order-detail-summary { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.order-detail-finance-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.order-detail-finance-metrics,
+.order-detail-customer-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.order-detail-recipient { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 13px; }
+.order-detail-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; padding-top: 13px; border-top: 1px solid var(--color-border); }
+
+@media (max-width: 640px) {
+  .order-detail-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+  .order-detail-finance-head { flex-wrap: wrap; }
+  .order-detail-finance-head > button { margin-left: auto; }
+  .order-detail-finance-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .order-detail-customer-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .order-detail-recipient { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .order-detail-actions { justify-content: flex-start; }
+  .order-detail-actions > button { flex: 1 1 calc(50% - 4px); justify-content: center; }
+}
+
+@media (max-width: 640px) {
+  /* 100mm 箱唛在 390 宽屏上放不下：预览按 86% 缩放，完整看到整张标签，不再横向裁切。 */
+  .label-editor-preview .carton-label-view { zoom: .86; }
+}
+
+/* 箱唛很多时列表自己滚，预览和字段不要被拉到几百像素以下。 */
+.label-editor-layout { align-items: start; }
+.label-editor-list { max-height: 540px; overflow-y: auto; padding-right: 2px; }
+.label-editor-preview { min-height: 420px; max-height: 540px; }
+@media (max-width: 900px) {
+  .label-editor-list { max-height: none; overflow-x: auto; overflow-y: hidden; padding-right: 0; }
+  .label-editor-preview { min-height: 300px; max-height: none; }
+}
+
+/* 销售单「产品明细」标题与三个选品按钮：手机端标题独占一行，按钮三等分。 */
+.sales-items-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.sales-items-head > strong { color: var(--color-text); font-size: 13px; }
+.sales-items-actions { display: flex; gap: 6px; }
+@media (max-width: 640px) {
+  .sales-items-head > strong { flex: 1 0 100%; }
+  .sales-items-actions { width: 100%; }
+  .sales-items-actions .button { flex: 1 1 0; min-width: 0; padding: 0 8px; font-size: 11.5px; }
+}
+
+/* 箱唛打印预览：手机端工具栏两行，标签按 86% 缩放避免横向溢出。 */
+@media screen and (max-width: 640px) {
+  .print-workspace-shell { padding: 10px; }
+  .print-workspace-toolbar { flex-wrap: wrap; gap: 6px; padding: 8px 10px; }
+  .print-workspace-toolbar > strong { flex: 1 0 100%; font-size: 13px; }
+  .print-workspace-toolbar > div { width: 100%; }
+  .print-workspace-toolbar .button { flex: 1 1 0; min-width: 0; padding: 0 8px; font-size: 12px; }
+  .print-workspace-list { justify-items: start; overflow-x: auto; }
+  .print-workspace-label { zoom: .86; }
+}
+
+/* 打印预览铺满时也要让开测试环境横条，否则工具栏第一行会被压住。 */
+.print-workspace-shell { top: var(--env-banner-h); }
+
+/* 财务详情抽屉：桌面 4 列金额摘要，手机 2 列（否则数字会挤成一列竖排）。 */
+@media (max-width: 640px) {
+  .finance-detail-drawer .finance-detail-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .finance-detail-drawer .finance-detail-summary strong { font-size: 16px; }
 }

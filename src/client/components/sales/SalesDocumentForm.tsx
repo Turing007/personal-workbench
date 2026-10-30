@@ -48,10 +48,11 @@ const fieldStyle = {
 const sectionStyle = {
   display: 'grid',
   gap: 'var(--space-4)',
-  padding: 'var(--space-5)',
-  border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius-control)',
-  background: 'var(--color-surface)',
+  padding: '0 0 14px',
+  border: 0,
+  borderBottom: '1px solid var(--color-divider)',
+  borderRadius: 0,
+  background: 'transparent',
 };
 
 const statusLabels = { draft: '草稿', issued: '已开单', void: '已作废' } as const;
@@ -304,7 +305,7 @@ export default function SalesDocumentForm({
     <section style={sectionStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <strong style={{ fontSize: 13 }}>单据信息</strong>
-        <span title="请在销售单列表中变更状态" style={{ padding: '5px 9px', border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)', color: '#475569', background: '#f8fafc' }}>{statusLabels[value.documentStatus]}</span>
+        <span title="请在销售单列表中变更状态" style={{ padding: '5px 9px', border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', color: 'var(--color-text-secondary)', background: 'var(--color-surface-subtle)' }}>{statusLabels[value.documentStatus]}</span>
       </div>
       <div className="sales-doc-fields is-four">
         <label>开单日期<input type="date" value={value.documentDate} onChange={(event) => setDraft('documentDate', event.target.value)} style={fieldStyle} /></label>
@@ -332,16 +333,16 @@ export default function SalesDocumentForm({
     </section>
 
     <section style={sectionStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-        <strong style={{ fontSize: 13 }}>产品明细</strong>
-        <div style={{ display: 'flex', gap: 6 }}>
+      <div className="sales-items-head">
+        <strong>产品明细</strong>
+        <div className="sales-items-actions">
           <button type="button" className="button" title="按当前客户调用产品" onClick={() => setShowCustomerProductPicker((current) => !current)}><span style={{ fontSize: 11, fontWeight: 700 }}>客</span>客户产品库</button>
           <button type="button" className="button" title="从系统产品库添加" onClick={() => setShowProductPicker((current) => !current)}><Library size={14} />产品库</button>
           <button type="button" className="button" title="添加临时产品" onClick={() => setDraft('items', [...value.items, emptyLine()])}><Plus size={14} />临时产品</button>
         </div>
       </div>
-      {showCustomerProductPicker && <div style={{ padding: 10, border: '1px solid #99f6e4', borderRadius: 'var(--radius-ui)', background: '#f0fdfa' }}><CustomerProductPicker customerId={value.customerId} onSelect={addCustomerProduct} onAddNew={() => setCustomerProductEditorOpen(true)} /></div>}
-      {showProductPicker && <div style={{ padding: 10, border: '1px solid #cbd5e1', borderRadius: 'var(--radius-ui)', background: '#f8fafc' }}><LibraryProductPicker onSelect={addLibraryProduct} /></div>}
+      {showCustomerProductPicker && <div style={{ padding: 10, border: '1px solid var(--color-accent-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-accent-soft)' }}><CustomerProductPicker customerId={value.customerId} onSelect={addCustomerProduct} onAddNew={() => setCustomerProductEditorOpen(true)} /></div>}
+      {showProductPicker && <div style={{ padding: 10, border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface-subtle)' }}><LibraryProductPicker onSelect={addLibraryProduct} /></div>}
       <DocumentColumnSettings
         kind="sales"
         value={value.displayConfig.columns}
@@ -349,9 +350,9 @@ export default function SalesDocumentForm({
         showProductImages={value.displayConfig.showProductImages}
         onShowProductImagesChange={(showProductImages) => setDraft('displayConfig', { ...value.displayConfig, showProductImages })}
       />
-      <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(56vh, 480px)', border: '1px solid #e2e8f0', borderRadius: 'var(--radius-ui)' }}>
+      <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(56vh, 480px)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)' }}>
         <table style={{ width: '100%', minWidth: 1060, borderCollapse: 'collapse' }}>
-          <thead><tr style={{ background: '#f8fafc', color: '#64748b', textAlign: 'left' }}>
+          <thead><tr style={{ background: 'var(--color-surface-subtle)', color: 'var(--color-text-secondary)', textAlign: 'left' }}>
             <th style={{ padding: 7, width: 30 }}>#</th><th style={{ padding: 7, width: 120 }}>产品代码</th><th style={{ padding: 7, minWidth: 180 }}>产品名称</th><th style={{ padding: 7, width: 150 }}>规格</th><th style={{ padding: 7, width: 76 }}>数量</th><th style={{ padding: 7, width: 105 }}>单价</th><th style={{ padding: 7, width: 110 }}>金额</th><th style={{ padding: 7, minWidth: 140 }}>备注</th><th style={{ padding: 7, width: 145 }}>操作</th>
           </tr></thead>
           <tbody>{value.items.map((item, index) => {
@@ -359,17 +360,17 @@ export default function SalesDocumentForm({
             const unitPrice = parseNonNegative(item.unitPrice);
             const amount = Math.round((quantity ?? 0) * (unitPrice ?? 0) * 100);
             const preview = localImageUrls.get(item.clientKey) ?? (item.image.relativePath ? `/files/${item.image.relativePath}` : '');
-            return <tr key={item.clientKey} style={{ borderTop: '1px solid #edf0f2', verticalAlign: 'top' }}>
-              <td style={{ padding: 7, color: '#94a3b8' }}>{index + 1}</td>
+            return <tr key={item.clientKey} style={{ borderTop: '1px solid var(--color-border)', verticalAlign: 'top' }}>
+              <td style={{ padding: 7, color: 'var(--color-text-muted)' }}>{index + 1}</td>
               <td style={{ padding: 7 }}><input value={item.productCode} onChange={(event) => updateLine(item.clientKey, { productCode: event.target.value, sku: event.target.value })} style={fieldStyle} /></td>
               <td style={{ padding: 7 }}><div style={{ display: 'grid', gridTemplateColumns: '36px minmax(0, 1fr)', gap: 6, alignItems: 'center' }}>
-                <button type="button" title={preview ? '更换产品图片' : '添加产品图片'} onClick={() => fileInputs.current[item.clientKey]?.click()} style={{ width: 36, height: 36, padding: 0, border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)', background: '#fff', display: 'grid', placeItems: 'center', overflow: 'hidden', cursor: 'pointer' }}>{preview ? <img src={preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={15} color="#94a3b8" />}</button>
+                <button type="button" title={preview ? '更换产品图片' : '添加产品图片'} onClick={() => fileInputs.current[item.clientKey]?.click()} style={{ width: 36, height: 36, padding: 0, border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface)', display: 'grid', placeItems: 'center', overflow: 'hidden', cursor: 'pointer' }}>{preview ? <img src={preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={15} color="var(--color-text-muted)" />}</button>
                 <input value={item.name} onChange={(event) => updateLine(item.clientKey, { name: event.target.value, isTemporary: item.productId == null })} style={fieldStyle} placeholder="品名" />
                 <input ref={(node) => { fileInputs.current[item.clientKey] = node; }} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; updateLine(item.clientKey, { image: { relativePath: null, originalName: file.name, mimeType: file.type, file } }); event.target.value = ''; }} />
               </div></td>
               <td style={{ padding: 7 }}><input value={item.specification} onChange={(event) => updateLine(item.clientKey, { specification: event.target.value })} style={fieldStyle} /></td>
-              <td style={{ padding: 7 }}><input type="number" min="0" step="any" value={item.quantity} onChange={(event) => updateLine(item.clientKey, { quantity: event.target.value })} style={{ ...fieldStyle, borderColor: quantity === null ? '#dc2626' : '#dbe3ea' }} /></td>
-              <td style={{ padding: 7 }}><input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(event) => updateLine(item.clientKey, { unitPrice: event.target.value })} style={{ ...fieldStyle, borderColor: unitPrice === null ? '#dc2626' : '#dbe3ea' }} />{item.customerProductId != null && !item.unitPrice.trim() && <small style={{ display: 'block', marginTop: 3, color: '#b45309' }}>客户价格待完善</small>}</td>
+              <td style={{ padding: 7 }}><input type="number" min="0" step="any" value={item.quantity} onChange={(event) => updateLine(item.clientKey, { quantity: event.target.value })} style={{ ...fieldStyle, borderColor: quantity === null ? 'var(--color-danger-strong)' : 'var(--color-border-control)' }} /></td>
+              <td style={{ padding: 7 }}><input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(event) => updateLine(item.clientKey, { unitPrice: event.target.value })} style={{ ...fieldStyle, borderColor: unitPrice === null ? 'var(--color-danger-strong)' : 'var(--color-border-control)' }} />{item.customerProductId != null && !item.unitPrice.trim() && <small style={{ display: 'block', marginTop: 3, color: 'var(--color-warning-text)' }}>客户价格待完善</small>}</td>
               <td style={{ padding: 10, fontWeight: 650, whiteSpace: 'nowrap' }}>¥{(amount / 100).toFixed(2)}</td>
               <td style={{ padding: 7 }}><input value={item.remark} onChange={(event) => updateLine(item.clientKey, { remark: event.target.value })} style={fieldStyle} /></td>
               <td style={{ padding: 7 }}><div style={{ display: 'flex', gap: 3 }}>
@@ -387,7 +388,7 @@ export default function SalesDocumentForm({
     <section style={{ ...sectionStyle, gridTemplateColumns: 'minmax(0, 1fr) 300px', alignItems: 'start' }}>
       <label>备注<textarea rows={4} value={value.remark} onChange={(event) => setDraft('remark', event.target.value)} style={{ ...fieldStyle, resize: 'vertical' }} placeholder="交货、付款或其他说明" /></label>
       <div style={{ display: 'grid', gap: 8 }}>
-        <label style={{ display: 'grid', gridTemplateColumns: '1fr 100px', alignItems: 'center', gap: 8 }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>运费{!shippingOverridden && <small style={{ color: '#0f766e' }}>自动</small>}</span><input type="number" min="0" step="0.01" value={value.shipping} onChange={(event) => { setShippingOverridden(true); setDraft('shipping', event.target.value); }} style={fieldStyle} /></label>
+        <label style={{ display: 'grid', gridTemplateColumns: '1fr 100px', alignItems: 'center', gap: 8 }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>运费{!shippingOverridden && <small style={{ color: 'var(--color-accent)' }}>自动</small>}</span><input type="number" min="0" step="0.01" value={value.shipping} onChange={(event) => { setShippingOverridden(true); setDraft('shipping', event.target.value); }} style={fieldStyle} /></label>
         <label style={{ display: 'grid', gridTemplateColumns: '1fr 100px', alignItems: 'center', gap: 8 }}>税率（%）<input type="number" min="0" max="100" step="0.01" value={value.taxRate} onChange={(event) => setDraft('taxRate', event.target.value)} style={fieldStyle} /></label>
         <DocumentTotals {...totals} receivedCents={receivedCents} outstandingCents={outstandingCents} showOutstanding />
       </div>
@@ -397,8 +398,8 @@ export default function SalesDocumentForm({
 
     <CustomerProductEditorModal open={customerProductEditorOpen} product={null} layer={40} onClose={() => setCustomerProductEditorOpen(false)} onSave={saveNewCustomerProduct} />
 
-    {error && <div role="alert" style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-ui)', padding: '8px 10px' }}>{error}</div>}
-    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 7, position: 'sticky', bottom: -18, padding: '10px 0', background: '#fff' }}>
+    {error && <div role="alert" style={{ color: 'var(--color-danger)', background: 'var(--color-danger-soft)', border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-ui)', padding: '8px 10px' }}>{error}</div>}
+    <div className="doc-form-actions">
       <button type="button" className="button" title="取消编辑" onClick={onCancel}><X size={15} />关闭</button>
       <button type="button" className="button button-primary" title="保存销售单" disabled={saving || value.documentStatus === 'void'} onClick={() => { if (validate()) void onSave(value); }}><Save size={15} />{saving ? '正在保存' : value.id ? '保存修改' : '保存并继续收款'}</button>
     </div>

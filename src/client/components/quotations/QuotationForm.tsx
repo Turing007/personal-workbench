@@ -60,10 +60,11 @@ const fieldStyle = {
 const sectionStyle = {
   display: 'grid',
   gap: 'var(--space-4)',
-  padding: 'var(--space-5)',
-  border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius-control)',
-  background: 'var(--color-surface)',
+  padding: '0 0 14px',
+  border: 0,
+  borderBottom: '1px solid var(--color-divider)',
+  borderRadius: 0,
+  background: 'transparent',
 };
 
 export default function QuotationForm({ customers, value, saving, onChange, onSave, onCancel, onSaveCustomerProduct, onCreateCustomer }: QuotationFormProps) {
@@ -111,7 +112,7 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
     if (validate()) void onSave(value);
   };
 
-  return <div className="quotation-form" style={{ display: 'grid', gap: 10, fontSize: 12 }}>
+  return <div className="quotation-form" style={{ display: 'grid', gap: 14, fontSize: 12 }}>
     <section style={sectionStyle}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <strong style={{ fontSize: 13 }}>单据信息</strong>
@@ -119,12 +120,12 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
           <option value="draft">草稿</option><option value="sent">已发送</option><option value="won">已成交</option><option value="expired">已失效</option>
         </select>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+      <div className="doc-form-grid is-two">
         <label>报价日期<input type="date" value={value.quotationDate} onChange={(event) => setDraft('quotationDate', event.target.value)} style={fieldStyle} /></label>
         <label>有效期至<input type="date" value={value.validUntil} onChange={(event) => setDraft('validUntil', event.target.value)} style={fieldStyle} /></label>
       </div>
       <CustomerSelector value={value.customerId} customers={customers} onChange={chooseCustomer} onCreateCustomer={onCreateCustomer} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+      <div className="doc-form-grid is-three">
         <label>客户名称<input value={value.customerName} onChange={(event) => setDraft('customerName', event.target.value)} style={fieldStyle} placeholder="可手动补充" /></label>
         <label>联系人<input value={value.contactName} onChange={(event) => setDraft('contactName', event.target.value)} style={fieldStyle} /></label>
         <label>联系电话<input value={value.contactPhone} onChange={(event) => setDraft('contactPhone', event.target.value)} style={fieldStyle} /></label>
@@ -140,40 +141,40 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
 
     <section style={sectionStyle}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <strong style={{ fontSize: 13 }}>产品明细<span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: '#64748b' }}>共 {value.items.length} 行</span></strong>
+        <strong style={{ fontSize: 13 }}>产品明细<span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: 'var(--color-text-secondary)' }}>共 {value.items.length} 行</span></strong>
         <button type="button" className="button" title="在弹窗中添加或编辑产品明细" onClick={() => setItemsOpen(true)}><Edit3 size={14} />编辑产品明细</button>
       </div>
-      {value.items.length ? <div style={{ overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 'var(--radius-ui)' }}>
+      {value.items.length ? <div style={{ overflow: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead><tr style={{ background: '#f8fafc', color: '#64748b', textAlign: 'left' }}>
+          <thead><tr style={{ background: 'var(--color-surface-subtle)', color: 'var(--color-text-secondary)', textAlign: 'left' }}>
             <th style={{ padding: 7, width: 30 }}>#</th><th style={{ padding: 7 }}>产品</th><th style={{ padding: 7, width: 150 }}>单价</th><th style={{ padding: 7, minWidth: 140 }}>备注</th>
           </tr></thead>
           <tbody>{value.items.map((item, index) => {
             const unitPriceCents = lineUnitPriceCents(item);
             const imageUrl = item.image.previewUrl ?? (item.image.relativePath ? `/files/${item.image.relativePath}` : undefined);
             const tierCount = (item.priceTiers ?? []).filter((tier) => tier.minQuantity.trim() || tier.maxQuantity.trim() || tier.unitPrice.trim()).length;
-            return <tr key={item.clientKey} style={{ borderTop: '1px solid #edf0f2' }}>
-              <td style={{ padding: 7, color: '#94a3b8' }}>{index + 1}</td>
+            return <tr key={item.clientKey} style={{ borderTop: '1px solid var(--color-border)' }}>
+              <td style={{ padding: 7, color: 'var(--color-text-muted)' }}>{index + 1}</td>
               <td style={{ padding: 7 }}><div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ width: 32, height: 32, flexShrink: 0, border: '1px solid #e2e8f0', borderRadius: 'var(--radius-ui)', background: '#fff', display: 'grid', placeItems: 'center', overflow: 'hidden' }}>{imageUrl ? <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={14} color="#cbd5e1" />}</span>
+                <span style={{ width: 32, height: 32, flexShrink: 0, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface)', display: 'grid', placeItems: 'center', overflow: 'hidden' }}>{imageUrl ? <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={14} color="var(--color-text-muted)" />}</span>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 550, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name.trim() || <span style={{ color: '#dc2626' }}>（未填写品名）</span>}</div>
-                  {item.specification.trim() && <div style={{ color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.specification}</div>}
+                  <div style={{ fontWeight: 550, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name.trim() || <span style={{ color: 'var(--color-danger-strong)' }}>（未填写品名）</span>}</div>
+                  {item.specification.trim() && <div style={{ color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.specification}</div>}
                 </div>
               </div></td>
-              <td style={{ padding: 7, whiteSpace: 'nowrap' }}>{formatMoney(unitPriceCents)}{tierCount > 0 && <span title="该行设置了数量区间价，供客户按量选择" style={{ marginLeft: 6, fontSize: 11, color: '#0f766e', background: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: 'var(--radius-ui)', padding: '1px 5px' }}>区间价×{tierCount}</span>}</td>
-              <td style={{ padding: 7, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.remark || '-'}</td>
+              <td style={{ padding: 7, whiteSpace: 'nowrap' }}>{formatMoney(unitPriceCents)}{tierCount > 0 && <span title="该行设置了数量区间价，供客户按量选择" style={{ marginLeft: 6, fontSize: 11, color: 'var(--color-accent)', background: 'var(--color-accent-soft)', border: '1px solid var(--color-accent-border)', borderRadius: 'var(--radius-ui)', padding: '1px 5px' }}>区间价×{tierCount}</span>}</td>
+              <td style={{ padding: 7, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.remark || '-'}</td>
             </tr>;
           })}</tbody>
         </table>
-      </div> : <button type="button" title="添加产品明细" onClick={() => setItemsOpen(true)} style={{ display: 'grid', placeItems: 'center', gap: 6, width: '100%', padding: 22, border: '1px dashed #cbd5e1', borderRadius: 'var(--radius-ui)', background: '#f8fafc', color: '#64748b', font: 'inherit', fontSize: 12, cursor: 'pointer' }}><Plus size={18} color="#94a3b8" />暂无产品，点击添加产品明细</button>}
-      {itemsError && !itemsOpen && <div role="alert" style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-ui)', padding: '8px 10px' }}>{itemsError}（点击“编辑产品明细”修改）</div>}
+      </div> : <button type="button" title="添加产品明细" onClick={() => setItemsOpen(true)} style={{ display: 'grid', placeItems: 'center', gap: 6, width: '100%', padding: 22, border: '1px dashed var(--color-border-control)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface-subtle)', color: 'var(--color-text-secondary)', font: 'inherit', fontSize: 12, cursor: 'pointer' }}><Plus size={18} color="var(--color-text-muted)" />暂无产品，点击添加产品明细</button>}
+      {itemsError && !itemsOpen && <div role="alert" style={{ color: 'var(--color-danger)', background: 'var(--color-danger-soft)', border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-ui)', padding: '8px 10px' }}>{itemsError}（点击“编辑产品明细”修改）</div>}
     </section>
 
     <section style={sectionStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><strong style={{ fontSize: 13 }}>自定义字段</strong><button type="button" className="icon-button" title="添加自定义字段" onClick={() => setDraft('customFields', [...value.customFields, { clientKey: createDocumentClientKey('quotation-field'), placement: 'footer', label: '', value: '' }])}><Plus size={15} /></button></div>
       {value.customFields.map((field) => { const fieldKey = field.clientKey ?? String(field.id); return <div key={fieldKey} style={{ display: 'grid', gridTemplateColumns: '100px 180px 1fr 30px', gap: 6 }}><select aria-label="字段位置" value={field.placement} onChange={(event) => updateField(fieldKey, { placement: event.target.value as 'header' | 'footer' })} style={fieldStyle}><option value="header">顶部</option><option value="footer">底部</option></select><input aria-label="字段名称" value={field.label} onChange={(event) => updateField(fieldKey, { label: event.target.value })} placeholder="字段名称" style={fieldStyle} /><input aria-label="字段内容" value={field.value} onChange={(event) => updateField(fieldKey, { value: event.target.value })} placeholder="字段内容" style={fieldStyle} /><button type="button" className="icon-button danger" title="删除自定义字段" onClick={() => setDraft('customFields', value.customFields.filter((item) => (item.clientKey ?? String(item.id)) !== fieldKey))}><Trash2 size={14} /></button></div>; })}
-      {!value.customFields.length && <span style={{ color: '#94a3b8' }}>没有自定义字段</span>}
+      {!value.customFields.length && <span style={{ color: 'var(--color-text-muted)' }}>没有自定义字段</span>}
     </section>
 
     <section style={sectionStyle}>
@@ -181,8 +182,8 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
       <label>备注<textarea rows={4} value={value.remark} onChange={(event) => setDraft('remark', event.target.value)} style={{ ...fieldStyle, resize: 'vertical' }} placeholder="付款方式、交期或其他说明" /></label>
     </section>
 
-    {error && <div role="alert" style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-ui)', padding: '8px 10px' }}>{error}</div>}
-    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 7, position: 'sticky', bottom: -18, padding: '10px 0', background: '#fff' }}>
+    {error && <div role="alert" style={{ color: 'var(--color-danger)', background: 'var(--color-danger-soft)', border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-ui)', padding: '8px 10px' }}>{error}</div>}
+    <div className="doc-form-actions">
       <button type="button" className="button" title="取消编辑" onClick={onCancel}><X size={15} />取消</button>
       <button type="button" className="button button-primary" title="保存报价单" disabled={saving} onClick={submit}><Save size={15} />{saving ? '正在保存' : '保存报价单'}</button>
     </div>

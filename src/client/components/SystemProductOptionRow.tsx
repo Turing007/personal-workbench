@@ -38,14 +38,14 @@ export default function SystemProductOptionRow({ product, thumbSize = 40 }: { pr
   const price = formatPurchasePrice(product.purchasePrice);
   return (
     <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
-      <span style={{ width: thumbSize, height: thumbSize, flexShrink: 0, display: 'grid', placeItems: 'center', overflow: 'hidden', border: '1px solid #e2e8f0', borderRadius: 'var(--radius-ui)', background: '#f8fafc' }}>
-        {imageUrl ? <img src={imageUrl} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <ImageIcon size={16} color="#94a3b8" />}
+      <span style={{ width: thumbSize, height: thumbSize, flexShrink: 0, display: 'grid', placeItems: 'center', overflow: 'hidden', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface-subtle)' }}>
+        {imageUrl ? <img src={imageUrl} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <ImageIcon size={16} color="var(--color-text-muted)" />}
       </span>
       <span style={{ minWidth: 0, flex: 1, display: 'grid', gap: 2 }}>
-        <strong style={{ fontSize: 12, color: '#17212b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.name || '未命名产品'}</strong>
-        {(pieces.length > 0 || price) && <span style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <strong style={{ fontSize: 12, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.name || '未命名产品'}</strong>
+        {(pieces.length > 0 || price) && <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {pieces.map((part, index) => <Fragment key={part}>{index > 0 ? ' · ' : ''}{part}</Fragment>)}
-          {price && <>{pieces.length > 0 ? ' · ' : ''}<span style={{ color: '#0f766e', fontWeight: 600 }}>{price}</span></>}
+          {price && <>{pieces.length > 0 ? ' · ' : ''}<span style={{ color: 'var(--color-accent)', fontWeight: 600 }}>{price}</span></>}
         </span>}
       </span>
     </span>

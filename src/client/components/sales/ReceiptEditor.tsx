@@ -28,12 +28,12 @@ export interface ReceiptEditorProps {
 const fieldStyle = {
   width: '100%',
   minWidth: 0,
-  border: '1px solid #dbe3ea',
+  border: '1px solid var(--color-border-control)',
   borderRadius: 'var(--radius-ui)',
   padding: '7px 8px',
   font: 'inherit',
   fontSize: 12,
-  background: '#fff',
+  background: 'var(--color-surface)',
 };
 
 function today(): string {
@@ -184,41 +184,41 @@ export default function ReceiptEditor({ documentId, receipts, disabled, onRefres
   };
 
   if (!documentId) {
-    return <section style={{ padding: 12, border: '1px dashed #cbd5e1', borderRadius: 'var(--radius-ui)', color: '#64748b', fontSize: 12, background: '#f8fafc' }}>
+    return <section style={{ padding: 12, border: '1px dashed var(--color-border-control)', borderRadius: 'var(--radius-ui)', color: 'var(--color-text-secondary)', fontSize: 12, background: 'var(--color-surface-subtle)' }}>
       请先保存销售单，再添加预付款、尾款和付款凭证。
     </section>;
   }
 
-  return <section style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid #e2e8f0', borderRadius: 'var(--radius-ui)', background: '#fff' }}>
+  return <section style={{ display: 'grid', gap: 10, padding: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface)' }}>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
       <strong style={{ fontSize: 13 }}>收款记录</strong>
-      <span style={{ color: '#64748b', fontSize: 12 }}>共 {receipts.length} 笔，已收 ¥{(receivedCents / 100).toFixed(2)}</span>
+      <span style={{ color: 'var(--color-text-secondary)', fontSize: 12 }}>共 {receipts.length} 笔，已收 ¥{(receivedCents / 100).toFixed(2)}</span>
     </div>
 
-    <div style={{ display: 'grid', gridTemplateColumns: '130px 120px 150px minmax(180px, 1fr) 38px', gap: 7, alignItems: 'end', padding: 9, background: '#f8fafc', borderRadius: 'var(--radius-ui)' }}>
-      <label style={{ fontSize: 11, color: '#64748b' }}>收款日期<input type="date" value={newReceipt.receivedAt} disabled={disabled} onChange={(event) => setNewReceipt({ ...newReceipt, receivedAt: event.target.value })} style={fieldStyle} /></label>
-      <label style={{ fontSize: 11, color: '#64748b' }}>金额<input type="number" min="0.01" step="0.01" value={newReceipt.amount} disabled={disabled} onChange={(event) => setNewReceipt({ ...newReceipt, amount: event.target.value })} style={fieldStyle} placeholder="0.00" /></label>
-      <label style={{ fontSize: 11, color: '#64748b' }}>付款方式<input value={newReceipt.paymentMethod} disabled={disabled} onChange={(event) => setNewReceipt({ ...newReceipt, paymentMethod: event.target.value })} style={fieldStyle} placeholder="微信 / 转账" /></label>
-      <label style={{ fontSize: 11, color: '#64748b' }}>备注<input value={newReceipt.note} disabled={disabled} onChange={(event) => setNewReceipt({ ...newReceipt, note: event.target.value })} style={fieldStyle} placeholder="预付款 / 尾款" /></label>
+    <div style={{ display: 'grid', gridTemplateColumns: '130px 120px 150px minmax(180px, 1fr) 38px', gap: 7, alignItems: 'end', padding: 9, background: 'var(--color-surface-subtle)', borderRadius: 'var(--radius-ui)' }}>
+      <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>收款日期<input type="date" value={newReceipt.receivedAt} disabled={disabled} onChange={(event) => setNewReceipt({ ...newReceipt, receivedAt: event.target.value })} style={fieldStyle} /></label>
+      <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>金额<input type="number" min="0.01" step="0.01" value={newReceipt.amount} disabled={disabled} onChange={(event) => setNewReceipt({ ...newReceipt, amount: event.target.value })} style={fieldStyle} placeholder="0.00" /></label>
+      <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>付款方式<input value={newReceipt.paymentMethod} disabled={disabled} onChange={(event) => setNewReceipt({ ...newReceipt, paymentMethod: event.target.value })} style={fieldStyle} placeholder="微信 / 转账" /></label>
+      <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>备注<input value={newReceipt.note} disabled={disabled} onChange={(event) => setNewReceipt({ ...newReceipt, note: event.target.value })} style={fieldStyle} placeholder="预付款 / 尾款" /></label>
       <button type="button" className="icon-button" title="添加收款" disabled={disabled || Boolean(busyKey)} onClick={() => void addReceipt()}><Plus size={15} /></button>
     </div>
 
     {receipts.map((receipt) => {
       const draft = drafts[receipt.id] ?? receiptToDraft(receipt);
-      return <div key={receipt.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 210px', gap: 12, padding: 10, border: '1px solid #edf0f2', borderRadius: 'var(--radius-ui)' }}>
+      return <div key={receipt.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 210px', gap: 12, padding: 10, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '130px 120px 150px minmax(160px, 1fr) 34px 34px', gap: 7, alignItems: 'end' }}>
-          <label style={{ fontSize: 11, color: '#64748b' }}>收款日期<input type="date" value={draft.receivedAt} disabled={disabled} onChange={(event) => setDrafts({ ...drafts, [receipt.id]: { ...draft, receivedAt: event.target.value } })} style={fieldStyle} /></label>
-          <label style={{ fontSize: 11, color: '#64748b' }}>金额<input type="number" min="0.01" step="0.01" value={draft.amount} disabled={disabled} onChange={(event) => setDrafts({ ...drafts, [receipt.id]: { ...draft, amount: event.target.value } })} style={fieldStyle} /></label>
-          <label style={{ fontSize: 11, color: '#64748b' }}>付款方式<input value={draft.paymentMethod} disabled={disabled} onChange={(event) => setDrafts({ ...drafts, [receipt.id]: { ...draft, paymentMethod: event.target.value } })} style={fieldStyle} /></label>
-          <label style={{ fontSize: 11, color: '#64748b' }}>备注<input value={draft.note} disabled={disabled} onChange={(event) => setDrafts({ ...drafts, [receipt.id]: { ...draft, note: event.target.value } })} style={fieldStyle} /></label>
+          <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>收款日期<input type="date" value={draft.receivedAt} disabled={disabled} onChange={(event) => setDrafts({ ...drafts, [receipt.id]: { ...draft, receivedAt: event.target.value } })} style={fieldStyle} /></label>
+          <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>金额<input type="number" min="0.01" step="0.01" value={draft.amount} disabled={disabled} onChange={(event) => setDrafts({ ...drafts, [receipt.id]: { ...draft, amount: event.target.value } })} style={fieldStyle} /></label>
+          <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>付款方式<input value={draft.paymentMethod} disabled={disabled} onChange={(event) => setDrafts({ ...drafts, [receipt.id]: { ...draft, paymentMethod: event.target.value } })} style={fieldStyle} /></label>
+          <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>备注<input value={draft.note} disabled={disabled} onChange={(event) => setDrafts({ ...drafts, [receipt.id]: { ...draft, note: event.target.value } })} style={fieldStyle} /></label>
           <button type="button" className="icon-button" title="保存收款修改" disabled={disabled || Boolean(busyKey)} onClick={() => void saveReceipt(receipt)}><Save size={14} /></button>
           <button type="button" className="icon-button danger" title="删除收款" disabled={disabled || Boolean(busyKey)} onClick={() => void removeReceipt(receipt)}><Trash2 size={14} /></button>
         </div>
-        {disabled ? <div style={{ display: 'grid', gap: 6, fontSize: 11, color: '#64748b' }}>
+        {disabled ? <div style={{ display: 'grid', gap: 6, fontSize: 11, color: 'var(--color-text-secondary)' }}>
           <span style={{ fontWeight: 600 }}>付款凭证</span>
           {receipt.files[0]
-            ? <a href={`/files/${receipt.files[0].relativePath}`} target="_blank" rel="noreferrer" title="查看付款凭证"><img src={`/files/${receipt.files[0].relativePath}`} alt={receipt.files[0].originalName} style={{ width: 92, height: 70, objectFit: 'cover', border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)' }} /></a>
-            : <span style={{ color: '#94a3b8' }}>无凭证</span>}
+            ? <a href={`/files/${receipt.files[0].relativePath}`} target="_blank" rel="noreferrer" title="查看付款凭证"><img src={`/files/${receipt.files[0].relativePath}`} alt={receipt.files[0].originalName} style={{ width: 92, height: 70, objectFit: 'cover', border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)' }} /></a>
+            : <span style={{ color: 'var(--color-text-muted)' }}>无凭证</span>}
         </div> : <ImagePasteUpload
           label="付款凭证"
           value={savedAttachments(receipt)}
@@ -231,7 +231,7 @@ export default function ReceiptEditor({ documentId, receipts, disabled, onRefres
       </div>;
     })}
 
-    {!receipts.length && <div style={{ padding: 12, textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>暂无收款记录，可先添加预付款。</div>}
-    {error && <div role="alert" style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-ui)', padding: '7px 9px', fontSize: 12 }}>{error}</div>}
+    {!receipts.length && <div style={{ padding: 12, textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 12 }}>暂无收款记录，可先添加预付款。</div>}
+    {error && <div role="alert" style={{ color: 'var(--color-danger)', background: 'var(--color-danger-soft)', border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-ui)', padding: '7px 9px', fontSize: 12 }}>{error}</div>}
   </section>;
 }

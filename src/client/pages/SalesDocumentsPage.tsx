@@ -224,16 +224,16 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
         <tbody>{visibleRows.map((row) => {
           const receivedCents = Math.max(0, row.totalCents - row.outstandingCents);
           return <tr key={row.id}>
-              <td className="strong-cell" style={{ color: '#0f766e' }}>{row.number}{row.generatedOrderNo && <small style={{ display: 'block', color: '#64748b', fontWeight: 400 }} title="该销售单已生成的订单">订单 {row.generatedOrderNo}</small>}</td>
+              <td className="strong-cell" style={{ color: 'var(--color-accent)' }}>{row.number}{row.generatedOrderNo && <small style={{ display: 'block', color: 'var(--color-text-secondary)', fontWeight: 400 }} title="该销售单已生成的订单">订单 {row.generatedOrderNo}</small>}</td>
             <td>{row.documentDate}</td>
             <td className="strong-cell">{row.customerName || '-'}</td>
             <td>{row.purchaseOrderNo || '-'}</td>
             <td className="strong-cell">{formatMoney(row.totalCents)}</td>
             <td>{formatMoney(receivedCents)}</td>
-            <td className="amount" style={{ color: row.outstandingCents > 0 ? '#b45309' : '#0f766e' }}>{formatMoney(row.outstandingCents)}</td>
+            <td className="amount" style={{ color: row.outstandingCents > 0 ? 'var(--color-warning-text)' : 'var(--color-accent)' }}>{formatMoney(row.outstandingCents)}</td>
             <td><select className="toolbar-select" aria-label={`${row.number}单据状态`} value={row.documentStatus} disabled={busyId === row.id || row.documentStatus === 'void'} onChange={(event) => void changeStatus(row, event.target.value as SalesDocumentStatus)}><option value="draft">草稿</option><option value="issued">已开单</option><option value="void">已作废</option></select></td>
             <td><span className={`badge ${row.paymentStatus === 'paid' ? 'badge-success' : row.paymentStatus === 'partial' ? 'badge-warning' : 'badge-neutral'}`}>{paymentStatusLabels[row.paymentStatus]}</span></td>
-            <td style={{ color: '#64748b' }}>{row.updatedAt.replace('T', ' ').slice(0, 16)}</td>
+            <td style={{ color: 'var(--color-text-secondary)' }}>{row.updatedAt.replace('T', ' ').slice(0, 16)}</td>
             <td><div className="row-actions">
               <button className="icon-button" type="button" title={row.documentStatus === 'void' ? '查看销售单' : '编辑销售单'} disabled={busyId === row.id} onClick={() => void openEdit(row.id)}><Edit3 size={14} /></button>
               <PdfDownloadButton number={row.number} download={() => downloadSalesDocumentPdf(row.id)} onError={(message) => notify(message, 'error')} disabled={busyId === row.id} />
@@ -259,7 +259,7 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
               <div className="sales-doc-card-field"><span>客户</span><strong>{row.customerName || '-'}</strong><em>{row.purchaseOrderNo ? `采购单 ${row.purchaseOrderNo}` : ''}</em></div>
               <div className="sales-doc-card-field"><span>含税合计</span><strong>{formatMoney(row.totalCents)}</strong></div>
               <div className="sales-doc-card-field"><span>已收</span><strong>{formatMoney(receivedCents)}</strong></div>
-              <div className="sales-doc-card-field"><span>未付</span><strong style={row.outstandingCents > 0 ? { color: '#b45309' } : { color: '#0f766e' }}>{formatMoney(row.outstandingCents)}</strong></div>
+              <div className="sales-doc-card-field"><span>未付</span><strong style={row.outstandingCents > 0 ? { color: 'var(--color-warning-text)' } : { color: 'var(--color-accent)' }}>{formatMoney(row.outstandingCents)}</strong></div>
             </div>
             <div className="sales-doc-card-status">
               <select className="toolbar-select" aria-label={`${row.number}单据状态`} value={row.documentStatus} disabled={busyId === row.id || row.documentStatus === 'void'} onChange={(event) => void changeStatus(row, event.target.value as SalesDocumentStatus)}><option value="draft">草稿</option><option value="issued">已开单</option><option value="void">已作废</option></select>
@@ -278,7 +278,7 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
       {!loading && !visibleRows.length && <div className="table-state">暂无符合条件的销售单，可独立新建或从已成交报价复制。</div>}
     </section>
 
-    <Modal open={editorOpen} title={draft.number ? `销售单 · ${draft.number}` : '新建销售单'} onClose={() => setEditorOpen(false)} width={1280}>
+    <Modal open={editorOpen} title={draft.number ? `销售单 · ${draft.number}` : '新建销售单'} onClose={() => setEditorOpen(false)} width={1200}>
       <SalesDocumentForm
         customers={customers}
         value={draft}

@@ -47,15 +47,24 @@ export default function InvoiceEditor({ detail, customer, onRefresh, onNotify }:
     const orderId = Number(detail.order.id ?? detail.order.order_id ?? 0);
     const customerId = orderCustomerId(detail);
     if (initializedOrder.current === orderId) return;
-    if (customerId) {
-      // 客户尚未从 props 解析到时等待下一帧，避免在客户列表加载前把抬头/税号清空。
-      if (customer?.id === customerId) {
-        setDraft((current) => ({ ...current, title: customer.invoiceTitle ?? '', taxNo: customer.taxNo ?? '' }));
-        initializedOrder.current = orderId;
-      }
-    } else {
+    if (!customerId) {
       initializedOrder.current = orderId;
+      return undefined;
     }
+    if (customer?.id === customerId) {
+      setDraft((current) => ({ ...current, title: customer.invoiceTitle ?? '', taxNo: customer.taxNo ?? '' }));
+      initializedOrder.current = orderId;
+      return undefined;
+    }
+    // 客户列表还没加载完或仍是旧快照时，直接按订单上的客户 ID 补拉一次，
+    // 避免用户刚打开页面就查财务时开票抬头/税号被留空。
+    let cancelled = false;
+    void getCustomer(customerId).then((fresh) => {
+      if (cancelled || initializedOrder.current === orderId) return;
+      setDraft((current) => ({ ...current, title: fresh.invoiceTitle ?? '', taxNo: fresh.taxNo ?? '' }));
+      initializedOrder.current = orderId;
+    }).catch(() => { /* 客户资料拉取失败不阻断财务详情查看 */ });
+    return () => { cancelled = true; };
   }, [detail, customer]);
 
   const create = async () => {
@@ -103,7 +112,7 @@ export default function InvoiceEditor({ detail, customer, onRefresh, onNotify }:
   return <section className="finance-section">
     <div className="finance-section-heading"><div><strong>发票跟踪</strong><span>{personal ? '对私结算订单无需开票' : '按订单保存开票资料和发票文件'}</span></div><span className={personal ? 'badge badge-neutral' : badgeClass(detail.finance.invoiceStatus)}>{personal ? INVOICE_NOT_REQUIRED_LABEL : INVOICE_STATUS_LABELS[detail.finance.invoiceStatus as InvoiceStatus]}</span></div>
     {personal ? <div className="finance-empty">该订单为对私结算，无需开票；如确需开票请先把订单结算方式改为对公。</div> : <div className="finance-invoice-form"><input placeholder="发票抬头" value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /><input placeholder="税号" value={draft.taxNo} onChange={(event) => setDraft({ ...draft, taxNo: event.target.value })} /><input type="email" placeholder="收票邮箱" value={draft.recipientEmail} onChange={(event) => setDraft({ ...draft, recipientEmail: event.target.value })} /><input type="number" min="0.01" step="0.01" placeholder="开票金额" value={draft.amount} onChange={(event) => setDraft({ ...draft, amount: event.target.value })} /><button className="button button-ghost" type="button" title="从客户资料带入开票抬头与税号" disabled={!orderCustomerId(detail)} onClick={() => void applyCustomer()}><RefreshCw size={14} />调用客户开票信息</button><button className="button button-primary" type="button" disabled={busy || !draft.title || !draft.taxNo || !draft.amount} onClick={() => void create()}><Plus size={14} />新建开票申请</button></div>}
-    {invoices.length > 0 && <small style={{ color: '#94a3b8' }}>有效开票金额合计 {money(validInvoiceTotal)} / 应收 {money(detail.finance.receivableCents)}</small>}
+    {invoices.length > 0 && <small style={{ color: 'var(--color-text-muted)' }}>有效开票金额合计 {money(validInvoiceTotal)} / 应收 {money(detail.finance.receivableCents)}</small>}
     <div className="finance-invoice-list">{invoices.length ? invoices.map((invoice) => {
       const pendingFile = fileByInvoice[invoice.id];
       const editable = invoice.status !== 'void' && invoice.status !== 'sent';

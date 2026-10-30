@@ -15,12 +15,12 @@ export interface CustomerSelectorProps {
 const inputStyle = {
   width: '100%',
   minWidth: 0,
-  border: '1px solid #dbe3ea',
+  border: '1px solid var(--color-border-control)',
   borderRadius: 'var(--radius-ui)',
   padding: '8px 30px 8px 30px',
   font: 'inherit',
   fontSize: 12,
-  background: '#fff',
+  background: 'var(--color-surface)',
 };
 
 export default function CustomerSelector({ value, customers, onChange, onCreateCustomer, disabled, label = '客户' }: CustomerSelectorProps) {
@@ -60,10 +60,10 @@ export default function CustomerSelector({ value, customers, onChange, onCreateC
   // 显示文本：打开下拉时是搜索词，否则是已选客户名；一键清空按同一份文本判断有没有内容。
   const shownText = open ? query : selected?.name ?? query;
   return <>
-    <label style={{ display: 'grid', gap: 5, position: 'relative', color: '#64748b', fontSize: 12 }}>
+    <label style={{ display: 'grid', gap: 5, position: 'relative', color: 'var(--color-text-secondary)', fontSize: 12 }}>
       {label}
       <span style={{ position: 'relative' }}>
-        <UserRound size={14} style={{ position: 'absolute', left: 9, top: 9, color: '#94a3b8', pointerEvents: 'none' }} />
+        <UserRound size={14} style={{ position: 'absolute', left: 9, top: 9, color: 'var(--color-text-muted)', pointerEvents: 'none' }} />
         <input
           aria-label={label}
           disabled={disabled}
@@ -75,13 +75,13 @@ export default function CustomerSelector({ value, customers, onChange, onCreateC
           autoComplete="off"
           style={shownText.trim() ? { ...inputStyle, paddingRight: 48 } : inputStyle}
         />
-        {!!shownText.trim() && !disabled && <button type="button" aria-label="清空客户" title="清空" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(''); onChange(null); setOpen(true); }} style={{ position: 'absolute', right: 26, top: '50%', transform: 'translateY(-50%)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, border: 0, borderRadius: '50%', padding: 0, color: '#94a3b8', background: 'transparent', cursor: 'pointer' }}><X size={13} /></button>}
-        <ChevronDown size={14} style={{ position: 'absolute', right: 9, top: 9, color: '#94a3b8', pointerEvents: 'none' }} />
+        {!!shownText.trim() && !disabled && <button type="button" aria-label="清空客户" title="清空" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(''); onChange(null); setOpen(true); }} style={{ position: 'absolute', right: 26, top: '50%', transform: 'translateY(-50%)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, border: 0, borderRadius: '50%', padding: 0, color: 'var(--color-text-muted)', background: 'transparent', cursor: 'pointer' }}><X size={13} /></button>}
+        <ChevronDown size={14} style={{ position: 'absolute', right: 9, top: 9, color: 'var(--color-text-muted)', pointerEvents: 'none' }} />
       </span>
-      {open && <div role="listbox" style={{ position: 'absolute', zIndex: 14, top: 56, left: 0, right: 0, maxHeight: 270, overflowY: 'auto', border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)', background: '#fff', boxShadow: '0 12px 28px rgba(15,23,42,.14)' }}>
-        {filtered.map((customer) => <button key={customer.id} type="button" role="option" aria-selected={customer.id === value} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(customer)} style={{ width: '100%', display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, padding: '8px 10px', border: 0, borderBottom: '1px solid #edf0f2', background: customer.id === value ? '#f0fdfa' : '#fff', textAlign: 'left', cursor: 'pointer' }}><span><strong style={{ display: 'block', color: '#17212b', fontSize: 12 }}>{customer.name}</strong><small style={{ color: '#64748b' }}>{[customer.contactName, customer.contactPhone].filter(Boolean).join(' · ') || '暂无联系人信息'}</small></span><small style={{ color: customer.incompleteProductCount ? '#b45309' : '#0f766e' }}>{customer.productCount} 个产品</small></button>)}
-        {!filtered.length && <div style={{ padding: 14, color: '#94a3b8', textAlign: 'center' }}>没有匹配客户</div>}
-        {onCreateCustomer && <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setOpen(false); setCreateOpen(true); }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 7, padding: '9px 10px', border: 0, background: '#f0fdfa', color: '#0f766e', textAlign: 'left', cursor: 'pointer', fontSize: 12 }}><Plus size={14} />快速新增客户</button>}
+      {open && <div role="listbox" style={{ position: 'absolute', zIndex: 14, top: 56, left: 0, right: 0, maxHeight: 270, overflowY: 'auto', border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface)', boxShadow: '0 12px 28px rgba(15,23,42,.14)' }}>
+        {filtered.map((customer) => <button key={customer.id} type="button" role="option" aria-selected={customer.id === value} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(customer)} style={{ width: '100%', display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, padding: '8px 10px', border: 0, borderBottom: '1px solid var(--color-border)', background: customer.id === value ? 'var(--color-accent-soft)' : 'var(--color-surface)', textAlign: 'left', cursor: 'pointer' }}><span><strong style={{ display: 'block', color: 'var(--color-text)', fontSize: 12 }}>{customer.name}</strong><small style={{ color: 'var(--color-text-secondary)' }}>{[customer.contactName, customer.contactPhone].filter(Boolean).join(' · ') || '暂无联系人信息'}</small></span><small style={{ color: customer.incompleteProductCount ? 'var(--color-warning-text)' : 'var(--color-accent)' }}>{customer.productCount} 个产品</small></button>)}
+        {!filtered.length && <div style={{ padding: 14, color: 'var(--color-text-muted)', textAlign: 'center' }}>没有匹配客户</div>}
+        {onCreateCustomer && <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setOpen(false); setCreateOpen(true); }} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 7, padding: '9px 10px', border: 0, background: 'var(--color-accent-soft)', color: 'var(--color-accent)', textAlign: 'left', cursor: 'pointer', fontSize: 12 }}><Plus size={14} />快速新增客户</button>}
       </div>}
     </label>
     <CustomerEditorModal open={createOpen} busy={creating} onClose={() => { if (!creating) setCreateOpen(false); }} onSave={create} />

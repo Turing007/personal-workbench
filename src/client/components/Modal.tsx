@@ -21,6 +21,8 @@ export interface ModalProps {
   className?: string;
   /** 标题栏右侧（关闭按钮左边）的额外操作：放在固定不滚动的一行，长列表里也随时能点到。 */
   headerExtra?: ReactNode;
+  /** 轻量确认/小设置弹窗：手机端保持居中卡片（宽 100% - 32px），不铺满全屏。 */
+  compact?: boolean;
 }
 
 /** 打开着的弹窗数量：只有第一个负责锁页面滚动，最后一个关掉时才还原。 */
@@ -48,7 +50,7 @@ function unregisterModal(id: symbol) {
   releaseSwipeRefreshHold = null;
 }
 
-export default function Modal({ open, title, children, onClose, width = 760, footer, layer = 20, variant = 'dialog', drawerSide = 'right', className, headerExtra }: ModalProps) {
+export default function Modal({ open, title, children, onClose, width = 760, footer, layer = 20, variant = 'dialog', drawerSide = 'right', className, headerExtra, compact = false }: ModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
@@ -104,7 +106,7 @@ export default function Modal({ open, title, children, onClose, width = 760, foo
       role="presentation"
       style={{ zIndex: layer }}
     >
-      <section ref={panelRef} className={`modal-panel${isDrawer ? ' drawer-panel' : ''}${isLeftDrawer ? ' drawer-panel-left' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId.current} style={{ '--modal-width': typeof width === 'number' ? `${width}px` : width } as CSSProperties}>
+      <section ref={panelRef} className={`modal-panel${isDrawer ? ' drawer-panel' : ''}${isLeftDrawer ? ' drawer-panel-left' : ''}${compact ? ' modal-panel-compact' : ''}${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId.current} style={{ '--modal-width': typeof width === 'number' ? `${width}px` : width } as CSSProperties}>
         <header className={`modal-header${headerExtra ? ' has-extra' : ''}`}>
           <strong id={titleId.current} className="modal-title">{title}</strong>
           {headerExtra && <div className="modal-header-extra">{headerExtra}</div>}

@@ -217,12 +217,12 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
     <section className="table-panel quotation-panel">
       <div className="table-scroll quotation-table-desktop"><table className="data-table quotation-data-table"><thead><tr>{['报价单号', '日期', '客户', '产品数', '状态', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
         <tbody>{visibleRows.map((row) => <tr key={row.id}>
-          <td className="strong-cell" style={{ color: '#0f766e' }}>{row.number}</td>
+          <td className="strong-cell" style={{ color: 'var(--color-accent)' }}>{row.number}</td>
           <td>{row.quotationDate}</td>
-          <td><strong style={{ display: 'block' }}>{row.customerName || '-'}</strong><small style={{ color: '#64748b' }}>{[row.contactName, row.contactPhone].filter(Boolean).join(' · ')}</small></td>
+          <td><strong style={{ display: 'block' }}>{row.customerName || '-'}</strong><small style={{ color: 'var(--color-text-secondary)' }}>{[row.contactName, row.contactPhone].filter(Boolean).join(' · ')}</small></td>
           <td>{row.itemCount ?? '-'}</td>
           <td><select className="toolbar-select" aria-label={`${row.number}状态`} value={row.status} disabled={busyId === row.id} onChange={(event) => void setStatus(row, event.target.value as QuotationStatus)}><option value="draft">草稿</option><option value="sent">已发送</option><option value="won">已成交</option><option value="expired">已失效</option></select></td>
-          <td style={{ color: '#64748b' }}>{row.updatedAt.replace('T', ' ').slice(0, 16)}</td>
+          <td style={{ color: 'var(--color-text-secondary)' }}>{row.updatedAt.replace('T', ' ').slice(0, 16)}</td>
           <td><div className="row-actions">
             <button className="icon-button" type="button" title="产品详情" disabled={busyId === row.id} onClick={() => setProductDetailId(row.id)}><PackageSearch size={14} /></button>
             <button className="icon-button" type="button" title="编辑报价单" disabled={busyId === row.id} onClick={() => void openEdit(row.id)}><Edit3 size={14} /></button>
@@ -265,7 +265,7 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
       {!loading && !visibleRows.length && <div className="table-state">暂无符合条件的报价单，点击“新建报价”开始。</div>}
     </section>
 
-    <Modal open={editorOpen} title={draft.number ? `编辑报价 · ${draft.number}` : '新建报价单'} onClose={() => setEditorOpen(false)} width={1240}>
+    <Modal open={editorOpen} title={draft.number ? `编辑报价 · ${draft.number}` : '新建报价单'} onClose={() => setEditorOpen(false)} width={1200}>
       <QuotationForm customers={customers} value={draft} saving={busyId === (draft.id ?? -1)} onChange={setDraft} onSave={save} onCancel={() => setEditorOpen(false)} onSaveCustomerProduct={onSaveCustomerProduct} onCreateCustomer={createCustomer} />
     </Modal>
     <QuotationSyncModal

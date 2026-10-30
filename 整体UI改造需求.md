@@ -1,7 +1,7 @@
 # 整体 UI 改造需求 — 从「卡片堆叠」到「ERP 工作台」
 
-> 状态：**v1.3（B 方案；阶段 1/2 已上线，阶段 3 已实施待验收）**
-> 日期：2026-10-30
+> 状态：**v1.4（B 方案；阶段 1/2/3 已上线，阶段 4 已实施待验收）**
+> 日期：2026-10-31
 > 范围：桌面端 + 手机端 + 全部 10 个模块 + 页面外壳 + 弹窗/抽屉/表格
 > 约束：**只改界面与样式，不改业务流程、字段、接口和数据库；所有现有操作必须保留。**
 
@@ -173,6 +173,33 @@
 - 产品图册：我的图册改为扁平行（名称/状态/产品数/毛利率/链接/打开次数 + 操作），供应商图册保持两列文件卡（长文件名截断，按钮不出卡）；选品编辑沿用一张工作面。
 - 设置：左侧导航改为无卡片导航栏（200px），右侧一整张内容面，每个分区用标题 + 分隔线，不再一张分区一张卡；手机菜单为胶囊一行行铺开，页面无横向滚动。
 - 相关 e2e 24 项通过（报价、销售、图册、供应商图册、设置预设、颜色插脚、手机布局）。
+
+
+### 阶段 4 实施记录（本地已实施，待验收）
+
+- [订单编辑 · 桌面](docs/ui-redesign/phase4-order-form-desktop.png)
+- [订单编辑 · 手机（全屏）](docs/ui-redesign/phase4-order-form-mobile.png)
+- [报价编辑 · 桌面](docs/ui-redesign/phase4-quote-form-desktop.png)
+- [销售编辑 · 桌面](docs/ui-redesign/phase4-sales-form-desktop.png)
+- [销售编辑 · 手机](docs/ui-redesign/phase4-sales-form-mobile.png)
+- [箱唛编辑 · 桌面](docs/ui-redesign/phase4-label-editor-desktop.png)
+- [箱唛编辑 · 手机](docs/ui-redesign/phase4-label-editor-mobile.png)
+- [订单详情 · 手机](docs/ui-redesign/phase4-order-detail-mobile.png)
+- [售价计算 · 手机](docs/ui-redesign/phase4-price-calculator-mobile.png)
+- [确认框 · 手机（居中卡片）](docs/ui-redesign/phase4-confirm-mobile.png)
+- [打印预览 · 手机](docs/ui-redesign/phase4-print-mobile.png)
+- [设置底部操作条 · 手机](docs/ui-redesign/phase4-settings-bottom-mobile.png)
+- [产品图册 · 手机（恢复新建入口）](docs/ui-redesign/phase4-catalog-mobile.png)
+- 深色模式：[订单编辑](docs/ui-redesign/phase4-dark-order-form.png)、[报价编辑](docs/ui-redesign/phase4-dark-quote-form.png)、[销售编辑](docs/ui-redesign/phase4-dark-sales-form-desktop.png)、[客户产品编辑](docs/ui-redesign/phase4-dark-customer-product.png)
+
+说明：阶段 4 统一了弹窗/抽屉与表单外壳，并把深色模式补齐到所有编辑弹窗：
+
+- **弹窗尺寸**：复杂编辑改为订单/产品 1040px、报价/销售 1200px；手机端表单和详情全屏（390 宽实测 390×818，圆角 0），只有确认框/小设置框保持居中卡片（358 宽，圆角 8px）。头部 48px、底部操作条 56px，底部避让安全区。
+- **表单内部去卡片**：报价/销售的分区改为「标题 + 1px 分隔线」，订单/销售底部保存条吸底；「编辑产品明细」等按钮统一为次级按钮，不再出现浏览器默认灰底。
+- **手机专项**：订单详情摘要 6 列改 2 列，财务摘要 4 列改 2 列；箱唛编辑器三栏在手机改为「横向箱唛列表 + 缩放预览 + 字段」，打印预览工具栏两行；设置、图册、发货页补足底部导航让位；图册页恢复「新建图册」入口。
+- **深色模式**：`color-scheme` 随主题切换；TSX 内 426 处硬编码颜色改为令牌，CSS 中旧的状态色/边框色/白底同步换令牌；原生日期、下拉、滚动条不再白底白字。
+- **顺带修掉的竞态**：打开财务详情时若客户列表尚未加载完，开票抬头/税号会留空；现在按订单上的客户 ID 补拉一次客户资料再带入，弱网/刚开页时不再空着。
+- **回归**：类型检查、构建通过；单测 **617** 通过；全量 e2e **142** 通过（单 worker 串行跑；并行模式下「体积参数」旧用例会和其他计算器用例共享全局参数而互扰，单独复跑通过）。1440/1024/390 三档、深色模式下 10 个页面横向溢出均为 **0**。原先按「颜色/插脚两字段」断言的旧用例已同步为当前三字段（颜色/插脚/电压）。
 
 ---
 

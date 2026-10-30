@@ -65,9 +65,9 @@ test('编辑器：分类紧跟品名，按品名给建议且只在点一下时�
   const cellTops = await editor.locator('.product-editor-identity > *').evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().top)));
   expect(new Set(cellTops).size).toBe(1);
 
-  // 颜色与插脚抽成独立一行：两个字段并排（top 相同、left 递增），不再带自定义输入。
+  // 颜色、电池插脚、电池电压抽成独立一行：三个字段并排（top 相同、left 递增），不再带自定义输入。
   const optionFields = editor.locator('.product-editor-options-row > *');
-  await expect(optionFields).toHaveCount(2);
+  await expect(optionFields).toHaveCount(3);
   await expect(editor.locator('.product-editor-options-row .chip-custom, .product-editor-options-row .chip-input, .product-editor-options-row .chip-add')).toHaveCount(0);
   await expect(editor.locator('input[aria-label="自定义颜色"], input[aria-label="自定义插脚"]')).toHaveCount(0);
   const positions = await optionFields.evaluateAll((nodes) => nodes.map((node) => {
@@ -76,9 +76,10 @@ test('编辑器：分类紧跟品名，按品名给建议且只在点一下时�
   }));
   expect(new Set(positions.map((position) => position.top)).size).toBe(1);
   expect(positions[1].left).toBeGreaterThan(positions[0].left);
-  // 窄屏下两列等宽，右侧不能越出容器。
+  expect(positions[2].left).toBeGreaterThan(positions[1].left);
+  // 三列等宽，最右一列不能越出容器。
   const rowRight = await editor.locator('.product-editor-options-row').evaluate((node) => Math.round(node.getBoundingClientRect().right));
-  expect(positions[1].right).toBeLessThanOrEqual(rowRight + 1);
+  expect(positions[2].right).toBeLessThanOrEqual(rowRight + 1);
 
   // 还没填品名时不给建议。
   await expect(editor.locator('.product-category-suggest')).toHaveCount(0);

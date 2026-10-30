@@ -86,18 +86,18 @@ export default function QuotationSyncModal({ open, quotationId, onClose, onNotif
     </>}
   >
     <div style={{ display: 'grid', gap: 10 }}>
-      {error && <div role="alert" style={{ padding: '8px 10px', border: '1px solid #fecaca', borderRadius: 'var(--radius-ui)', background: '#fef2f2', color: '#b91c1c', fontSize: 12 }}>{error}</div>}
+      {error && <div role="alert" style={{ padding: '8px 10px', border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-danger-soft)', color: 'var(--color-danger)', fontSize: 12 }}>{error}</div>}
       {loading && <div className="table-state">正在生成同步预览…</div>}
       {!loading && preview && !result && <>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, color: '#64748b', fontSize: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, color: 'var(--color-text-secondary)', fontSize: 12 }}>
           <span>报价产品默认全部勾选；只会把勾选的产品同步到当前客户。</span>
           <button type="button" className="button button-secondary" onClick={toggleAll}>{allSelected ? '取消全选' : '全选产品'}</button>
         </div>
-        <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(50vh, 420px)', border: '1px solid #e2e8f0', borderRadius: 'var(--radius-ui)' }}>
+        <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(50vh, 420px)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)' }}>
           <table className="data-table" style={{ minWidth: 680 }}><thead><tr><th style={{ width: 38 }}><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="全选同步产品" /></th><th>产品</th><th>规格</th><th>本次报价</th><th>同步预判</th></tr></thead>
             <tbody>{preview.items.map((item) => <tr key={item.quotationItemId}>
               <td><input type="checkbox" checked={selectedIds.includes(item.quotationItemId)} onChange={() => setSelectedIds((current) => current.includes(item.quotationItemId) ? current.filter((id) => id !== item.quotationItemId) : [...current, item.quotationItemId])} aria-label={`选择${item.name}`} /></td>
-              <td><strong>{item.name || '-'}</strong></td><td>{item.specification || '-'}</td><td>{money(item.unitPriceCents)}</td><td><span style={{ color: item.action === 'create' ? '#0f766e' : item.action === 'update' ? '#b45309' : '#64748b' }}>{actionLabels[item.action]}</span></td>
+              <td><strong>{item.name || '-'}</strong></td><td>{item.specification || '-'}</td><td>{money(item.unitPriceCents)}</td><td><span style={{ color: item.action === 'create' ? 'var(--color-accent)' : item.action === 'update' ? 'var(--color-warning-text)' : 'var(--color-text-secondary)' }}>{actionLabels[item.action]}</span></td>
             </tr>)}</tbody>
           </table>
         </div>
@@ -105,11 +105,11 @@ export default function QuotationSyncModal({ open, quotationId, onClose, onNotif
       </>}
       {result && <>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 7 }}>
-          {([['created', '新增'], ['updated', '更新'], ['unchanged', '无变化'], ['failed', '失败']] as const).map(([key, label]) => <div key={key} style={{ padding: '10px 12px', border: '1px solid #e2e8f0', borderRadius: 'var(--radius-ui)', background: '#f8fafc' }}><small style={{ color: '#64748b' }}>{label}</small><strong style={{ display: 'block', marginTop: 3, fontSize: 18, color: key === 'failed' ? '#b91c1c' : '#17212b' }}>{summary[key]}</strong></div>)}
+          {([['created', '新增'], ['updated', '更新'], ['unchanged', '无变化'], ['failed', '失败']] as const).map(([key, label]) => <div key={key} style={{ padding: '10px 12px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface-subtle)' }}><small style={{ color: 'var(--color-text-secondary)' }}>{label}</small><strong style={{ display: 'block', marginTop: 3, fontSize: 18, color: key === 'failed' ? 'var(--color-danger)' : 'var(--color-text)' }}>{summary[key]}</strong></div>)}
         </div>
-        <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(50vh, 420px)', border: '1px solid #e2e8f0', borderRadius: 'var(--radius-ui)' }}><table className="data-table"><thead><tr><th>产品</th><th>结果</th><th>说明</th></tr></thead><tbody>{result.items.map((item) => {
+        <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(50vh, 420px)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)' }}><table className="data-table"><thead><tr><th>产品</th><th>结果</th><th>说明</th></tr></thead><tbody>{result.items.map((item) => {
           const source = preview?.items.find((candidate) => candidate.quotationItemId === item.quotationItemId);
-          return <tr key={item.quotationItemId}><td>{source?.name ?? `产品行 ${item.quotationItemId}`}</td><td><span style={{ color: item.status === 'failed' ? '#b91c1c' : '#0f766e' }}>{resultLabels[item.status]}</span></td><td>{item.error || '-'}</td></tr>;
+          return <tr key={item.quotationItemId}><td>{source?.name ?? `产品行 ${item.quotationItemId}`}</td><td><span style={{ color: item.status === 'failed' ? 'var(--color-danger)' : 'var(--color-accent)' }}>{resultLabels[item.status]}</span></td><td>{item.error || '-'}</td></tr>;
         })}</tbody></table></div>
       </>}
     </div>
