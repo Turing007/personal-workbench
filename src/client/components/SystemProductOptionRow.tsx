@@ -38,7 +38,7 @@ export default function SystemProductOptionRow({ product, thumbSize = 40 }: { pr
   const price = formatPurchasePrice(product.purchasePrice);
   return (
     <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
-      <span style={{ width: thumbSize, height: thumbSize, flexShrink: 0, display: 'grid', placeItems: 'center', overflow: 'hidden', border: '1px solid #e2e8f0', borderRadius: 5, background: '#f8fafc' }}>
+      <span style={{ width: thumbSize, height: thumbSize, flexShrink: 0, display: 'grid', placeItems: 'center', overflow: 'hidden', border: '1px solid #e2e8f0', borderRadius: 'var(--radius-ui)', background: '#f8fafc' }}>
         {imageUrl ? <img src={imageUrl} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <ImageIcon size={16} color="#94a3b8" />}
       </span>
       <span style={{ minWidth: 0, flex: 1, display: 'grid', gap: 2 }}>

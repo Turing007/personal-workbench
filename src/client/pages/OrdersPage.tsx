@@ -252,24 +252,76 @@ export default function OrdersPage({ orders, customers, statusCounts, labelsByOr
       : <><button type="button" className="link-button" onClick={() => openLabels(order)}>箱唛</button>{showNextAction && nextAction?.kind === 'advance' && onAdvanceStatus && <button type="button" className="link-button muted" title={nextAction.label} onClick={() => onAdvanceStatus(order, nextAction.target)}>{nextAction.label}</button>}{showNextAction && nextAction?.kind === 'shipping' && onOpenShipping && <button type="button" className="link-button muted" title={nextAction.label} onClick={() => onOpenShipping(order)}>{nextAction.label}</button>}</>}{onDeleteOrder && <button type="button" className="icon-button danger" title="删除订单" onClick={() => confirmDeleteOrder(order)}><Trash2 size={14} /></button>}</div>;
   };
 
-  return <div className="page-shell orders-page" style={{ gap: 12, minHeight: '100%' }}>
-    <div className="page-toolbar orders-page-heading"><div><strong className="page-title">订单工作台</strong><span className="page-subtitle">跟进备货、打包、发货与箱唛打印进度</span></div></div>
-    <StatusCards activeKey={filter} counts={counts} onSelect={setFilter} />
-    <section className="table-panel">
-      <div className="page-toolbar table-toolbar orders-table-toolbar">
-        <button type="button" className="button button-primary" onClick={() => setCreating(true)}><Plus size={15} />新建订单</button>
-        <SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索订单号、客户、收件人、品名、SKU、规格" />
-        <span className="toolbar-count"><ListFilter size={14} style={{ verticalAlign: -2, marginRight: 3 }} />{visibleOrders.length} 条订单</span>
-        {selectedOrders.length > 0 && <><span className="badge badge-accent">已选 {selectedOrders.length} 条</span><button type="button" className="button button-secondary button-sm" title="将所选待备货订单标记为已备货" onClick={() => onBatchAdvance?.(selectedOrders, 'stock')}><PackageCheck size={14} />一键备货</button><button type="button" className="button button-secondary button-sm" title="将所选已备货/待打包订单完成打包，推进到待发货" onClick={() => onBatchAdvance?.(selectedOrders, 'pack')}><Package size={14} />一键打包</button><button type="button" className="button button-secondary button-sm" title="将所选待发货订单（已填物流单号）标记为已发货" onClick={() => onBatchAdvance?.(selectedOrders, 'ship')}><Truck size={14} />一键发货</button><button type="button" className="button button-secondary button-sm" onClick={bulkPrint}><Printer size={14} />批量打印箱唛</button></>}
+  return <div className="page-shell orders-page">
+    <div className="page-toolbar orders-page-heading">
+      <div className="orders-heading-copy">
+        <span className="page-breadcrumb">业务 / 订单</span>
+        <strong className="page-title">订单工作台</strong>
+        <span className="page-subtitle">跟进备货、打包、发货与箱唛打印进度</span>
       </div>
-      <div className="table-scroll orders-table-desktop"><table className="data-table" style={{ minWidth: 1180 }}><thead><tr><th style={{ width: 38 }}><input type="checkbox" checked={allPrintableSelected} onChange={toggleAll} aria-label="选择当前列表待打印箱唛订单" /></th>{['订单号', '客户', '下单时间', '收件人', '产品详情', '总箱数', '金额', '状态', '物流单号', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead><tbody>{visibleOrders.map((order) => { const id = orderKey(order); const boxCount = orderBoxCount(order); const productSummary = order.items.map((item) => item.name).filter(Boolean).join('、'); const paymentStatus = orderPaymentStatus(order); return <tr key={id}><td><input type="checkbox" disabled={!isUnshippedOrder(order) || isDraftOrder(order)} checked={isUnshippedOrder(order) && !isDraftOrder(order) && selectedIds.includes(id)} onChange={() => setSelectedIds((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id])} aria-label={`选择订单${order.orderNo}`} /></td><td className="strong-cell">{order.orderNo}</td><td>{order.customerName || '—'}</td><td>{order.orderedAt.replace('T', ' ')}</td><td>{order.recipientName}</td><td style={{ maxWidth: 230 }}><button type="button" className="link-button" title={productSummary} style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', textAlign: 'left', verticalAlign: 'bottom' }} onClick={() => setProductsOrder(order)}>{productSummary || '查看明细'}</button></td><td style={{ fontWeight: 650 }}>{boxCount}</td><td className="amount"><div>¥ {order.amount || '0.00'}</div><div style={{ marginTop: 4, fontSize: 10, color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</div></td><td><span className={statusBadgeClass(order.status)}>{order.status ? statusLabels[order.status] : '-'}</span><div style={{ marginTop: 4, fontSize: 10, color: order.labelPrintedAt ? '#0f766e' : '#b45309' }}>{order.status === 'draft' ? '草稿订单，发布后进入流程' : order.labelPrintedAt ? `已打印箱唛 · ${formatDateTime(order.labelPrintedAt)}` : '箱唛待打印'}</div></td><td>{order.trackingNo || '—'}</td><td>{renderOrderActions(order)}</td></tr>; })}</tbody></table>{!visibleOrders.length && <div className="table-state">暂无符合条件的订单</div>}</div>
-      <div className="orders-card-list" aria-label="订单卡片列表">{visibleOrders.map((order) => { const boxCount = orderBoxCount(order); const productSummary = order.items.map((item) => item.name).filter(Boolean).join('、'); const paymentStatus = orderPaymentStatus(order); return <article key={orderKey(order)} className="order-card"><div className="order-card-head"><div className="order-card-title"><strong>{order.orderNo}</strong><span>{order.customerName || '未填客户'} · {order.orderedAt.replace('T', ' ')}</span></div>{renderCardStatus(order)}</div><button type="button" className="order-card-products" title={productSummary} onClick={() => setProductsOrder(order)}>{productSummary || '查看产品明细'}</button><div className="order-card-grid"><div className="order-card-field"><span>收件人</span><strong>{order.recipientName || '—'}</strong></div><div className="order-card-field"><span>总箱数</span><strong>{boxCount}</strong></div><div className="order-card-field"><span>金额</span><strong>¥ {order.amount || '0.00'}<em style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</em></strong></div><div className="order-card-field"><span>物流单号</span><strong>{order.trackingNo || '—'}</strong></div></div><div className="order-card-meta">{order.status === 'draft' ? '草稿订单，发布后进入流程' : order.labelPrintedAt ? `已打印箱唛 · ${formatDateTime(order.labelPrintedAt)}` : '箱唛待打印'}</div>{renderOrderActions(order, { hideNextAction: true })}</article>; })}{!visibleOrders.length && <div className="table-state">暂无符合条件的订单</div>}</div>
+    </div>
+    <section className="table-panel orders-panel">
+      <div className="page-toolbar table-toolbar orders-table-toolbar">
+        <SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索订单号、客户、收件人、品名、SKU、规格" />
+        <StatusCards activeKey={filter} counts={counts} onSelect={setFilter} />
+        <span className="toolbar-count"><ListFilter size={14} />{visibleOrders.length} 条订单</span>
+        <button type="button" className="button button-primary orders-create-button" onClick={() => setCreating(true)}><Plus size={15} />新建订单</button>
+      </div>
+      {selectedOrders.length > 0 && <div className="orders-bulk-bar" role="region" aria-label="批量操作">
+        <span className="badge badge-accent">已选 {selectedOrders.length} 条</span>
+        <button type="button" className="button button-secondary button-sm" title="将所选待备货订单标记为已备货" onClick={() => onBatchAdvance?.(selectedOrders, 'stock')}><PackageCheck size={14} />一键备货</button>
+        <button type="button" className="button button-secondary button-sm" title="将所选已备货/待打包订单完成打包，推进到待发货" onClick={() => onBatchAdvance?.(selectedOrders, 'pack')}><Package size={14} />一键打包</button>
+        <button type="button" className="button button-secondary button-sm" title="将所选待发货订单（已填物流单号）标记为已发货" onClick={() => onBatchAdvance?.(selectedOrders, 'ship')}><Truck size={14} />一键发货</button>
+        <button type="button" className="button button-secondary button-sm" onClick={bulkPrint}><Printer size={14} />批量打印箱唛</button>
+      </div>}
+      <div className="table-scroll orders-table-desktop">
+        <table className="data-table orders-data-table">
+          <thead><tr><th className="order-check-cell"><input type="checkbox" checked={allPrintableSelected} onChange={toggleAll} aria-label="选择当前列表待打印箱唛订单" /></th>{['订单号', '客户', '下单时间', '收件人', '产品详情', '总箱数', '金额', '状态', '物流单号', '操作'].map((title) => <th key={title} className={title === '金额' ? 'is-right' : undefined}>{title}</th>)}</tr></thead>
+          <tbody>{visibleOrders.map((order) => {
+            const id = orderKey(order); const boxCount = orderBoxCount(order); const productSummary = order.items.map((item) => item.name).filter(Boolean).join('、'); const paymentStatus = orderPaymentStatus(order);
+            return <tr key={id}>
+              <td className="order-check-cell"><input type="checkbox" disabled={!isUnshippedOrder(order) || isDraftOrder(order)} checked={isUnshippedOrder(order) && !isDraftOrder(order) && selectedIds.includes(id)} onChange={() => setSelectedIds((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id])} aria-label={`选择订单${order.orderNo}`} /></td>
+              <td className="strong-cell order-no-cell">{order.orderNo}</td>
+              <td className="order-customer-cell">{order.customerName || '—'}</td>
+              <td>{order.orderedAt.replace('T', ' ')}</td>
+              <td>{order.recipientName}</td>
+              <td className="order-product-cell"><button type="button" className="link-button order-product-link" title={productSummary} onClick={() => setProductsOrder(order)}>{productSummary || '查看明细'}</button></td>
+              <td className="order-box-cell">{boxCount}</td>
+              <td className="amount order-amount-cell"><div>¥ {order.amount || '0.00'}</div><div className="payment-sub" style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</div></td>
+              <td className="order-status-cell"><span className={statusBadgeClass(order.status)}>{order.status ? statusLabels[order.status] : '-'}</span><div className={`status-sub ${order.labelPrintedAt ? 'is-printed' : 'is-pending'}`}>{order.status === 'draft' ? '草稿订单，发布后进入流程' : order.labelPrintedAt ? `已打印箱唛 · ${formatDateTime(order.labelPrintedAt)}` : '箱唛待打印'}</div></td>
+              <td className="order-tracking-cell">{order.trackingNo || '—'}</td>
+              <td className="order-ops-cell">{renderOrderActions(order)}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+        {!visibleOrders.length && <div className="table-state">暂无符合条件的订单</div>}
+      </div>
+      <div className="orders-card-list" aria-label="订单卡片列表">{visibleOrders.map((order) => {
+        const boxCount = orderBoxCount(order); const productSummary = order.items.map((item) => item.name).filter(Boolean).join('、'); const paymentStatus = orderPaymentStatus(order);
+        return <article key={orderKey(order)} className="order-card">
+          <div className="order-card-head">
+            <div className="order-card-title"><strong>{order.orderNo}</strong><span>{order.customerName || '未填客户'} · {order.orderedAt.replace('T', ' ')} · {order.recipientName || '未填收件人'}</span></div>
+            {renderCardStatus(order)}
+          </div>
+          <div className="order-card-mid">
+            <button type="button" className="order-card-products" title={productSummary} onClick={() => setProductsOrder(order)}>{productSummary || '查看产品明细'}</button>
+            <strong className="order-card-amount">¥ {order.amount || '0.00'}</strong>
+          </div>
+          <div className="order-card-meta">
+            <span>{boxCount} 箱</span>
+            <span style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</span>
+            <span>{order.status === 'draft' ? '草稿未发布' : order.labelPrintedAt ? '箱唛已打印' : '箱唛待打印'}</span>
+            {order.trackingNo && <span>物流 {order.trackingNo}</span>}
+          </div>
+          {renderOrderActions(order, { hideNextAction: true })}
+        </article>;
+      })}{!visibleOrders.length && <div className="table-state">暂无符合条件的订单</div>}</div>
     </section>
 
     <Modal open={creating || Boolean(editingOrder)} title={editingOrder ? `编辑订单 · ${editingOrder.orderNo}` : '新建订单'} onClose={() => { setCreating(false); setEditingOrder(undefined); }} width={1080}><OrderForm key={editingOrder?.id ?? (creating ? 'new' : 'closed')} value={editingOrder} customers={customers} onSaveCustomerProduct={onSaveCustomerProduct} onCreateCustomer={onCreateCustomer} onGetNextOrderNumber={onGetNextOrderNumber} onSubmit={(order) => { onSaveOrder(order); setCreating(false); setEditingOrder(undefined); }} onSaveDraft={onSaveDraft ? (order) => { onSaveDraft(order); setCreating(false); setEditingOrder(undefined); } : undefined} onCancel={() => { setCreating(false); setEditingOrder(undefined); }} /></Modal>
     <OrderDetailModal open={Boolean(detailOrder)} order={detailOrder} onClose={() => setDetailOrder(undefined)} onEditOrder={openEdit} onEditLabels={(order) => { setDetailOrder(undefined); openLabels(order); }} onPrintLabels={(order) => { setDetailOrder(undefined); setPrintLabels(labelsByOrderId?.[orderKey(order)] ?? fallbackLabels(order)); }} onDeleteContract={onDeleteContract} onDeleteOrder={onDeleteOrder ? confirmDeleteOrder : undefined} onAdvanceStatus={onAdvanceStatus} onPublishOrder={onPublishOrder} onOpenFinance={onOpenFinance} />
     <Modal open={Boolean(productsOrder)} title={productsOrder ? `产品明细 · ${productsOrder.orderNo}` : '产品明细'} onClose={() => setProductsOrder(undefined)} width={920}>{productsOrder && <div style={{ display: 'grid', gap: 12 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: narrow ? 'repeat(2, minmax(0, 1fr))' : 'repeat(6, minmax(0, 1fr))', gap: 12, padding: 12, background: 'var(--tone-surface-frost)', border: '1px solid var(--tone-border-soft)', borderRadius: 7 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: narrow ? 'repeat(2, minmax(0, 1fr))' : 'repeat(6, minmax(0, 1fr))', gap: 12, padding: 12, background: 'var(--tone-surface-frost)', border: '1px solid var(--tone-border-soft)', borderRadius: 'var(--radius-ui)' }}>
         <div style={{ display: 'grid', gap: 4, minWidth: 0 }}><span style={{ color: 'var(--tone-text-faint)', fontSize: 11 }}>订单号</span><strong style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{productsOrder.orderNo}</strong></div>
         <div style={{ display: 'grid', gap: 4, minWidth: 0 }}><span style={{ color: 'var(--tone-text-faint)', fontSize: 11 }}>收件人</span><strong style={{ fontSize: 13 }}>{productsOrder.recipientName || '未填写'}</strong></div>
         <div style={{ display: 'grid', gap: 4, minWidth: 0 }}><span style={{ color: 'var(--tone-text-faint)', fontSize: 11 }}>总箱数</span><strong style={{ fontSize: 13 }}>{orderBoxCount(productsOrder)}</strong></div>

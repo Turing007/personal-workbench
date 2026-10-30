@@ -234,6 +234,10 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
   const closeImages = () => setImagesProductId(undefined);
 
   return <div className="page-shell products-page">
+    <div className="products-page-head">
+      <span className="page-breadcrumb">资料 / 产品库</span>
+      <div className="products-page-head-title"><strong className="page-title">产品库</strong><span className="page-subtitle">维护产品资料、图片、包装与价格</span></div>
+    </div>
     <div className="page-toolbar">
       <SearchInput value={query} onChange={setQuery} history resultCount={query.trim() ? filtered.length : undefined} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="按品名、SKU、供应商、分类筛选" />
       <select aria-label="产品状态筛选" className="toolbar-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}>
@@ -268,7 +272,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
       <input ref={importInputRef} type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void onImport(file); }} />
       <button className="button button-primary" type="button" onClick={openNew}><Plus size={15} /><span>添加<span className="products-mobile-hidden">产品</span></span></button>
     </div>
-    <section className="table-panel">
+    <section className={`table-panel products-panel${view === 'gallery' ? ' is-gallery' : ''}`}>
       {view === 'gallery' && <div className="products-gallery">
         {visible.map((product) => {
           const pending = pendingImagesFor(product);
@@ -281,7 +285,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
               ? <button className="product-gallery-image-button" type="button" onClick={() => setImagesProductId(String(product.id))} title="图片正在上传，点开看逐张进度"><span className="product-gallery-image"><PendingImageTile item={pending[0]} compact /></span></button>
               : <span className="product-gallery-image"><span className="product-gallery-placeholder"><ImageIcon size={22} /><span>无图片</span></span></span>}
           <button className="product-gallery-open" type="button" onClick={() => setDetailProductId(String(product.id))} title="查看产品详情">
-            <span className="product-gallery-name">{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}{statusBadge(product)}</span>
+            <span className="product-gallery-name" title={product.name || product.sku || undefined}>{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}{statusBadge(product)}</span>
             {/* 「图片上传中」不能放进 .product-gallery-name：那是两行截断 + overflow:hidden 的容器，
                 名字一长就把标记裁掉，只剩一条边。放在它外面自成一行才看得见。 */}
             {uploadBadge(product, uploadingIds)}
@@ -304,7 +308,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
         <tbody>{visible.map((product) => <tr key={product.id}>
           <td className="strong-cell"><div className="product-sku-cell"><button className="product-sku-button" type="button" onClick={() => setDetailProductId(String(product.id))} title="查看产品详情">{product.sku || '查看详情'}</button>{product.sku && <button className="icon-button product-sku-copy-button" type="button" aria-label={`复制 SKU ${product.sku}`} title={copiedSkuId === String(product.id) ? '已复制 SKU' : '复制 SKU'} onClick={() => void copySku(product)}>{copiedSkuId === String(product.id) ? <Check size={12} /> : <Copy size={12} />}</button>}</div></td>
           <td>{product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProductId(String(product.id))} title="查看全部图片"><span className="product-image-thumb"><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}</td>
-          <td className="product-name-cell"><span className="product-name-text">{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}</span>{statusBadge(product)}{uploadBadge(product, uploadingIds)}</td><td>{product.colors.join('、') || '—'}</td><td>{product.batteryPlugs.join('、') || '—'}</td>
+          <td className="product-name-cell"><span className="product-name-text" title={product.name || undefined}>{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}</span>{statusBadge(product)}{uploadBadge(product, uploadingIds)}</td><td>{product.colors.join('、') || '—'}</td><td>{product.batteryPlugs.join('、') || '—'}</td>
           <td className="product-parameters-cell">{product.parameters?.trim() ? <button className="product-parameters-trigger" type="button" onClick={() => setParametersProduct(product)} title="查看完整参数"><span>查看详情</span><Copy size={13} /></button> : <span>—</span>}</td>
           <td className="product-packaging-cell"><div className="product-packaging-lines">{product.packaging.length ? <>
             {(expandedPackagingId === product.id ? product.packaging : product.packaging.slice(0, 1)).map((item) => {
@@ -317,7 +321,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
             })}
             {product.packaging.length > 1 && <button className="product-packaging-expand" type="button" onClick={() => setExpandedPackagingId((current) => current === product.id ? undefined : product.id)}>{expandedPackagingId === product.id ? <><ChevronUp size={13} />收起</> : <><ChevronDown size={13} />... 还有 {product.packaging.length - 1} 个包装</>}</button>}
           </> : <span>—</span>}</div></td>
-          <td className="product-remark-cell">{product.remark || '—'}</td>{showSensitive && <><td>{product.supplier || '—'}</td><td>{purchasePriceLabel(product.purchasePrice)}{extraQuoteCount(product) > 0 && <span className="price-tier-count" title={`还有 ${extraQuoteCount(product)} 档报价`}>+{extraQuoteCount(product)}</span>}</td></>}
+          <td className="product-remark-cell">{product.remark || '—'}</td>{showSensitive && <><td className="product-supplier-cell" title={product.supplier || undefined}>{product.supplier || '—'}</td><td>{purchasePriceLabel(product.purchasePrice)}{extraQuoteCount(product) > 0 && <span className="price-tier-count" title={`还有 ${extraQuoteCount(product)} 档报价`}>+{extraQuoteCount(product)}</span>}</td></>}
           <td><div className="row-actions"><button className="icon-button price-calc-entry" title="售价计算" type="button" aria-label={`${product.name || product.sku} 售价计算`} onClick={() => setCalculatorProduct(product)}><Calculator size={14} /></button><button className="icon-button" title={product.status === 'draft' ? '继续编辑草稿' : '编辑产品'} type="button" onClick={() => openEdit(product)}><Edit3 size={14} /></button><button className="icon-button" title="复制产品为新建产品" type="button" onClick={() => openCopy(product)}><Copy size={14} /></button></div></td>
         </tr>)}</tbody></table></div>}
       {view === 'list' && <div className="products-card-list">

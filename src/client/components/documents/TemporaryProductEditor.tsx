@@ -16,7 +16,7 @@ export interface TemporaryProductEditorProps {
   showValidation?: boolean;
 }
 
-const fieldStyle = { width: '100%', minWidth: 0, border: '1px solid #dbe3ea', borderRadius: 5, padding: '8px 9px', font: 'inherit', fontSize: 12 };
+const fieldStyle = { width: '100%', minWidth: 0, border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)', padding: '8px 9px', font: 'inherit', fontSize: 12 };
 
 export default function TemporaryProductEditor({ value, onChange, disabled, showValidation }: TemporaryProductEditorProps) {
   const setField = <K extends keyof TemporaryProductDraft>(field: K, next: TemporaryProductDraft[K]) => onChange({ ...value, [field]: next });

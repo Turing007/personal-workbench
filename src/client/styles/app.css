@@ -512,7 +512,7 @@ select {
   height: 28px;
   place-items: center;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-ui);
   color: var(--tone-accent-text);
   background: transparent;
   cursor: pointer;
@@ -625,7 +625,7 @@ select {
 .product-editor-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; width: 100%; }
 .product-editor-footer-actions { display: flex; gap: 9px; margin-left: auto; }
 .product-editor-catalog-add { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #3d434a; cursor: pointer; }
-.product-editor-catalog-select { border: 1px solid #dbe3ea; border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 12.5px; background: #fff; max-width: 180px; }
+.product-editor-catalog-select { border: 1px solid #dbe3ea; border-radius: var(--radius-ui); padding: 5px 8px; font: inherit; font-size: 12.5px; background: #fff; max-width: 180px; }
 
 @keyframes modal-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modal-scale-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
@@ -907,7 +907,7 @@ select {
   overflow: auto;
   padding: 10px;
   border: 1px solid var(--tone-border-soft);
-  border-radius: 6px;
+  border-radius: var(--radius-ui);
   background: var(--color-surface-subtle);
 }
 
@@ -965,7 +965,7 @@ select {
   overflow: hidden;
   place-items: center;
   aspect-ratio: 4 / 3;
-  border-radius: 5px;
+  border-radius: var(--radius-ui);
   background: var(--color-surface-subtle);
 }
 
@@ -1110,7 +1110,7 @@ select {
   max-width: 100%;
   padding: 3px;
   border: 1px solid var(--tone-border-soft);
-  border-radius: 8px;
+  border-radius: var(--radius-ui);
   background: var(--color-surface-subtle);
 }
 
@@ -1121,7 +1121,7 @@ select {
   gap: 6px;
   padding: 6px 12px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-ui);
   background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
@@ -1170,7 +1170,7 @@ select {
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--tone-border-soft);
-  border-radius: 8px;
+  border-radius: var(--radius-ui);
   background: var(--color-surface);
 }
 
@@ -1225,7 +1225,7 @@ select {
   display: grid;
   overflow: hidden;
   border: 1px solid var(--tone-border-soft);
-  border-radius: 6px;
+  border-radius: var(--radius-ui);
   background: var(--color-surface);
 }
 
@@ -1303,7 +1303,7 @@ select {
   gap: 8px;
   padding: 10px;
   border: 1px dashed var(--color-border-control);
-  border-radius: 8px;
+  border-radius: var(--radius-ui);
   outline: none;
   background: var(--color-surface-subtle);
 }
@@ -1570,7 +1570,7 @@ select {
   place-items: center;
   overflow: hidden;
   border: 1px solid #dbe3ea;
-  border-radius: 5px;
+  border-radius: var(--radius-ui);
   background: var(--tone-surface-frost);
 }
 
@@ -1615,7 +1615,7 @@ select {
   gap: 5px;
   max-width: 100%;
   border: 1px solid var(--tone-border-cool);
-  border-radius: 4px;
+  border-radius: var(--radius-ui);
   padding: 5px 7px;
   overflow: hidden;
   color: var(--tone-accent-text);
@@ -1706,7 +1706,7 @@ select {
   max-height: 430px;
   overflow: auto;
   border: 1px solid var(--tone-border-soft);
-  border-radius: 5px;
+  border-radius: var(--radius-ui);
   padding: 12px;
   color: var(--tone-text-strong);
   background: var(--tone-surface-frost);
@@ -1750,7 +1750,7 @@ select {
 
 .packaging-images-trigger {
   border: 1px solid var(--tone-border-cool);
-  border-radius: 4px;
+  border-radius: var(--radius-ui);
   padding: 5px 6px;
   background: #fff;
   cursor: pointer;
@@ -1774,7 +1774,7 @@ select {
   gap: 1px;
   overflow: hidden;
   border: 1px solid var(--tone-border-soft);
-  border-radius: 7px;
+  border-radius: var(--radius-ui);
   background: var(--tone-border-soft);
 }
 
@@ -1839,7 +1839,7 @@ select {
   gap: 4px 10px;
   padding: 8px 9px;
   border: 1px solid var(--tone-border-soft);
-  border-radius: 5px;
+  border-radius: var(--radius-ui);
   background: var(--tone-surface-frost);
 }
 
@@ -1881,7 +1881,7 @@ select {
   width: 38px;
   height: 30px;
   border: 1px solid #dbe3ea;
-  border-radius: 4px;
+  border-radius: var(--radius-ui);
   object-fit: contain;
   background: var(--tone-surface-frost);
 }
@@ -2001,7 +2001,7 @@ select {
   flex-direction: column;
   overflow: hidden;
   border: 1px solid #dbe3ea;
-  border-radius: 6px;
+  border-radius: var(--radius-ui);
   background: #fff;
 }
 
@@ -2544,7 +2544,7 @@ select {
   min-height: 36px;
   padding: 8px 10px;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--radius-ui);
   color: var(--tone-text-soft);
   background: transparent;
   cursor: pointer;
@@ -2604,7 +2604,7 @@ select {
   height: 90px;
   overflow: hidden;
   border: 1px solid #dbe3ea;
-  border-radius: 6px;
+  border-radius: var(--radius-ui);
   background: var(--tone-surface-frost);
 }
 
@@ -2915,7 +2915,7 @@ select {
 /* 多选标签（颜色 / 插脚） */
 .chip {
   border: 1px solid var(--tone-border-cool);
-  border-radius: 7px;
+  border-radius: var(--radius-ui);
   padding: 6px 10px;
   color: var(--color-text-secondary);
   background: var(--color-surface);
@@ -2939,7 +2939,7 @@ select {
 .chip-input {
   width: 110px;
   border: 1px solid var(--control-border);
-  border-radius: 7px;
+  border-radius: var(--radius-ui);
   padding: 6px 8px;
   font-size: var(--text-xs);
 }
@@ -2957,7 +2957,7 @@ select {
   height: 32px;
   flex: 0 0 auto;
   border: 1px solid var(--tone-border-cool);
-  border-radius: 7px;
+  border-radius: var(--radius-ui);
   color: var(--color-text-secondary);
   background: var(--color-surface);
   cursor: pointer;
@@ -2974,7 +2974,7 @@ select {
   gap: 7px;
   padding: 9px 11px;
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: var(--radius-ui);
   background: var(--color-surface-subtle);
 }
 
@@ -3060,7 +3060,7 @@ select {
   place-items: center;
   padding: 26px 16px;
   border: 1px dashed var(--tone-border-cool);
-  border-radius: 10px;
+  border-radius: var(--radius-ui);
   color: var(--color-text-muted);
   font-size: var(--text-xs);
   text-align: center;
@@ -3078,7 +3078,7 @@ select {
 
 .segmented-item {
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-ui);
   padding: 5px 12px;
   color: var(--color-text-secondary);
   background: transparent;
@@ -3113,7 +3113,7 @@ select {
   min-width: 0;
   padding: 9px 11px;
   border: 1px solid var(--color-divider);
-  border-radius: 10px;
+  border-radius: var(--radius-ui);
   background: var(--color-surface-subtle);
 }
 
@@ -3190,7 +3190,7 @@ select {
   min-width: 0;
   padding: 7px 9px;
   border: 1px solid var(--color-divider);
-  border-radius: 8px;
+  border-radius: var(--radius-ui);
   background: var(--color-surface);
 }
 
@@ -3201,7 +3201,7 @@ select {
   width: 34px;
   height: 34px;
   border: 1px solid var(--color-divider);
-  border-radius: 6px;
+  border-radius: var(--radius-ui);
   object-fit: cover;
 }
 
@@ -3251,7 +3251,7 @@ select {
 .button-sm {
   min-height: 30px;
   padding: 0 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-ui);
   font-size: var(--text-xs);
 }
 
@@ -3292,7 +3292,7 @@ select {
   width: 34px;
   height: 34px;
   flex: 0 0 34px;
-  border-radius: 11px;
+  border-radius: var(--radius-ui);
   /* 无公司 Logo 时这里回退成字母 V，需要显式字号，否则会跟着正文 13px 显得过小。 */
   font-size: 19px;
   line-height: 1;
@@ -3330,7 +3330,7 @@ select {
   min-height: 40px;
   padding: 8px 11px;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--radius-ui);
   color: var(--sidebar-text-muted);
   background: transparent;
   cursor: pointer;
@@ -3383,7 +3383,7 @@ select {
   gap: 9px;
   padding: 11px 14px;
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: var(--radius-ui);
   background: var(--color-surface);
   box-shadow: var(--shadow-popover);
   color: var(--color-text);
@@ -3396,7 +3396,7 @@ select {
 .toast-success .toast-dot { background: #22c55e; }
 .toast-info .toast-dot { background: #3b82f6; }
 .toast-error .toast-dot { background: #ef4444; }
-.toast-close { display: inline-grid; place-items: center; width: 22px; height: 22px; margin: -3px -5px 0 auto; border: 0; border-radius: 6px; color: var(--color-text-muted); background: transparent; cursor: pointer; }
+.toast-close { display: inline-grid; place-items: center; width: 22px; height: 22px; margin: -3px -5px 0 auto; border: 0; border-radius: var(--radius-ui); color: var(--color-text-muted); background: transparent; cursor: pointer; }
 .toast-close:hover { color: var(--color-text); background: var(--color-grouped); }
 
 @keyframes toast-slide-in {
@@ -3418,7 +3418,7 @@ select {
   gap: 3px;
   padding: 10px 12px;
   border: 1px solid var(--color-border);
-  border-radius: 11px;
+  border-radius: var(--radius-ui);
   background: var(--color-surface);
   cursor: pointer;
   text-align: left;
@@ -3431,7 +3431,7 @@ select {
   position: absolute;
   inset: -1px -1px auto;
   height: 2px;
-  border-radius: 11px 11px 0 0;
+  border-radius: var(--radius-ui) var(--radius-ui) 0 0;
   background: linear-gradient(90deg, transparent, var(--tone, var(--color-border-strong)), transparent);
   opacity: 0;
   content: '';
@@ -3497,7 +3497,7 @@ select {
   gap: 8px;
   padding: 6px 9px;
   border: 1px solid var(--color-accent-border);
-  border-radius: 9px;
+  border-radius: var(--radius-ui);
   background: var(--color-accent-soft);
 }
 .image-select-count { color: var(--color-text-secondary); font-size: var(--text-xs); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
@@ -3518,7 +3518,7 @@ select {
 .image-select-bar button:disabled { opacity: .5; cursor: default; }
 
 /* 选中态：亮色描边（box-shadow 而非 outline，老 WebView 的 outline 不跟圆角）+ 右上角勾选圈 */
-.image-card.is-selected .image-card-thumb { box-shadow: 0 0 0 2px var(--color-accent); border-radius: 6px; }
+.image-card.is-selected .image-card-thumb { box-shadow: 0 0 0 2px var(--color-accent); border-radius: var(--radius-ui); }
 .image-card-check-badge {
   position: absolute;
   top: 5px;
@@ -3539,7 +3539,7 @@ select {
 .image-folder {
   min-width: 0;
   border: 1px solid var(--color-divider);
-  border-radius: 9px;
+  border-radius: var(--radius-ui);
   padding: 8px;
   background: var(--color-surface);
 }
@@ -3574,7 +3574,7 @@ select {
   width: 30px;
   height: 30px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-ui);
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
@@ -3597,7 +3597,7 @@ select {
   gap: 5px;
   padding: 6px;
   border: 1px solid var(--color-divider);
-  border-radius: 9px;
+  border-radius: var(--radius-ui);
   background: var(--color-surface);
 }
 
@@ -3610,7 +3610,7 @@ select {
   display: block;
   width: 100%;
   aspect-ratio: 4 / 3;
-  border-radius: 6px;
+  border-radius: var(--radius-ui);
   background: var(--color-surface-subtle);
   object-fit: cover;
 }
@@ -3642,7 +3642,7 @@ select {
   width: 24px;
   height: 24px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-ui);
   color: #fff;
   background: rgba(15, 23, 42, .55);
   cursor: pointer;
@@ -3679,18 +3679,18 @@ select {
   place-items: center;
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: var(--radius-ui);
   background: rgba(255, 255, 255, .92);
   color: var(--color-text-secondary);
   cursor: grab;
   box-shadow: var(--shadow-popover);
 }
 
-.image-card-note { border: 0; border-radius: 6px; padding: 4px 6px; min-width: 0; width: 100%; font-size: 11px; background: var(--color-surface-subtle); }
+.image-card-note { border: 0; border-radius: var(--radius-ui); padding: 4px 6px; min-width: 0; width: 100%; font-size: 11px; background: var(--color-surface-subtle); }
 
 .image-card-category {
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-ui);
   padding: 4px 6px;
   min-width: 0;
   width: 100%;
@@ -3706,7 +3706,7 @@ select {
   justify-items: center;
   padding: 20px 12px;
   border: 1px dashed var(--tone-border-cool);
-  border-radius: 9px;
+  border-radius: var(--radius-ui);
   color: var(--color-text-muted);
   font-size: var(--text-xs);
   text-align: center;
@@ -3726,14 +3726,14 @@ select {
 .image-upload.is-compact .image-card {
   gap: 4px;
   padding: 4px;
-  border-radius: 8px;
+  border-radius: var(--radius-ui);
 }
 
 .image-upload.is-compact .image-card-img {
   aspect-ratio: 1;
   padding: 2px;
   border: 1px solid var(--tone-row-border);
-  border-radius: 6px;
+  border-radius: var(--radius-ui);
   background: var(--color-surface);
   object-fit: contain;
 }
@@ -4270,7 +4270,7 @@ select {
   overflow: hidden;
   aspect-ratio: 1 / 1;
   border: 1px dashed var(--color-border);
-  border-radius: 5px;
+  border-radius: var(--radius-ui);
   background: var(--color-surface-subtle);
 }
 
@@ -4792,7 +4792,7 @@ select {
   width: auto;
   height: auto;
   padding: 2px 5px;
-  border-radius: 6px;
+  border-radius: var(--radius-ui);
   color: #fff;
   background: rgba(15, 23, 42, .68);
   font-size: 10px;
@@ -4985,7 +4985,7 @@ select {
   display: grid;
   gap: 8px;
   border: 1px solid var(--color-divider);
-  border-radius: 9px;
+  border-radius: var(--radius-ui);
   padding: 10px 12px;
   background: var(--color-surface-subtle);
 }
@@ -5228,7 +5228,7 @@ select {
   min-height: 34px;
   padding: 0 var(--space-4);
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-ui);
   color: var(--color-text);
   background: transparent;
   cursor: pointer;
@@ -5246,7 +5246,7 @@ select {
   margin-top: var(--space-2);
   padding-top: var(--space-2);
   border-top: 1px solid var(--color-divider);
-  border-radius: 0 0 7px 7px;
+  border-radius: 0 0 var(--radius-ui) var(--radius-ui);
 }
 
 /* ===== 产品分类：按品名的建议按钮 ===== */
@@ -5537,7 +5537,7 @@ select {
 .finance-file-picker.compact { width: auto; height: var(--control-height-sm); padding: 0 8px; }
 .finance-proof-list, .finance-invoice-list { display: grid; gap: 8px; }
 .finance-proof-row { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 9px; border: 1px solid var(--color-divider); border-radius: var(--radius-control); }
-.finance-proof-thumb { width: 48px; height: 42px; overflow: hidden; border-radius: 6px; background: var(--color-surface-subtle); }
+.finance-proof-thumb { width: 48px; height: 42px; overflow: hidden; border-radius: var(--radius-ui); background: var(--color-surface-subtle); }
 .finance-proof-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .finance-proof-main { display: grid; gap: 2px; min-width: 0; }
 .finance-proof-main strong, .finance-proof-main span, .finance-proof-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -5738,7 +5738,7 @@ select {
   gap: 7px;
   padding: 8px 9px;
   border: 1px solid var(--tone-border-soft);
-  border-radius: 6px;
+  border-radius: var(--radius-ui);
   background: #fff;
 }
 
@@ -5822,7 +5822,7 @@ select {
 .auth-brand-mark {
   width: 46px; height: 46px; flex: none;
   display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 14px;
+  border-radius: var(--radius-ui);
   background: linear-gradient(135deg, var(--color-accent), var(--color-accent-hover));
   color: #fff; font-size: 25px; font-weight: var(--weight-bold); line-height: 1;
   box-shadow: 0 8px 20px -8px rgba(14, 115, 104, .55);
@@ -5863,7 +5863,7 @@ select {
   height: 46px;
   padding: 0 14px;
   border: 1px solid var(--color-border-control);
-  border-radius: 12px;
+  border-radius: var(--radius-ui);
   background: var(--control-bg);
   color: var(--color-text);
   font-family: inherit;
@@ -5884,7 +5884,7 @@ select {
 .auth-submit {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   width: 100%; height: 48px;
-  border: none; border-radius: 12px;
+  border: none; border-radius: var(--radius-ui);
   background: var(--color-accent);
   color: #fff;
   font-family: inherit; font-size: var(--text-lg); font-weight: var(--weight-semibold);
@@ -5952,7 +5952,7 @@ select {
 
 /* 电池矩阵：节数由产品电压过滤；行首/列头只剩排序与删除。 */
 .battery-scope-hint { margin: 0 0 8px; font-size: 12px; color: var(--color-text-muted); }
-.battery-move-button { display: inline-grid; flex: none; width: 17px; height: 17px; place-items: center; border: 0; border-radius: 4px; padding: 0; color: var(--color-text-muted); background: transparent; cursor: pointer; }
+.battery-move-button { display: inline-grid; flex: none; width: 17px; height: 17px; place-items: center; border: 0; border-radius: var(--radius-ui); padding: 0; color: var(--color-text-muted); background: transparent; cursor: pointer; }
 .battery-move-button:hover:not(:disabled) { color: var(--color-text-strong); background: var(--color-surface-subtle); }
 .battery-move-button.is-danger:hover:not(:disabled) { color: var(--tone-danger-text); background: var(--color-danger-soft); }
 .battery-move-button:disabled { cursor: not-allowed; opacity: .3; }
@@ -5984,7 +5984,7 @@ select {
 .price-calc2-field .input.is-volume-trigger { cursor: pointer; }
 /* 包装与配件：两块排在录入区右侧；选中的包装/配件才计入成本与实重。 */
 .price-calc2-packaging,
-.price-calc2-accessories { position: relative; display: grid; gap: 4px; border: 1px solid var(--color-divider); border-radius: 6px; padding: 5px 7px; color: var(--color-text-secondary); background: var(--color-surface-subtle); font-size: 11px; }
+.price-calc2-accessories { position: relative; display: grid; gap: 4px; border: 1px solid var(--color-divider); border-radius: var(--radius-ui); padding: 5px 7px; color: var(--color-text-secondary); background: var(--color-surface-subtle); font-size: 11px; }
 .price-calc2-packaging.is-empty,
 .price-calc2-accessories.is-empty { color: var(--color-text-muted); }
 .price-calc2-packaging-head,
@@ -6084,7 +6084,7 @@ select {
 .price-calc-plans-head { font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
 .price-calc-plans-head em { font-style: normal; font-size: 11px; color: var(--color-text-muted); }
 .price-calc-plans { display: grid; gap: 6px; }
-.price-calc-plan { display: flex; justify-content: space-between; gap: 8px; align-items: center; border: 1px solid var(--color-border-subtle); border-radius: 8px; padding: 7px 9px; }
+.price-calc-plan { display: flex; justify-content: space-between; gap: 8px; align-items: center; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-ui); padding: 7px 9px; }
 .price-calc-plan-main { display: grid; gap: 2px; min-width: 0; }
 .price-calc-plan-main strong { font-size: 13px; }
 .price-calc-plan-main span { font-size: 11.5px; color: var(--color-text-muted); }
@@ -6169,7 +6169,7 @@ select {
 
 /* ===== 骨架屏 ===== */
 .skeleton {
-  border-radius: 8px;
+  border-radius: var(--radius-ui);
   background: linear-gradient(90deg, var(--color-grouped) 25%, var(--color-surface-hover) 37%, var(--color-grouped) 63%);
   background-size: 400% 100%;
   animation: skeleton-wave 1.3s ease infinite;
@@ -6254,7 +6254,7 @@ select {
   gap: 10px;
   padding: 6px 8px;
   border: 1px solid var(--color-divider);
-  border-radius: 6px;
+  border-radius: var(--radius-ui);
   background: var(--tone-surface-frost);
 }
 
@@ -6409,7 +6409,7 @@ select {
   }
   .customer-product-card-head { display: flex; align-items: center; gap: var(--space-3); }
   .customer-product-card-head input[type='checkbox'] { flex: none; }
-  .customer-product-card-image { width: 46px; height: 40px; object-fit: contain; border: 1px solid #e2e8f0; border-radius: 4px; flex: none; }
+  .customer-product-card-image { width: 46px; height: 40px; object-fit: contain; border: 1px solid #e2e8f0; border-radius: var(--radius-ui); flex: none; }
   .customer-product-card-title { display: grid; gap: 2px; min-width: 0; flex: 1; }
   .customer-product-card-title strong { color: var(--color-text-strong); font-size: var(--text-sm); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
   .customer-product-card-title span { color: var(--color-text-muted); font-size: var(--text-2xs); overflow-wrap: anywhere; }
@@ -6469,7 +6469,7 @@ select {
 .stock-item-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .stock-item-display { color: var(--color-text-strong); font-weight: 500; }
 .stock-item-quantity { color: var(--color-accent); font-variant-numeric: tabular-nums; }
-.stock-item-remark { color: var(--color-text-muted); font-size: var(--text-xs); background: var(--color-surface-muted, #f8fafc); border: 1px solid var(--color-border); border-radius: 4px; padding: 1px 6px; }
+.stock-item-remark { color: var(--color-text-muted); font-size: var(--text-xs); background: var(--color-surface-muted, #f8fafc); border: 1px solid var(--color-border); border-radius: var(--radius-ui); padding: 1px 6px; }
 .stock-item-actions { width: 1%; white-space: nowrap; text-align: right; }
 .stock-source-row td { background: var(--color-surface-muted, #f8fafc); color: var(--color-text-muted); font-size: var(--text-xs); }
 
@@ -6503,7 +6503,7 @@ select {
      同时必须去掉 .page-shell 的入场动画：page-enter 动画带 transform，会让 .page-shell 成为
      fixed 的包含块，搜索框就退化成「相对页面」定位 —— 页面一滚动它就被推到视口外，
      回滑时虽然已经展开却看不见。这里关掉本页动画，保证 fixed 真正相对视口。 */
-  .orders-page { padding-top: calc(var(--env-banner-h, 0px) + 56px + env(safe-area-inset-top, 0px)); }
+  .orders-page { padding-top: calc(56px + env(safe-area-inset-top, 0px)); }
   .page-shell.orders-page { animation: none; }
 
   .orders-page .orders-table-toolbar .search-control {
@@ -6668,7 +6668,7 @@ select {
   }
 
   /* 悬浮搜索框盖在页首，给页面预留等高空间，避免压住工具条。 */
-  .products-page { padding-top: calc(var(--env-banner-h, 0px) + 56px + env(safe-area-inset-top, 0px)); }
+  .products-page { padding-top: calc(56px + env(safe-area-inset-top, 0px)); }
 }
 
 /* ===== 财务管理页：手机端悬浮搜索框 + 状态筛选压成一行 ===== */
@@ -6678,7 +6678,7 @@ select {
      fixed 的包含块，搜索框就退化成「相对页面」定位 —— 页面一滚动它就被推到视口外，
      回滑时虽然已经展开却看不见。这里关掉本页动画，保证 fixed 真正相对视口。 */
   .page-shell.finance-page { animation: none; }
-  .finance-page { padding-top: calc(var(--env-banner-h, 0px) + 56px + env(safe-area-inset-top, 0px)); }
+  .finance-page { padding-top: calc(56px + env(safe-area-inset-top, 0px)); }
 
   /* 两行排布：第一行「月份筛选 + 刷新」，第二行三个状态筛选三等分铺满。
      搜索框已 fixed 脱离文档流，不占用网格单元。
@@ -6743,7 +6743,7 @@ select {
   /* 与财务页同理：page-enter 动画带 transform 会让 .page-shell 成为 fixed 的包含块，
      搜索框会退化成「相对页面」定位，滚动后回滑时看不见。关掉本页动画。 */
   .page-shell.quotation-page { animation: none; }
-  .quotation-page { padding-top: calc(var(--env-banner-h, 0px) + 56px + env(safe-area-inset-top, 0px)); }
+  .quotation-page { padding-top: calc(56px + env(safe-area-inset-top, 0px)); }
 
   /* 第一行「五个状态分段铺满」，第二行「数量 + 刷新 + 新建报价」。
      搜索框已 fixed 脱离文档流，不占用网格单元。 */
@@ -6797,7 +6797,7 @@ select {
 /* ===== 销售开单页：手机端悬浮搜索框 + 两个状态筛选并排成一行 ===== */
 @media (max-width: 900px) {
   .page-shell.sales-documents-page { animation: none; }
-  .sales-documents-page { padding-top: calc(var(--env-banner-h, 0px) + 56px + env(safe-area-inset-top, 0px)); }
+  .sales-documents-page { padding-top: calc(56px + env(safe-area-inset-top, 0px)); }
 
   /* 第一行「单据状态 + 付款状态」两个筛选对半分，第二行「数量 + 刷新 + 新建销售单」。 */
   .sales-docs-toolbar {
@@ -6881,7 +6881,7 @@ select {
   /* 与财务 / 报价单 / 销售单同理：page-enter 动画带 transform 会让 .page-shell 成为
      fixed 的包含块，搜索框会退化成「相对页面」定位，滚动后回滑时看不见。关掉本页动画。 */
   .page-shell.customer-products-page { animation: none; }
-  .customer-products-page { padding-top: calc(var(--env-banner-h, 0px) + 56px + env(safe-area-inset-top, 0px)); }
+  .customer-products-page { padding-top: calc(56px + env(safe-area-inset-top, 0px)); }
 
   /* 页头标题与「N 个客户」统计是桌面端的结构，手机上隐藏：
      搜索框 fixed 悬浮在顶部，客户列表入口改用下面的 trigger 按钮 + 左侧抽屉。 */
@@ -6977,7 +6977,7 @@ select {
   display: inline-flex;
   align-items: stretch;
   border: 1px solid var(--tone-border-cool);
-  border-radius: 7px;
+  border-radius: var(--radius-ui);
   overflow: hidden;
 }
 
@@ -7083,7 +7083,7 @@ select {
    会盖掉这里写的 background / border，只有 box-shadow 不受影响。 */
 .product-editor-attachments.is-drop-target,
 .attachment-drop-section.is-drop-target {
-  border-radius: 10px;
+  border-radius: var(--radius-ui);
   box-shadow: 0 0 0 2px var(--color-accent), inset 0 0 24px var(--color-accent-soft);
 }
 
@@ -7098,7 +7098,7 @@ select {
   flex: 0 0 auto;
   min-height: var(--control-height-sm);
   border: 1px solid var(--color-border-control);
-  border-radius: 7px;
+  border-radius: var(--radius-ui);
   padding: 0 6px;
   color: var(--color-text-secondary);
   background: var(--control-bg);
@@ -7315,7 +7315,7 @@ select {
   .finance-card {
     gap: var(--space-3);
     padding: var(--space-3) var(--space-4);
-    border-radius: 12px;
+    border-radius: var(--radius-ui);
   }
 
   .order-card-grid,

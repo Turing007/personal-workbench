@@ -10,7 +10,7 @@ export interface CustomerProductEditorProps {
   onSave: (product: CustomerProduct) => Promise<void> | void;
 }
 
-const fieldStyle = { width: '100%', minWidth: 0, border: '1px solid #dbe3ea', borderRadius: 5, padding: '8px 9px', color: '#1f2937', background: '#fff', font: 'inherit', fontSize: 12 };
+const fieldStyle = { width: '100%', minWidth: 0, border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)', padding: '8px 9px', color: '#1f2937', background: '#fff', font: 'inherit', fontSize: 12 };
 
 function blankProduct(): CustomerProduct {
   return { id: `customer-new-${Date.now()}`, name: '', sku: '', specification: '', packCount: 1 };
@@ -44,9 +44,9 @@ export default function CustomerProductEditor({ open, product, onClose, onSave }
     }
   };
 
-  return <Modal open={open} title={product ? '编辑客户产品' : '添加客户产品'} onClose={busy ? () => undefined : onClose} width={620} footer={<><button type="button" onClick={onClose} disabled={busy} style={{ border: '1px solid #cbd5e1', borderRadius: 5, background: '#fff', padding: '8px 14px', cursor: busy ? 'not-allowed' : 'pointer' }}>取消</button><button type="button" onClick={() => { void save(); }} disabled={busy} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 5, background: '#0f766e', color: '#fff', padding: '8px 15px', cursor: busy ? 'wait' : 'pointer' }}><Save size={14} />{busy ? '保存中…' : '保存并加入订单'}</button></>}>
+  return <Modal open={open} title={product ? '编辑客户产品' : '添加客户产品'} onClose={busy ? () => undefined : onClose} width={620} footer={<><button type="button" onClick={onClose} disabled={busy} style={{ border: '1px solid #cbd5e1', borderRadius: 'var(--radius-ui)', background: '#fff', padding: '8px 14px', cursor: busy ? 'not-allowed' : 'pointer' }}>取消</button><button type="button" onClick={() => { void save(); }} disabled={busy} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 'var(--radius-ui)', background: '#0f766e', color: '#fff', padding: '8px 15px', cursor: busy ? 'wait' : 'pointer' }}><Save size={14} />{busy ? '保存中…' : '保存并加入订单'}</button></>}>
     <div style={{ display: 'grid', gap: 12 }}>
-      {error && <div role="alert" style={{ padding: '8px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 5, color: '#b91c1c', fontSize: 12 }}>{error}</div>}
+      {error && <div role="alert" style={{ padding: '8px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-ui)', color: '#b91c1c', fontSize: 12 }}>{error}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
         <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>品名<input autoFocus value={draft.name} onChange={(event) => update('name', event.target.value)} style={fieldStyle} /></label>
         <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>SKU<input value={draft.sku} onChange={(event) => update('sku', event.target.value)} style={fieldStyle} /></label>

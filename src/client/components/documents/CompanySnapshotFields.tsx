@@ -15,7 +15,7 @@ export interface CompanySnapshotFieldsProps {
   disabled?: boolean;
 }
 
-const fieldStyle = { width: '100%', minWidth: 0, border: '1px solid #dbe3ea', borderRadius: 5, padding: '8px 9px', font: 'inherit', fontSize: 12 };
+const fieldStyle = { width: '100%', minWidth: 0, border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)', padding: '8px 9px', font: 'inherit', fontSize: 12 };
 
 export default function CompanySnapshotFields({ value, onChange, display, onDisplayChange, disabled }: CompanySnapshotFieldsProps) {
   const setField = <K extends keyof CompanySnapshot>(field: K, next: CompanySnapshot[K]) => onChange({ ...value, [field]: next });
@@ -23,7 +23,7 @@ export default function CompanySnapshotFields({ value, onChange, display, onDisp
   const logoUrl = value.logoRelativePath ? `/files/${value.logoRelativePath}` : '';
   return <div style={{ display: 'grid', gap: 10 }}>
     <div className="company-snapshot-fields">
-      <div style={{ width: 88, height: 64, display: 'flex', justifyContent: 'center', alignItems: 'center', border: '1px solid #dbe3ea', borderRadius: 6, overflow: 'hidden', background: '#f8fafc' }}>{logoUrl ? <img src={logoUrl} alt="公司 Logo" style={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain', objectPosition: '50% 50%' }} /> : <ImageOff size={20} color="#94a3b8" />}</div>
+      <div style={{ width: 88, height: 64, display: 'flex', justifyContent: 'center', alignItems: 'center', border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)', overflow: 'hidden', background: '#f8fafc' }}>{logoUrl ? <img src={logoUrl} alt="公司 Logo" style={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain', objectPosition: '50% 50%' }} /> : <ImageOff size={20} color="#94a3b8" />}</div>
       <label style={{ display: 'grid', gap: 4, fontSize: 12, color: '#64748b' }}>公司名称<input disabled={disabled} value={value.name} onChange={(event) => setField('name', event.target.value)} style={fieldStyle} /></label>
       <label style={{ display: 'grid', gap: 4, fontSize: 12, color: '#64748b' }}>联系电话<input disabled={disabled} value={value.phone} onChange={(event) => setField('phone', event.target.value)} style={fieldStyle} /></label>
       <label style={{ display: 'grid', gap: 4, fontSize: 12, color: '#64748b' }}>公司地址<input disabled={disabled} value={value.address} onChange={(event) => setField('address', event.target.value)} style={fieldStyle} /></label>

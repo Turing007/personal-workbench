@@ -399,7 +399,7 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
     {tab === 'mine' ? <section className="table-panel" style={{ padding: 12, display: 'grid', gap: 10 }}>
       {catalogs === null && <div className="table-state">正在加载图册…</div>}
       {catalogs?.length === 0 && <div className="table-state">还没有图册：点右上角「新建图册」，选好产品就能生成一条链接。</div>}
-      {catalogs?.map((catalog) => <article key={catalog.id} style={{ border: '1px solid var(--tone-border-soft)', borderRadius: 8, padding: 12, display: 'grid', gap: 8 }}>
+      {catalogs?.map((catalog) => <article key={catalog.id} style={{ border: '1px solid var(--tone-border-soft)', borderRadius: 'var(--radius-ui)', padding: 12, display: 'grid', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <strong style={{ fontSize: 14 }}>{catalog.name}</strong>
           <span className={catalog.enabled ? 'badge badge-success' : 'badge badge-neutral'}>{catalog.enabled ? '在用' : '已停用'}</span>
@@ -407,7 +407,7 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
           <span className={catalog.markupPercent > 0 ? 'badge badge-success' : 'badge badge-neutral'}>{catalog.markupPercent > 0 ? `毛利率 ${catalog.markupPercent}%` : '未报价'}</span>
           <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--tone-text-faint)' }}>打开 {catalog.viewCount} 次 · {formatViewedAt(catalog.lastViewedAt)}</span>
         </div>
-        <code style={{ fontSize: 12, color: 'var(--tone-accent-text)', overflowWrap: 'anywhere', background: 'var(--tone-surface-frost)', border: '1px solid var(--tone-border-soft)', borderRadius: 5, padding: '5px 8px' }}>{publicUrl(catalog)}</code>
+        <code style={{ fontSize: 12, color: 'var(--tone-accent-text)', overflowWrap: 'anywhere', background: 'var(--tone-surface-frost)', border: '1px solid var(--tone-border-soft)', borderRadius: 'var(--radius-ui)', padding: '5px 8px' }}>{publicUrl(catalog)}</code>
         <div className="row-actions" style={{ flexWrap: 'wrap' }}>
           <button className="button button-secondary button-sm" type="button" onClick={() => void copyLink(catalog)}>{copiedId === catalog.id ? <><Check size={14} />已复制</> : <><Copy size={14} />复制链接</>}</button>
           <button className="button button-secondary button-sm" type="button" onClick={() => window.open(publicUrl(catalog), '_blank', 'noopener')}><ExternalLink size={14} />预览</button>

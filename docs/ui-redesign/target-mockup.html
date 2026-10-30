@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>目标风格样张 · ERP 工作台</title>
+<style>
+  :root{
+    --page:#F3F4F6; --surface:#fff; --subtle:#F8F9FA; --border:#E4E7EC; --divider:#EEF0F2;
+    --text:#1F2329; --text-2:#5B6472; --muted:#8A919E; --accent:#0E7368; --accent-soft:#E8F4F1;
+    --accent-border:#B9DED8; --danger:#B42318; --warn:#B45309; --warn-soft:#FFFBEB;
+    --success:#15803D; --success-soft:#F0FDF4; --info:#1D4ED8; --info-soft:#EFF6FF;
+    --draft:#64748B; --draft-soft:#F1F5F9;
+    --sidebar:#0B1220; --side-text:#DDE3EC; --side-muted:#7D8BA1;
+    --r-control:8px; --r-surface:8px;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI","HarmonyOS Sans SC","MiSans","Noto Sans SC","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#E9EBEF;font-family:var(--font);color:var(--text);-webkit-font-smoothing:antialiased}
+  .gallery{display:grid;gap:28px;padding:28px;justify-items:start}
+  .shot-label{font-size:12px;color:#6B7280;margin:0 0 -16px 2px;letter-spacing:.02em}
+  .artboard{position:relative;overflow:hidden;background:var(--page);font-size:13px;line-height:1.45}
+  .desktop{width:1440px;height:900px;display:flex}
+  .mobile{width:390px;height:844px}
+  .sidebar{width:200px;flex:none;display:flex;flex-direction:column;background:var(--sidebar);color:var(--side-text);padding:14px 10px 10px}
+  .brand{display:flex;align-items:center;gap:9px;padding:2px 8px 18px}
+  .brand-mark{width:28px;height:28px;border-radius:var(--r-surface);background:linear-gradient(180deg,#12a597,#0c6a60);display:grid;place-items:center;color:#fff;font-size:14px;font-weight:700;box-shadow:inset 0 1px 0 rgba(255,255,255,.22)}
+  .brand-name{font-size:13px;font-weight:650;letter-spacing:.01em;white-space:nowrap}
+  .nav{display:grid;gap:2px}
+  .nav-group{font-size:10px;letter-spacing:.12em;color:#66758C;padding:13px 10px 5px}
+  .nav-item{display:flex;align-items:center;gap:9px;height:32px;padding:0 10px;border-radius:var(--r-surface);color:#B9C4D4;font-size:12.5px;white-space:nowrap}
+  .nav-item svg{width:15px;height:15px;flex:none;stroke:currentColor;opacity:.9}
+  .nav-item.active{background:rgba(45,212,191,.10);color:#F2FBF9;box-shadow:inset 2px 0 0 #2DD4BF}
+  .nav-item.active svg{color:#3EDBC9;opacity:1}
+  .side-user{margin-top:auto;display:flex;align-items:center;gap:8px;padding:10px 8px 4px;border-top:1px solid rgba(148,163,184,.12)}
+  .avatar{width:26px;height:26px;border-radius:50%;background:#183042;color:#8FE3D8;display:grid;place-items:center;font-size:11px;font-weight:650}
+  .side-user strong{display:block;font-size:11.5px;font-weight:600;color:#DCE5EF}
+  .side-user small{display:block;font-size:10px;color:#7D8BA1}
+  .side-user .logout{margin-left:auto;font-size:11px;color:#7D8BA1}
+
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;padding:16px 20px 16px}
+  .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex:none;height:44px}
+  .crumb{font-size:10.5px;color:var(--muted);letter-spacing:.02em;margin-bottom:3px}
+  .crumb b{font-weight:500;color:var(--text-2)}
+  .page-title{font-size:18px;font-weight:650;letter-spacing:-.015em;line-height:1.2}
+  .page-sub{font-size:11.5px;color:var(--text-2);margin-top:3px}
+  .head-actions{display:flex;align-items:center;gap:8px}
+  .btn{height:32px;display:inline-flex;align-items:center;gap:6px;border-radius:var(--r-control);padding:0 12px;font-size:12.5px;font-weight:600;white-space:nowrap;border:1px solid transparent}
+  .btn svg{width:14px;height:14px;stroke:currentColor}
+  .btn-primary{background:var(--accent);color:#fff;border-color:#0B6259}
+  .btn-primary:hover{background:#0A5F57}
+  .btn-secondary{background:#fff;border-color:var(--border);color:var(--text)}
+  .btn-ghost{background:transparent;color:var(--accent);padding:0 8px}
+
+  .panel{margin-top:10px;flex:1;min-height:0;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-surface);overflow:hidden}
+  .toolbar{display:flex;align-items:center;gap:10px;height:46px;flex:none;padding:0 12px;border-bottom:1px solid var(--divider)}
+  .search{width:262px;height:32px;flex:none;display:flex;align-items:center;gap:7px;padding:0 10px;border:1px solid var(--border);border-radius:var(--r-control);background:#fff;color:var(--muted);font-size:12px}
+  .search svg{width:14px;height:14px;stroke:currentColor;flex:none}
+  .status-tabs{display:flex;align-items:center;gap:2px;height:100%;min-width:0;overflow:hidden}
+  .status-tab{height:100%;display:inline-flex;align-items:center;gap:5px;padding:0 10px;border:0;background:transparent;font:inherit;font-size:12px;color:var(--text-2);white-space:nowrap;position:relative;cursor:default}
+  .status-tab b{font-weight:650;font-size:12px;color:var(--text)}
+  .status-tab.active{color:var(--accent);font-weight:600}
+  .status-tab.active::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:2px;background:var(--accent);border-radius:var(--r-surface) var(--r-surface) 0 0}
+  .status-tab.active b{color:var(--accent)}
+  .toolbar-right{margin-left:auto;display:flex;align-items:center;gap:10px;flex:none;color:var(--muted);font-size:11.5px}
+  .icon-btn{width:28px;height:28px;display:grid;place-items:center;border:1px solid transparent;border-radius:var(--r-control);background:transparent;color:var(--text-2)}
+  .icon-btn svg{width:14px;height:14px;stroke:currentColor}
+
+  .table{flex:1;min-height:0;overflow:hidden}
+  .thead,.trow{display:grid;grid-template-columns:28px 130px 140px 76px 66px minmax(120px,1fr) 40px 90px 92px 94px 160px;align-items:center;padding:0 12px}
+  .thead{height:32px;background:var(--subtle);border-bottom:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.02em;position:sticky;top:0}
+  .trow{height:38px;border-bottom:1px solid var(--divider);font-size:12.5px;color:var(--text-2);font-variant-numeric:tabular-nums}
+  .trow:hover{background:#FAFBFC}
+  .trow.selected{background:#F2FAF8}
+  .trow .cell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:10px}
+  .thead > span{padding-right:10px}
+  .trow .strong{color:var(--accent);font-weight:650}
+  .trow .name{color:var(--text);font-weight:500}
+  .trow .num{text-align:right;color:var(--text);font-weight:600;padding-right:10px}
+  .trow .sub{display:block;font-size:10px;color:var(--muted);font-weight:400;margin-top:1px}
+  .trow .ops{display:flex;align-items:center;gap:8px;justify-content:flex-end;white-space:nowrap}
+  .trow .ops button{border:0;background:transparent;padding:0;font:inherit;font-size:11.5px;color:var(--accent);cursor:default}
+  .trow .ops .muted{color:var(--text-2)}
+  .trow .ops .danger{color:var(--danger)}
+  .trow .ops svg{width:13px;height:13px;vertical-align:-2px;stroke:currentColor}
+  .checkbox{width:13px;height:13px;border:1px solid #C9CED6;border-radius:3px;background:#fff;display:block}
+  .checkbox.on{background:var(--accent);border-color:var(--accent);position:relative}
+  .checkbox.on::after{content:"";position:absolute;left:3px;top:0px;width:4px;height:7px;border:solid #fff;border-width:0 1.5px 1.5px 0;transform:rotate(42deg)}
+  .badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:999px;font-size:10.5px;font-weight:500;background:var(--draft-soft);color:var(--draft);white-space:nowrap}
+  .badge .dot{width:5px;height:5px;border-radius:50%;background:currentColor;flex:none}
+  .badge.warn{background:var(--warn-soft);color:var(--warn)}
+  .badge.success{background:var(--success-soft);color:var(--success)}
+  .badge.info{background:var(--info-soft);color:var(--info)}
+  .badge.accent{background:var(--accent-soft);color:var(--accent)}
+  .footer{height:44px;flex:none;display:flex;align-items:center;gap:12px;padding:0 12px;border-top:1px solid var(--divider);color:var(--muted);font-size:11.5px}
+  .footer .pages{margin-left:auto;display:flex;align-items:center;gap:6px}
+  .page-btn{min-width:26px;height:26px;border:1px solid var(--border);border-radius:var(--r-control);background:#fff;display:grid;place-items:center;font-size:11px;color:var(--text-2)}
+  .page-btn.cur{border-color:var(--accent);color:var(--accent);font-weight:650;background:var(--accent-soft)}
+  .pager-select{height:26px;border:1px solid var(--border);border-radius:var(--r-control);background:#fff;font-size:11px;padding:0 6px;color:var(--text-2)}
+
+  /* 财务：指标带 + 工具栏 + 表格，同一张工作面 */
+  .finance-page-head{height:40px}
+  #shot-finance .panel{margin-top:8px}
+  .finance-panel .toolbar{height:40px}
+  .kpi-strip{height:52px;flex:none;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border-bottom:1px solid var(--border);background:#fff}
+  .kpi-cell{display:flex;flex-direction:column;justify-content:center;gap:2px;padding:0 16px;border-right:1px solid var(--divider);min-width:0}
+  .kpi-cell:last-child{border-right:0}
+  .kpi-cell span{font-size:10.5px;color:var(--muted);white-space:nowrap}
+  .kpi-cell strong{font-size:19px;font-weight:650;line-height:1.15;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .kpi-cell strong.success{color:var(--success)}
+  .kpi-cell strong.danger{color:var(--danger)}
+  .filter-select{height:30px;display:inline-flex;align-items:center;gap:6px;padding:0 9px;border:1px solid var(--border);border-radius:var(--r-control);background:#fff;color:var(--text-2);font-size:11.5px;white-space:nowrap}
+  .month-select{height:30px;display:inline-flex;align-items:center;gap:6px;padding:0 9px;border:1px solid var(--border);border-radius:var(--r-control);background:#fff;color:var(--text);font-size:12px;font-weight:500}
+  .month-select svg{width:13px;height:13px;stroke:var(--muted)}
+  .finance-table .thead,.finance-table .trow{grid-template-columns:132px minmax(150px,1fr) 78px 90px 80px 90px 78px 78px 78px 70px 88px}
+  .finance-table .trow .cell{padding-right:10px}
+  .finance-table .thead > span{padding-right:10px}
+
+  /* 发货分栏 */
+  .ship-panel{margin-top:10px;flex:1;min-height:0;display:flex;background:#fff;border:1px solid var(--border);border-radius:var(--r-surface);overflow:hidden}
+  .ship-left{width:360px;flex:none;display:flex;flex-direction:column;border-right:1px solid var(--divider)}
+  .ship-right{flex:1;min-width:0;display:flex;flex-direction:column}
+  .ship-head{height:48px;flex:none;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--divider)}
+  .ship-head strong{font-size:13.5px;font-weight:650}
+  .ship-head .count{font-size:11px;color:var(--muted)}
+  .ship-head .right{margin-left:auto;display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px}
+  .ship-search{margin:10px 12px 6px;height:32px;flex:none;display:flex;align-items:center;gap:6px;padding:0 9px;border:1px solid var(--border);border-radius:var(--r-control);color:var(--muted);font-size:11.5px}
+  .ship-search svg{width:13px;height:13px;stroke:currentColor}
+  .queue{flex:1;min-height:0;overflow:hidden;padding:0 6px}
+  .queue-row{display:flex;align-items:center;gap:10px;min-height:62px;padding:8px 8px;border-bottom:1px solid var(--divider)}
+  .queue-row:last-child{border-bottom:0}
+  .queue-main{min-width:0;flex:1}
+  .queue-line1{display:flex;align-items:center;gap:8px}
+  .queue-line1 strong{font-size:12.5px;color:var(--text);font-weight:650}
+  .queue-line1 .badge{height:18px;font-size:10px;padding:0 6px}
+  .queue-sub{font-size:10.5px;color:var(--text-2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .queue-addr{font-size:10px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .add-btn{height:26px;flex:none;padding:0 9px;border:1px solid var(--accent-border);border-radius:var(--r-control);background:#fff;color:var(--accent);font:inherit;font-size:10.5px;font-weight:600}
+  .add-btn.solid{background:var(--accent);border-color:var(--accent);color:#fff}
+  .batch-summary{display:flex;align-items:center;gap:14px;padding:10px 14px;border-bottom:1px solid var(--divider);background:#FCFDFD;font-size:11.5px;color:var(--text-2)}
+  .batch-summary b{color:var(--text);font-size:13px;font-weight:650}
+  .batch-summary .right{margin-left:auto;color:var(--danger);display:flex;align-items:center;gap:4px;font-size:11px}
+  .batch-table{padding:0 14px}
+  .batch-thead,.batch-row{display:grid;grid-template-columns:1fr 96px 58px 86px;gap:8px;align-items:center;height:34px;font-size:11px;border-bottom:1px solid var(--divider)}
+  .batch-thead{color:var(--muted);font-weight:600;background:var(--subtle);margin:10px -14px 0;padding:0 14px;height:30px;border-bottom:1px solid var(--border)}
+  .batch-row{height:42px;color:var(--text-2)}
+  .batch-row strong{color:var(--text);font-weight:600;font-size:12px}
+  .batch-row .right{text-align:right}
+  .batch-note{margin:12px 14px 0;display:grid;gap:5px}
+  .batch-note span{font-size:11px;color:var(--muted)}
+  .batch-note .textarea{height:74px;border:1px solid var(--border);border-radius:var(--r-control);background:#fff;padding:8px 10px;font-size:11.5px;color:var(--muted)}
+  .batch-footer{margin-top:auto;height:56px;flex:none;display:flex;align-items:center;gap:10px;padding:0 14px;border-top:1px solid var(--divider);background:#FCFDFD}
+  .batch-footer .hint{font-size:11px;color:var(--muted)}
+  .batch-footer .btn{margin-left:auto}
+  .batch-footer .btn-primary{min-width:112px;justify-content:center}
+
+  /* 手机 */
+  .phone{height:844px;display:flex;flex-direction:column;background:var(--page);padding:8px 10px 0;position:relative}
+  .m-search{height:40px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;background:#fff;border:1px solid var(--border);border-radius:var(--r-control);color:var(--muted);font-size:13px}
+  .m-search svg{width:16px;height:16px;stroke:currentColor;flex:none}
+  .m-chips{display:flex;gap:6px;overflow:hidden;margin-top:8px;flex:none;height:30px}
+  .m-chip{height:30px;flex:none;display:inline-flex;align-items:center;gap:4px;padding:0 10px;border:1px solid var(--border);border-radius:999px;background:#fff;font-size:11.5px;color:var(--text-2)}
+  .m-chip b{font-size:11.5px;color:var(--text);font-weight:600}
+  .m-chip.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+  .m-chip.active b{color:var(--accent)}
+  .m-actions{display:flex;align-items:center;gap:8px;height:36px;margin-top:8px;flex:none}
+  .m-actions .btn{height:32px;font-size:12px}
+  .m-actions .count{margin-left:auto;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px}
+  .m-list{margin-top:8px;background:#fff;border:1px solid var(--border);border-radius:var(--r-surface);overflow:hidden}
+  .m-card{padding:10px 12px;border-bottom:1px solid var(--divider)}
+  .m-card:last-child{border-bottom:0}
+  .m-line1{display:flex;align-items:center;gap:8px}
+  .m-line1 strong{font-size:13px;font-weight:650;color:var(--text);letter-spacing:.01em}
+  .m-line1 .money{margin-left:auto;font-size:13px;font-weight:650;color:var(--text);font-variant-numeric:tabular-nums}
+  .m-meta{font-size:11px;color:var(--text-2);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .m-product{font-size:11px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .m-foot{display:flex;align-items:center;gap:12px;margin-top:7px;height:30px}
+  .m-foot button{border:0;background:transparent;padding:0;font:inherit;font-size:12px;color:var(--accent);white-space:nowrap}
+  .m-foot .del{color:var(--danger);margin-left:-2px}
+  .m-next{margin-left:auto;height:28px;display:inline-flex;align-items:center;padding:0 9px;border:1px solid var(--accent-border);border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:10.5px;font-weight:600;white-space:nowrap}
+  .m-next.warn{border-color:#FDE68A;background:var(--warn-soft);color:var(--warn)}
+  .m-tabbar{position:absolute;left:0;right:0;bottom:0;height:56px;background:#fff;border-top:1px solid var(--border);display:grid;grid-template-columns:repeat(5,1fr);align-items:center;padding:0 4px 4px}
+  .m-tab{display:grid;justify-items:center;gap:2px;font-size:10px;color:var(--muted)}
+  .m-tab svg{width:20px;height:20px;stroke:currentColor}
+  .m-tab.active{color:var(--accent);font-weight:600}
+  .m-fade{position:absolute;left:10px;right:10px;bottom:56px;height:18px;background:linear-gradient(180deg,rgba(243,244,246,0),rgba(243,244,246,.92))}
+</style>
+</head>
+<body>
+<div class="gallery">
+  <p class="shot-label">桌面 · 订单工作台（1440×900）— 状态卡改为状态标签，首条数据上移，行高 38</p>
+  <section class="artboard desktop" id="shot-orders">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">V</span><span class="brand-name">个人工作台</span></div>
+      <nav class="nav">
+        <div class="nav-group">交易</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M6 3h12a1 1 0 0 1 1 1v17l-3-2-2 2-2-2-2 2-2-2-3 2V4a1 1 0 0 1 1-1Z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>报价单</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>销售单</div>
+        <div class="nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M8 4h8a2 2 0 0 1 2 2v14l-6-3-6 3V6a2 2 0 0 1 2-2Z"/><path d="M9 8h6M9 12h4"/></svg>订单</div>
+        <div class="nav-group">履约</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="m3 8 9-5 9 5-9 5-9-5Z"/><path d="m3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>备货</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M3 7h11v10H3z"/><path d="M14 10h4l3 3v4h-7z"/><circle cx="7" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/></svg>发货</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18M7 14h3"/></svg>财务</div>
+        <div class="nav-group">资料</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg>产品库</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 5h7v14H4zM13 5h7v14h-7z"/><path d="M6.5 8h2M15.5 8h2"/></svg>产品图册</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>客户</div>
+        <div class="nav-group">系统</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/></svg>设置</div>
+      </nav>
+      <div class="side-user"><span class="avatar">高</span><span><strong>高夫瑶</strong><small>管理员</small></span><span class="logout">退出</span></div>
+    </aside>
+    <main class="main">
+      <header class="page-head">
+        <div>
+          <div class="crumb">业务 / <b>订单</b></div>
+          <div class="page-title">订单工作台</div>
+        </div>
+        <div class="head-actions">
+          <button class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>新建订单</button>
+        </div>
+      </header>
+      <section class="panel">
+        <div class="toolbar">
+          <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>搜索订单号、客户、收件人、品名</div>
+          <div class="status-tabs" id="status-tabs"></div>
+          <div class="toolbar-right"><span>8 条订单</span><button class="icon-btn" aria-label="刷新"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M20 11a8 8 0 1 0-2.3 6.7"/><path d="M20 4v7h-7"/></svg></button></div>
+        </div>
+        <div class="table">
+          <div class="thead">
+            <span><i class="checkbox on"></i></span><span>订单号</span><span>客户</span><span>下单时间</span><span>收件人</span><span>产品详情</span><span>箱数</span><span style="text-align:right">金额</span><span>状态</span><span>物流单号</span><span style="text-align:right">操作</span>
+          </div>
+          <div id="orders-body"></div>
+        </div>
+        <footer class="footer"><span>共 8 条订单 · 已选 1 条</span><span class="pages"><span>每页</span><select class="pager-select"><option>20</option></select><span>条</span><button class="page-btn">‹</button><button class="page-btn cur">1</button><button class="page-btn">›</button></span></footer>
+      </section>
+    </main>
+  </section>
+
+  <p class="shot-label">桌面 · 财务工作台（1440×900）— 5 张统计卡合并为主面板顶部的 52px 指标带，首条数据回到 190px 内</p>
+  <section class="artboard desktop" id="shot-finance">
+    <aside class="sidebar" data-clone></aside>
+    <main class="main">
+      <header class="page-head finance-page-head">
+        <div>
+          <div class="crumb">履约 / <b>财务</b></div>
+          <div class="page-title">财务工作台</div>
+        </div>
+      </header>
+      <section class="panel">
+        <div class="kpi-strip">
+          <div class="kpi-cell"><span>本期应收</span><strong>¥89,896.00</strong></div>
+          <div class="kpi-cell"><span>已收金额</span><strong class="success">¥0.00</strong></div>
+          <div class="kpi-cell"><span>未收金额</span><strong class="danger">¥89,896.00</strong></div>
+          <div class="kpi-cell"><span>待审核水单</span><strong>2 张</strong></div>
+          <div class="kpi-cell"><span>待处理发票</span><strong>3 笔</strong></div>
+        </div>
+        <div class="toolbar" style="height:40px">
+          <div class="search" style="width:240px"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>搜索订单号或客户</div>
+          <div class="month-select"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>2026 年 10 月</div>
+          <div class="filter-select">全部付款 <span>⌄</span></div>
+          <div class="filter-select">全部水单 <span>⌄</span></div>
+          <div class="filter-select">全部发票 <span>⌄</span></div>
+          <div class="toolbar-right"><span>17 条记录</span><button class="icon-btn" aria-label="刷新"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M20 11a8 8 0 1 0-2.3 6.7"/><path d="M20 4v7h-7"/></svg></button></div>
+        </div>
+        <div class="table finance-table">
+          <div class="thead"><span>订单号</span><span>客户</span><span>日期</span><span style="text-align:right">应收</span><span style="text-align:right">已收</span><span style="text-align:right">未收</span><span>付款</span><span>水单</span><span>发票</span><span>物流</span><span style="text-align:right">操作</span></div>
+          <div id="finance-body"></div>
+        </div>
+        <footer class="footer"><span>共 17 条记录</span><span class="pages"><span>每页</span><select class="pager-select"><option>20</option></select><span>条</span><button class="page-btn">‹</button><button class="page-btn cur">1</button><button class="page-btn">›</button></span></footer>
+      </section>
+    </main>
+  </section>
+
+  <p class="shot-label">桌面 · 发货工作区（1440×900）— 三层卡片合并为一张工作面，左队列右批次</p>
+  <section class="artboard desktop" id="shot-shipping">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">V</span><span class="brand-name">个人工作台</span></div>
+      <nav class="nav">
+        <div class="nav-group">交易</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M6 3h12a1 1 0 0 1 1 1v17l-3-2-2 2-2-2-2 2-2-2-3 2V4a1 1 0 0 1 1-1Z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>报价单</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>销售单</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M8 4h8a2 2 0 0 1 2 2v14l-6-3-6 3V6a2 2 0 0 1 2-2Z"/><path d="M9 8h6M9 12h4"/></svg>订单</div>
+        <div class="nav-group">履约</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="m3 8 9-5 9 5-9 5-9-5Z"/><path d="m3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>备货</div>
+        <div class="nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M3 7h11v10H3z"/><path d="M14 10h4l3 3v4h-7z"/><circle cx="7" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/></svg>发货</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18M7 14h3"/></svg>财务</div>
+        <div class="nav-group">资料</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg>产品库</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 5h7v14H4zM13 5h7v14h-7z"/><path d="M6.5 8h2M15.5 8h2"/></svg>产品图册</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>客户</div>
+        <div class="nav-group">系统</div>
+        <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/></svg>设置</div>
+      </nav>
+      <div class="side-user"><span class="avatar">高</span><span><strong>高夫瑶</strong><small>管理员</small></span><span class="logout">退出</span></div>
+    </aside>
+    <main class="main">
+      <header class="page-head">
+        <div>
+          <div class="crumb">履约 / <b>发货</b></div>
+          <div class="page-title">发货工作区</div>
+        </div>
+        <div class="head-actions"><span class="badge warn"><span class="dot"></span>8 条未发货</span></div>
+      </header>
+      <section class="ship-panel">
+        <div class="ship-left">
+          <div class="ship-head"><strong>未发货订单</strong><span class="count">8 条可加入</span><span class="right">刷新</span></div>
+          <div class="ship-search"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>搜索订单号、客户、收件人</div>
+          <div class="queue" id="ship-queue"></div>
+        </div>
+        <div class="ship-right">
+          <div class="ship-head"><strong>当前发货批次</strong><span class="count">2 单 / 4 箱</span></div>
+          <div class="batch-summary"><span>收件信息：</span><b>赵总 · 浙江省宁波市</b><span>物流：待填</span><span class="right">清空批次</span></div>
+          <div class="batch-table">
+            <div class="batch-thead"><span>订单</span><span>客户</span><span class="right">箱数</span><span class="right">金额</span></div>
+            <div class="batch-row"><strong>SO-20261030-008</strong><span>青岛海川</span><span class="right">2</span><span class="right">¥4,872.00</span></div>
+            <div class="batch-row"><strong>SO-20261030-006</strong><span>义乌锐锋</span><span class="right">2</span><span class="right">¥4,632.00</span></div>
+          </div>
+          <div class="batch-note"><span>发货备注（不打印）</span><div class="textarea">两个订单合并发物流，木架加固。</div></div>
+          <div class="batch-footer"><span class="hint">还有 6 条未加入批次</span><button class="btn btn-primary">确认批次发货</button></div>
+        </div>
+      </section>
+    </main>
+  </section>
+
+  <p class="shot-label">手机 · 订单（390×844）— 一张列表容器，单条 3 行 + 一行操作，一屏 5 条</p>
+  <section class="artboard mobile" id="shot-mobile">
+    <div class="phone">
+      <div class="m-search"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>搜索订单号、客户、收件人、品名</div>
+      <div class="m-chips" id="m-chips"></div>
+      <div class="m-actions">
+        <button class="btn btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>新建订单</button>
+        <span class="count">8 条订单</span>
+      </div>
+      <div class="m-list" id="m-list"></div>
+      <div class="m-fade"></div>
+      <nav class="m-tabbar">
+        <div class="m-tab active"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M8 4h8a2 2 0 0 1 2 2v14l-6-3-6 3V6a2 2 0 0 1 2-2Z"/><path d="M9 8h6M9 12h4"/></svg><span>订单</span></div>
+        <div class="m-tab"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M6 3h12a1 1 0 0 1 1 1v17l-3-2-2 2-2-2-2 2-2-2-3 2V4a1 1 0 0 1 1-1Z"/><path d="M8 8h8M8 12h8"/></svg><span>报价</span></div>
+        <div class="m-tab"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M3 7h11v10H3z"/><path d="M14 10h4l3 3v4h-7z"/><circle cx="7" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/></svg><span>发货</span></div>
+        <div class="m-tab"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18M7 14h3"/></svg><span>财务</span></div>
+        <div class="m-tab"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>更多</span></div>
+      </nav>
+    </div>
+  </section>
+</div>
+<script>
+  // 财务页侧栏直接克隆订单页，避免重复一大段导航；再切换选中项。
+  const sideTemplate = document.querySelector('#shot-orders .sidebar');
+  document.querySelectorAll('[data-clone]').forEach((el) => el.replaceWith(sideTemplate.cloneNode(true)));
+  const financeSide = document.querySelector('#shot-finance .sidebar');
+  financeSide.querySelectorAll('.nav-item.active').forEach((item) => item.classList.remove('active'));
+  [...financeSide.querySelectorAll('.nav-item')].find((item) => item.textContent.trim() === '财务')?.classList.add('active');
+
+  const statuses = [
+    ['全部',8,true],['草稿',0],['待备货',3],['已备货',2],['待打包',1],['待发货',2],['已发货',0]
+  ];
+  document.getElementById('status-tabs').innerHTML = statuses.map(([label,count,active]) =>
+    `<div class="status-tab${active?' active':''}">${label} <b>${count}</b></div>`).join('');
+  document.getElementById('m-chips').innerHTML = statuses.map(([label,count,active]) =>
+    `<div class="m-chip${active?' active':''}">${label} <b>${count}</b></div>`).join('');
+
+  const rows = [
+    ['SO-20261030-008','青岛海川机电进出口','10-29','赵总','锂电冲击钻 · 标准套装','2','¥4,872.00','已备货','warn','—','开始打包'],
+    ['SO-20261030-007','深圳市拓力电动工具','10-28','李经理','锂电角磨机 · 标准套装','2','¥4,752.00','待备货','','—','确认已备货'],
+    ['SO-20261030-006','义乌市锐锋五金经营部','10-27','陈晓','无刷电锤 · 双电套装','2','¥4,632.00','待发货','info','SF1234567890','去发货'],
+    ['SO-20261030-005','宁波恒达工贸有限公司','10-26','王海峰','锂电扳手 · 标准套装','2','¥4,512.00','待发货','info','SF1234567891','去发货'],
+    ['SO-20261030-004','青岛海川机电进出口','10-25','赵总','锂电冲击钻 · 双电套装','2','¥4,392.00','待打包','warn','—','完成打包'],
+    ['SO-20261030-003','深圳市拓力电动工具','10-24','李经理','锂电角磨机 · 标准套装','2','¥4,272.00','已备货','warn','—','开始打包'],
+    ['SO-20261030-002','义乌市锐锋五金经营部','10-23','陈晓','无刷电锤 · 标准套装','2','¥4,152.00','待备货','','—','确认已备货'],
+    ['SO-20261030-001','宁波恒达工贸有限公司','10-22','王海峰','锂电冲击钻 · 标准套装','2','¥4,032.00','待备货','','—','确认已备货'],
+    ['SO-20261029-018','杭州临平机电市场','10-21','周经理','锂电扳手 · 双电套装','3','¥5,880.00','已发货','success','SF1234567892','查看'],
+    ['SO-20261029-017','苏州金桥五金城','10-21','吴总','无刷电锤 · 标准套装','1','¥2,160.00','待打包','warn','—','完成打包'],
+    ['SO-20261029-016','上海青浦工具城','10-20','孙经理','锂电冲击钻 · 标准套装','4','¥8,640.00','待备货','','—','确认已备货'],
+    ['SO-20261029-015','南京江宁机电','10-20','钱总','锂电角磨机 · 双电套装','5','¥11,400.00','已备货','warn','—','开始打包'],
+    ['SO-20261029-014','合肥瑶海五金','10-19','郑经理','锂电扳手 · 标准套装','2','¥3,920.00','待发货','info','SF1234567893','去发货'],
+    ['SO-20261029-013','无锡锡山工具城','10-19','冯总','无刷电锤 · 双电套装','3','¥6,960.00','待备货','','—','确认已备货'],
+    ['SO-20261029-012','常州武进机电','10-18','陈经理','锂电冲击钻 · 双电套装','2','¥4,880.00','已发货','success','SF1234567894','查看'],
+    ['SO-20261029-011','嘉兴南湖五金','10-18','褚总','锂电角磨机 · 标准套装','4','¥8,160.00','待打包','warn','—','完成打包'],
+    ['SO-20261029-010','绍兴柯桥机电','10-17','卫经理','锂电扳手 · 双电套装','1','¥2,280.00','待备货','','—','确认已备货'],
+    ['SO-20261029-009','湖州织里工具城','10-17','蒋总','无刷电锤 · 标准套装','6','¥12,960.00','已备货','warn','—','开始打包']
+  ];
+  const badgeCls = {warn:'warn',info:'info',success:'success'};
+  document.getElementById('orders-body').innerHTML = rows.map((r,i) => {
+    const [,customer,date,recipient,product,boxes,amount,status,tone,tracking] = r;
+    return `<div class="trow${i===0?' selected':''}">
+      <span><i class="checkbox ${i===0?'on':''}"></i></span>
+      <span class="cell strong">${r[0]}</span>
+      <span class="cell name">${customer}</span>
+      <span class="cell">2026-${date}</span>
+      <span class="cell">${recipient}</span>
+      <span class="cell">${product}</span>
+      <span class="cell">${boxes}</span>
+      <span class="num">${amount}<span class="sub">未付款</span></span>
+      <span class="cell"><span class="badge ${badgeCls[tone]||''}"><span class="dot"></span>${status}</span></span>
+      <span class="cell">${tracking}</span>
+      <span class="ops"><button>详情</button><button>编辑</button><button class="muted">箱唛</button><button>${r[10]}</button><button class="danger" aria-label="删除"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/><path d="M10 11v6M14 11v6"/></svg></button></span>
+    </div>`;
+  }).join('');
+
+  const finRows = [
+    ['SO-20261030-008','青岛海川机电进出口','10-29','4,872.00','未付款','无水单','未申请','已备货'],
+    ['SO-20261030-007','深圳市拓力电动工具','10-28','4,752.00','未付款','待审核','未申请','待备货'],
+    ['SO-20261030-006','义乌市锐锋五金经营部','10-27','4,632.00','未付款','无水单','待开票','待发货'],
+    ['SO-20261030-005','宁波恒达工贸有限公司','10-26','4,512.00','未付款','无水单','未申请','待发货'],
+    ['SO-20261030-004','青岛海川机电进出口','10-25','4,392.00','未付款','无水单','未申请','待打包'],
+    ['SO-20261030-003','深圳市拓力电动工具','10-24','4,272.00','未付款','待审核','未申请','已备货'],
+    ['SO-20261030-002','义乌市锐锋五金经营部','10-23','4,152.00','未付款','无水单','待开票','待备货'],
+    ['SO-20261030-001','宁波恒达工贸有限公司','10-22','4,032.00','未付款','无水单','未申请','待备货'],
+    ['SO-20261029-018','杭州临平机电市场','10-21','5,880.00','未付款','无水单','未申请','已发货'],
+    ['SO-20261029-017','苏州金桥五金城','10-21','2,160.00','未付款','无水单','待开票','待打包'],
+    ['SO-20261029-016','上海青浦工具城','10-20','8,640.00','未付款','无水单','未申请','待备货'],
+    ['SO-20261029-015','南京江宁机电','10-20','11,400.00','未付款','无水单','待开票','已备货'],
+    ['SO-20261029-014','合肥瑶海五金','10-19','3,920.00','未付款','无水单','未申请','待发货'],
+    ['SO-20261029-013','无锡锡山工具城','10-19','6,960.00','未付款','无水单','未申请','待备货'],
+    ['SO-20261029-012','常州武进机电','10-18','4,880.00','未付款','无水单','未申请','已发货'],
+    ['SO-20261029-011','嘉兴南湖五金','10-18','8,160.00','未付款','无水单','未申请','待打包'],
+    ['SO-20261029-010','绍兴柯桥机电','10-17','2,280.00','未付款','无水单','未申请','待备货']
+  ];
+  const badgeFor = (text, kind) => `<span class="badge ${kind}"><span class="dot"></span>${text}</span>`;
+  document.getElementById('finance-body').innerHTML = finRows.map((r) => {
+    const [no, customer, date, amount, pay, proof, invoice, logistics] = r;
+    const proofKind = proof === '待审核' ? 'warn' : '';
+    const invoiceKind = invoice === '待开票' ? 'warn' : '';
+    return `<div class="trow">
+      <span class="cell strong">${no}</span>
+      <span class="cell name">${customer}</span>
+      <span class="cell">2026-${date}</span>
+      <span class="cell" style="text-align:right;color:var(--text);font-weight:600">¥${amount}</span>
+      <span class="cell" style="text-align:right;color:var(--muted)">¥0.00</span>
+      <span class="cell" style="text-align:right;color:var(--danger);font-weight:600">¥${amount}</span>
+      <span class="cell">${badgeFor(pay, '')}</span>
+      <span class="cell">${badgeFor(proof, proofKind)}</span>
+      <span class="cell">${badgeFor(invoice, invoiceKind)}</span>
+      <span class="cell">${logistics}</span>
+      <span class="ops"><button>查看财务</button></span>
+    </div>`;
+  }).join('');
+
+  const shipRows = [
+    ['SO-20261030-008','赵总 · 青岛海川机电','宁波市鄞州区工业园区 88 号','已备货','加入批次',true],
+    ['SO-20261030-007','李经理 · 深圳拓力电动','深圳市宝安区福海街道 12 号','待备货','加入批次',false],
+    ['SO-20261030-006','陈晓 · 义乌锐锋五金','义乌市国际商贸城二区','待发货','已加入',true],
+    ['SO-20261030-005','王海峰 · 宁波恒达工贸','宁波市北仑区大港工业城','待发货','加入批次',false],
+    ['SO-20261030-004','赵总 · 青岛海川机电','青岛市黄岛区海川路 6 号','待打包','加入批次',false],
+    ['SO-20261030-003','李经理 · 深圳拓力电动','深圳市宝安区福海街道 12 号','已备货','加入批次',false],
+    ['SO-20261029-018','周经理 · 杭州临平机电','杭州市临平区望梅路 88 号','已发货','已发货',false]
+  ];
+  document.getElementById('ship-queue').innerHTML = shipRows.map(([no,who,addr,status,action,on]) =>
+    `<div class="queue-row"><div class="queue-main">
+      <div class="queue-line1"><strong>${no}</strong><span class="badge ${status==='待发货'?'info':status==='已备货'?'warn':status==='已发货'?'success':''}"><span class="dot"></span>${status}</span></div>
+      <div class="queue-sub">${who}</div><div class="queue-addr">${addr}</div>
+    </div><button class="add-btn${on?' solid':''}">${action}</button></div>`).join('');
+
+  const mRows = [
+    ['SO-20261030-008','青岛海川机电进出口 · 10-29','锂电冲击钻 · 2 箱','¥4,872.00','已备货 → 开始打包','warn'],
+    ['SO-20261030-007','深圳拓力电动工具 · 10-28','锂电角磨机 · 2 箱','¥4,752.00','待备货 → 确认已备货',''],
+    ['SO-20261030-006','义乌锐锋五金经营部 · 10-27','无刷电锤 · 2 箱','¥4,632.00','已备货 → 去发货','warn'],
+    ['SO-20261030-005','宁波恒达工贸 · 10-26','锂电扳手 · 2 箱','¥4,512.00','待发货 → 去发货',''],
+    ['SO-20261030-004','青岛海川机电进出口 · 10-25','锂电冲击钻 · 2 箱','¥4,392.00','待打包 → 完成打包','warn']
+  ];
+  document.getElementById('m-list').innerHTML = mRows.map(([no,meta,product,money,next,tone]) =>
+    `<div class="m-card">
+      <div class="m-line1"><strong>${no}</strong><span class="money">${money}</span></div>
+      <div class="m-meta">${meta}</div>
+      <div class="m-product">${product}</div>
+      <div class="m-foot"><button>详情</button><button>编辑</button><button>箱唛</button><button class="del">删除</button><span class="m-next ${tone}">${next}</span></div>
+    </div>`).join('');
+</script>
+</body>
+</html>

@@ -161,7 +161,7 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
   };
 
   return (
-    <Modal open={open} className="product-detail-modal" title={`产品详情 · ${product.sku || product.name || '未命名产品'}`} onClose={onClose} width={760} footer={footer}>
+    <Modal open={open} className="product-detail-modal product-detail-drawer" title={`产品详情 · ${product.sku || product.name || '未命名产品'}`} onClose={onClose} width={640} variant="drawer" footer={footer}>
       <div className="product-detail-content">
         <div className="product-detail-grid kv-grid">
           <DetailItem label="SKU">

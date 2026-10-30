@@ -364,7 +364,7 @@ export default function SettingsPage({
       <div className="settings-heading"><ScrollText size={18} /><strong>购销合同模板</strong></div>
       <p>订单详情里「生成购销合同」会按此模板输出 PDF 并归档到订单附件。条款中可使用下方占位符，生成时自动替换为订单数据；无法识别的占位符会原样保留。</p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '2px 0 12px' }}>
-        {CONTRACT_PLACEHOLDERS.map((placeholder) => <code key={placeholder.key} title={placeholder.description} style={{ padding: '3px 8px', border: '1px solid #dbe3ea', borderRadius: 5, background: 'var(--tone-surface-frost)', color: 'var(--tone-accent-text)', fontSize: 11 }}>{`{${placeholder.key}}`}</code>)}
+        {CONTRACT_PLACEHOLDERS.map((placeholder) => <code key={placeholder.key} title={placeholder.description} style={{ padding: '3px 8px', border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)', background: 'var(--tone-surface-frost)', color: 'var(--tone-accent-text)', fontSize: 11 }}>{`{${placeholder.key}}`}</code>)}
       </div>
       <div style={{ display: 'grid', gap: 10 }}>
         <label className="label" style={{ maxWidth: 360 }}>合同标题<input className="input" disabled={templateLoading || templateBusy} value={template.title} onChange={(event) => setTemplate((current) => ({ ...current, title: event.target.value }))} /></label>

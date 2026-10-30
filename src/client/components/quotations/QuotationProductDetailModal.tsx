@@ -60,7 +60,7 @@ export default function QuotationProductDetailModal({ open, quotationId, onClose
     footer={<button type="button" className="button button-primary" onClick={onClose}>关闭</button>}
   >
     <div style={{ display: 'grid', gap: 10, fontSize: 12 }}>
-      {error && <div role="alert" style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 5, padding: '8px 10px' }}>{error}</div>}
+      {error && <div role="alert" style={{ color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--radius-ui)', padding: '8px 10px' }}>{error}</div>}
       {loading && <div style={{ padding: 24, textAlign: 'center', color: '#94a3b8' }}>正在加载产品信息...</div>}
       {detail && <>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, ...fieldStyle }}>
@@ -68,14 +68,14 @@ export default function QuotationProductDetailModal({ open, quotationId, onClose
           <span>报价日期：{detail.quotationDate}</span>
           <span>产品数：{detail.items.length}</span>
         </div>
-        {detail.items.length ? <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(56vh, 480px)', border: '1px solid #e2e8f0', borderRadius: 5 }}>
+        {detail.items.length ? <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(56vh, 480px)', border: '1px solid #e2e8f0', borderRadius: 'var(--radius-ui)' }}>
           <table style={{ width: '100%', minWidth: 920, borderCollapse: 'collapse' }}>
             <thead><tr style={{ background: '#f8fafc', color: '#64748b', textAlign: 'left' }}>
               <th style={{ padding: 7, width: 30 }}>#</th><th style={{ padding: 7, width: 64 }}>图片</th><th style={{ padding: 7, minWidth: 200 }}>品名</th><th style={{ padding: 7, width: 120 }}>规格</th><th style={{ padding: 7, width: 100 }}>单价</th><th style={{ padding: 7, width: 170 }}>数量区间价</th><th style={{ padding: 7, minWidth: 120 }}>备注</th>
             </tr></thead>
             <tbody>{detail.items.map((item, index) => <tr key={item.id} style={{ borderTop: '1px solid #edf0f2', verticalAlign: 'top' }}>
               <td style={{ padding: 7, color: '#94a3b8' }}>{index + 1}</td>
-              <td style={{ padding: 7 }}><span style={{ width: 40, height: 40, display: 'grid', placeItems: 'center', border: '1px solid #e2e8f0', borderRadius: 4, background: '#fff', overflow: 'hidden' }}>{item.imageRelativePath
+              <td style={{ padding: 7 }}><span style={{ width: 40, height: 40, display: 'grid', placeItems: 'center', border: '1px solid #e2e8f0', borderRadius: 'var(--radius-ui)', background: '#fff', overflow: 'hidden' }}>{item.imageRelativePath
                 ? <img src={`/files/${item.imageRelativePath}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 : <span style={{ color: '#cbd5e1' }}>-</span>}</span></td>
               <td style={{ padding: 7, fontWeight: 550 }}>{item.name || '-'}</td>

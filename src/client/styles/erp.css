@@ -1,0 +1,1586 @@
+/* ============================================================
+   ERP 工作台改造 · 阶段 1
+   作用范围：订单 / 财务 / 产品库 + 通用弹窗外壳。
+   旧页面继续使用 app.css，避免一次性重写全站样式。
+   ============================================================ */
+
+:root {
+  --erp-page: #f3f4f6;
+  --erp-surface: #ffffff;
+  --erp-surface-muted: #f8f9fa;
+  --erp-border: #e4e7ec;
+  --erp-divider: #eef0f2;
+  --erp-text: #1f2329;
+  --erp-text-2: #5b6472;
+  --erp-muted: #8a919e;
+  --erp-radius-surface: var(--radius-ui);
+  --erp-radius-control: var(--radius-ui);
+  --erp-shadow-popover: 0 8px 24px -8px rgba(16, 24, 40, .18);
+  --erp-shadow-modal: 0 24px 64px -18px rgba(16, 24, 40, .28);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --erp-page: #0e1116;
+    --erp-surface: #171c24;
+    --erp-surface-muted: #1c222b;
+    --erp-border: #2a3038;
+    --erp-divider: #232932;
+    --erp-text: #e6e9ef;
+    --erp-text-2: #a3adbd;
+    --erp-muted: #71809a;
+    --erp-shadow-popover: 0 8px 24px -8px rgba(0, 0, 0, .5);
+    --erp-shadow-modal: 0 24px 64px -18px rgba(0, 0, 0, .65);
+  }
+}
+
+/* ---------- 通用：弹窗外壳更平、更紧凑 ---------- */
+.modal-overlay {
+  background: rgba(13, 20, 33, .42);
+  backdrop-filter: blur(4px);
+}
+
+.modal-panel {
+  border-color: var(--erp-border);
+  border-radius: var(--radius-ui);
+  box-shadow: var(--erp-shadow-modal);
+}
+
+.modal-header {
+  min-height: 48px;
+  padding: 0 16px;
+}
+
+.modal-title {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.modal-body {
+  padding: 16px;
+}
+
+.modal-footer {
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.modal-close {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--erp-radius-control);
+}
+
+.modal-panel.drawer-panel {
+  border-left-color: var(--erp-border);
+  box-shadow: -16px 0 48px -20px rgba(16, 24, 40, .24);
+}
+
+.order-detail-drawer .modal-body,
+.finance-detail-drawer .modal-body,
+.product-detail-drawer .modal-body {
+  padding: 14px 16px;
+}
+
+/* 详情抽屉内的浅色卡/渐变全部放平，改用分隔线分区 */
+.order-detail-drawer .modal-body > div { gap: 14px !important; }
+.order-detail-drawer .modal-body section {
+  padding: 0 !important;
+  border: 0 !important;
+  border-top: 1px solid var(--erp-divider) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding-top: 12px !important;
+}
+.order-detail-drawer .modal-body > div > section:first-of-type {
+  border-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+.finance-detail-drawer .finance-detail { gap: 14px; }
+.finance-detail-drawer .finance-detail-summary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--erp-divider);
+  border-radius: 0;
+  background: transparent;
+}
+.finance-detail-drawer .finance-detail-summary strong { font-size: 18px; }
+.finance-detail-drawer .finance-section {
+  padding: 12px 0 0;
+  border: 0;
+  border-top: 1px solid var(--erp-divider);
+  border-radius: 0;
+  background: transparent;
+}
+
+.product-detail-drawer .product-detail-grid.kv-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+}
+.product-detail-drawer .product-detail-grid .kv-item {
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid var(--erp-divider);
+  border-radius: 0;
+}
+.product-detail-drawer .product-detail-hint { margin-top: 0; }
+
+/* ---------- 三个高频页共用：页面骨架、表格密度 ---------- */
+.page-breadcrumb {
+  color: var(--erp-muted);
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+
+.orders-page,
+.finance-page,
+.products-page {
+  animation: none;
+}
+
+.orders-heading-copy,
+.finance-heading-copy {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 10px;
+  row-gap: 1px;
+  min-width: 0;
+}
+
+.orders-heading-copy .page-breadcrumb,
+.finance-heading-copy .page-breadcrumb { grid-column: 1 / -1; }
+
+.products-page-head-title {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.orders-page .page-title,
+.finance-page .page-title,
+.products-page .page-title {
+  grid-column: 1;
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -.015em;
+}
+
+.orders-page .page-subtitle,
+.finance-page .page-subtitle,
+.products-page .page-subtitle {
+  grid-column: 2;
+  overflow: hidden;
+  color: var(--erp-text-2);
+  font-size: 11.5px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orders-page .page-subtitle,
+.finance-page .page-subtitle { align-self: end; }
+
+.orders-page .data-table,
+.finance-page .data-table,
+.products-page .data-table {
+  color: var(--erp-text-2);
+  font-size: 12.5px;
+}
+
+.orders-page .data-table th,
+.finance-page .data-table th,
+.products-page .data-table th {
+  height: 32px;
+  padding: 0 10px;
+  border-bottom-color: var(--erp-border);
+  background: var(--erp-surface-muted);
+  color: var(--erp-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+.orders-page .data-table td,
+.finance-page .data-table td,
+.products-page .data-table td {
+  height: 38px;
+  padding: 0 10px;
+  border-top-color: var(--erp-divider);
+  font-size: 12.5px;
+}
+
+.orders-page .data-table tbody tr:hover,
+.finance-page .data-table tbody tr:hover,
+.products-page .data-table tbody tr:hover {
+  background: var(--erp-surface-muted);
+}
+
+.orders-page .data-table tbody tr:first-child td,
+.finance-page .data-table tbody tr:first-child td,
+.products-page .data-table tbody tr:first-child td {
+  border-top: 0;
+}
+
+.orders-page .badge,
+.finance-page .badge,
+.products-page .badge {
+  height: 20px;
+  padding: 0 7px;
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.orders-page .table-panel,
+.finance-page .table-panel,
+.products-page .table-panel {
+  border-color: var(--erp-border);
+  border-radius: var(--erp-radius-surface);
+  box-shadow: none;
+}
+
+.orders-page .button,
+.finance-page .button,
+.products-page .button {
+  border-radius: var(--erp-radius-control);
+  font-weight: 600;
+}
+
+.orders-page .button-primary,
+.finance-page .button-primary,
+.products-page .button-primary {
+  border-color: #0a5f57;
+  background: #0e7368;
+  box-shadow: none;
+}
+
+.orders-page .button-primary:hover:not(:disabled),
+.finance-page .button-primary:hover:not(:disabled),
+.products-page .button-primary:hover:not(:disabled) {
+  background: #0a5f57;
+  box-shadow: none;
+}
+
+.orders-page .icon-button,
+.finance-page .icon-button,
+.products-page .icon-button {
+  border-radius: var(--radius-ui);
+  color: var(--color-accent);
+}
+
+.orders-page .link-button,
+.finance-page .link-button,
+.products-page .link-button {
+  color: var(--color-accent);
+  font-size: 11.5px;
+}
+
+/* ---------- 订单页 ---------- */
+@media (min-width: 901px) {
+  .orders-page {
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - var(--env-banner-h));
+    gap: 8px;
+    padding: 12px 20px 16px;
+  }
+
+  .orders-page .orders-page-heading {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: flex-end;
+    min-height: 38px;
+    gap: 14px;
+  }
+
+  .orders-page .orders-panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .orders-page .orders-table-toolbar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--erp-divider);
+    flex-wrap: nowrap;
+  }
+
+  .orders-page .orders-table-toolbar > :first-child { margin-right: 0; }
+
+  .orders-page .orders-table-toolbar .search-control {
+    width: 258px;
+    flex: 0 1 258px;
+    min-width: 190px;
+  }
+
+  .orders-page .orders-table-toolbar .search-control input {
+    height: 32px;
+    border-color: var(--erp-border);
+    box-shadow: none;
+  }
+
+  .orders-page .orders-table-toolbar .toolbar-count {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--erp-muted);
+    font-size: 11.5px;
+    white-space: nowrap;
+  }
+
+  .orders-page .orders-create-button {
+    height: 32px;
+    min-height: 32px;
+    margin-left: 0;
+    padding: 0 12px;
+    font-size: 12.5px;
+  }
+
+  .orders-page .orders-bulk-bar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--erp-divider);
+    background: var(--erp-surface-muted);
+  }
+
+  .orders-page .table-scroll {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .orders-page .orders-data-table {
+    min-width: 1180px;
+    table-layout: fixed;
+  }
+
+  .orders-page .orders-data-table .order-check-cell { width: 36px; padding-right: 4px; }
+  .orders-page .orders-data-table .order-no-cell { width: 142px; white-space: nowrap; }
+  .orders-page .orders-data-table .order-customer-cell { width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .orders-page .orders-data-table .order-product-cell { width: auto; overflow: hidden; }
+  .orders-page .orders-data-table .order-box-cell { width: 52px; text-align: right; }
+  .orders-page .orders-data-table .order-amount-cell { width: 104px; text-align: right; }
+  .orders-page .orders-data-table .order-status-cell { width: 118px; }
+  .orders-page .orders-data-table .order-tracking-cell { width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .orders-page .orders-data-table .order-ops-cell { width: 150px; }
+
+  .orders-page .orders-data-table th.is-right,
+  .orders-page .orders-data-table td.is-right { text-align: right; }
+
+  .orders-page .order-product-link {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .orders-page .payment-sub,
+  .orders-page .status-sub {
+    margin-top: 2px;
+    font-size: 10px;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  .orders-page .status-sub.is-printed { color: var(--color-accent); }
+  .orders-page .status-sub.is-pending { color: var(--color-warning); }
+
+  .orders-page .order-ops-cell .row-actions {
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .orders-page .order-ops-cell .icon-button {
+    width: 24px;
+    height: 24px;
+  }
+
+  /* 窄桌面横向滚动时，勾选 + 订单号固定在左、操作固定在右 */
+  .orders-page .orders-data-table th:nth-child(1),
+  .orders-page .orders-data-table td:nth-child(1) {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--erp-surface);
+  }
+
+  .orders-page .orders-data-table th:nth-child(2),
+  .orders-page .orders-data-table td:nth-child(2) {
+    position: sticky;
+    left: 36px;
+    z-index: 1;
+    background: var(--erp-surface);
+  }
+
+  .orders-page .orders-data-table th:nth-child(1),
+  .orders-page .orders-data-table th:nth-child(2) {
+    z-index: 3;
+    background: var(--erp-surface-muted);
+  }
+
+  .orders-page .orders-data-table tr:hover td:nth-child(1),
+  .orders-page .orders-data-table tr:hover td:nth-child(2) {
+    background: var(--erp-surface-muted);
+  }
+
+  .orders-page .orders-data-table th:last-child,
+  .orders-page .orders-data-table td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    background: var(--erp-surface);
+    box-shadow: -1px 0 0 var(--erp-divider);
+  }
+
+  .orders-page .orders-data-table th:last-child {
+    z-index: 3;
+    background: var(--erp-surface-muted);
+  }
+
+  .orders-page .orders-data-table tr:hover td:last-child { background: var(--erp-surface-muted); }
+
+  /* 状态标签：桌面一行，不再是一张张卡 */
+  .orders-page .orders-table-toolbar .status-cards {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    height: 32px;
+    gap: 0;
+  }
+
+  .orders-page .orders-table-toolbar .status-card {
+    position: relative;
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 32px;
+    min-height: 32px;
+    padding: 0 9px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--erp-text-2);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    transform: none;
+  }
+
+  .orders-page .orders-table-toolbar .status-card:hover {
+    background: var(--erp-surface-muted);
+    transform: none;
+    box-shadow: none;
+  }
+
+  .orders-page .orders-table-toolbar .status-card::after { display: none; }
+
+  .orders-page .orders-table-toolbar .status-card.is-active {
+    background: transparent;
+    color: var(--color-accent);
+    font-weight: 600;
+    box-shadow: none;
+  }
+
+  .orders-page .orders-table-toolbar .status-card.is-active::before {
+    position: absolute;
+    right: 8px;
+    bottom: -1px;
+    left: 8px;
+    height: 2px;
+    border-radius: var(--radius-ui) var(--radius-ui) 0 0;
+    background: var(--color-accent);
+    content: "";
+  }
+
+  .orders-page .orders-table-toolbar .status-card-label {
+    overflow: hidden;
+    max-width: none;
+    color: inherit;
+    font-size: 12px;
+    text-overflow: ellipsis;
+  }
+
+  .orders-page .orders-table-toolbar .status-card-count {
+    color: var(--erp-text);
+    font-size: 11px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .orders-page .orders-table-toolbar .status-card.is-active .status-card-count { color: var(--color-accent); }
+  .orders-page .orders-table-toolbar .status-card.is-empty { opacity: .6; }
+  .orders-page .orders-table-toolbar .status-card.is-empty.is-active { opacity: 1; }
+}
+
+/* 901–1199：平板/窄桌面下工具条允许换行，状态标签另起一行，避免横向溢出 */
+@media (min-width: 901px) and (max-width: 1199px) {
+  .orders-page .orders-table-toolbar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    padding: 5px 10px;
+  }
+
+  .orders-page .orders-table-toolbar .search-control { flex: 1 1 220px; }
+
+  .orders-page .orders-table-toolbar .status-cards {
+    order: 4;
+    flex: 1 0 100%;
+    overflow-x: auto;
+  }
+
+  .orders-page .orders-table-toolbar .toolbar-count { margin-left: auto; }
+
+  /* 窄桌面保留「订单号 / 客户 / 日期 / 金额 / 状态 / 操作」，
+     收件人、产品详情、总箱数、物流单号收进详情抽屉，避免关键金额被横向滚动藏掉。 */
+  .orders-page .orders-data-table {
+    min-width: 760px;
+  }
+
+  .orders-page .orders-data-table th:nth-child(5),
+  .orders-page .orders-data-table td:nth-child(5),
+  .orders-page .orders-data-table th:nth-child(6),
+  .orders-page .orders-data-table td:nth-child(6),
+  .orders-page .orders-data-table th:nth-child(7),
+  .orders-page .orders-data-table td:nth-child(7),
+  .orders-page .orders-data-table th:nth-child(10),
+  .orders-page .orders-data-table td:nth-child(10) {
+    display: none;
+  }
+
+  .finance-page .finance-toolbar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 40px;
+    padding: 4px 10px;
+  }
+
+  .finance-page .finance-toolbar .search-control { flex: 1 1 200px; }
+
+  /* 窄桌面财务表只留「订单号 / 客户 / 应收 / 未收 / 付款 / 操作」 */
+  .finance-page .finance-table th:nth-child(3),
+  .finance-page .finance-table td:nth-child(3),
+  .finance-page .finance-table th:nth-child(5),
+  .finance-page .finance-table td:nth-child(5),
+  .finance-page .finance-table th:nth-child(8),
+  .finance-page .finance-table td:nth-child(8),
+  .finance-page .finance-table th:nth-child(9),
+  .finance-page .finance-table td:nth-child(9),
+  .finance-page .finance-table th:nth-child(10),
+  .finance-page .finance-table td:nth-child(10) {
+    display: none;
+  }
+}
+
+/* 订单手机端：一个列表容器 + 紧凑三行 */
+@media (max-width: 900px) {
+  .orders-page .orders-page-heading { display: none; }
+  .orders-page .orders-panel {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .orders-page .orders-table-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 8px;
+    padding: 4px 0 8px;
+    border-bottom: 0;
+  }
+
+  .orders-page .orders-table-toolbar .search-control {
+    grid-column: 1 / -1;
+  }
+
+  .orders-page .orders-table-toolbar .search-control input {
+    height: 38px;
+    border-color: var(--erp-border);
+    box-shadow: none;
+  }
+
+  .orders-page .orders-table-toolbar .status-cards {
+    grid-column: 1 / -1;
+    order: 1;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    height: auto;
+  }
+
+  .orders-page .orders-table-toolbar .status-card {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 0;
+    height: 30px;
+    min-height: 30px;
+    padding: 0 6px;
+    border: 1px solid var(--erp-border);
+    border-radius: 999px;
+    background: var(--erp-surface);
+    color: var(--erp-text-2);
+    font-size: 11px;
+    font-weight: 500;
+    box-shadow: none;
+    transform: none;
+  }
+
+  .orders-page .orders-table-toolbar .status-card::after { display: none; }
+
+  .orders-page .orders-table-toolbar .status-card.is-active {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+    font-weight: 600;
+    box-shadow: none;
+  }
+
+  .orders-page .orders-table-toolbar .status-card.is-active::before { display: none; }
+
+  .orders-page .orders-table-toolbar .status-card-label {
+    overflow: hidden;
+    min-width: 0;
+    color: inherit;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .orders-page .orders-table-toolbar .status-card-count {
+    color: var(--erp-text);
+    font-size: 11px;
+    font-weight: 650;
+  }
+
+  .orders-page .orders-table-toolbar .status-card.is-active .status-card-count { color: var(--color-accent); }
+  .orders-page .orders-table-toolbar .status-card.is-empty { opacity: .6; }
+  .orders-page .orders-table-toolbar .status-card.is-empty.is-active { opacity: 1; }
+
+  .orders-page .orders-table-toolbar .toolbar-count {
+    order: 2;
+    justify-self: start;
+    margin: 0;
+    color: var(--erp-muted);
+    font-size: 11px;
+  }
+
+  .orders-page .orders-create-button {
+    order: 3;
+    justify-self: end;
+    height: 34px;
+    min-height: 34px;
+    margin: 0;
+    padding: 0 11px;
+    font-size: 12.5px;
+  }
+
+  .orders-page .orders-bulk-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 4px 0 6px;
+    border-bottom: 0;
+    background: transparent;
+  }
+
+  .orders-page .orders-card-list {
+    display: grid;
+    gap: 6px;
+    padding: 0;
+  }
+
+  .orders-page .order-card {
+    display: grid;
+    gap: 4px;
+    padding: 10px 12px;
+    border-color: var(--erp-border);
+    border-radius: var(--radius-ui);
+    background: var(--erp-surface);
+    box-shadow: none;
+  }
+
+  .orders-page .order-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .orders-page .order-card-title {
+    display: grid;
+    flex: 1;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .orders-page .order-card-title strong {
+    overflow: hidden;
+    color: var(--erp-text);
+    font-size: 13px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .orders-page .order-card-title span {
+    overflow: hidden;
+    color: var(--erp-muted);
+    font-size: 10.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .orders-page .order-card .status-action-pill {
+    height: 26px;
+    min-height: 26px;
+    flex: none;
+    padding: 0 8px;
+    font-size: 10.5px;
+  }
+
+  .orders-page .order-card .status-action-pill-current,
+  .orders-page .order-card .status-action-pill-next { font-size: 10.5px; }
+
+  .orders-page .order-card-mid {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .orders-page .order-card-products {
+    flex: 1;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--erp-text-2);
+    font-size: 11px;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .orders-page .order-card-amount {
+    flex: none;
+    color: var(--erp-text);
+    font-size: 13px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .orders-page .order-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 8px;
+    color: var(--erp-muted);
+    font-size: 10.5px;
+    line-height: 1.3;
+  }
+
+  .orders-page .order-card .row-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 2px;
+    padding-top: 5px;
+    border-top: 1px solid var(--erp-divider);
+  }
+
+  .orders-page .order-card .row-actions .link-button,
+  .orders-page .order-card .row-actions .icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 0 2px;
+    font-size: 12px;
+  }
+
+  .orders-page .order-card .row-actions .icon-button { min-width: 28px; }
+}
+
+/* ---------- 财务页 ---------- */
+@media (min-width: 901px) {
+  .finance-page {
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - var(--env-banner-h));
+    gap: 8px;
+    padding: 12px 20px 16px;
+  }
+
+  .finance-page .finance-page-head {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: flex-end;
+    min-height: 38px;
+  }
+
+  .finance-page .finance-panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* 指标带：主面板顶部一条，不再是 5 张卡 */
+  .finance-page .finance-stat-grid {
+    display: grid;
+    flex: 0 0 auto;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0;
+    padding: 0;
+    border-bottom: 1px solid var(--erp-divider);
+    background: var(--erp-surface);
+  }
+
+  .finance-page .finance-stat-grid > div,
+  .finance-page .finance-stat-grid > button {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    height: 52px;
+    padding: 0 16px;
+    border: 0;
+    border-right: 1px solid var(--erp-divider);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    text-align: left;
+    transform: none;
+  }
+
+  .finance-page .finance-stat-grid > :last-child { border-right: 0; }
+
+  .finance-page .finance-stat-grid > div,
+  .finance-page .finance-stat-grid > button,
+  .finance-page .finance-stat-grid > :nth-child(-n + 3),
+  .finance-page .finance-stat-grid > :nth-child(n + 4) {
+    grid-column: auto;
+  }
+
+  .finance-page .finance-stat-grid > button:hover {
+    border-color: transparent;
+    background: var(--erp-surface-muted);
+    transform: none;
+  }
+
+  .finance-page .finance-stat-grid span {
+    color: var(--erp-muted);
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+
+  .finance-page .finance-stat-grid strong {
+    color: var(--erp-text);
+    font-size: 19px;
+    font-weight: 650;
+    letter-spacing: -.01em;
+    line-height: 1.15;
+    white-space: nowrap;
+  }
+
+  .finance-page .finance-stat-grid small {
+    color: var(--erp-muted);
+    font-size: 10.5px;
+  }
+
+  .finance-page .finance-toolbar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    min-height: 40px;
+    padding: 4px 10px;
+    border-bottom: 1px solid var(--erp-divider);
+    flex-wrap: nowrap;
+  }
+
+  .finance-page .finance-toolbar .search-control {
+    width: 236px;
+    flex: 0 1 236px;
+    min-width: 170px;
+  }
+
+  .finance-page .finance-toolbar .search-control input,
+  .finance-page .finance-toolbar .toolbar-select,
+  .finance-page .finance-toolbar .month-input {
+    height: 30px;
+    border-color: var(--erp-border);
+    box-shadow: none;
+    font-size: 12px;
+  }
+
+  .finance-page .finance-toolbar .icon-button { width: 28px; height: 28px; }
+
+  .finance-page .table-scroll {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .finance-page .finance-table {
+    min-width: 1080px;
+  }
+
+  .finance-page .finance-table th.is-right,
+  .finance-page .finance-table td.is-right { text-align: right; }
+
+  /* 财务列多：窄桌面横向滚动时订单号固定左、操作固定右 */
+  .finance-page .finance-table th:nth-child(1),
+  .finance-page .finance-table td:nth-child(1) {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--erp-surface);
+  }
+
+  .finance-page .finance-table th:nth-child(1) {
+    z-index: 3;
+    background: var(--erp-surface-muted);
+  }
+
+  .finance-page .finance-table tr:hover td:nth-child(1) { background: var(--erp-surface-muted); }
+
+  .finance-page .finance-table th:last-child,
+  .finance-page .finance-table td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    background: var(--erp-surface);
+    box-shadow: -1px 0 0 var(--erp-divider);
+  }
+
+  .finance-page .finance-table th:last-child {
+    z-index: 3;
+    background: var(--erp-surface-muted);
+  }
+
+  .finance-page .finance-table tr:hover td:last-child { background: var(--erp-surface-muted); }
+
+  .finance-page .finance-ops-cell .button {
+    height: 26px;
+    min-height: 26px;
+    padding: 0 6px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 900px) {
+  .finance-page .finance-page-head { display: none; }
+
+  .finance-page .finance-panel {
+    display: flex;
+    flex-direction: column;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .finance-page .finance-toolbar { order: 0; }
+
+  .finance-page .finance-stat-grid {
+    order: 1;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 4px;
+    padding: 0 0 4px;
+    border: 0;
+    background: transparent;
+  }
+
+  .finance-page .finance-stat-grid > div,
+  .finance-page .finance-stat-grid > button {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    height: 40px;
+    min-height: 40px;
+    padding: 4px 9px;
+    border: 1px solid var(--erp-border);
+    border-radius: var(--radius-ui);
+    background: var(--erp-surface);
+    box-shadow: none;
+    text-align: left;
+    transform: none;
+  }
+
+  .finance-page .finance-stat-grid > :nth-child(-n + 3) { grid-column: span 2; }
+  .finance-page .finance-stat-grid > :nth-child(n + 4) { grid-column: span 3; }
+
+  .finance-page .finance-stat-grid span {
+    color: var(--erp-muted);
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+
+  .finance-page .finance-stat-grid strong {
+    color: var(--erp-text);
+    font-size: 15px;
+    font-weight: 650;
+    line-height: 1.15;
+    white-space: nowrap;
+  }
+
+  .finance-page .finance-stat-grid > :nth-child(n + 4) strong {
+    font-size: 16px;
+  }
+
+  .finance-page .finance-stat-grid small {
+    color: var(--erp-muted);
+    font-size: 10px;
+  }
+
+  .finance-page .finance-stat-grid > button:hover {
+    border-color: var(--erp-border);
+    background: var(--erp-surface);
+  }
+
+  .finance-page .table-scroll {
+    order: 2;
+    max-height: none;
+  }
+
+  .finance-page .finance-card-list {
+    order: 3;
+    display: grid;
+    gap: 6px;
+    padding: 0;
+  }
+
+  .finance-page .finance-card {
+    display: grid;
+    gap: 4px;
+    padding: 10px 12px;
+    border-color: var(--erp-border);
+    border-radius: var(--radius-ui);
+    background: var(--erp-surface);
+    box-shadow: none;
+  }
+
+  .finance-page .finance-card .order-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .finance-page .finance-card .order-card-title {
+    display: grid;
+    flex: 1;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .finance-page .finance-card .order-card-title strong {
+    overflow: hidden;
+    color: var(--erp-text);
+    font-size: 13px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .finance-page .finance-card .order-card-title span {
+    overflow: hidden;
+    color: var(--erp-muted);
+    font-size: 10.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .finance-page .finance-card .badge { flex: none; }
+
+  .finance-page .finance-card-amounts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .finance-page .finance-card-amounts > div {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .finance-page .finance-card-amounts span {
+    color: var(--erp-muted);
+    font-size: 10.5px;
+  }
+
+  .finance-page .finance-card-amounts strong {
+    overflow: hidden;
+    color: var(--erp-text);
+    font-size: 12.5px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .finance-page .finance-card .order-card-meta {
+    color: var(--erp-muted);
+    font-size: 10.5px;
+    line-height: 1.3;
+  }
+
+  .finance-page .finance-card .row-actions {
+    margin-top: 2px;
+    padding-top: 5px;
+    border-top: 1px solid var(--erp-divider);
+  }
+
+  .finance-page .finance-card .row-actions .button {
+    height: 28px;
+    min-height: 28px;
+    padding: 0 2px;
+    font-size: 12px;
+  }
+}
+
+/* ---------- 产品库 ---------- */
+@media (min-width: 901px) {
+  .products-page {
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - var(--env-banner-h));
+    gap: 8px;
+    padding: 12px 20px 16px;
+  }
+
+  .products-page .products-page-head {
+    display: grid;
+    flex: 0 0 auto;
+    align-content: end;
+    gap: 1px;
+    min-height: 38px;
+  }
+
+  .products-page .products-page-head-title {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  .products-page .page-toolbar {
+    flex: 0 0 auto;
+    min-height: 40px;
+    gap: 8px;
+  }
+
+  .products-page .page-toolbar .search-control input {
+    height: 32px;
+    border-color: var(--erp-border);
+    box-shadow: none;
+  }
+
+  .products-page .page-toolbar .toolbar-select {
+    height: 32px;
+    border-color: var(--erp-border);
+    box-shadow: none;
+  }
+
+  .products-page .products-panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .products-page .products-panel.is-gallery {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .products-page .products-gallery {
+    display: grid;
+    flex: 1;
+    grid-template-columns: repeat(auto-fill, minmax(172px, 1fr));
+    align-content: start;
+    gap: 12px;
+    padding: 0;
+    overflow: auto;
+  }
+
+  .products-page .product-gallery-card {
+    position: relative;
+    display: grid;
+    gap: 4px;
+    padding: 8px;
+    border-color: var(--erp-border);
+    border-radius: var(--radius-ui);
+    background: var(--erp-surface);
+    box-shadow: none;
+  }
+
+  .products-page .product-gallery-card:hover {
+    border-color: var(--color-accent-border);
+    box-shadow: none;
+  }
+
+  .products-page .product-gallery-image {
+    aspect-ratio: 1 / 1;
+    border-radius: var(--radius-ui);
+    background: var(--erp-surface-muted);
+  }
+
+  .products-page .product-gallery-open { gap: 3px; }
+
+  .products-page .product-gallery-name {
+    display: block;
+    overflow: hidden;
+    color: var(--erp-text);
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .products-page .product-gallery-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: 11px;
+  }
+
+  .products-page .product-gallery-sku {
+    overflow: hidden;
+    color: var(--erp-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .products-page .product-gallery-price {
+    margin-left: auto;
+    color: var(--erp-text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .products-page .product-gallery-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-top: 1px;
+    padding-top: 3px;
+    border-top: 1px solid var(--erp-divider);
+  }
+
+  .products-page .product-gallery-actions .icon-button {
+    width: 24px;
+    height: 24px;
+  }
+
+  .products-page .products-pagination {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 6px 10px;
+    border-top-color: var(--erp-divider);
+    background: var(--erp-surface);
+    font-size: 11.5px;
+  }
+
+  .products-page .products-panel.is-gallery .products-pagination {
+    padding-right: 0;
+    padding-left: 0;
+    background: transparent;
+  }
+
+  .products-page .products-data-table {
+    min-width: 1260px;
+    table-layout: fixed;
+  }
+
+  .products-page .products-data-table th,
+  .products-page .products-data-table td {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .products-page .products-data-table td {
+    height: 56px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .products-page .products-data-table th:nth-child(1),
+  .products-page .products-data-table td:nth-child(1) { width: 100px; }
+  .products-page .products-data-table th:nth-child(2),
+  .products-page .products-data-table td:nth-child(2) { width: 90px; }
+  .products-page .products-data-table th:nth-child(3),
+  .products-page .products-data-table td:nth-child(3) { width: 190px; }
+  .products-page .products-data-table th:nth-child(4),
+  .products-page .products-data-table td:nth-child(4) { width: 84px; white-space: normal; line-height: 1.25; }
+  .products-page .products-data-table th:nth-child(5),
+  .products-page .products-data-table td:nth-child(5) { width: 72px; white-space: normal; line-height: 1.25; }
+  .products-page .products-data-table th:nth-child(6),
+  .products-page .products-data-table td:nth-child(6) { width: 66px; }
+  .products-page .products-data-table th:nth-child(7),
+  .products-page .products-data-table td:nth-child(7) { width: 260px; white-space: normal; }
+  .products-page .products-data-table th:nth-child(8),
+  .products-page .products-data-table td:nth-child(8) { width: 90px; }
+  .products-page .products-data-table th:nth-child(9),
+  .products-page .products-data-table td:nth-child(9) { width: 140px; }
+  .products-page .products-data-table th:nth-child(10),
+  .products-page .products-data-table td:nth-child(10) { width: 80px; }
+  .products-page .products-data-table th:nth-child(11),
+  .products-page .products-data-table td:nth-child(11) { width: 100px; }
+
+  .products-page .products-data-table th:first-child,
+  .products-page .products-data-table td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--erp-surface);
+  }
+
+  .products-page .products-data-table th:first-child {
+    z-index: 3;
+    background: var(--erp-surface-muted);
+  }
+
+  .products-page .products-data-table tr:hover td:first-child { background: var(--erp-surface-muted); }
+
+  .products-page .products-data-table th:last-child,
+  .products-page .products-data-table td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    background: var(--erp-surface);
+    box-shadow: -1px 0 0 var(--erp-divider);
+  }
+
+  .products-page .products-data-table th:last-child {
+    z-index: 3;
+    background: var(--erp-surface-muted);
+  }
+
+  .products-page .products-data-table tr:hover td:last-child { background: var(--erp-surface-muted); }
+
+  .products-page .product-image-thumb {
+    width: 40px;
+    height: 40px;
+  }
+
+  .products-page .product-name-cell { max-width: 190px; }
+
+  .products-page .product-packaging-line {
+    gap: 1px;
+    line-height: 1.3;
+  }
+}
+
+@media (max-width: 900px) {
+  .products-page .products-page-head { display: none; }
+
+  .products-page .products-panel.is-gallery {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .products-page .products-gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 0;
+  }
+
+  .products-page .product-gallery-card {
+    display: grid;
+    gap: 3px;
+    padding: 7px;
+    border-color: var(--erp-border);
+    border-radius: var(--radius-ui);
+    background: var(--erp-surface);
+    box-shadow: none;
+  }
+
+  .products-page .product-gallery-image {
+    aspect-ratio: 1 / 1;
+    border-radius: var(--radius-ui);
+    background: var(--erp-surface-muted);
+  }
+
+  .products-page .product-gallery-name {
+    display: block;
+    overflow: hidden;
+    color: var(--erp-text);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .products-page .product-gallery-meta {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    font-size: 10.5px;
+  }
+
+  .products-page .product-gallery-sku {
+    overflow: hidden;
+    color: var(--erp-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .products-page .product-gallery-price {
+    margin-left: auto;
+    color: var(--erp-text);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .products-page .product-gallery-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding-top: 2px;
+    border-top: 1px solid var(--erp-divider);
+  }
+
+  .products-page .product-gallery-actions .icon-button {
+    width: 30px;
+    height: 30px;
+  }
+
+  .products-page .products-pagination {
+    min-height: 44px;
+    padding: 6px 0;
+    border-top-color: var(--erp-divider);
+    background: transparent;
+  }
+
+  .products-page .products-card-list { gap: 6px; padding: 0; }
+
+  .products-page .product-card {
+    gap: 6px;
+    padding: 8px 10px;
+    border-color: var(--erp-border);
+    border-radius: var(--radius-ui);
+    box-shadow: none;
+  }
+
+  .products-page .product-card-title strong { font-size: 13px; }
+  .products-page .product-card-field strong { font-size: 12.5px; }
+  .products-page .product-card .row-actions {
+    gap: 8px;
+    padding-top: 5px;
+  }
+  .products-page .product-card .row-actions .link-button,
+  .products-page .product-card .row-actions .icon-button {
+    min-height: 30px;
+    padding: 0 2px;
+    font-size: 12px;
+  }
+  .products-page .product-card .row-actions .icon-button { min-width: 30px; }
+}
+
+/* 1200–1419 常见笔记本：隐藏次要列，保证金额/状态/操作不被横向滚动藏掉 */
+@media (min-width: 1200px) and (max-width: 1419px) {
+  .orders-page .orders-data-table { min-width: 960px; }
+
+  .orders-page .orders-data-table th:nth-child(5),
+  .orders-page .orders-data-table td:nth-child(5),
+  .orders-page .orders-data-table th:nth-child(7),
+  .orders-page .orders-data-table td:nth-child(7),
+  .orders-page .orders-data-table th:nth-child(10),
+  .orders-page .orders-data-table td:nth-child(10) {
+    display: none;
+  }
+
+  .finance-page .finance-table { min-width: 940px; }
+
+  .finance-page .finance-table th:nth-child(5),
+  .finance-page .finance-table td:nth-child(5),
+  .finance-page .finance-table th:nth-child(8),
+  .finance-page .finance-table td:nth-child(8),
+  .finance-page .finance-table th:nth-child(9),
+  .finance-page .finance-table td:nth-child(9),
+  .finance-page .finance-table th:nth-child(10),
+  .finance-page .finance-table td:nth-child(10) {
+    display: none;
+  }
+
+  /* 产品库工具条按钮多，1200–1419 也允许换行 */
+  .products-page .page-toolbar {
+    flex-wrap: wrap;
+    min-height: 40px;
+  }
+
+  .products-page .page-toolbar .search-control { flex: 1 1 240px; }
+}
+
+/* 901–1199 的补充：财务与产品库工具条允许换行，避免窄桌面横向溢出 */
+@media (min-width: 901px) and (max-width: 1199px) {
+  .finance-page .finance-toolbar {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 40px;
+    padding: 4px 10px;
+  }
+
+  .finance-page .finance-toolbar .search-control { flex: 1 1 200px; }
+  .finance-page .finance-table { min-width: 760px; }
+
+  .products-page .page-toolbar {
+    flex-wrap: wrap;
+    min-height: 40px;
+  }
+
+  .products-page .page-toolbar .search-control { flex: 1 1 220px; }
+}
+
+/* 深色模式：改版页统一的表面色 */
+@media (prefers-color-scheme: dark) {
+  .orders-page .orders-panel,
+  .finance-page .finance-panel,
+  .products-page .products-panel,
+  .orders-page .order-card,
+  .finance-page .finance-card,
+  .products-page .product-gallery-card,
+  .products-page .product-card {
+    background: var(--erp-surface);
+  }
+}

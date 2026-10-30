@@ -293,11 +293,11 @@ function LinkSystemProductModal({ target, systemProducts, onClose, onLinked, onN
       <div style={{ color: '#475569', fontSize: 12 }}>订单明细：<strong>{target.displayName}</strong>{target.quantity ? `*${target.quantity}` : ''}</div>
       <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>搜索系统产品
         <span style={{ position: 'relative', display: 'block' }}>
-          <input value={query} onChange={(event) => { setQuery(event.target.value); setSelectedId(null); }} placeholder="输入品名、规格、SKU或供应商搜索" style={{ width: '100%', border: '1px solid #dbe3ea', borderRadius: 5, padding: query ? '8px 28px 8px 9px' : '8px 9px', font: 'inherit', fontSize: 12 }} />
+          <input value={query} onChange={(event) => { setQuery(event.target.value); setSelectedId(null); }} placeholder="输入品名、规格、SKU或供应商搜索" style={{ width: '100%', border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)', padding: query ? '8px 28px 8px 9px' : '8px 9px', font: 'inherit', fontSize: 12 }} />
           {!!query && <button type="button" aria-label="清空搜索" title="清空" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(''); setSelectedId(null); }} style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, border: 0, borderRadius: '50%', padding: 0, color: '#94a3b8', background: 'transparent', cursor: 'pointer' }}><X size={13} /></button>}
         </span>
       </label>
-      <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 6 }}>
+      <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 'var(--radius-ui)' }}>
         {filtered.map((item) => <button
           key={item.id}
           type="button"
@@ -313,7 +313,7 @@ function LinkSystemProductModal({ target, systemProducts, onClose, onLinked, onN
         {!filtered.length && <div style={{ padding: 12, color: '#94a3b8', textAlign: 'center', fontSize: 12 }}>没有匹配的系统产品</div>}
       </div>
       <label style={{ display: 'grid', gap: 5, color: '#64748b', fontSize: 12 }}>供应商产品名称
-        <input value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder="报给供应商的名称，留空则按系统产品名报供" style={{ width: '100%', border: '1px solid #dbe3ea', borderRadius: 5, padding: '8px 9px', font: 'inherit', fontSize: 12 }} />
+        <input value={supplierName} onChange={(event) => setSupplierName(event.target.value)} placeholder="报给供应商的名称，留空则按系统产品名报供" style={{ width: '100%', border: '1px solid #dbe3ea', borderRadius: 'var(--radius-ui)', padding: '8px 9px', font: 'inherit', fontSize: 12 }} />
       </label>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
         <button className="button button-secondary" type="button" disabled={busy} onClick={onClose}>取消</button>

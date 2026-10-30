@@ -27,7 +27,7 @@ export default function OrderItemsTable({ order }: OrderItemsTableProps) {
   }, [order.id]);
 
   return (
-    <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(56vh, 480px)', border: '1px solid var(--tone-border-soft)', borderRadius: 6 }}>
+    <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(56vh, 480px)', border: '1px solid var(--tone-border-soft)', borderRadius: 'var(--radius-ui)' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 760 }}>
         <thead><tr style={{ background: 'var(--tone-surface-frost)', textAlign: 'left', color: 'var(--tone-text-soft)' }}>{['品名', 'SKU', '规格', '数量', '装箱数', '箱数', '单价', '金额', '运费/箱', '运费小计', '备注'].map((title) => <th key={title} style={{ padding: '8px 9px', fontWeight: 600 }}>{title}</th>)}</tr></thead>
         <tbody>
@@ -37,7 +37,7 @@ export default function OrderItemsTable({ order }: OrderItemsTableProps) {
             const packaging = item.packaging ?? [];
             const images = itemImages[Number(item.id)] ?? [];
             return <Fragment key={item.id}><tr style={{ borderTop: '1px solid #edf0f2', verticalAlign: 'top' }}>
-              <td style={{ padding: '8px 9px', minWidth: 120 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{images.length ? <a href={images[0]!.url} target="_blank" rel="noreferrer" title="查看原图"><img src={thumbUrl(images[0]!.url, 240)} alt={images[0]!.name} loading="lazy" decoding="async" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 4, cursor: 'pointer', border: '1px solid var(--tone-border-soft)', flexShrink: 0 }} /></a> : null}<span>{item.name}</span></div></td>
+              <td style={{ padding: '8px 9px', minWidth: 120 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{images.length ? <a href={images[0]!.url} target="_blank" rel="noreferrer" title="查看原图"><img src={thumbUrl(images[0]!.url, 240)} alt={images[0]!.name} loading="lazy" decoding="async" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 'var(--radius-ui)', cursor: 'pointer', border: '1px solid var(--tone-border-soft)', flexShrink: 0 }} /></a> : null}<span>{item.name}</span></div></td>
               <td style={{ padding: '8px 9px' }}>{item.sku}</td>
               <td style={{ padding: '8px 9px' }}>{item.specification}</td>
               <td style={{ padding: '8px 9px' }}>{item.quantity}</td>

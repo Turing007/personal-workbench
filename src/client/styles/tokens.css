@@ -70,10 +70,11 @@
   --sidebar-text-muted: #97a5b4;
   --sidebar-accent: #2dd4bf;
 
-  /* 圆角：稍大一号，更现代 */
-  --radius-control: 10px;
-  --radius-card: 16px;
-  --radius-modal: 20px;
+  /* 圆角：全站统一 8px；胶囊与圆形元素单独保留 */
+  --radius-ui: 8px;
+  --radius-control: var(--radius-ui);
+  --radius-card: var(--radius-ui);
+  --radius-modal: var(--radius-ui);
   --radius-pill: 999px;
 
   /* 阴影：多层精工（贴地 + 漫射双层） */
