@@ -384,22 +384,27 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
     </div>;
   }
 
-  return <div className="page-shell catalog-page" style={{ gap: 12, minHeight: '100%' }}>
-    <div className="page-toolbar">
-      <strong className="page-title">产品图册</strong>
-      <span className="page-subtitle" style={{ flex: 1 }}>{tab === 'mine' ? '选好产品生成一条网址发给客户；改内容不用换链接' : '按供应商归档供应商发来的 PDF / 图片，只给自己看'}</span>
-      {tab === 'mine'
-        ? <button className="button button-primary" type="button" disabled={busy} onClick={() => void openEditor()}><Plus size={15} />新建图册</button>
-        : <button className="button button-primary" type="button" onClick={() => setSupplierEditor(null)}><Upload size={15} />上传供应商图册</button>}
+  return <div className="page-shell catalog-page">
+    <div className="catalog-page-head">
+      <div className="catalog-heading-copy">
+        <span className="page-breadcrumb">资料 / 产品图册</span>
+        <strong className="page-title">产品图册</strong>
+        <span className="page-subtitle">{tab === 'mine' ? '选好产品生成一条网址发给客户；改内容不用换链接' : '按供应商归档供应商发来的 PDF / 图片，只给自己看'}</span>
+      </div>
+      <div className="catalog-head-actions">
+        {tab === 'mine'
+          ? <button className="button button-primary" type="button" disabled={busy} onClick={() => void openEditor()}><Plus size={15} />新建图册</button>
+          : <button className="button button-primary" type="button" onClick={() => setSupplierEditor(null)}><Upload size={15} />上传供应商图册</button>}
+      </div>
     </div>
     <div className="catalog-tabs" role="tablist" aria-label="图册类型">
       <button className={`catalog-tab${tab === 'mine' ? ' is-active' : ''}`} type="button" role="tab" aria-selected={tab === 'mine'} onClick={() => setTab('mine')}>我的图册 <span>{catalogs?.length ?? 0}</span></button>
       <button className={`catalog-tab${tab === 'supplier' ? ' is-active' : ''}`} type="button" role="tab" aria-selected={tab === 'supplier'} onClick={() => setTab('supplier')}>供应商图册 <span>{supplierCatalogs?.length ?? '—'}</span></button>
     </div>
-    {tab === 'mine' ? <section className="table-panel" style={{ padding: 12, display: 'grid', gap: 10 }}>
+    {tab === 'mine' ? <section className="table-panel catalog-list-panel">
       {catalogs === null && <div className="table-state">正在加载图册…</div>}
       {catalogs?.length === 0 && <div className="table-state">还没有图册：点右上角「新建图册」，选好产品就能生成一条链接。</div>}
-      {catalogs?.map((catalog) => <article key={catalog.id} style={{ border: '1px solid var(--tone-border-soft)', borderRadius: 'var(--radius-ui)', padding: 12, display: 'grid', gap: 8 }}>
+      {catalogs?.map((catalog) => <article key={catalog.id} className="catalog-list-row">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <strong style={{ fontSize: 14 }}>{catalog.name}</strong>
           <span className={catalog.enabled ? 'badge badge-success' : 'badge badge-neutral'}>{catalog.enabled ? '在用' : '已停用'}</span>

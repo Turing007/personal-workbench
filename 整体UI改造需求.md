@@ -1,6 +1,6 @@
 # 整体 UI 改造需求 — 从「卡片堆叠」到「ERP 工作台」
 
-> 状态：**v1.2（B 方案；阶段 1 已上线，阶段 2 已实施待验收）**
+> 状态：**v1.3（B 方案；阶段 1/2 已上线，阶段 3 已实施待验收）**
 > 日期：2026-10-30
 > 范围：桌面端 + 手机端 + 全部 10 个模块 + 页面外壳 + 弹窗/抽屉/表格
 > 约束：**只改界面与样式，不改业务流程、字段、接口和数据库；所有现有操作必须保留。**
@@ -153,6 +153,26 @@
 | 平板 1024 | 页面无横向溢出；客户表保留状态/品名/客户 SKU/最终价格/操作 |
 
 说明：阶段 2 只改备货、发货、客户产品库及其移动端；报价/销售单/设置仍在阶段 3。备货组仍保留 `.stock-group` 钩子，发货仍保留 `.shipping-available-order` / 跟踪单号输入，客户产品仍保留成本价显隐，原有功能不变。相关 e2e 10 项通过。
+
+
+### 阶段 3 实施记录（本地已实施，待验收）
+
+- [报价单 · 桌面](docs/ui-redesign/phase3-quotations-desktop.png)
+- [销售单 · 桌面](docs/ui-redesign/phase3-sales-desktop.png)
+- [产品图册 · 桌面](docs/ui-redesign/phase3-catalog-desktop.png)
+- [供应商图册 · 桌面](docs/ui-redesign/phase3-catalog-supplier-desktop.png)
+- [设置 · 桌面](docs/ui-redesign/phase3-settings-desktop.png)
+- [报价单 · 手机](docs/ui-redesign/phase3-quotations-mobile.png)
+- [销售单 · 手机](docs/ui-redesign/phase3-sales-mobile.png)
+- [产品图册 · 手机](docs/ui-redesign/phase3-catalog-mobile.png)
+- [设置 · 手机](docs/ui-redesign/phase3-settings-mobile.png)
+
+说明：阶段 3 完成报价单、销售单、产品图册、设置四个模块：
+
+- 报价/销售：页头统一（面包屑 + 标题 + 说明），列表行高 38px，表头吸顶，金额右对齐；手机卡片压缩到 160–180px，状态选择收窄，操作按钮保持可见。
+- 产品图册：我的图册改为扁平行（名称/状态/产品数/毛利率/链接/打开次数 + 操作），供应商图册保持两列文件卡（长文件名截断，按钮不出卡）；选品编辑沿用一张工作面。
+- 设置：左侧导航改为无卡片导航栏（200px），右侧一整张内容面，每个分区用标题 + 分隔线，不再一张分区一张卡；手机菜单为胶囊一行行铺开，页面无横向滚动。
+- 相关 e2e 24 项通过（报价、销售、图册、供应商图册、设置预设、颜色插脚、手机布局）。
 
 ---
 

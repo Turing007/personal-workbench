@@ -199,6 +199,13 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
   };
 
   return <div className="page-shell quotation-page">
+    <div className="quotation-page-head">
+      <div className="quotation-heading-copy">
+        <span className="page-breadcrumb">交易 / 报价单</span>
+        <strong className="page-title">报价单</strong>
+        <span className="page-subtitle">选品报价、发送客户，成交后转销售单</span>
+      </div>
+    </div>
     <div className="page-toolbar quotation-toolbar">
       <SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索单号、客户、联系人、电话" />
       <div className="segmented">{statusOptions.map((option) => <button key={option.value} className={`segmented-item${filter === option.value ? ' is-active' : ''}`} type="button" title={`筛选${option.label}报价单`} onClick={() => setFilter(option.value)}>{option.label}</button>)}</div>
@@ -207,8 +214,8 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
       <button className="button button-primary" type="button" title="新建报价单" onClick={() => { void openNew(); }}><Plus size={15} />新建报价</button>
     </div>
 
-    <section className="table-panel">
-      <div className="table-scroll quotation-table-desktop"><table className="data-table" style={{ minWidth: 900 }}><thead><tr>{['报价单号', '日期', '客户', '产品数', '状态', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
+    <section className="table-panel quotation-panel">
+      <div className="table-scroll quotation-table-desktop"><table className="data-table quotation-data-table"><thead><tr>{['报价单号', '日期', '客户', '产品数', '状态', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
         <tbody>{visibleRows.map((row) => <tr key={row.id}>
           <td className="strong-cell" style={{ color: '#0f766e' }}>{row.number}</td>
           <td>{row.quotationDate}</td>

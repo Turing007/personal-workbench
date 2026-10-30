@@ -196,6 +196,13 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
   };
 
   return <div className="page-shell sales-documents-page">
+    <div className="sales-page-head">
+      <div className="sales-heading-copy">
+        <span className="page-breadcrumb">交易 / 销售单</span>
+        <strong className="page-title">销售单</strong>
+        <span className="page-subtitle">销售开单、收款跟踪，并可直接生成订单</span>
+      </div>
+    </div>
     <div className="page-toolbar sales-docs-toolbar">
       <SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索销售单号、客户、采购单号" />
       <div className="sales-doc-status-row">
@@ -211,8 +218,8 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
       <button className="button button-primary" type="button" title="独立新建销售单" onClick={openNew}><Plus size={15} />新建销售单</button>
     </div>
 
-    <section className="table-panel">
-      <div className="table-scroll sales-doc-table-desktop"><table className="data-table" style={{ minWidth: 1160 }}>
+    <section className="table-panel sales-panel">
+      <div className="table-scroll sales-doc-table-desktop"><table className="data-table sales-data-table">
         <thead><tr>{['销售单号', '日期', '客户', '采购单号', '含税合计', '已收', '未付', '单据状态', '付款状态', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
         <tbody>{visibleRows.map((row) => {
           const receivedCents = Math.max(0, row.totalCents - row.outstandingCents);

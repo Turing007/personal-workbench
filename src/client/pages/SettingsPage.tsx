@@ -311,9 +311,16 @@ export default function SettingsPage({
     showTemplateMessage('已恢复默认模板，确认无误后请点击保存', 'success');
   };
 
-  return <div className="page-shell">
+  return <div className="page-shell settings-page">
+    <div className="settings-page-head">
+      <div className="settings-heading-copy">
+        <span className="page-breadcrumb">系统 / 设置</span>
+        <strong className="page-title">设置</strong>
+        <span className="page-subtitle">公司资料、单据模板、产品预设与数据备份</span>
+      </div>
+    </div>
     <section className="settings-layout">
-      <nav className="settings-menu card" aria-label="设置分类导航">
+      <nav className="settings-menu" aria-label="设置分类导航">
         {menuGroups.map((group) => (
           <div key={group.label} className="settings-menu-group">
             <div className="settings-menu-group-title">{group.label}</div>
