@@ -127,49 +127,60 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
   };
 
   return <div className="page-shell stock-page">
-    <div className="page-toolbar stock-toolbar">
-      <div className="month-control" role="group" aria-label="备货范围">
-        <input
-          type="date"
-          className="toolbar-select"
-          aria-label="按下单日期筛选"
-          value={scope === 'date' ? date : ''}
-          disabled={scope === 'all'}
-          onChange={(event) => setDate(event.target.value || todayISO())}
-        />
-        <button className="button button-secondary month-scope-button" type="button" title={scope === 'date' ? '切换为全部待备货' : '回到按日期'} onClick={() => setScope((value) => (value === 'date' ? 'all' : 'date'))}>
-          {scope === 'date' ? <X size={14} /> : <CalendarDays size={14} />}
-          {scope === 'date' ? '全部' : '按日期'}
-        </button>
-      </div>
-      <button className="icon-button" type="button" title="刷新备货表" disabled={loading} onClick={() => void load()}><RefreshCw size={15} /></button>
-      <div className="stock-action-row">
-        <button className="button button-secondary" type="button" disabled={loading || !groups.length} onClick={() => void exportExcel()}><Download size={14} />导出 Excel</button>
-        <button className="button button-secondary" type="button" disabled={!groups.length || !preparation} onClick={() => { if (preparation) void copyStockText(buildCopyText(preparation, groups)); }}><Copy size={14} />复制全部</button>
-        <button className="button button-primary" type="button" disabled={marking || !orderIds.length} onClick={() => setConfirmMarkOpen(true)}><PackageOpen size={14} />标记已备货</button>
+    <div className="stock-page-head">
+      <div className="stock-heading-copy">
+        <span className="page-breadcrumb">履约 / 备货</span>
+        <strong className="page-title">备货工作台</strong>
+        <span className="page-subtitle">按供应商生成备货表，补齐关联后标记已备货</span>
       </div>
     </div>
-    <div className="stock-stat-grid">
-      <div><span>待备货订单</span><strong>{preparation?.orderCount ?? 0}<small> 单</small></strong></div>
-      <div><span>供应商</span><strong>{preparation?.supplierCount ?? 0}<small> 家</small></strong></div>
-      <div><span>产品项</span><strong>{preparation?.itemCount ?? 0}<small> 项</small></strong></div>
-      <div><span>合计数量</span><strong>{preparation?.totalQuantity ?? 0}</strong></div>
-    </div>
-    {warningGroups.length > 0 && <div className="stock-warning-bar" role="status">
-      <TriangleAlert size={15} />
-      <span>{warningGroups.map((group) => `${group.title} ${group.items.length} 项`).join('、')}：未关联或未填供应商的产品不会发给对应供应商，请先补全再报备。</span>
-    </div>}
-    {loading && <div className="table-state">正在生成备货表...</div>}
-    {!loading && !groups.length && <section className="table-panel"><div className="table-state">当前范围没有待备货订单。订单发布后会自动出现在这里。</div></section>}
-    {!loading && groups.map((group) => <StockGroupCard
-      key={`${group.kind}:${group.title}`}
-      group={group}
-      expandedKeys={expandedKeys}
-      onToggleExpanded={toggleExpanded}
-      onCopyGroup={(text) => void copyStockText(text)}
-      onLink={(item) => setLinkTarget(item)}
-      systemProductCount={systemProducts.length}
-    />)}
+    <section className="table-panel stock-panel">
+      <div className="stock-stat-grid">
+        <div><span>待备货订单</span><strong>{preparation?.orderCount ?? 0}<small> 单</small></strong></div>
+        <div><span>供应商</span><strong>{preparation?.supplierCount ?? 0}<small> 家</small></strong></div>
+        <div><span>产品项</span><strong>{preparation?.itemCount ?? 0}<small> 项</small></strong></div>
+        <div><span>合计数量</span><strong>{preparation?.totalQuantity ?? 0}</strong></div>
+      </div>
+      <div className="page-toolbar stock-toolbar">
+        <div className="month-control" role="group" aria-label="备货范围">
+          <input
+            type="date"
+            className="toolbar-select"
+            aria-label="按下单日期筛选"
+            value={scope === 'date' ? date : ''}
+            disabled={scope === 'all'}
+            onChange={(event) => setDate(event.target.value || todayISO())}
+          />
+          <button className="button button-secondary month-scope-button" type="button" title={scope === 'date' ? '切换为全部待备货' : '回到按日期'} onClick={() => setScope((value) => (value === 'date' ? 'all' : 'date'))}>
+            {scope === 'date' ? <X size={14} /> : <CalendarDays size={14} />}
+            {scope === 'date' ? '全部' : '按日期'}
+          </button>
+        </div>
+        <button className="icon-button" type="button" title="刷新备货表" disabled={loading} onClick={() => void load()}><RefreshCw size={15} /></button>
+        <div className="stock-action-row">
+          <button className="button button-secondary" type="button" disabled={loading || !groups.length} onClick={() => void exportExcel()}><Download size={14} />导出 Excel</button>
+          <button className="button button-secondary" type="button" disabled={!groups.length || !preparation} onClick={() => { if (preparation) void copyStockText(buildCopyText(preparation, groups)); }}><Copy size={14} />复制全部</button>
+          <button className="button button-primary" type="button" disabled={marking || !orderIds.length} onClick={() => setConfirmMarkOpen(true)}><PackageOpen size={14} />标记已备货</button>
+        </div>
+      </div>
+      {warningGroups.length > 0 && <div className="stock-warning-bar" role="status">
+        <TriangleAlert size={15} />
+        <span>{warningGroups.map((group) => `${group.title} ${group.items.length} 项`).join('、')}：未关联或未填供应商的产品不会发给对应供应商，请先补全再报备。</span>
+      </div>}
+      <div className="stock-groups-scroll">
+        {loading && <div className="table-state">正在生成备货表...</div>}
+        {!loading && !groups.length && <div className="table-state">当前范围没有待备货订单。订单发布后会自动出现在这里。</div>}
+        {!loading && groups.map((group) => <StockGroupCard
+          key={`${group.kind}:${group.title}`}
+          group={group}
+          expandedKeys={expandedKeys}
+          onToggleExpanded={toggleExpanded}
+          onCopyGroup={(text) => void copyStockText(text)}
+          onLink={(item) => setLinkTarget(item)}
+          systemProductCount={systemProducts.length}
+        />)}
+      </div>
+    </section>
 
     <Modal open={confirmMarkOpen} title="标记已备货" onClose={() => setConfirmMarkOpen(false)} width={420}>
       <div style={{ display: 'grid', gap: 12, fontSize: 13, color: '#334155' }}>
@@ -203,7 +214,7 @@ function StockGroupCard({ group, expandedKeys, onToggleExpanded, onCopyGroup, on
   systemProductCount: number;
 }) {
   const warning = group.kind !== 'supplier';
-  return <section className={`table-panel stock-group${warning ? ' stock-group-warning' : ''}`}>
+  return <section className={`stock-group${warning ? ' stock-group-warning' : ''}`}>
     <div className="stock-group-head">
       <strong className="stock-group-title">{group.title}</strong>
       <span className="badge badge-neutral">{group.items.length} 项 / {group.items.reduce((sum, item) => sum + item.quantity, 0)} 件</span>

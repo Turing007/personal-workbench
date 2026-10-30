@@ -34,5 +34,17 @@ export default function ShippingPage({ orders, initialOrder, initialOrders, onUp
     setBatch((current) => current.map((order) => (order.id ?? order.orderNo) === id ? { ...order, trackingNo: value } : order));
     onUpdateTracking?.(id, value);
   };
-  return <div className="page-shell shipping-page"><div className="page-toolbar"><div><strong>发货工作区</strong></div><span className="badge badge-warning">{eligible.length} 条未发货</span></div><section className="table-panel shipping-panel"><ShippingBatchPanel orders={batch} allOrders={eligible} onAdd={add} onRemove={remove} onTrackingChange={tracking} onSaveTracking={onSaveTracking} onClear={() => setBatch([])} onConfirm={() => { void onConfirm?.(batch); }} /></section></div>;
+  return <div className="page-shell shipping-page">
+    <div className="shipping-page-head">
+      <div className="shipping-heading-copy">
+        <span className="page-breadcrumb">履约 / 发货</span>
+        <strong className="page-title">发货工作区</strong>
+        <span className="page-subtitle">把未发货订单加入批次，回填物流单号后确认发货</span>
+      </div>
+      <span className="badge badge-warning">{eligible.length} 条未发货</span>
+    </div>
+    <section className="table-panel shipping-panel">
+      <ShippingBatchPanel orders={batch} allOrders={eligible} onAdd={add} onRemove={remove} onTrackingChange={tracking} onSaveTracking={onSaveTracking} onClear={() => setBatch([])} onConfirm={() => { void onConfirm?.(batch); }} />
+    </section>
+  </div>;
 }
