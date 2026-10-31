@@ -86,6 +86,15 @@ test.describe('财务管理工作台', () => {
       await orderRow.getByRole('button', { name: '详情' }).click();
       await expect(page.getByRole('dialog', { name: /订单详情/ })).toBeVisible();
       await expect(page.getByRole('button', { name: '打开财务详情' })).toBeVisible();
+
+      // 从订单详情进财务后，必须能一键回到当前订单，而不是只能留在财务列表。
+      await page.getByRole('button', { name: '打开财务详情' }).click();
+      const financeDialog = page.getByRole('dialog', { name: /财务详情/ });
+      await expect(financeDialog).toBeVisible();
+      await financeDialog.getByRole('button', { name: '返回订单' }).click();
+      const orderDialog = page.getByRole('dialog', { name: /订单详情/ });
+      await expect(orderDialog).toBeVisible();
+      await expect(orderDialog).toContainText(String(order.order_no));
     } finally {
       await page.request.delete(`/api/orders/${orderId}`);
       await page.request.delete(`/api/customers/${customer.id}`);

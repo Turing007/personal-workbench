@@ -149,7 +149,6 @@ export default function OrderDetailModal({
             <div style={detailStyle}><span style={labelStyle}>收件人</span><strong style={{ fontSize: 13 }}>{order.recipientName || '未填写'}</strong></div>
             <div style={detailStyle}><span style={labelStyle}>收件信息</span><span style={{ ...valueStyle, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{order.recipientInfo || '未填写'}</span></div>
           </div>
-          <div style={detailStyle}><span style={labelStyle}>客户常用收件信息</span><span style={{ ...valueStyle, whiteSpace: 'pre-wrap' }}>{order.customerShippingInfo || '未填写'}</span></div>
         </section>
 
         <section style={{ display: 'grid', gap: 8 }}>

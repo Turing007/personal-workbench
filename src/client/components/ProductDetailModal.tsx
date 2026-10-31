@@ -10,7 +10,7 @@ import VideoPlayerModal from './VideoPlayerModal';
 import { formatFileSize, type ProductRecord, type ProductVideo } from './ProductEditor';
 import type { UploadFileSnapshot } from '../product-upload-queue';
 import { packagingDisplay } from '../packaging-display';
-import { groupPurchaseQuotesBySupplier, purchaseQuoteLabel } from '../../shared/product-purchase-quotes';
+import { groupPurchaseQuotesBySupplier } from '../../shared/product-purchase-quotes';
 import { copyText } from '../copy-text';
 import { saveFileOrDownload } from '../file-save';
 import { thumbUrl } from '../image-urls';
@@ -178,7 +178,7 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
               {groupPurchaseQuotesBySupplier(purchaseQuotes).map((group) => <div className="product-detail-quote-group" key={group.supplier}>
                 <span className="product-detail-quote-supplier">{group.supplier}</span>
                 <span className="product-detail-quote-items">{group.quotes.map((quote) => <span className={quote.isDefault ? 'product-detail-quote is-default' : 'product-detail-quote'} key={quote.id}>
-                  <b>{purchaseQuoteLabel(quote)}</b>
+                  <b>{quote.variant.trim() || '默认报价'}</b>
                   <span>{quote.price ? `¥${quote.price}` : '未定价'}</span>
                   {quote.isDefault && <em>默认</em>}
                 </span>)}</span>

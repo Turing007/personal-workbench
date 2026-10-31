@@ -2874,3 +2874,21 @@
   .finance-detail-drawer .finance-detail-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .finance-detail-drawer .finance-detail-summary strong { font-size: 16px; }
 }
+
+/* 产品详情 · 手机端：单列字段，宽内容不再被挤进半格；底部四个操作按钮两列排布。 */
+@media (max-width: 640px) {
+  .product-detail-drawer .product-detail-grid.kv-grid { grid-template-columns: minmax(0, 1fr); }
+  .product-detail-drawer .product-detail-grid .product-detail-item-wide { grid-column: auto; }
+  .product-detail-drawer .product-detail-grid .product-detail-item .product-detail-value {
+    overflow: visible;
+    white-space: normal;
+    text-overflow: clip;
+  }
+  .product-detail-drawer .modal-footer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+  .product-detail-drawer .modal-footer > * { width: 100%; }
+}

@@ -181,6 +181,8 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
   const [shippingInitialOrder, setShippingInitialOrder] = useState<OrderDraft>();
   const [shippingInitialOrders, setShippingInitialOrders] = useState<OrderDraft[]>();
   const [financeInitialOrderId, setFinanceInitialOrderId] = useState<number>();
+  /** 从订单详情进入财务时记住来源订单，财务详情里可以一键返回并重新打开该订单。 */
+  const [financeReturnOrderId, setFinanceReturnOrderId] = useState<number>();
   const [ordersInitialOrderId, setOrdersInitialOrderId] = useState<number | null>(null);
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSectionKey | null>(null);
   const [loading, setLoading] = useState(true);
@@ -200,7 +202,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     // not unexpectedly jump back to the last synced customer.
     if (next !== 'customer-products') setCustomerProductsInitialCustomerId(null);
     if (next !== 'shipping') setShippingInitialOrder(undefined);
-    if (next !== 'finance') setFinanceInitialOrderId(undefined);
+    if (next !== 'finance') { setFinanceInitialOrderId(undefined); setFinanceReturnOrderId(undefined); }
     if (next !== 'orders') setOrdersInitialOrderId(null);
     if (next !== 'settings') setSettingsInitialSection(null);
     setActive(next);
@@ -862,8 +864,8 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
         <button type="button" className="button button-secondary" onClick={() => void productUploadQueue.retryFailures()}>重试</button>
       </span>
     </div>}
-    {active === 'finance' && <FinancePage onNotify={notify} initialOrderId={financeInitialOrderId} customers={customers} />}
-    {active === 'orders' && <OrdersPage orders={orders} customers={customers} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} />}
+    {active === 'finance' && <FinancePage onNotify={notify} initialOrderId={financeInitialOrderId} returnOrderId={financeReturnOrderId} customers={customers} onReturnToOrder={(orderId) => { setOrdersInitialOrderId(orderId); setFinanceReturnOrderId(undefined); navigate('orders'); }} />}
+    {active === 'orders' && <OrdersPage orders={orders} customers={customers} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); setFinanceReturnOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} />}
     {active === 'stock' && <StockPage onNotify={notify} systemProducts={products} />}
     {active === 'quotations' && <QuotationPage onNotify={notify} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
     {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={async (orderId) => { await loadOrders(); setOrdersInitialOrderId(orderId); navigate('orders'); }} />}
