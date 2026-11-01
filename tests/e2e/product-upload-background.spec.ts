@@ -286,4 +286,29 @@ test.describe('产品图片后台上传', () => {
       return product ? (product.images ?? []).length : -1;
     }, { timeout: 30_000 }).toBe(1);
   });
+
+  test('续传存储被阻塞时保存仍能结束，按钮不会一直卡在“保存中”', async ({ page }) => {
+    // 模拟 WebView / 另一标签页把 indexedDB 卡住：onblocked 不回调也不报错。
+    await page.addInitScript(() => {
+      try {
+        indexedDB.open = () => ({ onupgradeneeded: null, onsuccess: null, onerror: null, onblocked: null, result: null });
+      } catch { /* 忽略：测试仍继续走正常路径 */ }
+    });
+
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
+    await page.locator('.products-page .page-toolbar .button-primary').click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.locator('.product-editor')).toBeVisible();
+
+    const name = `E2E保存防卡${Date.now()}`;
+    await dialog.getByRole('textbox', { name: '品名' }).fill(name);
+    await pickImageFile(page, '防卡.png');
+    await dialog.getByRole('button', { name: '保存产品' }).click();
+
+    // 产品已落库就够了；续传落盘失败不能把编辑器按钮锁死。
+    await expect(dialog).toHaveCount(0, { timeout: 5000 });
+    await page.locator('.search-control input').fill(name);
+    await expect(page.locator('.product-gallery-card')).toHaveCount(1);
+  });
 });

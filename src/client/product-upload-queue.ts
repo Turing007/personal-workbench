@@ -168,6 +168,18 @@ function openDatabase(): Promise<IDBDatabase | null> {
       resolve(null);
       return;
     }
+    let settled = false;
+    // 浏览器/WebView 里 indexedDB.open 可能被另一个连接阻塞且永远不回调；
+    // 续传只是附属能力，最多等 1.5 秒就退化为仅内存，绝不能让保存按钮一直转圈。
+    const timer = setTimeout(() => {
+      if (!settled) { settled = true; resolve(null); }
+    }, 1500);
+    const finish = (value: IDBDatabase | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
     try {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
       request.onupgradeneeded = () => {
@@ -175,11 +187,32 @@ function openDatabase(): Promise<IDBDatabase | null> {
         if (!db.objectStoreNames.contains(BATCH_STORE)) db.createObjectStore(BATCH_STORE, { keyPath: 'productId' });
         if (!db.objectStoreNames.contains(FILE_STORE)) db.createObjectStore(FILE_STORE, { keyPath: 'meta.id' });
       };
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => resolve(null);
+      request.onsuccess = () => {
+        if (settled) { request.result.close(); return; }
+        finish(request.result);
+      };
+      request.onerror = () => finish(null);
+      request.onblocked = () => finish(null);
     } catch {
-      resolve(null);
+      finish(null);
     }
+  });
+}
+
+/** 事务收尾也设上限：持久化失败只丢续传能力，不能让后台队列永远挂住。 */
+function waitForTransaction(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(finish, 2000);
+    transaction.oncomplete = finish;
+    transaction.onerror = finish;
+    transaction.onabort = finish;
   });
 }
 
@@ -279,7 +312,8 @@ export class ProductUploadQueue {
   /** 入队一个批次并立刻开始在后台跑。 */
   async enqueue(batch: UploadBatch): Promise<void> {
     if (!batch.files.length) {
-      await this.reorderIfNeeded(batch, new Map());
+      // 排序只是收尾动作，不能让它（网络慢/失败）把「保存」按钮卡在保存中。
+      void this.reorderIfNeeded(batch, new Map());
       return;
     }
     const items: QueueItem[] = batch.files.map((entry) => ({
@@ -291,7 +325,8 @@ export class ProductUploadQueue {
     if (existing) for (const item of existing.items) revokePreviewUrl(item);
     const internal: InternalBatch = { productId: batch.productId, productLabel: batch.productLabel, imageOrder: batch.imageOrder, items };
     this.batches.set(batch.productId, internal);
-    await this.persistBatch(internal);
+    // 续传落盘只影响崩溃后能否接着传，不能阻塞保存结果；失败时退化为仅内存。
+    void this.persistBatch(internal).catch(() => undefined);
     const wasActive = this.snapshot.active;
     this.publish({
       active: true,
@@ -539,6 +574,8 @@ export class ProductUploadQueue {
     const db = await openDatabase();
     if (!db) return;
     try {
+      // 不阻塞保存后，上传可能先完成并清掉批次；此时不要再把旧记录写回续传库。
+      if (!this.batches.has(batch.productId)) return;
       const stored: StoredBatch = {
         productId: batch.productId,
         productLabel: batch.productLabel,
@@ -553,11 +590,9 @@ export class ProductUploadQueue {
         if (item.status === 'done') continue;
         fileStore.put({ meta: item.meta, blob: item.file } satisfies StoredFile);
       }
-      await new Promise<void>((resolve) => {
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => resolve();
-        transaction.onabort = () => resolve();
-      });
+      await waitForTransaction(transaction);
+      // 写盘期间批次已经传完/被丢弃：补一次清理，避免下次启动把已完成的图当成续传项。
+      if (!this.batches.has(batch.productId)) await this.removeBatchFromStorage(batch.productId);
     } finally {
       db.close();
     }
@@ -570,11 +605,7 @@ export class ProductUploadQueue {
     try {
       const transaction = db.transaction(FILE_STORE, 'readwrite');
       transaction.objectStore(FILE_STORE).delete(taskId);
-      await new Promise<void>((resolve) => {
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => resolve();
-        transaction.onabort = () => resolve();
-      });
+      await waitForTransaction(transaction);
     } finally {
       db.close();
     }
@@ -590,11 +621,7 @@ export class ProductUploadQueue {
       for (const stored of files ?? []) {
         if (stored.meta.productId === productId) transaction.objectStore(FILE_STORE).delete(stored.meta.id);
       }
-      await new Promise<void>((resolve) => {
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => resolve();
-        transaction.onabort = () => resolve();
-      });
+      await waitForTransaction(transaction);
     } finally {
       db.close();
     }
@@ -607,10 +634,7 @@ export class ProductUploadQueue {
       const transaction = db.transaction([BATCH_STORE, FILE_STORE], 'readwrite');
       transaction.objectStore(BATCH_STORE).clear();
       transaction.objectStore(FILE_STORE).clear();
-      await new Promise<void>((resolve) => {
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => resolve();
-      });
+      await waitForTransaction(transaction);
     } finally {
       db.close();
     }

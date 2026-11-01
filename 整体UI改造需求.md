@@ -206,6 +206,7 @@
 - **手机端产品详情**：阶段 4 把详情网格强制成两列，导致「采购报价 / 包装信息 / 图片」这类跨列内容被塞进半格；现已改回手机单列，所有字段占满整行，底部四个操作按钮改为两列排布。报价行不再重复显示供应商名。[修正前](docs/ui-redesign/phase4-product-detail-mobile-before.png) / [修正后](docs/ui-redesign/phase4-product-detail-mobile.png) / [有图版本](docs/ui-redesign/phase4-product-detail-mobile-images.png)
 - **订单详情**：不再显示「客户常用收件信息」，只保留客户名称、联系人、联系电话、收件人和收件信息；数据本身不动。
 - **财务详情**：从订单详情进入财务详情时，底部增加「关闭」「返回订单」；点「返回订单」回到同一张订单并重新打开订单详情。[截图](docs/ui-redesign/phase4-finance-return-desktop.png)
+- **产品保存**：保存成功后按钮一直停在「保存中」的根因是保存流程在等 IndexedDB 续传落盘；WebView 或多标签页把 indexedDB 卡住时它可能永远不回调。续传落盘改为后台进行，并给打开数据库/事务各加 1.5 / 2 秒上限；保存后的列表刷新最多等 1.5 秒。新增 e2e 模拟 IndexedDB 阻塞，验证保存仍能在 1.4 秒内结束。
 
 ---
 

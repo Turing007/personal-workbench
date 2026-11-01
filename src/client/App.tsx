@@ -531,13 +531,15 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
 
       const uploadCount = batch.files.length;
       await productUploadQueue.enqueue(batch);
+      // 产品记录已经落库；列表刷新最多等 1.5 秒，避免刷新接口慢时保存按钮一直卡在「保存中」。
+      // 新产品需要马上出现在列表里（带「图片上传中」标记），批次结束时队列还会再刷一次。
+      await Promise.race([
+        loadProducts(),
+        new Promise<void>((resolve) => window.setTimeout(resolve, 1500)),
+      ]);
       if (uploadCount) {
-        // 立刻刷一次列表：新产品要马上出现在产品库里（带「图片上传中」标记），
-        // 不然用户会以为没存上；批次结束时队列还会再刷一次，把图片带回来。
-        await loadProducts();
         notify(`${mode === 'draft' ? '草稿已保存' : '产品已保存'}，${uploadCount} 个文件正在后台上传，可以继续做别的`, 'success');
       } else {
-        await loadProducts();
         notify(mode === 'draft' ? '草稿已保存，可稍后继续编辑' : '产品已保存', 'success');
       }
     } catch (error) {
