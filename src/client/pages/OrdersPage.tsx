@@ -276,15 +276,14 @@ export default function OrdersPage({ orders, customers, statusCounts, labelsByOr
       </div>}
       <div className="table-scroll orders-table-desktop">
         <table className="data-table orders-data-table">
-          <thead><tr><th className="order-check-cell"><input type="checkbox" checked={allPrintableSelected} onChange={toggleAll} aria-label="选择当前列表待打印箱唛订单" /></th>{['订单号', '客户', '下单时间', '收件人', '产品详情', '总箱数', '金额', '状态', '物流单号', '操作'].map((title) => <th key={title} className={title === '金额' ? 'is-right' : undefined}>{title}</th>)}</tr></thead>
+          <thead><tr><th className="order-check-cell"><input type="checkbox" checked={allPrintableSelected} onChange={toggleAll} aria-label="选择当前列表待打印箱唛订单" /></th>{['订单号', '客户 / 收件人', '下单时间', '产品详情', '总箱数', '金额', '状态', '物流单号', '操作'].map((title) => <th key={title} className={title === '金额' ? 'is-right' : undefined}>{title}</th>)}</tr></thead>
           <tbody>{visibleOrders.map((order) => {
             const id = orderKey(order); const boxCount = orderBoxCount(order); const productSummary = order.items.map((item) => item.name).filter(Boolean).join('、'); const paymentStatus = orderPaymentStatus(order);
             return <tr key={id}>
               <td className="order-check-cell"><input type="checkbox" disabled={!isUnshippedOrder(order) || isDraftOrder(order)} checked={isUnshippedOrder(order) && !isDraftOrder(order) && selectedIds.includes(id)} onChange={() => setSelectedIds((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id])} aria-label={`选择订单${order.orderNo}`} /></td>
               <td className="strong-cell order-no-cell">{order.orderNo}</td>
-              <td className="order-customer-cell">{order.customerName || '—'}</td>
+              <td className="order-customer-cell"><div className="order-party"><strong className="order-party-customer" title={order.customerName || undefined}>{order.customerName || '未填客户'}</strong><span className="order-party-recipient" title={order.recipientName || undefined}>收件人：{order.recipientName || '—'}</span></div></td>
               <td>{order.orderedAt.replace('T', ' ')}</td>
-              <td>{order.recipientName}</td>
               <td className="order-product-cell"><button type="button" className="link-button order-product-link" title={productSummary} onClick={() => setProductsOrder(order)}>{productSummary || '查看明细'}</button></td>
               <td className="order-box-cell">{boxCount}</td>
               <td className="amount order-amount-cell"><div>¥ {order.amount || '0.00'}</div><div className="payment-sub" style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</div></td>

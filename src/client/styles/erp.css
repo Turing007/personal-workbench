@@ -378,13 +378,18 @@
   }
 
   .orders-page .orders-data-table {
-    min-width: 1180px;
+    min-width: 1120px;
     table-layout: fixed;
   }
 
   .orders-page .orders-data-table .order-check-cell { width: 36px; padding-right: 4px; }
   .orders-page .orders-data-table .order-no-cell { width: 142px; white-space: nowrap; }
-  .orders-page .orders-data-table .order-customer-cell { width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .orders-page .orders-data-table .order-customer-cell { width: 190px; overflow: hidden; }
+  .orders-page .order-party { display: grid; gap: 1px; min-width: 0; }
+  .orders-page .order-party-customer,
+  .orders-page .order-party-recipient { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .orders-page .order-party-customer { color: var(--erp-text); font-size: 12px; font-weight: 600; }
+  .orders-page .order-party-recipient { color: var(--erp-muted); font-size: 10.5px; }
   .orders-page .orders-data-table .order-product-cell { width: auto; overflow: hidden; }
   .orders-page .orders-data-table .order-box-cell { width: 52px; text-align: right; }
   .orders-page .orders-data-table .order-amount-cell { width: 104px; text-align: right; }
@@ -563,20 +568,18 @@
 
   .orders-page .orders-table-toolbar .toolbar-count { margin-left: auto; }
 
-  /* 窄桌面保留「订单号 / 客户 / 日期 / 金额 / 状态 / 操作」，
-     收件人、产品详情、总箱数、物流单号收进详情抽屉，避免关键金额被横向滚动藏掉。 */
+  /* 窄桌面保留「订单号 / 客户·收件人 / 日期 / 金额 / 状态 / 操作」，
+     产品详情、总箱数、物流单号收进详情抽屉，避免关键金额被横向滚动藏掉。 */
   .orders-page .orders-data-table {
-    min-width: 760px;
+    min-width: 880px;
   }
 
   .orders-page .orders-data-table th:nth-child(5),
   .orders-page .orders-data-table td:nth-child(5),
   .orders-page .orders-data-table th:nth-child(6),
   .orders-page .orders-data-table td:nth-child(6),
-  .orders-page .orders-data-table th:nth-child(7),
-  .orders-page .orders-data-table td:nth-child(7),
-  .orders-page .orders-data-table th:nth-child(10),
-  .orders-page .orders-data-table td:nth-child(10) {
+  .orders-page .orders-data-table th:nth-child(9),
+  .orders-page .orders-data-table td:nth-child(9) {
     display: none;
   }
 
@@ -1535,12 +1538,10 @@
 @media (min-width: 1200px) and (max-width: 1419px) {
   .orders-page .orders-data-table { min-width: 960px; }
 
-  .orders-page .orders-data-table th:nth-child(5),
-  .orders-page .orders-data-table td:nth-child(5),
-  .orders-page .orders-data-table th:nth-child(7),
-  .orders-page .orders-data-table td:nth-child(7),
-  .orders-page .orders-data-table th:nth-child(10),
-  .orders-page .orders-data-table td:nth-child(10) {
+  .orders-page .orders-data-table th:nth-child(6),
+  .orders-page .orders-data-table td:nth-child(6),
+  .orders-page .orders-data-table th:nth-child(9),
+  .orders-page .orders-data-table td:nth-child(9) {
     display: none;
   }
 

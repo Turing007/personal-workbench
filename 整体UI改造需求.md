@@ -207,6 +207,7 @@
 - **订单详情**：不再显示「客户常用收件信息」，只保留客户名称、联系人、联系电话、收件人和收件信息；数据本身不动。
 - **财务详情**：从订单详情进入财务详情时，底部增加「关闭」「返回订单」；点「返回订单」回到同一张订单并重新打开订单详情。[截图](docs/ui-redesign/phase4-finance-return-desktop.png)
 - **产品保存**：保存成功后按钮一直停在「保存中」的根因是保存流程在等 IndexedDB 续传落盘；WebView 或多标签页把 indexedDB 卡住时它可能永远不回调。续传落盘改为后台进行，并给打开数据库/事务各加 1.5 / 2 秒上限；保存后的列表刷新最多等 1.5 秒。新增 e2e 模拟 IndexedDB 阻塞，验证保存仍能在 1.4 秒内结束。
+- **订单首屏**：客户与收件人合并为「客户 / 收件人」一列，客户名在上、收件人在下；窄桌面隐藏列同步调整，表格少占一列。[桌面](docs/ui-redesign/phase4-orders-merged-desktop.png) / [平板](docs/ui-redesign/phase4-orders-merged-tablet.png) / [手机](docs/ui-redesign/phase4-orders-merged-mobile.png)
 
 ---
 
