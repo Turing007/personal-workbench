@@ -21,6 +21,8 @@ export interface PickerCurtainProps {
   ariaLabel: string;
   children: ReactNode;
   className?: string;
+  /** 幕布内部按下鼠标/手指时通知父组件：用于「输入框失焦收起」时区分是否还在操作幕布。 */
+  onPointerDownInside?: () => void;
 }
 
 /** 位移超过这个值就按「滚动/拖拽」处理，不当作点击。 */
@@ -39,7 +41,7 @@ const EDGE_GAP = 12;
  *  - Esc；
  *  - closeOnScroll 打开时，页面/容器一滚动就收（搜索历史幕布的行为）。
  */
-export default function PickerCurtain({ open, onClose, anchorRef, matchAnchorWidth = false, wide = false, closeOnScroll = false, ariaLabel, children, className }: PickerCurtainProps) {
+export default function PickerCurtain({ open, onClose, anchorRef, matchAnchorWidth = false, wide = false, closeOnScroll = false, ariaLabel, children, className, onPointerDownInside }: PickerCurtainProps) {
   const curtainRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -48,6 +50,7 @@ export default function PickerCurtain({ open, onClose, anchorRef, matchAnchorWid
     const isInside = (target: Node) => Boolean(anchorRef.current?.contains(target) || curtainRef.current?.contains(target));
 
     const onPointerDown = (event: PointerEvent) => {
+      if (curtainRef.current?.contains(event.target as Node)) onPointerDownInside?.();
       // 落在锚点或幕布内部：这是操作，不是「点外部」，后续不再判定。
       if (isInside(event.target as Node)) {
         pressPoint = null;
@@ -73,7 +76,7 @@ export default function PickerCurtain({ open, onClose, anchorRef, matchAnchorWid
       document.removeEventListener('pointerup', onPointerUp, true);
       document.removeEventListener('pointercancel', onPointerCancel, true);
     };
-  }, [open, onClose, anchorRef]);
+  }, [open, onClose, anchorRef, onPointerDownInside]);
 
   // 滚动收起：监听捕获阶段，容器内滚（.app-content）与文档滚都能收到。
   useEffect(() => {

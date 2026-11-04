@@ -121,5 +121,11 @@ test('搜索幕布：滚动即收起，轻点外部也收起', async ({ page }) 
   // 侧栏点击会切走页面，切回产品库供后续步骤用。
   await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
 
+  // 输入框失焦也收起幕布（延迟 120ms 是为了不打断点胶囊）。
+  await search.click();
+  await expect(curtain).toBeVisible();
+  await search.blur();
+  await expect(curtain).toHaveCount(0);
+
   await page.request.delete(`/api/products/${product.id}`);
 });
