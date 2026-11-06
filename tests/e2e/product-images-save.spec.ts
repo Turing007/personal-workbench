@@ -59,13 +59,21 @@ async function seedProductWithImage(page: Page, stamp: number) {
  * 打开产品图片弹窗。桌面表格与手机卡片列表在 DOM 里同时存在、由 CSS 决定谁可见，
  * 所以必须用 :visible 过滤，否则会点到被 display:none 藏起来的那一份，click 直接超时。
  */
-async function openImagesModal(page: Page, sku: string, mobile: boolean) {
+async function openImagesModal(page: Page, sku: string, mobile: boolean, options?: { viaDetail?: boolean }) {
   await page.goto('/');
   if (mobile) {
     await page.locator('.mobile-tab-item[aria-label="更多模块"]').click();
   }
   await page.locator('.sidebar-nav').getByRole('button', { name: '产品库', exact: true }).click();
   await page.locator('.products-page .page-toolbar .search-control input').fill(sku);
+  if (options?.viaDetail) {
+    // 先开一次产品详情再关掉：详情里也挂着一个未打开的图片弹窗，
+    // 它不能把图库的原生保存回执挤掉，否则图存进相册后按钮会一直停在「保存中」。
+    await page.locator('.product-sku-button:visible').first().click();
+    await expect(page.getByRole('dialog', { name: /产品详情/ })).toBeVisible();
+    await page.locator('.modal-panel .modal-close').first().click();
+    await expect(page.getByRole('dialog', { name: /产品详情/ })).toHaveCount(0);
+  }
   await page.locator('.product-image-button:visible').first().click();
   await expect(page.locator('.product-images-content')).toBeVisible();
 }
@@ -166,7 +174,7 @@ test.describe('手机端：触摸 + 局域网 http（非安全上下文）', () 
     const product = await seedProductWithImage(page, stamp);
 
     try {
-      await openImagesModal(page, product.sku, true);
+      await openImagesModal(page, product.sku, true, { viaDetail: true });
       await selectFirstThumbnail(page);
 
       await expect(page.locator('.product-images-help')).toContainText('点顶部的「存相册」即可存进手机相册');

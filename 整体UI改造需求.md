@@ -210,6 +210,7 @@
 - **订单首屏**：客户与收件人合并为「客户 / 收件人」一列，客户名在上、收件人在下；窄桌面隐藏列同步调整，表格少占一列。[桌面](docs/ui-redesign/phase4-orders-merged-desktop.png) / [平板](docs/ui-redesign/phase4-orders-merged-tablet.png) / [手机](docs/ui-redesign/phase4-orders-merged-mobile.png)
 - **搜索候选词幕布**：输入框失焦后收起；延迟 120ms 是为了不打断点胶囊/删词，点在幕布内部不会误关。
 - **供应商图册**：搜索条固定在面板顶部，卡片区独立滚动；修掉桌面/平板被整高网格拉伸造成的大块空白和满高卡片，手机保持单列紧凑卡片。[桌面](docs/ui-redesign/phase4-supplier-catalogs-desktop.png) / [平板](docs/ui-redesign/phase4-supplier-catalogs-tablet.png) / [手机](docs/ui-redesign/phase4-supplier-catalogs-mobile.png)
+- **手机保存图片卡在「保存中」**：产品详情里挂着一个未打开的图片弹窗，会覆盖图库的原生保存回执，图片其实已进相册，按钮却一直等不到回执。现在只有图片弹窗真正打开时才注册回执；回归用例覆盖「先开产品详情再开图库保存」。
 
 ---
 

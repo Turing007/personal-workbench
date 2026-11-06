@@ -192,7 +192,9 @@ export default function ProductImagesModal({ open, productName = '产品', image
   };
 
   useEffect(() => {
-    if (!nativeSave) return undefined;
+    // 只在图库真正打开时接管原生回执：产品详情里还挂着一个未打开的同款弹窗，
+    // 如果它也注册，就会把当前图库的 handler 覆盖掉，保存成功后按钮一直停在「保存中」。
+    if (!nativeSave || !open) return undefined;
     const unregisterSaved = registerImageSavedHandler((ok) => {
       // 大图浮层的单张保存：一次只存一张，收到回执就收尾。
       if (singleSaveRef.current) {
@@ -220,7 +222,7 @@ export default function ProductImagesModal({ open, productName = '产品', image
       unregisterSaved();
       unregisterFailed();
     };
-  }, [nativeSave]);
+  }, [nativeSave, open]);
 
   useEffect(() => {
     // 打开弹窗/切换产品时不再默认勾选第一张：预勾选会让复制、下载、保存到相册的计数虚高，
