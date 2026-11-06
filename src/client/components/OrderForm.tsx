@@ -9,6 +9,7 @@ import { useFileDrop } from '../use-file-drop';
 import { calculateOrderBoxes } from '../../shared/order-calculations';
 import { calculateFreightCents, calculateOrderLineAmountCents, calculateOrderTotalCents } from '../../shared/order-prices';
 import { dateInputValue, dateOnlyValue } from '../../shared/date-input';
+import { extractRecipientName } from '../order-recipient';
 import { ORDER_SETTLEMENT_LABELS, isSettlementType, type OrderSettlementType } from '../../shared/settlement';
 import type { Customer, CustomerProduct as CustomerProductRecord, CustomerProductAttachment, CustomerProductSaveInput, CustomerSaveInput } from '../../shared/customers';
 import ImagePasteUpload, { type ImageAttachment } from './ImagePasteUpload';
@@ -184,6 +185,8 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
   const calculatedAmount = ((calculatedTotalCents + shippingCents) / 100).toFixed(2);
   const objectUrls = useRef(new Set<string>());
   const autoPreviewRef = useRef('');
+  /** 上次自动提取到的收件人名称；只覆盖这个值，用户手改过就不再动。 */
+  const autoRecipientNameRef = useRef('');
   const errorRef = useRef<HTMLDivElement>(null);
   const contractInputRef = useRef<HTMLInputElement>(null);
   // 表单错误条固定在顶部，而「选择附件」「保存订单」都在弹窗下方：移动端弹窗正文是独立滚动容器，
@@ -245,18 +248,37 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
     update('shippingCents', cents);
     setShippingInput((cents / 100).toFixed(2));
   };
-  const selectCustomer = (customerId: number | null, customer?: Customer) => setDraft((current) => ({
-    ...current,
-    customerId,
-    customerName: customer?.name ?? '',
-    customerContactName: customer?.contactName ?? '',
-    customerContactPhone: customer?.contactPhone ?? '',
-    customerShippingInfo: customer?.shippingInfo ?? '',
-    recipientInfo: customer?.shippingInfo && !current.recipientInfo.trim() ? customer.shippingInfo : current.recipientInfo,
-    items: customerId && customerId !== current.customerId
-      ? current.items.map((item) => ({ ...item, customerProductId: null }))
-      : current.items,
-  }));
+  /** 收件信息变化：自动提取姓名，但只在姓名为空或仍是上次自动值时覆盖。 */
+  const changeRecipientInfo = (info: string) => setDraft((current) => {
+    const parsed = extractRecipientName(info);
+    const canReplace = !current.recipientName.trim() || current.recipientName === autoRecipientNameRef.current;
+    if (parsed && canReplace) autoRecipientNameRef.current = parsed;
+    return {
+      ...current,
+      recipientInfo: info,
+      recipientName: parsed && canReplace ? parsed : current.recipientName,
+    };
+  });
+  const selectCustomer = (customerId: number | null, customer?: Customer) => setDraft((current) => {
+    const shippingInfo = customer?.shippingInfo ?? '';
+    const recipientInfo = current.recipientInfo.trim() ? current.recipientInfo : shippingInfo;
+    const parsed = extractRecipientName(recipientInfo);
+    const canReplace = !current.recipientName.trim() || current.recipientName === autoRecipientNameRef.current;
+    if (parsed && canReplace) autoRecipientNameRef.current = parsed;
+    return {
+      ...current,
+      customerId,
+      customerName: customer?.name ?? '',
+      customerContactName: customer?.contactName ?? '',
+      customerContactPhone: customer?.contactPhone ?? '',
+      customerShippingInfo: shippingInfo,
+      recipientInfo,
+      recipientName: parsed && canReplace ? parsed : current.recipientName,
+      items: customerId && customerId !== current.customerId
+        ? current.items.map((item) => ({ ...item, customerProductId: null }))
+        : current.items,
+    };
+  });
   const selectProduct = (product: CustomerProductRecord) => setDraft((current) => ({ ...current, items: [...current.items, makeItem(product)] }));
   const updateItem = (id: string, patch: Partial<OrderItemDraft>) => setDraft((current) => ({ ...current, items: current.items.map((item) => {
     if (item.id !== id) return item;
@@ -377,8 +399,8 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
           </select></label>
         </div>
         <div className="order-form-grid order-form-grid-recipient">
-          <label style={labelStyle}>收件人名称<input style={controlStyle} value={draft.recipientName} onChange={(event) => update('recipientName', event.target.value)} placeholder="箱唛显示名称" /></label>
-          <label style={labelStyle}>收件信息<textarea rows={2} style={{ ...controlStyle, resize: 'vertical' }} value={draft.recipientInfo} onChange={(event) => update('recipientInfo', event.target.value)} placeholder="收件人、地址、电话等统一记录" /></label>
+          <label style={labelStyle}>收件人名称<input style={controlStyle} value={draft.recipientName} onChange={(event) => { autoRecipientNameRef.current = ''; update('recipientName', event.target.value); }} placeholder="从收件信息自动提取，可修改" /></label>
+          <label style={labelStyle}>收件信息<textarea rows={2} style={{ ...controlStyle, resize: 'vertical' }} value={draft.recipientInfo} onChange={(event) => changeRecipientInfo(event.target.value)} placeholder="粘贴收件人、电话、地址，姓名会自动提取" /></label>
           <label style={labelStyle}>发货单号<input style={controlStyle} value={draft.trackingNo} onChange={(event) => update('trackingNo', event.target.value)} placeholder="发货后回填" /></label>
         </div>
       </section>

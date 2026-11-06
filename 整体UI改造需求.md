@@ -211,6 +211,7 @@
 - **搜索候选词幕布**：输入框失焦后收起；延迟 120ms 是为了不打断点胶囊/删词，点在幕布内部不会误关。
 - **供应商图册**：搜索条固定在面板顶部，卡片区独立滚动；修掉桌面/平板被整高网格拉伸造成的大块空白和满高卡片，手机保持单列紧凑卡片。[桌面](docs/ui-redesign/phase4-supplier-catalogs-desktop.png) / [平板](docs/ui-redesign/phase4-supplier-catalogs-tablet.png) / [手机](docs/ui-redesign/phase4-supplier-catalogs-mobile.png)
 - **手机保存图片卡在「保存中」**：产品详情里挂着一个未打开的图片弹窗，会覆盖图库的原生保存回执，图片其实已进相册，按钮却一直等不到回执。现在只有图片弹窗真正打开时才注册回执；回归用例覆盖「先开产品详情再开图库保存」。
+- **订单编辑收件人自动提取**：在「收件信息」里粘贴姓名、电话、地址后，自动提取收件人名称填入「收件人名称」；手动改过姓名后不再覆盖，清空姓名会恢复自动提取。选择客户时如果收件信息为空，也会从客户常用收件信息提取姓名。[桌面](docs/ui-redesign/phase4-order-recipient-autofill-desktop.png) / [手机](docs/ui-redesign/phase4-order-recipient-autofill-mobile.png)
 
 ---
 
