@@ -2419,10 +2419,24 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    overflow: auto;
     padding: 0 !important;
     border-radius: var(--erp-radius-surface);
     box-shadow: none;
+  }
+
+  .catalog-page .catalog-list-panel { overflow: auto; }
+  .catalog-page .supplier-catalog-panel { overflow: hidden; }
+
+  /* 供应商图册：搜索条固定在面板顶部，只有卡片区滚动。 */
+  .catalog-page .supplier-catalog-toolbar {
+    flex: 0 0 auto;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--erp-divider);
+  }
+
+  .catalog-page .supplier-catalog-panel > .table-state {
+    flex: 1;
+    padding: 32px 12px;
   }
 
   .catalog-page .catalog-list-row {
@@ -2442,7 +2456,16 @@
   .catalog-page .catalog-list-row .button { height: 28px; min-height: 28px; padding: 0 8px; font-size: 11px; }
   .catalog-page .catalog-list-row strong { color: var(--erp-text); font-size: 13px !important; }
 
-  .catalog-page .supplier-catalog-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; padding: 10px; }
+  .catalog-page .supplier-catalog-grid {
+    display: grid;
+    flex: 1;
+    min-height: 0;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    align-content: start;
+    gap: 10px;
+    overflow: auto;
+    padding: 10px 12px 14px;
+  }
   .catalog-page .supplier-catalog-card { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface); box-shadow: none; }
   .catalog-page .supplier-catalog-card-head { gap: 8px; }
   .catalog-page .supplier-catalog-card-name { font-size: 13px; }
@@ -2464,11 +2487,13 @@
   .catalog-page .catalog-tab { height: 32px; padding: 0 8px; font-size: 11.5px; }
   .catalog-page .catalog-list-panel,
   .catalog-page .supplier-catalog-panel { flex: none; overflow: visible; padding: 0 !important; border: 0; background: transparent; box-shadow: none; }
+  .catalog-page .supplier-catalog-toolbar { padding: 0 0 8px; border-bottom: 0; }
+  .catalog-page .supplier-catalog-panel > .table-state { padding: 18px 0; }
   .catalog-page .catalog-list-row { display: grid !important; grid-template-columns: minmax(0, 1fr) !important; gap: 5px !important; padding: 9px 10px !important; border: 1px solid var(--erp-border) !important; border-radius: var(--radius-ui) !important; margin-bottom: 6px; background: var(--erp-surface) !important; }
   .catalog-page .catalog-list-row > .row-actions { grid-column: 1; grid-row: auto; justify-content: flex-start; flex-wrap: wrap; padding-top: 4px; border-top: 1px solid var(--erp-divider); }
   .catalog-page .catalog-list-row .button { height: 30px; min-height: 30px; padding: 0 8px; font-size: 11px; }
   .catalog-page .catalog-list-row > code { font-size: 10px !important; }
-  .catalog-page .supplier-catalog-grid { grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 0; }
+  .catalog-page .supplier-catalog-grid { flex: none; min-height: 0; grid-template-columns: minmax(0, 1fr); gap: 6px; overflow: visible; padding: 0; }
   .catalog-page .supplier-catalog-card { padding: 9px 10px; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface); box-shadow: none; }
   .catalog-page .supplier-catalog-card-files { gap: 4px; }
   .catalog-page .supplier-catalog-file-row { min-height: 36px; }

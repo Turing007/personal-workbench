@@ -209,6 +209,7 @@
 - **产品保存**：保存成功后按钮一直停在「保存中」的根因是保存流程在等 IndexedDB 续传落盘；WebView 或多标签页把 indexedDB 卡住时它可能永远不回调。续传落盘改为后台进行，并给打开数据库/事务各加 1.5 / 2 秒上限；保存后的列表刷新最多等 1.5 秒。新增 e2e 模拟 IndexedDB 阻塞，验证保存仍能在 1.4 秒内结束。
 - **订单首屏**：客户与收件人合并为「客户 / 收件人」一列，客户名在上、收件人在下；窄桌面隐藏列同步调整，表格少占一列。[桌面](docs/ui-redesign/phase4-orders-merged-desktop.png) / [平板](docs/ui-redesign/phase4-orders-merged-tablet.png) / [手机](docs/ui-redesign/phase4-orders-merged-mobile.png)
 - **搜索候选词幕布**：输入框失焦后收起；延迟 120ms 是为了不打断点胶囊/删词，点在幕布内部不会误关。
+- **供应商图册**：搜索条固定在面板顶部，卡片区独立滚动；修掉桌面/平板被整高网格拉伸造成的大块空白和满高卡片，手机保持单列紧凑卡片。[桌面](docs/ui-redesign/phase4-supplier-catalogs-desktop.png) / [平板](docs/ui-redesign/phase4-supplier-catalogs-tablet.png) / [手机](docs/ui-redesign/phase4-supplier-catalogs-mobile.png)
 
 ---
 

@@ -421,8 +421,8 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
           <button className="button button-secondary button-sm" type="button" disabled={busy} onClick={() => void toggleEnabled(catalog)}><Power size={14} />{catalog.enabled ? '停用' : '启用'}</button>
         </div>
       </article>)}
-    </section> : <section className="table-panel supplier-catalog-panel" style={{ padding: 12, display: 'grid', gap: 10 }}>
-      <div className="page-toolbar table-toolbar" style={{ padding: 0 }}>
+    </section> : <section className="table-panel supplier-catalog-panel">
+      <div className="page-toolbar table-toolbar supplier-catalog-toolbar">
         <SearchInput value={supplierQuery} onChange={setSupplierQuery} placeholder="搜供应商、图册名、文件名" />
         <span className="toolbar-count">共 {filteredSupplierCatalogs.length} 条 · {filteredSupplierCatalogs.reduce((sum, catalog) => sum + catalog.files.length, 0)} 个文件</span>
       </div>
