@@ -13,6 +13,7 @@ import { mapStoredPurchaseQuotes, type ProductPurchaseQuote } from '../shared/pr
 import type { PackagingPreset } from '../shared/packaging-presets';
 import type { ProductOptionPresets } from '../shared/product-options';
 import type { StockPreparation } from '../shared/stock';
+import type { LibraryCategory, LibrarySort } from '../shared/library';
 import type {
   Customer,
   CustomerProduct as SharedCustomerProduct,
@@ -687,6 +688,94 @@ export function uploadSupplierCatalogFile(catalogId: number, file: File): Promis
 
 export function deleteSupplierCatalogFile(catalogId: number, fileId: number): Promise<{ deleted: boolean }> {
   return request<{ deleted: boolean }>(`/api/supplier-catalogs/${catalogId}/files/${fileId}`, { method: 'DELETE' });
+}
+
+// ===== 资料库：合同表格 / 客户标贴 / 产品资料 =====
+
+export interface LibraryFile {
+  id: number;
+  title: string;
+  category: LibraryCategory;
+  customerId: number | null;
+  customerName: string;
+  tags: string[];
+  note: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  relativePath: string;
+  url: string;
+  createdBy: string;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LibraryListFilters {
+  q?: string;
+  category?: LibraryCategory | 'all';
+  customerId?: number;
+  sort?: LibrarySort;
+  trash?: boolean;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface LibraryListResult {
+  items: LibraryFile[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface LibraryMetaInput {
+  title: string;
+  category: LibraryCategory;
+  customerId: number | null;
+  tags: string[];
+  note: string;
+}
+
+export function listLibraryFiles(filters: LibraryListFilters = {}): Promise<LibraryListResult> {
+  const params = new URLSearchParams();
+  if (filters.q?.trim()) params.set('q', filters.q.trim());
+  if (filters.category && filters.category !== 'all') params.set('category', filters.category);
+  if (filters.customerId) params.set('customerId', String(filters.customerId));
+  if (filters.sort) params.set('sort', filters.sort);
+  if (filters.trash) params.set('trash', '1');
+  if (filters.page) params.set('page', String(filters.page));
+  if (filters.pageSize) params.set('pageSize', String(filters.pageSize));
+  const query = params.toString();
+  return request<LibraryListResult>(`/api/library${query ? `?${query}` : ''}`);
+}
+
+export function uploadLibraryFile(input: LibraryMetaInput & { file: File; allowDuplicate?: boolean }): Promise<LibraryFile> {
+  const form = new FormData();
+  // 字段必须排在文件前面：服务端读取文件时会顺带解析已出现的字段。
+  form.append('title', input.title);
+  form.append('category', input.category);
+  if (input.customerId != null) form.append('customerId', String(input.customerId));
+  form.append('tags', JSON.stringify(input.tags));
+  form.append('note', input.note);
+  if (input.allowDuplicate) form.append('allowDuplicate', '1');
+  form.append('file', input.file, input.file.name);
+  return request<LibraryFile>('/api/library', { method: 'POST', body: form });
+}
+
+export function updateLibraryFile(id: number, input: LibraryMetaInput): Promise<LibraryFile> {
+  return request<LibraryFile>(`/api/library/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+}
+
+export function deleteLibraryFile(id: number): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(`/api/library/${id}`, { method: 'DELETE' });
+}
+
+export function restoreLibraryFile(id: number): Promise<LibraryFile> {
+  return request<LibraryFile>(`/api/library/${id}/restore`, { method: 'POST' });
+}
+
+export function purgeLibraryFile(id: number): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(`/api/library/${id}/purge`, { method: 'DELETE' });
 }
 export async function importProducts(file: File) {
   const form = new FormData();

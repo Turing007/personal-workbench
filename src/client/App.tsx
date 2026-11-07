@@ -24,6 +24,7 @@ import ShippingPage from './pages/ShippingPage';
 import SettingsPage, { type SettingsSectionKey } from './pages/SettingsPage';
 import QuotationPage from './pages/QuotationPage';
 import SalesDocumentsPage from './pages/SalesDocumentsPage';
+import LibraryPage from './pages/LibraryPage';
 import FinancePage from './pages/FinancePage';
 import StockPage from './pages/StockPage';
 import {
@@ -208,6 +209,8 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     setActive(next);
     setMobileNavOpen(false);
     // 切换模块后回到列表顶部，避免手机上停留在上一个模块的滚动位置。
+    // 真正滚动的是文档本身；.app-content 只是包裹层，两处都清一遍更稳。
+    window.scrollTo({ top: 0, left: 0 });
     document.querySelector('.app-content')?.scrollTo({ top: 0 });
     // 记住当前模块，浏览器刷新后仍停留在原页面。
     try { window.localStorage.setItem(ACTIVE_NAV_STORAGE_KEY, next); } catch { /* 忽略存储失败 */ }
@@ -874,6 +877,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} saving={productSaving} onExport={exportProductLibrary} onOpenCatalog={() => navigate('product-catalog')} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onReloadProducts={async () => { await loadProducts(); }} onManagePresets={() => { setSettingsInitialSection('packaging'); navigate('settings'); }} onManageProductOptions={() => { setSettingsInitialSection('product-options'); navigate('settings'); }} onUpdateSaleStatus={(product, next) => { void toggleProductSaleStatus(product, next); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} uploadingProductIds={uploadQueue.uploadingProductIds} uploadFiles={uploadQueue.files} onRetryUploadFile={(taskId) => productUploadQueue.retryFailure(taskId)} />}
     {active === 'product-catalog' && <CatalogPage products={products} loading={loading} onNotify={notify} />}
     {active === 'customer-products' && <CustomerProductsPage customers={customers} systemProducts={products} initialCustomerId={customerProductsInitialCustomerId ?? undefined} loading={loading} onCustomersChanged={loadCustomers} onNotify={notify} />}
+    {active === 'library' && <LibraryPage customers={customers} onNotify={notify} />}
     {active === 'shipping' && <ShippingPage orders={shippingOrders} initialOrder={shippingInitialOrder} initialOrders={shippingInitialOrders} onUpdateTracking={updateTracking} onSaveTracking={saveShippingTracking} onConfirm={confirmShipping} />}
     {active === 'settings' && <SettingsPage onBackup={backup} onRestore={restore} onProfileChanged={setCompanyProfile} currentUser={user} mobileTabs={mobileTabs} onMobileTabsChange={updateMobileTabs} initialSection={settingsInitialSection ?? undefined} />}
   </main><MobileTabBar activeKey={active} tabs={mobileTabs} onNavigate={navigate} onOpenMore={() => setMobileNavOpen(true)} /><Toast messages={messages} onDismiss={(id) => setMessages((current) => current.filter((item) => item.id !== id))} /></div>;

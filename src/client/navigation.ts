@@ -1,4 +1,5 @@
 import {
+  Archive,
   BookOpen,
   Boxes,
   ClipboardList,
@@ -12,7 +13,7 @@ import {
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 
-export type NavigationKey = 'orders' | 'stock' | 'finance' | 'quotations' | 'sales-documents' | 'products' | 'product-catalog' | 'customer-products' | 'shipping' | 'settings';
+export type NavigationKey = 'orders' | 'stock' | 'finance' | 'quotations' | 'sales-documents' | 'products' | 'product-catalog' | 'customer-products' | 'library' | 'shipping' | 'settings';
 
 export interface NavigationItem {
   key: NavigationKey;
@@ -33,6 +34,7 @@ export const navigationItems: NavigationItem[] = [
   { key: 'products', label: '产品库', shortLabel: '产品', icon: Boxes },
   { key: 'product-catalog', label: '产品图册', shortLabel: '图册', icon: BookOpen },
   { key: 'customer-products', label: '客户', shortLabel: '客户', icon: ShoppingBag },
+  { key: 'library', label: '资料库', shortLabel: '资料', icon: Archive },
   { key: 'settings', label: '设置', shortLabel: '设置', icon: Settings },
 ];
 

@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 38;
+const CURRENT_SCHEMA_VERSION = 39;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -1444,6 +1444,36 @@ function migrateVersionThirtyEight(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '38', now);
 }
 
+/**
+ * 资料库：合同表格、客户标贴、产品资料等常用文件的统一存放。
+ * 删除先写 deleted_at 进回收站，30 天后由服务端清理；文件本身仍在 data/files/library。
+ */
+function migrateVersionThirtyNine(database: DatabaseSync, now: string): void {
+  database.exec(
+    `CREATE TABLE IF NOT EXISTS library_files (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       title TEXT NOT NULL,
+       category TEXT NOT NULL DEFAULT 'other',
+       customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+       tags TEXT NOT NULL DEFAULT '[]',
+       note TEXT NOT NULL DEFAULT '',
+       original_name TEXT NOT NULL,
+       relative_path TEXT NOT NULL UNIQUE,
+       mime_type TEXT NOT NULL,
+       size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+       content_hash TEXT NOT NULL DEFAULT '',
+       created_by TEXT NOT NULL DEFAULT '',
+       deleted_at TEXT,
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL
+     )`,
+  );
+  database.exec('CREATE INDEX IF NOT EXISTS idx_library_files_updated ON library_files (deleted_at, updated_at DESC, id DESC)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_library_files_customer ON library_files (customer_id, deleted_at, updated_at DESC)');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_library_files_hash ON library_files (content_hash, deleted_at)');
+  upsertSetting(database, 'schema_version', '39', now);
+}
+
 export function migrateDatabase(database: DatabaseSync): void {
   if (database.isTransaction) {
     throw new Error('Database migration cannot run inside an active transaction');
@@ -1508,6 +1538,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionThirtySix(transactionDatabase, now);
     migrateVersionThirtySeven(transactionDatabase, now);
     migrateVersionThirtyEight(transactionDatabase, now);
+    migrateVersionThirtyNine(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

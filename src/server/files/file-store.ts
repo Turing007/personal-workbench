@@ -35,7 +35,8 @@ export type FileKind =
   | 'customer-product-attachment'
   | 'order-item-requirement'
   | 'finance-invoice'
-  | 'supplier-catalog';
+  | 'supplier-catalog'
+  | 'library';
 
 export type PublicFileDirectory =
   | 'product-images'
@@ -54,7 +55,8 @@ export type PublicFileDirectory =
   | 'customer-product-attachments'
   | 'order-item-requirements'
   | 'finance-invoices'
-  | 'supplier-catalogs';
+  | 'supplier-catalogs'
+  | 'library-files';
 
 export interface StoredFile {
   relativePath: string;
@@ -82,6 +84,8 @@ export class FileStoreError extends Error {
       | 'INVOICE_TOO_LARGE'
       | 'UNSUPPORTED_SUPPLIER_CATALOG_TYPE'
       | 'SUPPLIER_CATALOG_TOO_LARGE'
+      | 'UNSUPPORTED_LIBRARY_TYPE'
+      | 'LIBRARY_FILE_TOO_LARGE'
       | 'INVALID_FILE_PATH'
       | 'INVALID_FILE_NAME'
       | 'INVALID_STAGED_FILE',
@@ -140,6 +144,15 @@ function assertAllowedSupplierCatalogFile(originalName: string, mime: string): s
   return extension;
 }
 
+function assertAllowedLibraryFile(originalName: string, _mime: string): string {
+  const base = basename(originalName.replaceAll('\\', '/'));
+  const extension = base.toLowerCase().slice(base.lastIndexOf('.'));
+  if (!(ALLOWED_PRODUCT_ATTACHMENT_EXTENSIONS as readonly string[]).includes(extension)) {
+    throw new FileStoreError('UNSUPPORTED_LIBRARY_TYPE', '资料库支持 PDF、Office、图片、压缩包及常见设计源文件');
+  }
+  return extension;
+}
+
 const directoryByKind: Record<FileKind, PublicFileDirectory> = {
   product: 'product-images',
   'product-packaging': 'product-packaging-images',
@@ -158,6 +171,7 @@ const directoryByKind: Record<FileKind, PublicFileDirectory> = {
   'order-item-requirement': 'order-item-requirements',
   'finance-invoice': 'finance-invoices',
   'supplier-catalog': 'supplier-catalogs',
+  library: 'library-files',
 };
 
 const publicDirectories = new Set<PublicFileDirectory>(Object.values(directoryByKind));
@@ -221,6 +235,7 @@ function tooLargeError(kind: FileKind, maxSize: number): FileStoreError {
   if (kind === 'finance-invoice') return new FileStoreError('INVOICE_TOO_LARGE', `发票不能超过 ${maxSize / 1024 / 1024}MB`);
   if (kind === 'product-video') return new FileStoreError('VIDEO_TOO_LARGE', `视频不能超过 ${maxSize / 1024 / 1024}MB`);
   if (kind === 'supplier-catalog') return new FileStoreError('SUPPLIER_CATALOG_TOO_LARGE', `供应商图册文件不能超过 ${maxSize / 1024 / 1024}MB`);
+  if (kind === 'library') return new FileStoreError('LIBRARY_FILE_TOO_LARGE', `资料库文件不能超过 ${maxSize / 1024 / 1024}MB`);
   return new FileStoreError('PRODUCT_ATTACHMENT_TOO_LARGE', `附件不能超过 ${maxSize / 1024 / 1024}MB`);
 }
 
@@ -319,7 +334,7 @@ export class FileStore {
     originalName: string,
     mime: string,
   ): Promise<StagedFile> {
-    if (kind !== 'order-contract' && kind !== 'product-attachment' && kind !== 'product-video' && kind !== 'customer-product-attachment' && kind !== 'order-item-requirement' && kind !== 'finance-invoice' && kind !== 'supplier-catalog') {
+    if (kind !== 'order-contract' && kind !== 'product-attachment' && kind !== 'product-video' && kind !== 'customer-product-attachment' && kind !== 'order-item-requirement' && kind !== 'finance-invoice' && kind !== 'supplier-catalog' && kind !== 'library') {
       throw new FileStoreError('INVALID_FILE_PATH', '通用附件类型无效');
     }
     const safeOriginalName = normalizeOriginalName(originalName);
@@ -329,7 +344,9 @@ export class FileStore {
         ? assertAllowedInvoiceFile(safeOriginalName, mime)
         : kind === 'supplier-catalog'
           ? assertAllowedSupplierCatalogFile(safeOriginalName, mime)
-          : kind === 'product-video'
+          : kind === 'library'
+            ? assertAllowedLibraryFile(safeOriginalName, mime)
+            : kind === 'product-video'
             ? assertAllowedVideoFile(safeOriginalName)
             : assertAllowedProductAttachmentFile(safeOriginalName, mime);
     const directoryName = targetDirectoryName(kind);
