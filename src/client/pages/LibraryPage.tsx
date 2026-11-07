@@ -6,6 +6,7 @@ import {
   File as FileIcon,
   FileText,
   Image as ImageIcon,
+  Inbox,
   Plus,
   RotateCcw,
   Trash2,
@@ -345,6 +346,79 @@ export default function LibraryPage({ customers, onNotify }: LibraryPageProps) {
   const [preview, setPreview] = useState<LibraryFile>();
   const [downloadingId, setDownloadingId] = useState<number>();
   const [busyId, setBusyId] = useState<number>();
+  const [collecting, setCollecting] = useState(false);
+  const [collectProgress, setCollectProgress] = useState('');
+  const collectInputRef = useRef<HTMLInputElement>(null);
+  const collectingRef = useRef(false);
+
+  /** 收集箱：不选客户、不选分类，按文件名直接入箱；重复文件跳过。 */
+  const collectFiles = async (incoming: File[]) => {
+    if (collectingRef.current || !incoming.length) return;
+    const accepted = incoming.filter((file) => file.size <= MAX_FILE_SIZE);
+    const tooLarge = incoming.length - accepted.length;
+    if (!accepted.length) {
+      onNotify?.(`文件超过 20MB，没有收集`, 'error');
+      return;
+    }
+    collectingRef.current = true;
+    setCollecting(true);
+    let saved = 0;
+    let skipped = 0;
+    let failed = 0;
+    try {
+      for (let index = 0; index < accepted.length; index += 1) {
+        const file = accepted[index];
+        setCollectProgress(`${index + 1}/${accepted.length}`);
+        try {
+          await uploadLibraryFile({
+            file,
+            title: file.name.replace(/\.[^.]+$/, '') || file.name,
+            category: 'inbox',
+            customerId: null,
+            tags: [],
+            note: '',
+          });
+          saved += 1;
+        } catch (error) {
+          if ((error as { code?: string }).code === 'DUPLICATE_FILE') skipped += 1;
+          else failed += 1;
+        }
+      }
+    } finally {
+      collectingRef.current = false;
+      setCollecting(false);
+      setCollectProgress('');
+    }
+    if (saved > 0) {
+      setQuery('');
+      setCategory('inbox');
+      setRefreshKey((key) => key + 1);
+      onNotify?.(`已收集 ${saved} 个文件${skipped ? `，${skipped} 个已存在` : ''}${tooLarge ? `，${tooLarge} 个超过 20MB` : ''}${failed ? `，${failed} 个失败` : ''}`, failed ? 'error' : 'success');
+    } else if (skipped) {
+      onNotify?.('这些文件已经在资料库里了', 'info');
+    } else if (failed || tooLarge) {
+      onNotify?.('文件没有保存成功，请检查后重试', 'error');
+    }
+  };
+
+  const { dragging: collectDragging, handlers: collectDropHandlers } = useFileDrop((incoming) => { void collectFiles(incoming); });
+  const collectFilesRef = useRef(collectFiles);
+  collectFilesRef.current = collectFiles;
+
+  // 不点收集箱也能直接 Ctrl+V：焦点在输入框/文本域或弹窗里时不抢粘贴。
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (document.querySelector('.modal-panel')) return;
+      const files = Array.from(event.clipboardData?.files ?? []);
+      if (!files.length) return;
+      event.preventDefault();
+      void collectFilesRef.current(files);
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, []);
 
   const customerOptions = useMemo(
     () => [...customers].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN')),
@@ -483,6 +557,42 @@ export default function LibraryPage({ customers, onNotify }: LibraryPageProps) {
       <button className={`library-tab${category === 'all' ? ' is-active' : ''}`} type="button" role="tab" aria-selected={category === 'all'} onClick={() => setCategory('all')}>全部</button>
       {LIBRARY_CATEGORIES.map((item) => <button key={item} className={`library-tab${category === item ? ' is-active' : ''}`} type="button" role="tab" aria-selected={category === item} onClick={() => setCategory(item)}>{LIBRARY_CATEGORY_LABELS[item]}</button>)}
     </div>
+
+    {!trash && <div
+      className={`library-inbox-bar${collectDragging ? ' is-dragging' : ''}${collecting ? ' is-busy' : ''}`}
+      role="button"
+      tabIndex={0}
+      onClick={() => { if (!collecting) collectInputRef.current?.click(); }}
+      onKeyDown={(event) => { if (!collecting && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); collectInputRef.current?.click(); } }}
+      onPaste={(event) => {
+        const files = Array.from(event.clipboardData?.files ?? []);
+        if (!files.length) return;
+        event.preventDefault();
+        void collectFiles(files);
+      }}
+      {...collectDropHandlers}
+    >
+      <span className="library-inbox-icon"><Inbox size={18} /></span>
+      <div className="library-inbox-copy">
+        <strong>收集箱 · 快速收集</strong>
+        <span>文件拖进来、Ctrl+V 或点这里选择，不用选客户，按文件名自动保存</span>
+      </div>
+      <span className="library-inbox-action">{collecting ? `收集 ${collectProgress}` : '选择文件'}</span>
+      <input
+        ref={collectInputRef}
+        type="file"
+        multiple
+        accept={LIBRARY_ACCEPT}
+        hidden
+        aria-label="快速收集文件"
+        onClick={(event) => event.stopPropagation()}
+        onChange={(event) => {
+          const selected = Array.from(event.target.files ?? []);
+          event.target.value = '';
+          void collectFiles(selected);
+        }}
+      />
+    </div>}
 
     <section className="table-panel library-panel">
       <div className="page-toolbar library-toolbar">

@@ -3032,3 +3032,33 @@
   .library-page .library-table th:nth-child(7) { width: 128px; }
   .library-page .library-table .library-actions-cell .row-actions { gap: 2px; }
 }
+
+/* 收集箱：不选客户/分类，文件直接快速入箱 */
+.library-inbox-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px dashed var(--erp-border);
+  border-radius: var(--erp-radius-surface);
+  background: var(--erp-surface);
+  color: var(--erp-text-2);
+  cursor: pointer;
+}
+.library-inbox-bar:hover,
+.library-inbox-bar.is-dragging { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.library-inbox-bar.is-busy { cursor: progress; opacity: .75; }
+.library-inbox-icon { display: inline-grid; flex: 0 0 32px; width: 32px; height: 32px; place-items: center; border-radius: var(--radius-ui); background: var(--color-accent-soft); color: var(--color-accent); }
+.library-inbox-copy { display: grid; flex: 1; gap: 1px; min-width: 0; }
+.library-inbox-copy strong { color: var(--erp-text); font-size: 12.5px; font-weight: 600; }
+.library-inbox-copy span { overflow: hidden; color: var(--erp-muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.library-inbox-action { flex: none; color: var(--color-accent); font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.library-category.is-inbox { background: var(--color-neutral-pill); color: var(--erp-text-2); }
+
+@media (max-width: 900px) {
+  .library-inbox-bar { gap: 8px; padding: 8px 9px; }
+  .library-inbox-icon { flex-basis: 28px; width: 28px; height: 28px; }
+  .library-inbox-copy strong { font-size: 12px; }
+  .library-inbox-copy span { font-size: 10px; }
+  .library-inbox-action { font-size: 10.5px; }
+}

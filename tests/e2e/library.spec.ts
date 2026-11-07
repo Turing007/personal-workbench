@@ -92,3 +92,37 @@ test('资料库：上传标贴 → 搜索/编辑 → 回收站恢复 → 彻底�
     await page.request.delete(`/api/customers/${customer.id}`);
   }
 });
+
+test('资料库收集箱：不选客户直接收集，按名称搜索', async ({ page }) => {
+  test.setTimeout(60_000);
+  const name = `E2E快速收集-${Date.now()}`;
+  try {
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '资料库', exact: true }).click();
+    await expect(page.locator('.library-inbox-bar')).toBeVisible();
+
+    await page.locator('input[aria-label="快速收集文件"]').setInputFiles({
+      name: `${name}.pdf`,
+      mimeType: 'application/pdf',
+      buffer: Buffer.from(`%PDF-1.4\n% quick-collect-${name}\n%%EOF`),
+    });
+
+    await expect(page.locator('.library-tab.is-active')).toHaveText('收集箱');
+    const row = page.locator('.library-table tbody tr', { hasText: name });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('收集箱');
+    await expect(row).toContainText('—');
+
+    await page.locator('.library-toolbar .search-control input').fill(name);
+    await expect(page.locator('.library-table tbody tr', { hasText: name })).toHaveCount(1);
+  } finally {
+    const list = await page.request.get('/api/library?pageSize=500');
+    if (list.ok()) {
+      const items = ((await list.json()).data as { items: Array<{ id: number; title: string }> }).items;
+      for (const item of items.filter((entry) => entry.title === name)) {
+        await page.request.delete(`/api/library/${item.id}`);
+        await page.request.delete(`/api/library/${item.id}/purge`);
+      }
+    }
+  }
+});

@@ -1,8 +1,9 @@
 /** 资料库分类与展示文案，前后端共用。 */
-export const LIBRARY_CATEGORIES = ['contract', 'label', 'product', 'other'] as const;
+export const LIBRARY_CATEGORIES = ['inbox', 'contract', 'label', 'product', 'other'] as const;
 export type LibraryCategory = (typeof LIBRARY_CATEGORIES)[number];
 
 export const LIBRARY_CATEGORY_LABELS: Record<LibraryCategory, string> = {
+  inbox: '收集箱',
   contract: '合同表格',
   label: '客户标贴',
   product: '产品资料',
