@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 40;
+const CURRENT_SCHEMA_VERSION = 41;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -626,7 +626,8 @@ type MigratedTable =
   | 'sales_document_items'
   | 'payment_proofs'
   | 'finance_receipts'
-  | 'catalogs';
+  | 'catalogs'
+  | 'companies';
 
 interface MigrationPreflight {
   schemaVersion: number;
@@ -1474,6 +1475,15 @@ function migrateVersionForty(database: DatabaseSync, now: string): void {
 }
 
 /**
+ * 公司档案增加「可开票类目」，用于一键复制开票信息发给客户。
+ * 新列必须追加在表尾：备份恢复按列位置复制，插到中间会让旧备份错位。
+ */
+function migrateVersionFortyOne(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'companies', 'invoice_categories', "TEXT NOT NULL DEFAULT '[]'");
+  upsertSetting(database, 'schema_version', '41', now);
+}
+
+/**
  * 资料库：合同表格、客户标贴、产品资料等常用文件的统一存放。
  * 删除先写 deleted_at 进回收站，30 天后由服务端清理；文件本身仍在 data/files/library。
  */
@@ -1569,6 +1579,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionThirtyEight(transactionDatabase, now);
     migrateVersionThirtyNine(transactionDatabase, now);
     migrateVersionForty(transactionDatabase, now);
+    migrateVersionFortyOne(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { Company, CompanySaveInput } from '../../shared/companies.js';
+import { normalizeInvoiceCategories, type Company, type CompanySaveInput } from '../../shared/companies.js';
 
 interface CompanyRow {
   id: number;
@@ -12,6 +12,7 @@ interface CompanyRow {
   phone: string;
   contact_name: string;
   remark: string;
+  invoice_categories: string;
   is_active: number;
   created_at: string;
   updated_at: string;
@@ -23,6 +24,16 @@ export class CompanyRepositoryError extends Error {
   constructor(public readonly code: CompanyErrorCode, message: string) {
     super(message);
     this.name = 'CompanyRepositoryError';
+  }
+}
+
+/** 数据库里按 JSON 数组保存；历史数据或手工写入的异常值退化为分隔文本解析。 */
+function storedInvoiceCategories(value: unknown): string[] {
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    return normalizeInvoiceCategories(JSON.parse(value));
+  } catch {
+    return normalizeInvoiceCategories(value);
   }
 }
 
@@ -38,6 +49,7 @@ function mapCompany(row: CompanyRow): Company {
     phone: String(row.phone ?? ''),
     contactName: String(row.contact_name ?? ''),
     remark: String(row.remark ?? ''),
+    invoiceCategories: storedInvoiceCategories(row.invoice_categories),
     isActive: Number(row.is_active) === 1,
     createdAt: String(row.created_at ?? ''),
     updatedAt: String(row.updated_at ?? ''),
@@ -71,8 +83,8 @@ export class CompanyRepository {
     try {
       const result = this.database.prepare(`
         INSERT INTO companies
-          (short_name, full_name, tax_no, bank_name, bank_account, address, phone, contact_name, remark, is_active, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (short_name, full_name, tax_no, bank_name, bank_account, address, phone, contact_name, remark, invoice_categories, is_active, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         shortName,
         text(input.fullName),
@@ -83,6 +95,7 @@ export class CompanyRepository {
         text(input.phone),
         text(input.contactName),
         text(input.remark),
+        JSON.stringify(normalizeInvoiceCategories(input.invoiceCategories)),
         input.isActive === false ? 0 : 1,
         timestamp,
         timestamp,
@@ -106,7 +119,7 @@ export class CompanyRepository {
       this.database.prepare(`
         UPDATE companies SET
           short_name = ?, full_name = ?, tax_no = ?, bank_name = ?, bank_account = ?,
-          address = ?, phone = ?, contact_name = ?, remark = ?, is_active = ?, updated_at = ?
+          address = ?, phone = ?, contact_name = ?, remark = ?, invoice_categories = ?, is_active = ?, updated_at = ?
         WHERE id = ?
       `).run(
         shortName,
@@ -118,6 +131,7 @@ export class CompanyRepository {
         text(input.phone),
         text(input.contactName),
         text(input.remark),
+        JSON.stringify(normalizeInvoiceCategories(input.invoiceCategories)),
         input.isActive === false ? 0 : 1,
         timestamp,
         id,

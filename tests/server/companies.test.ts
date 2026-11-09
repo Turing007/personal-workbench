@@ -270,4 +270,37 @@ describe('公司档案与水单收款', () => {
     await app.close();
     database.close();
   });
+
+  it('公司档案可维护可开票类目，新增/修改后随列表返回', async () => {
+    const { app, database } = await setup();
+    const created = await authInject(app, {
+      method: 'POST',
+      url: '/api/finance/companies',
+      payload: {
+        shortName: '类目公司',
+        fullName: '类目公司全称',
+        taxNo: 'TAX-CATEGORY',
+        invoiceCategories: ['电动工具', ' 电池 ', '电动工具', ''],
+      },
+    });
+    expect(created.statusCode).toBe(200);
+    expect(created.json().data.invoiceCategories).toEqual(['电动工具', '电池']);
+    const companyId = Number(created.json().data.id);
+    const stored = database.prepare('SELECT invoice_categories FROM companies WHERE id = ?').get(companyId);
+    expect(JSON.parse(String(stored?.invoice_categories))).toEqual(['电动工具', '电池']);
+
+    const updated = await authInject(app, {
+      method: 'PUT',
+      url: `/api/finance/companies/${companyId}`,
+      payload: { shortName: '类目公司', invoiceCategories: '配件、充电器' },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().data.invoiceCategories).toEqual(['配件', '充电器']);
+
+    const list = await authInject(app, { method: 'GET', url: '/api/finance/companies?includeInactive=1' });
+    expect(list.json().data.items.find((item: { id: number }) => item.id === companyId))
+      .toMatchObject({ shortName: '类目公司', invoiceCategories: ['配件', '充电器'] });
+    await app.close();
+    database.close();
+  });
 });

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { CompanyRepository } from '../db/company-repository.js';
 import { CompanyRepositoryError } from '../db/company-repository.js';
+import { normalizeInvoiceCategories } from '../../shared/companies.js';
 import { ApiError, asRecord, parseId, sendFailure, sendSuccess } from './api-response.js';
 
 interface IdParams { id: string }
@@ -21,6 +22,7 @@ function companyInput(body: Record<string, unknown>) {
     phone: text(body.phone),
     contactName: text(body.contactName ?? body.contact_name),
     remark: text(body.remark),
+    invoiceCategories: normalizeInvoiceCategories(body.invoiceCategories ?? body.invoice_categories),
     isActive: rawActive == null ? undefined : !(rawActive === false || rawActive === 'false' || rawActive === 0 || rawActive === '0'),
   };
 }

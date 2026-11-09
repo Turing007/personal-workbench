@@ -1,4 +1,4 @@
-import { ArrowLeft, Building2, CalendarDays, ChevronLeft, ChevronRight, RefreshCw, X } from 'lucide-react';
+import { ArrowLeft, Building2, CalendarDays, ChevronLeft, ChevronRight, Copy, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Modal from '../components/Modal';
 import SearchInput from '../components/SearchInput';
@@ -22,11 +22,12 @@ import {
   type FinanceProofStatus,
   type InvoiceStatus,
 } from '../../shared/finance';
-import type { Company, CompanyReceiptBreakdownRow } from '../../shared/companies';
+import { buildCompanyInvoiceInfoText, type Company, type CompanyReceiptBreakdownRow } from '../../shared/companies';
 import type { Customer } from '../../shared/customers';
 import { invoiceDisplayLabel, isPersonalSettlement } from '../../shared/settlement';
 import { useIsNarrow } from '../use-is-narrow';
 import { useHideOnScroll } from '../use-hide-on-scroll';
+import { copyText } from '../copy-text';
 
 /** 按月偏移量平移 YYYY-MM，offset 为负表示往前翻 */
 function shiftMonth(month: string, offset: number): string {
@@ -99,6 +100,20 @@ export default function FinancePage({ onNotify, initialOrderId, returnOrderId, o
     if (!detail || !Number.isSafeInteger(numeric) || numeric <= 0) return undefined;
     return customers.find((customer) => customer.id === numeric);
   }, [customers, detail]);
+  const detailCompany = useMemo(() => {
+    const raw = detail?.order.company_id ?? detail?.order.companyId;
+    const numeric = Number(raw);
+    if (!detail || !Number.isSafeInteger(numeric) || numeric <= 0) return undefined;
+    return companies.find((company) => company.id === numeric);
+  }, [companies, detail]);
+  const copyDetailCompanyInvoiceInfo = async () => {
+    if (!detailCompany) return;
+    const copied = await copyText(buildCompanyInvoiceInfoText(detailCompany));
+    onNotify?.(
+      copied ? `已复制「${detailCompany.shortName}」开票信息，可直接发给客户` : '复制失败，请手动选择文字复制',
+      copied ? 'success' : 'error',
+    );
+  };
   const closeDetail = () => { setDetail(undefined); setSelectedOrderId(undefined); };
   const canReturnToOrder = Boolean(returnOrderId && onReturnToOrder && selectedOrderId === returnOrderId);
 
@@ -133,7 +148,7 @@ export default function FinancePage({ onNotify, initialOrderId, returnOrderId, o
         <div><span>已收金额</span><strong className="finance-positive">{money(detail.finance.receivedCents)}</strong></div>
         <div><span>未收金额</span><strong className={detail.finance.outstandingCents > 0 ? 'finance-warning' : 'finance-positive'}>{money(detail.finance.outstandingCents)}</strong></div>
         <div><span>付款状态</span><b className={badgeClass(detail.finance.paymentStatus)}>{FINANCE_PAYMENT_STATUS_LABELS[detail.finance.paymentStatus]}</b></div>
-        <div><span>收款/开票公司</span><strong>{String(detail.order.company_name ?? '') || '未分配'}</strong></div>
+        <div><span>收款/开票公司</span><strong className="finance-company-copy-row">{String(detail.order.company_name ?? '') || '未分配'}{detailCompany && <button className="icon-button" type="button" title="复制开票信息（可直接发给客户）" onClick={() => void copyDetailCompanyInvoiceInfo()}><Copy size={13} /></button>}</strong></div>
       </div>
       <PaymentProofEditor detail={detail} onRefresh={refreshDetail} onNotify={onNotify} />
       <InvoiceEditor detail={detail} customer={detailCustomer} onRefresh={refreshDetail} onNotify={onNotify} />

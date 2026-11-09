@@ -1,8 +1,9 @@
-import { Building2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Building2, Copy, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import Modal from '../Modal';
 import { createCompany, deleteCompany, updateCompany } from '../../api';
-import type { Company, CompanySaveInput } from '../../../shared/companies';
+import { buildCompanyInvoiceInfoText, formatInvoiceCategories, normalizeInvoiceCategories, type Company, type CompanySaveInput } from '../../../shared/companies';
+import { copyText } from '../../copy-text';
 import { errorText } from './finance-format';
 
 export interface CompanyManagerProps {
@@ -23,6 +24,7 @@ const emptyForm: CompanySaveInput = {
   phone: '',
   contactName: '',
   remark: '',
+  invoiceCategories: [],
   isActive: true,
 };
 
@@ -37,6 +39,7 @@ function companyForm(company: Company): CompanySaveInput {
     phone: company.phone,
     contactName: company.contactName,
     remark: company.remark,
+    invoiceCategories: company.invoiceCategories,
     isActive: company.isActive,
   };
 }
@@ -44,15 +47,19 @@ function companyForm(company: Company): CompanySaveInput {
 export default function CompanyManager({ open, companies, onClose, onChanged, onNotify }: CompanyManagerProps) {
   const [editing, setEditing] = useState<Company | 'new' | null>(null);
   const [form, setForm] = useState<CompanySaveInput>(emptyForm);
+  /** 可开票类目单独保存输入框原文，避免边输入分隔符边被解析回数组导致光标跳动。 */
+  const [categoriesText, setCategoriesText] = useState('');
   const [busy, setBusy] = useState(false);
 
   const beginCreate = () => {
     setEditing('new');
     setForm(emptyForm);
+    setCategoriesText('');
   };
   const beginEdit = (company: Company) => {
     setEditing(company);
     setForm(companyForm(company));
+    setCategoriesText(formatInvoiceCategories(company.invoiceCategories));
   };
   const updateField = <K extends keyof CompanySaveInput>(key: K, value: CompanySaveInput[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -65,8 +72,9 @@ export default function CompanyManager({ open, companies, onClose, onChanged, on
     }
     setBusy(true);
     try {
-      if (editing && editing !== 'new') await updateCompany(editing.id, form);
-      else await createCompany(form);
+      const payload: CompanySaveInput = { ...form, invoiceCategories: normalizeInvoiceCategories(categoriesText) };
+      if (editing && editing !== 'new') await updateCompany(editing.id, payload);
+      else await createCompany(payload);
       await onChanged();
       setEditing(null);
       onNotify?.(editing === 'new' ? '公司已新增' : '公司档案已保存', 'success');
@@ -75,6 +83,17 @@ export default function CompanyManager({ open, companies, onClose, onChanged, on
     } finally {
       setBusy(false);
     }
+  };
+  const copyInvoiceInfo = async (source: CompanySaveInput, label?: string) => {
+    if (!source.shortName.trim()) {
+      onNotify?.('请先填写公司简称', 'error');
+      return;
+    }
+    const copied = await copyText(buildCompanyInvoiceInfoText(source));
+    onNotify?.(
+      copied ? `已复制${label ? `「${label}」` : ''}开票信息，可直接发给客户` : '复制失败，请手动选择文字复制',
+      copied ? 'success' : 'error',
+    );
   };
   const remove = async (company: Company) => {
     if (busy || !window.confirm(`确定删除公司“${company.shortName}”吗？已被订单引用的公司不能删除，只能停用。`)) return;
@@ -111,21 +130,23 @@ export default function CompanyManager({ open, companies, onClose, onChanged, on
           <label>银行账号<input value={form.bankAccount} onChange={(event) => updateField('bankAccount', event.target.value)} /></label>
           <label>联系电话<input value={form.phone} onChange={(event) => updateField('phone', event.target.value)} /></label>
           <label>联系人<input value={form.contactName} onChange={(event) => updateField('contactName', event.target.value)} /></label>
+          <label className="company-form-wide">可开票类目<input value={categoriesText} onChange={(event) => setCategoriesText(event.target.value)} placeholder="多个类目用顿号或逗号分隔，如：电动工具、配件、电池" /></label>
           <label className="company-form-wide">注册地址<input value={form.address} onChange={(event) => updateField('address', event.target.value)} /></label>
           <label className="company-form-wide">备注<input value={form.remark} onChange={(event) => updateField('remark', event.target.value)} placeholder="如：对公账户、财务联系人等" /></label>
           <label className="company-form-check"><input type="checkbox" checked={form.isActive !== false} onChange={(event) => updateField('isActive', event.target.checked)} />启用（停用后不出现在新订单下拉，但历史记录保留）</label>
         </div>
-        <div className="company-form-actions"><button className="button button-secondary" type="button" onClick={() => setEditing(null)}>取消</button><button className="button button-primary" type="button" disabled={busy || !form.shortName.trim()} onClick={() => void save()}>{busy ? '保存中…' : '保存公司'}</button></div>
+        <div className="company-form-actions"><button className="button button-ghost" type="button" disabled={busy || !form.shortName.trim()} onClick={() => void copyInvoiceInfo({ ...form, invoiceCategories: normalizeInvoiceCategories(categoriesText) }, form.shortName)}><Copy size={14} />复制开票信息</button><button className="button button-secondary" type="button" onClick={() => setEditing(null)}>取消</button><button className="button button-primary" type="button" disabled={busy || !form.shortName.trim()} onClick={() => void save()}>{busy ? '保存中…' : '保存公司'}</button></div>
       </section>}
 
       {companies.length ? <div className="company-list">
-        <div className="company-list-head"><span>公司简称</span><span>全称 / 税号</span><span>开户行 / 账号</span><span>状态</span><span>操作</span></div>
+        <div className="company-list-head"><span>公司简称</span><span>全称 / 税号 / 开票类目</span><span>开户行 / 账号</span><span>状态</span><span>操作</span></div>
         {companies.map((company) => <div className={`company-row${company.isActive ? '' : ' is-inactive'}`} key={company.id}>
           <div className="company-name"><Building2 size={15} /><strong>{company.shortName}</strong></div>
-          <div><span>{company.fullName || '未填写全称'}</span><small>{company.taxNo || '未填写税号'}</small></div>
+          <div><span>{company.fullName || '未填写全称'}</span><small>{company.taxNo || '未填写税号'}</small>{(company.invoiceCategories?.length ?? 0) > 0 && <small className="company-category-line" title={company.invoiceCategories.join('、')}>开票类目：{company.invoiceCategories.join('、')}</small>}</div>
           <div><span>{company.bankName || '未填写开户行'}</span><small>{company.bankAccount || '未填写账号'}</small></div>
           <div><span className={company.isActive ? 'badge badge-success' : 'badge badge-neutral'}>{company.isActive ? '启用' : '已停用'}</span></div>
           <div className="company-row-actions">
+            <button className="icon-button" type="button" title="复制开票信息（可直接发给客户）" disabled={busy} onClick={() => void copyInvoiceInfo(companyForm(company), company.shortName)}><Copy size={14} /></button>
             <button className="icon-button" type="button" title="编辑公司" disabled={busy} onClick={() => beginEdit(company)}><Pencil size={14} /></button>
             <button className="icon-button danger" type="button" title="删除公司（被引用时不可删除）" disabled={busy} onClick={() => void remove(company)}><Trash2 size={14} /></button>
           </div>

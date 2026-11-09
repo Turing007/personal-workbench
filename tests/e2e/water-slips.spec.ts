@@ -42,7 +42,8 @@ async function seedCompanyOrder(page: import('@playwright/test').Page, stamp: nu
   return { company, order };
 }
 
-test('水单收款：订单号定位、上传、确认入账并按公司统计', async ({ page }) => {
+test('水单收款：订单号定位、上传、确认入账并按公司统计', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   const stamp = Date.now();
   const { company, order } = await seedCompanyOrder(page, stamp);
   const orderNo = String(order.order_no);
@@ -95,6 +96,11 @@ test('水单收款：订单号定位、上传、确认入账并按公司统计',
     const financeDialog = page.getByRole('dialog', { name: /财务详情/ });
     await expect(financeDialog).toContainText(company.shortName);
     await expect(financeDialog).toContainText(`开票公司：${company.shortName}`);
+    await financeDialog.locator('.finance-detail-summary').getByTitle('复制开票信息（可直接发给客户）').click();
+    await expect(page.getByText(`已复制「${company.shortName}」开票信息，可直接发给客户`)).toBeVisible();
+    const copiedInvoiceInfo = await page.evaluate(() => navigator.clipboard.readText());
+    expect(copiedInvoiceInfo).toContain(`公司名称：${company.fullName}`);
+    expect(copiedInvoiceInfo).toContain(`纳税人识别号：${company.taxNo}`);
   } finally {
     await page.request.delete(`/api/orders/${order.id}`);
     await page.request.delete(`/api/finance/companies/${company.id}`);
