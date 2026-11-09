@@ -2,6 +2,12 @@ plugins {
     id 'com.android.application'
 }
 
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
 android {
     namespace 'com.workbench.app'
     compileSdk 34
@@ -16,11 +22,11 @@ android {
 
     signingConfigs {
         release {
-            // 个人项目：keystore 随仓库保存，保证换电脑重新打包后签名不变、可覆盖安装。
-            storeFile rootProject.file('workbench.keystore')
-            storePassword 'REDACTED'
-            keyAlias 'workbench'
-            keyPassword 'REDACTED'
+            // 签名材料不进仓库：本机放在 android/keystore.properties（已忽略）。
+            storeFile rootProject.file(keystoreProperties.getProperty('storeFile', 'workbench.keystore'))
+            storePassword keystoreProperties.getProperty('storePassword', '')
+            keyAlias keystoreProperties.getProperty('keyAlias', 'workbench')
+            keyPassword keystoreProperties.getProperty('keyPassword', keystoreProperties.getProperty('storePassword', ''))
         }
     }
 
