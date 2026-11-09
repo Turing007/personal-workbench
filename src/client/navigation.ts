@@ -4,6 +4,7 @@ import {
   Boxes,
   ClipboardList,
   FileSpreadsheet,
+  HandCoins,
   PackageCheck,
   PackageOpen,
   ReceiptText,
@@ -13,7 +14,7 @@ import {
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 
-export type NavigationKey = 'orders' | 'stock' | 'finance' | 'quotations' | 'sales-documents' | 'products' | 'product-catalog' | 'customer-products' | 'library' | 'shipping' | 'settings';
+export type NavigationKey = 'orders' | 'stock' | 'finance' | 'water-slips' | 'quotations' | 'sales-documents' | 'products' | 'product-catalog' | 'customer-products' | 'library' | 'shipping' | 'settings';
 
 export interface NavigationItem {
   key: NavigationKey;
@@ -31,6 +32,7 @@ export const navigationItems: NavigationItem[] = [
   { key: 'stock', label: '备货', shortLabel: '备货', icon: PackageOpen },
   { key: 'shipping', label: '发货', shortLabel: '发货', icon: PackageCheck },
   { key: 'finance', label: '财务', shortLabel: '财务', icon: WalletCards },
+  { key: 'water-slips', label: '水单', shortLabel: '水单', icon: HandCoins },
   { key: 'products', label: '产品库', shortLabel: '产品', icon: Boxes },
   { key: 'product-catalog', label: '产品图册', shortLabel: '图册', icon: BookOpen },
   { key: 'customer-products', label: '客户', shortLabel: '客户', icon: ShoppingBag },

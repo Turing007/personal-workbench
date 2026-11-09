@@ -71,9 +71,9 @@ test.describe('订单对公/对私结算与开票状态', () => {
     await page.getByRole('textbox', { name: '搜索订单号或客户' }).fill(name);
     const financePersonalRow = page.locator('tbody tr', { hasText: personalOrder.orderNo });
     await expect(financePersonalRow).toContainText('无需开票');
-    // 列位置回归：发票列(第9格)显示无需开票，物流列(第10格)不得出现开票文案
-    await expect(financePersonalRow.locator('td').nth(8)).toContainText('无需开票');
-    await expect(financePersonalRow.locator('td').nth(9)).not.toContainText('无需开票');
+    // 列位置回归：公司列插入后，发票列是第10格，物流列是第11格。
+    await expect(financePersonalRow.locator('td').nth(9)).toContainText('无需开票');
+    await expect(financePersonalRow.locator('td').nth(10)).not.toContainText('无需开票');
     await financePersonalRow.getByRole('button', { name: '查看财务' }).click();
     const financeDialog = page.getByRole('dialog', { name: /财务详情/ });
     await expect(financeDialog).toBeVisible();

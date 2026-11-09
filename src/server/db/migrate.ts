@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 39;
+const CURRENT_SCHEMA_VERSION = 40;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -1445,6 +1445,35 @@ function migrateVersionThirtyEight(database: DatabaseSync, now: string): void {
 }
 
 /**
+ * 水单收款：公司档案 + 订单归属公司。
+ * 水单、收款、发票的公司统一从订单派生，避免同一字段多表重复。
+ */
+function migrateVersionForty(database: DatabaseSync, now: string): void {
+  database.exec(
+    `CREATE TABLE IF NOT EXISTS companies (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       short_name TEXT NOT NULL,
+       full_name TEXT NOT NULL DEFAULT '',
+       tax_no TEXT NOT NULL DEFAULT '',
+       bank_name TEXT NOT NULL DEFAULT '',
+       bank_account TEXT NOT NULL DEFAULT '',
+       address TEXT NOT NULL DEFAULT '',
+       phone TEXT NOT NULL DEFAULT '',
+       contact_name TEXT NOT NULL DEFAULT '',
+       remark TEXT NOT NULL DEFAULT '',
+       is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+       created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL
+     )`,
+  );
+  database.exec('CREATE UNIQUE INDEX IF NOT EXISTS uq_companies_short_name ON companies (lower(trim(short_name)))');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_companies_active_name ON companies (is_active, short_name, id)');
+  addColumnIfMissing(database, 'orders', 'company_id', 'INTEGER REFERENCES companies(id) ON DELETE SET NULL');
+  database.exec('CREATE INDEX IF NOT EXISTS idx_orders_company ON orders (company_id, ordered_at DESC, id DESC)');
+  upsertSetting(database, 'schema_version', '40', now);
+}
+
+/**
  * 资料库：合同表格、客户标贴、产品资料等常用文件的统一存放。
  * 删除先写 deleted_at 进回收站，30 天后由服务端清理；文件本身仍在 data/files/library。
  */
@@ -1539,6 +1568,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionThirtySeven(transactionDatabase, now);
     migrateVersionThirtyEight(transactionDatabase, now);
     migrateVersionThirtyNine(transactionDatabase, now);
+    migrateVersionForty(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

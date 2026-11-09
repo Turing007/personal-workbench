@@ -47,11 +47,20 @@ import type {
   FinanceInvoiceFile,
   FinanceListFilters,
   FinanceListResult,
+  FinanceOrderLookupRow,
+  FinanceProofListFilters,
+  FinanceProofListRow,
   FinanceReceipt,
   OrderFinanceSummary,
   PayeeBreakdownRow,
   PaymentProofRecord,
 } from '../shared/finance';
+import type {
+  Company,
+  CompanyReceiptBreakdownRow,
+  CompanySaveInput,
+  CompanyStatsRow,
+} from '../shared/companies';
 import type { CustomerProduct as LegacyCustomerProduct, OrderDraft, OrderItemDraft, PackagingOption } from './components/OrderForm';
 import type { ProductRecord } from './components/ProductEditor';
 import type { ProductAttachmentCategory, ProductVideo } from './components/ProductEditor';
@@ -125,6 +134,9 @@ export interface ApiOrderRow {
   updated_at?: string;
   /** 含 draft（草稿）在内的全部订单状态。 */
   status: OrderStatus | 'draft';
+  /** 收款/开票公司；历史订单可能为空 */
+  company_id?: number | null;
+  company_name?: string;
   label_printed_at?: string | null;
   total_boxes: number;
   total_quantity: number;
@@ -503,6 +515,7 @@ export function draftToInput(draft: OrderDraft) {
     orderDetail: draft.orderDetail,
     remark: draft.remark,
     settlementType: draft.settlementType === 'personal' ? 'personal' : 'corporate',
+    companyId: draft.companyId ?? null,
     items: draft.items.map((item) => ({ customerProductId: item.customerProductId ?? (item.productId ? Number(item.productId) : null), name: item.name.trim(), sku: item.sku.trim(), specification: item.specification.trim(), packCount: Math.max(1, Math.trunc(item.packSize)), quantity: Math.max(1, Math.trunc(item.quantity)), unitPriceCents: Math.max(0, Math.trunc(item.unitPriceCents ?? 0)), freightPerBoxCents: Math.max(0, Math.trunc(item.freightPerBoxCents ?? 0)), packaging: item.packaging?.length ? item.packaging.map((pack) => ({ name: pack.name, innerSize: pack.innerSize, innerWeight: Number(pack.innerWeight) || 0, outerSize: pack.outerSize, outerWeight: Number(pack.outerWeight) || 0, packCount: Math.max(1, Math.trunc(pack.packSize)) })) : [{ name: '', packCount: Math.max(1, Math.trunc(item.packSize)) }], remark: item.remark, labelRequirement: (item.labelRequirement ?? '').trim() }))
     , orderAttachments: draft.items.flatMap((item) => (item.customerProductAttachments ?? []).map((attachment) => ({ category: attachment.category, sourceCustomerProductId: item.customerProductId ?? null, relativePath: attachment.relativePath, originalName: attachment.originalName, mimeType: attachment.mimeType, size: attachment.size })))
   };
@@ -1148,6 +1161,36 @@ export interface ApiFinanceDetail {
 
 export interface FinanceListParams extends FinanceListFilters {
   q?: string;
+}
+
+export function listCompanies(includeInactive = false) {
+  return request<{ items: Company[] }>(`/api/finance/companies${includeInactive ? '?includeInactive=1' : ''}`);
+}
+export function createCompany(input: CompanySaveInput) {
+  return request<Company>('/api/finance/companies', { method: 'POST', body: JSON.stringify(input) });
+}
+export function updateCompany(id: number, input: CompanySaveInput) {
+  return request<Company>(`/api/finance/companies/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+}
+export function deleteCompany(id: number) {
+  return request<{ id: number }>(`/api/finance/companies/${id}`, { method: 'DELETE' });
+}
+export function listCompanyStats(month?: string) {
+  return request<{ items: CompanyStatsRow[] }>(`/api/finance/companies/stats${month ? `?month=${encodeURIComponent(month)}` : ''}`);
+}
+export function listCompanyBreakdown(month?: string) {
+  return request<{ items: CompanyReceiptBreakdownRow[] }>(`/api/finance/receipts/by-company${month ? `?month=${encodeURIComponent(month)}` : ''}`);
+}
+export function lookupFinanceOrders(orderNo: string) {
+  return request<{ items: FinanceOrderLookupRow[] }>(`/api/finance/orders/lookup?orderNo=${encodeURIComponent(orderNo)}`);
+}
+export function listFinanceProofs(filters: FinanceProofListFilters = {}) {
+  const query = new URLSearchParams();
+  if (filters.month) query.set('month', filters.month);
+  if (filters.companyId != null) query.set('companyId', String(filters.companyId));
+  if (filters.status) query.set('status', filters.status);
+  if (filters.query?.trim()) query.set('q', filters.query.trim());
+  return request<{ items: FinanceProofListRow[] }>(`/api/finance/proofs?${query.toString()}`);
 }
 
 export function listFinanceOrders(params: FinanceListParams = {}) {

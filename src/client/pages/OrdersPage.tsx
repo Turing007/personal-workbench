@@ -12,6 +12,7 @@ import StatusCards from '../components/StatusCards';
 import { getOrderNextAction, isDraftOrder, isUnshippedOrder, type BatchAdvanceAction, type OrderNextAction } from '../order-workflow';
 import { FINANCE_PAYMENT_STATUS_LABELS, type FinancePaymentStatus } from '../../shared/finance';
 import { formatDateTime } from '../../shared/formatters';
+import type { Company } from '../../shared/companies';
 import type { Customer, CustomerSaveInput } from '../../shared/customers';
 import { cartonLabelRequirement } from '../../shared/customers';
 import { useIsNarrow } from '../use-is-narrow';
@@ -20,6 +21,7 @@ import { useHideOnScroll } from '../use-hide-on-scroll';
 export interface OrdersPageProps {
   orders: OrderDraft[];
   customers: Customer[];
+  companies?: Company[];
   statusCounts?: Partial<Record<'all' | OrderStatus, number>>;
   labelsByOrderId?: Record<string, CartonLabel[]>;
   initialOrderId?: number | null;
@@ -140,7 +142,7 @@ export function fallbackLabels(order: OrderDraft): CartonLabel[] {
   });
 }
 
-export default function OrdersPage({ orders, customers, statusCounts, labelsByOrderId, initialOrderId, onSaveOrder, onSaveDraft, onDeleteOrder, onSaveCustomerProduct, onCreateCustomer, onGetNextOrderNumber, onDeleteContract, onGenerateContract, onAdvanceStatus, onBatchAdvance, onPublishOrder, onOpenShipping, onOpenFinance, onSaveLabels, onMergeLabels, onRestoreAutoLabels, onPrintHistory }: OrdersPageProps) {
+export default function OrdersPage({ orders, customers, companies = [], statusCounts, labelsByOrderId, initialOrderId, onSaveOrder, onSaveDraft, onDeleteOrder, onSaveCustomerProduct, onCreateCustomer, onGetNextOrderNumber, onDeleteContract, onGenerateContract, onAdvanceStatus, onBatchAdvance, onPublishOrder, onOpenShipping, onOpenFinance, onSaveLabels, onMergeLabels, onRestoreAutoLabels, onPrintHistory }: OrdersPageProps) {
   const [filter, setFilter] = useState<'all' | OrderStatus>('all');
   const [query, setQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -317,7 +319,7 @@ export default function OrdersPage({ orders, customers, statusCounts, labelsByOr
       })}{!visibleOrders.length && <div className="table-state">暂无符合条件的订单</div>}</div>
     </section>
 
-    <Modal open={creating || Boolean(editingOrder)} title={editingOrder ? `编辑订单 · ${editingOrder.orderNo}` : '新建订单'} onClose={() => { setCreating(false); setEditingOrder(undefined); }} width={1040}><OrderForm key={editingOrder?.id ?? (creating ? 'new' : 'closed')} value={editingOrder} customers={customers} onSaveCustomerProduct={onSaveCustomerProduct} onCreateCustomer={onCreateCustomer} onGetNextOrderNumber={onGetNextOrderNumber} onSubmit={(order) => { onSaveOrder(order); setCreating(false); setEditingOrder(undefined); }} onSaveDraft={onSaveDraft ? (order) => { onSaveDraft(order); setCreating(false); setEditingOrder(undefined); } : undefined} onCancel={() => { setCreating(false); setEditingOrder(undefined); }} /></Modal>
+    <Modal open={creating || Boolean(editingOrder)} title={editingOrder ? `编辑订单 · ${editingOrder.orderNo}` : '新建订单'} onClose={() => { setCreating(false); setEditingOrder(undefined); }} width={1040}><OrderForm key={editingOrder?.id ?? (creating ? 'new' : 'closed')} value={editingOrder} customers={customers} companies={companies} onSaveCustomerProduct={onSaveCustomerProduct} onCreateCustomer={onCreateCustomer} onGetNextOrderNumber={onGetNextOrderNumber} onSubmit={(order) => { onSaveOrder(order); setCreating(false); setEditingOrder(undefined); }} onSaveDraft={onSaveDraft ? (order) => { onSaveDraft(order); setCreating(false); setEditingOrder(undefined); } : undefined} onCancel={() => { setCreating(false); setEditingOrder(undefined); }} /></Modal>
     <OrderDetailModal open={Boolean(detailOrder)} order={detailOrder} onClose={() => setDetailOrder(undefined)} onEditOrder={openEdit} onEditLabels={(order) => { setDetailOrder(undefined); openLabels(order); }} onPrintLabels={(order) => { setDetailOrder(undefined); setPrintLabels(labelsByOrderId?.[orderKey(order)] ?? fallbackLabels(order)); }} onDeleteContract={onDeleteContract} onDeleteOrder={onDeleteOrder ? confirmDeleteOrder : undefined} onAdvanceStatus={onAdvanceStatus} onPublishOrder={onPublishOrder} onOpenFinance={onOpenFinance} />
     <Modal open={Boolean(productsOrder)} title={productsOrder ? `产品明细 · ${productsOrder.orderNo}` : '产品明细'} onClose={() => setProductsOrder(undefined)} width={920}>{productsOrder && <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ display: 'grid', gridTemplateColumns: narrow ? 'repeat(2, minmax(0, 1fr))' : 'repeat(6, minmax(0, 1fr))', gap: 12, padding: 12, background: 'var(--tone-surface-frost)', border: '1px solid var(--tone-border-soft)', borderRadius: 'var(--radius-ui)' }}>

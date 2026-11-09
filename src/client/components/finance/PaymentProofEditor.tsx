@@ -173,7 +173,7 @@ export default function PaymentProofEditor({ detail, onRefresh, onNotify }: Paym
   };
 
   return <section className="finance-section">
-    <div className="finance-section-heading"><div><strong>客户水单</strong><span>上传凭证不等于到账，每笔水单单独审核通过后才计入已收</span></div><span className="finance-section-count">{detail.proofs.length} 张</span></div>
+    <div className="finance-section-heading"><div><strong>客户水单</strong><span>收款公司：{String(detail.order.company_name ?? '') || '未分配公司'} · 上传凭证不等于到账，每笔水单单独审核通过后才计入已收</span></div><span className="finance-section-count">{detail.proofs.length} 张</span></div>
     <div className="finance-proof-upload">
       {file && fileUrl ? <a href={fileUrl} target="_blank" rel="noreferrer" className="finance-proof-thumb" title="查看待上传水单原图"><img src={fileUrl} alt={file.name} /></a> : null}
       <label className="finance-file-picker"><Upload size={15} />{file ? file.name : '选择水单图片'}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setProofFile(event.target.files?.[0])} /></label>
@@ -181,7 +181,6 @@ export default function PaymentProofEditor({ detail, onRefresh, onNotify }: Paym
       <input type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} aria-label="付款日期" />
       <input ref={amountRef} type="number" min="0.01" step="0.01" placeholder="付款金额" value={amount} onChange={(event) => setAmount(event.target.value)} />
       <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} aria-label="付款方式">{paymentMethods.map((method) => <option key={method}>{method}</option>)}</select>
-      <input placeholder="收款人（可选，如：对公户 / 张会计）" value={payeeName} onChange={(event) => setPayeeName(event.target.value)} />
       <input placeholder="交易流水号（可选）" value={transactionNo} onChange={(event) => setTransactionNo(event.target.value)} />
       <button className="button button-primary" type="button" disabled={!file || !amount || busy} onClick={() => void upload()}><Plus size={14} />上传水单</button>
     </div>

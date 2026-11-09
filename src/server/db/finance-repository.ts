@@ -11,6 +11,9 @@ import {
   type FinanceListResult,
   type FinanceListRow,
   type FinanceListStats,
+  type FinanceOrderLookupRow,
+  type FinanceProofListFilters,
+  type FinanceProofListRow,
   type FinanceReceipt,
   type OrderFinanceSummary,
   type PayeeBreakdownRow,
@@ -18,6 +21,8 @@ import {
   type PaymentProofStatus,
   type InvoiceStatus,
 } from '../../shared/finance.js';
+import type { CompanyReceiptBreakdownRow, CompanyStatsRow } from '../../shared/companies.js';
+import { UNASSIGNED_COMPANY_NAME } from '../../shared/companies.js';
 
 interface SqlRow { [key: string]: unknown }
 
@@ -192,7 +197,12 @@ export class FinanceRepository {
   constructor(private readonly database: DatabaseSync) {}
 
   getOrder(orderId: number): SqlRow | undefined {
-    return this.database.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as SqlRow | undefined;
+    return this.database.prepare(`
+      SELECT o.*, c.short_name AS company_name, c.full_name AS company_full_name
+      FROM orders o
+      LEFT JOIN companies c ON c.id = o.company_id
+      WHERE o.id = ?
+    `).get(orderId) as SqlRow | undefined;
   }
 
   ensureOrderFinance(orderId: number, receivableCents: number, database = this.database): OrderFinanceSummary {
@@ -254,6 +264,12 @@ export class FinanceRepository {
     if (filters.proofStatus) { conditions.push('f.proof_status = ?'); values.push(filters.proofStatus); }
     if (filters.invoiceStatus) { conditions.push('f.invoice_status = ?'); values.push(filters.invoiceStatus); }
     if (filters.orderStatus) { conditions.push('o.status = ?'); values.push(filters.orderStatus); }
+    if (filters.companyId === 'unassigned') {
+      conditions.push('o.company_id IS NULL');
+    } else if (filters.companyId != null) {
+      conditions.push('o.company_id = ?');
+      values.push(filters.companyId);
+    }
     const month = filters.month?.trim();
     if (month) {
       conditions.push("substr(o.ordered_at, 1, 7) = ?");
@@ -266,12 +282,16 @@ export class FinanceRepository {
       values.push(like, like, like, like);
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const total = Number(this.database.prepare(`SELECT COUNT(*) AS count FROM order_finance f JOIN orders o ON o.id = f.order_id ${where}`).get(...values)?.count ?? 0);
+    const total = Number(this.database.prepare(`SELECT COUNT(*) AS count FROM order_finance f JOIN orders o ON o.id = f.order_id LEFT JOIN companies c ON c.id = o.company_id ${where}`).get(...values)?.count ?? 0);
     const rows = this.database.prepare(`
       SELECT o.id AS order_id, o.order_no, o.customer_name, o.ordered_at AS order_date,
         f.receivable_cents, f.received_cents, f.outstanding_cents, f.payment_status,
-        f.proof_status, f.invoice_status, o.status AS order_status, o.settlement_type, f.updated_at
-      FROM order_finance f JOIN orders o ON o.id = f.order_id ${where}
+        f.proof_status, f.invoice_status, o.status AS order_status, o.settlement_type,
+        o.company_id, COALESCE(c.short_name, '') AS company_name, f.updated_at
+      FROM order_finance f
+      JOIN orders o ON o.id = f.order_id
+      LEFT JOIN companies c ON c.id = o.company_id
+      ${where}
       ORDER BY f.updated_at DESC, f.id DESC LIMIT ? OFFSET ?
     `).all(...values, pageSize, (page - 1) * pageSize) as SqlRow[];
     const statsRows = this.database.prepare(`
@@ -281,7 +301,10 @@ export class FinanceRepository {
         COALESCE(SUM((SELECT COUNT(*) FROM payment_proofs p WHERE p.order_id = f.order_id AND p.status = 'pending')), 0) AS pending_proof_count,
         COALESCE(SUM(CASE WHEN f.invoice_status IN ('incomplete', 'pending_issue', 'issued')
           AND COALESCE(o.settlement_type, 'corporate') <> 'personal' THEN 1 ELSE 0 END), 0) AS pending_invoice_count
-      FROM order_finance f JOIN orders o ON o.id = f.order_id ${where}
+      FROM order_finance f
+      JOIN orders o ON o.id = f.order_id
+      LEFT JOIN companies c ON c.id = o.company_id
+      ${where}
     `).get(...values) as SqlRow;
     const stats: FinanceListStats = {
       receivableCents: numberValue(statsRows, 'receivable_cents'),
@@ -294,13 +317,61 @@ export class FinanceRepository {
       rows: rows.map((row): FinanceListRow => ({
         orderId: numberValue(row, 'order_id'), orderNo: stringValue(row, 'order_no'), customerName: stringValue(row, 'customer_name'), orderDate: stringValue(row, 'order_date'),
         receivableCents: numberValue(row, 'receivable_cents'), receivedCents: numberValue(row, 'received_cents'), outstandingCents: numberValue(row, 'outstanding_cents'),
-        paymentStatus: stringValue(row, 'payment_status') as FinanceListRow['paymentStatus'], proofStatus: stringValue(row, 'proof_status') as FinanceListRow['proofStatus'], invoiceStatus: stringValue(row, 'invoice_status') as FinanceListRow['invoiceStatus'], orderStatus: stringValue(row, 'order_status'), settlementType: stringValue(row, 'settlement_type', 'corporate'), updatedAt: stringValue(row, 'updated_at'),
+        paymentStatus: stringValue(row, 'payment_status') as FinanceListRow['paymentStatus'], proofStatus: stringValue(row, 'proof_status') as FinanceListRow['proofStatus'], invoiceStatus: stringValue(row, 'invoice_status') as FinanceListRow['invoiceStatus'], orderStatus: stringValue(row, 'order_status'), settlementType: stringValue(row, 'settlement_type', 'corporate'), companyId: row.company_id == null ? null : numberValue(row, 'company_id'), companyName: stringValue(row, 'company_name'), updatedAt: stringValue(row, 'updated_at'),
       })), total, page, pageSize, stats,
     };
   }
 
   listProofs(orderId: number): PaymentProofRecord[] {
     return (this.database.prepare('SELECT * FROM payment_proofs WHERE order_id = ? ORDER BY created_at DESC, id DESC').all(orderId) as SqlRow[]).map(mapProof);
+  }
+
+  listProofsAcrossOrders(filters: FinanceProofListFilters = {}): FinanceProofListRow[] {
+    const conditions: string[] = [];
+    const values: Array<string | number> = [];
+    if (filters.status) {
+      conditions.push('p.status = ?');
+      values.push(filters.status);
+    }
+    if (filters.companyId === 'unassigned') {
+      conditions.push('o.company_id IS NULL');
+    } else if (filters.companyId != null) {
+      conditions.push('o.company_id = ?');
+      values.push(filters.companyId);
+    }
+    const month = filters.month?.trim();
+    if (month) {
+      conditions.push('substr(COALESCE(p.payment_date, p.created_at), 1, 7) = ?');
+      values.push(month);
+    }
+    const query = filters.query?.trim();
+    if (query) {
+      conditions.push('(o.order_no LIKE ? OR o.customer_name LIKE ? OR p.payer_name LIKE ?)');
+      values.push(`%${query}%`, `%${query}%`, `%${query}%`);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = Math.min(500, Math.max(1, Math.trunc(filters.limit ?? 200)));
+    const rows = this.database.prepare(`
+      SELECT p.*, o.order_no, o.customer_name, o.ordered_at AS order_date,
+        COALESCE(o.settlement_type, 'corporate') AS settlement_type,
+        o.company_id, COALESCE(c.short_name, '') AS company_name
+      FROM payment_proofs p
+      JOIN orders o ON o.id = p.order_id
+      LEFT JOIN companies c ON c.id = o.company_id
+      ${where}
+      ORDER BY COALESCE(p.payment_date, p.created_at) DESC, p.id DESC
+      LIMIT ?
+    `).all(...values, limit) as SqlRow[];
+    return rows.map((row) => ({
+      ...mapProof(row),
+      orderNo: stringValue(row, 'order_no'),
+      customerName: stringValue(row, 'customer_name'),
+      orderDate: stringValue(row, 'order_date'),
+      settlementType: stringValue(row, 'settlement_type', 'corporate'),
+      companyId: row.company_id == null ? null : numberValue(row, 'company_id'),
+      companyName: stringValue(row, 'company_name'),
+      url: `/files/${stringValue(row, 'relative_path')}`,
+    }));
   }
 
   getProof(id: number): PaymentProofRecord | undefined {
@@ -380,6 +451,153 @@ export class FinanceRepository {
       payeeName: stringValue(row, 'payee_name', '未指定'),
       receiptCount: numberValue(row, 'receipt_count'),
       amountCents: numberValue(row, 'amount_cents'),
+    }));
+  }
+
+  /** 财务台账“已收金额 → 按公司”，月份口径与台账一致（下单月份）。 */
+  listCompanyBreakdown(month?: string): CompanyReceiptBreakdownRow[] {
+    const values: Array<string | number> = [UNASSIGNED_COMPANY_NAME];
+    let where = '';
+    const trimmed = month?.trim();
+    if (trimmed) {
+      where = 'WHERE substr(o.ordered_at, 1, 7) = ?';
+      values.push(trimmed);
+    }
+    const rows = this.database.prepare(`
+      SELECT o.company_id,
+        COALESCE(NULLIF(c.short_name, ''), ?) AS company_name,
+        COUNT(*) AS receipt_count,
+        COALESCE(SUM(r.amount_cents), 0) AS amount_cents
+      FROM finance_receipts r
+      JOIN orders o ON o.id = r.order_id
+      LEFT JOIN companies c ON c.id = o.company_id
+      ${where}
+      GROUP BY o.company_id, c.short_name
+      ORDER BY amount_cents DESC, receipt_count DESC
+    `).all(...values) as SqlRow[];
+    return rows.map((row) => ({
+      companyId: row.company_id == null ? null : numberValue(row, 'company_id'),
+      companyName: stringValue(row, 'company_name', UNASSIGNED_COMPANY_NAME),
+      receiptCount: numberValue(row, 'receipt_count'),
+      amountCents: numberValue(row, 'amount_cents'),
+    }));
+  }
+
+  /**
+   * 水单页按公司统计：
+   * - 已入账/待确认按水单付款日期月份；
+   * - 待开票按订单下单月份，金额为应收减去有效发票金额。
+   */
+  listCompanyStats(month?: string): CompanyStatsRow[] {
+    const trimmed = month?.trim();
+    const receivedValues: Array<string | number> = [];
+    const pendingValues: Array<string | number> = [];
+    const invoiceValues: Array<string | number> = [];
+    const receivedMonth = trimmed ? 'AND substr(r.received_at, 1, 7) = ?' : '';
+    const pendingMonth = trimmed ? 'AND substr(COALESCE(p.payment_date, p.created_at), 1, 7) = ?' : '';
+    const invoiceMonth = trimmed ? 'AND substr(o.ordered_at, 1, 7) = ?' : '';
+    if (trimmed) {
+      receivedValues.push(trimmed);
+      pendingValues.push(trimmed);
+      invoiceValues.push(trimmed);
+    }
+    const receivedRows = this.database.prepare(`
+      SELECT o.company_id, COUNT(*) AS count, COALESCE(SUM(r.amount_cents), 0) AS amount_cents
+      FROM finance_receipts r
+      JOIN orders o ON o.id = r.order_id
+      WHERE 1 = 1 ${receivedMonth}
+      GROUP BY o.company_id
+    `).all(...receivedValues) as SqlRow[];
+    const pendingRows = this.database.prepare(`
+      SELECT o.company_id, COUNT(*) AS count, COALESCE(SUM(p.amount_cents), 0) AS amount_cents
+      FROM payment_proofs p
+      JOIN orders o ON o.id = p.order_id
+      WHERE p.status = 'pending' AND p.amount_cents IS NOT NULL ${pendingMonth}
+      GROUP BY o.company_id
+    `).all(...pendingValues) as SqlRow[];
+    const invoiceRows = this.database.prepare(`
+      SELECT o.company_id,
+        COUNT(*) AS count,
+        COALESCE(SUM(MAX(0, f.receivable_cents - COALESCE((
+          SELECT SUM(i.amount_cents) FROM finance_invoices i
+          WHERE i.order_id = o.id AND i.status <> 'void'
+        ), 0))), 0) AS amount_cents
+      FROM order_finance f
+      JOIN orders o ON o.id = f.order_id
+      WHERE COALESCE(o.settlement_type, 'corporate') <> 'personal'
+        AND f.invoice_status IN ('not_requested', 'incomplete', 'pending_issue')
+        ${invoiceMonth}
+      GROUP BY o.company_id
+    `).all(...invoiceValues) as SqlRow[];
+
+    const companyRows = this.database
+      .prepare('SELECT id, short_name FROM companies ORDER BY is_active DESC, short_name COLLATE NOCASE, id')
+      .all() as Array<{ id: number; short_name: string }>;
+    const received = new Map<string, SqlRow>();
+    const pending = new Map<string, SqlRow>();
+    const invoice = new Map<string, SqlRow>();
+    const key = (value: unknown) => (value == null ? 'null' : String(value));
+    for (const row of receivedRows) received.set(key(row.company_id), row);
+    for (const row of pendingRows) pending.set(key(row.company_id), row);
+    for (const row of invoiceRows) invoice.set(key(row.company_id), row);
+
+    const build = (companyId: number | null, companyName: string): CompanyStatsRow => {
+      const receivedRow = received.get(key(companyId));
+      const pendingRow = pending.get(key(companyId));
+      const invoiceRow = invoice.get(key(companyId));
+      return {
+        companyId,
+        companyName,
+        receivedCents: numberValue(receivedRow ?? {}, 'amount_cents'),
+        receivedCount: numberValue(receivedRow ?? {}, 'count'),
+        pendingCents: numberValue(pendingRow ?? {}, 'amount_cents'),
+        pendingCount: numberValue(pendingRow ?? {}, 'count'),
+        pendingInvoiceCents: numberValue(invoiceRow ?? {}, 'amount_cents'),
+        pendingInvoiceCount: numberValue(invoiceRow ?? {}, 'count'),
+      };
+    };
+
+    const rows = companyRows.map((row) => build(numberValue(row, 'id'), stringValue(row, 'short_name')));
+    const hasUnassigned = received.has('null') || pending.has('null') || invoice.has('null');
+    if (hasUnassigned) rows.push(build(null, UNASSIGNED_COMPANY_NAME));
+    return rows;
+  }
+
+  /** 水单页订单号输入：模糊匹配，完全匹配排在最前。 */
+  lookupOrders(query: string, limit = 10): FinanceOrderLookupRow[] {
+    const trimmed = query.trim();
+    if (!trimmed) return [];
+    const rows = this.database.prepare(`
+      SELECT o.id AS order_id, o.order_no, o.customer_name, o.ordered_at AS order_date,
+        COALESCE(o.settlement_type, 'corporate') AS settlement_type,
+        o.company_id, COALESCE(c.short_name, '') AS company_name,
+        COALESCE(f.receivable_cents, o.amount_cents) AS receivable_cents,
+        COALESCE(f.received_cents, 0) AS received_cents,
+        COALESCE(f.outstanding_cents, o.amount_cents) AS outstanding_cents,
+        COALESCE(f.payment_status, 'unpaid') AS payment_status,
+        COALESCE(f.proof_status, 'none') AS proof_status,
+        COALESCE(f.invoice_status, 'not_requested') AS invoice_status
+      FROM orders o
+      LEFT JOIN order_finance f ON f.order_id = o.id
+      LEFT JOIN companies c ON c.id = o.company_id
+      WHERE o.order_no LIKE ?
+      ORDER BY CASE WHEN o.order_no = ? THEN 0 ELSE 1 END, o.ordered_at DESC, o.id DESC
+      LIMIT ?
+    `).all(`%${trimmed}%`, trimmed, Math.max(1, Math.min(50, limit))) as SqlRow[];
+    return rows.map((row) => ({
+      orderId: numberValue(row, 'order_id'),
+      orderNo: stringValue(row, 'order_no'),
+      customerName: stringValue(row, 'customer_name'),
+      orderDate: stringValue(row, 'order_date'),
+      settlementType: stringValue(row, 'settlement_type', 'corporate'),
+      companyId: row.company_id == null ? null : numberValue(row, 'company_id'),
+      companyName: stringValue(row, 'company_name'),
+      receivableCents: numberValue(row, 'receivable_cents'),
+      receivedCents: numberValue(row, 'received_cents'),
+      outstandingCents: numberValue(row, 'outstanding_cents'),
+      paymentStatus: stringValue(row, 'payment_status') as FinanceOrderLookupRow['paymentStatus'],
+      proofStatus: stringValue(row, 'proof_status') as FinanceOrderLookupRow['proofStatus'],
+      invoiceStatus: stringValue(row, 'invoice_status') as FinanceOrderLookupRow['invoiceStatus'],
     }));
   }
 

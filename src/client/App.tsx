@@ -15,6 +15,7 @@ import type { CartonLabel } from './components/LabelEditorModal';
 import type { OrderContractDraft, OrderDraft, OrderItemDraft, OrderStatus } from './components/OrderForm';
 import type { ProductRecord } from './components/ProductEditor';
 import type { Customer } from '../shared/customers';
+import type { Company } from '../shared/companies';
 import OrdersPage, { fallbackLabels } from './pages/OrdersPage';
 import { getBatchAdvancePlan, type BatchAdvanceAction } from './order-workflow';
 import ProductsPage from './pages/ProductsPage';
@@ -26,6 +27,7 @@ import QuotationPage from './pages/QuotationPage';
 import SalesDocumentsPage from './pages/SalesDocumentsPage';
 import LibraryPage from './pages/LibraryPage';
 import FinancePage from './pages/FinancePage';
+import WaterSlipPage from './pages/WaterSlipPage';
 import StockPage from './pages/StockPage';
 import {
   advanceOrderStatus,
@@ -35,6 +37,7 @@ import {
   exportProducts,
   downloadProductImportTemplate,
   getCustomers,
+  listCompanies,
   getCompanyProfile,
   createCustomer,
   getOrderDetail,
@@ -116,7 +119,7 @@ function mapOrderDetail(row: ApiOrderDetail | ApiOrderRow): OrderDraft {
   const mappedContracts = rawContracts.map((contract): OrderContractDraft => { const item = contract as Record<string, unknown>; const relativePath = String(item.relative_path ?? item.relativePath ?? ''); return { id: String(item.id), name: String(item.original_name ?? item.originalName ?? '订单附件'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mime_type ?? item.mimeType ?? ''), size: asNumber(item.size ?? item.size_bytes), createdAt: String(item.created_at ?? item.createdAt ?? ''), category: String(item.category ?? 'other'), sourceCustomerProductId: item.source_customer_product_id == null ? null : Number(item.source_customer_product_id) }; });
   const rawFinance = (raw.financeSummary ?? raw.finance_summary) as Record<string, unknown> | null | undefined;
   return {
-      id: String(raw.id), orderNo: String(raw.order_no ?? ''), orderedAt: String(raw.ordered_at ?? '').slice(0, 10), customerId: raw.customer_id == null ? null : Number(raw.customer_id), customerName: String(raw.customer_name ?? ''), customerContactName: String(raw.customer_contact_name ?? ''), customerContactPhone: String(raw.customer_contact_phone ?? ''), customerShippingInfo: String(raw.customer_shipping_info ?? ''), settlementType: raw.settlement_type === 'personal' ? 'personal' : 'corporate', orderDetail: String(raw.order_detail ?? raw.orderDetail ?? ''), orderDetailImages: rawDetailImages.map((image) => { const item = image as Record<string, unknown>; const relativePath = String(item.relative_path ?? item.relativePath ?? ''); return { id: String(item.id), name: String(item.original_name ?? item.originalName ?? '订单详情图片'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mime_type ?? item.mimeType ?? ''), size: asNumber(item.size ?? item.size_bytes) }; }), recipientName: String(raw.recipient_name ?? ''), recipientInfo: String(raw.recipient_info ?? ''), amount: asNumber(raw.amount).toFixed(2), shippingCents: Math.max(0, Math.trunc(asNumber(raw.shipping_cents ?? raw.shippingCents))), trackingNo: String(raw.tracking_no ?? ''), paymentNote: String(raw.payment_note ?? raw.paymentNote ?? ''), paymentProofs: (Array.isArray(raw.paymentProofs) ? raw.paymentProofs : Array.isArray(raw.payment_proofs) ? raw.payment_proofs : []).map((proof) => { const item = proof as Record<string, unknown>; const relativePath = String(item.relative_path ?? item.relativePath ?? ''); return { id: String(item.id), name: String(item.original_name ?? item.originalName ?? '付款凭证'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), note: String(item.note ?? ''), mimeType: String(item.mime_type ?? item.mimeType ?? ''), size: asNumber(item.size ?? item.size_bytes), createdAt: String(item.created_at ?? item.createdAt ?? '') }; }), contracts: mappedContracts, labels: Array.isArray(raw.labels) ? raw.labels as Array<Record<string, unknown>> : [], remark: String(raw.remark ?? ''), items: rawItems.map((item) => mapOrderItem(item as Record<string, unknown>)), totalBoxes: Math.max(0, Math.trunc(asNumber(raw.total_boxes))), status: String(raw.status ?? 'pending_stock') as OrderStatus, labelPrintedAt: raw.label_printed_at == null ? undefined : String(raw.label_printed_at),
+      id: String(raw.id), orderNo: String(raw.order_no ?? ''), orderedAt: String(raw.ordered_at ?? '').slice(0, 10), customerId: raw.customer_id == null ? null : Number(raw.customer_id), customerName: String(raw.customer_name ?? ''), customerContactName: String(raw.customer_contact_name ?? ''), customerContactPhone: String(raw.customer_contact_phone ?? ''), customerShippingInfo: String(raw.customer_shipping_info ?? ''), settlementType: raw.settlement_type === 'personal' ? 'personal' : 'corporate', companyId: raw.company_id == null ? null : Number(raw.company_id), companyName: String(raw.company_name ?? ''), orderDetail: String(raw.order_detail ?? raw.orderDetail ?? ''), orderDetailImages: rawDetailImages.map((image) => { const item = image as Record<string, unknown>; const relativePath = String(item.relative_path ?? item.relativePath ?? ''); return { id: String(item.id), name: String(item.original_name ?? item.originalName ?? '订单详情图片'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), mimeType: String(item.mime_type ?? item.mimeType ?? ''), size: asNumber(item.size ?? item.size_bytes) }; }), recipientName: String(raw.recipient_name ?? ''), recipientInfo: String(raw.recipient_info ?? ''), amount: asNumber(raw.amount).toFixed(2), shippingCents: Math.max(0, Math.trunc(asNumber(raw.shipping_cents ?? raw.shippingCents))), trackingNo: String(raw.tracking_no ?? ''), paymentNote: String(raw.payment_note ?? raw.paymentNote ?? ''), paymentProofs: (Array.isArray(raw.paymentProofs) ? raw.paymentProofs : Array.isArray(raw.payment_proofs) ? raw.payment_proofs : []).map((proof) => { const item = proof as Record<string, unknown>; const relativePath = String(item.relative_path ?? item.relativePath ?? ''); return { id: String(item.id), name: String(item.original_name ?? item.originalName ?? '付款凭证'), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), note: String(item.note ?? ''), mimeType: String(item.mime_type ?? item.mimeType ?? ''), size: asNumber(item.size ?? item.size_bytes), createdAt: String(item.created_at ?? item.createdAt ?? '') }; }), contracts: mappedContracts, labels: Array.isArray(raw.labels) ? raw.labels as Array<Record<string, unknown>> : [], remark: String(raw.remark ?? ''), items: rawItems.map((item) => mapOrderItem(item as Record<string, unknown>)), totalBoxes: Math.max(0, Math.trunc(asNumber(raw.total_boxes))), status: String(raw.status ?? 'pending_stock') as OrderStatus, labelPrintedAt: raw.label_printed_at == null ? undefined : String(raw.label_printed_at),
       financeSummary: rawFinance ? {
         orderId: Math.trunc(asNumber(rawFinance.orderId ?? rawFinance.order_id)),
         receivableCents: Math.max(0, Math.trunc(asNumber(rawFinance.receivableCents ?? rawFinance.receivable_cents))),
@@ -175,6 +178,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
   const [productSaving, setProductSaving] = useState(false);
   const productSaveTask = useRef<Promise<void> | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [companyProfile, setCompanyProfile] = useState<CompanySnapshot>({ name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '', wechatQrRelativePath: null });
   const [labelsByOrderId, setLabelsByOrderId] = useState<Record<string, CartonLabel[]>>({});
   const [statusCounts, setStatusCounts] = useState<Partial<Record<'all' | OrderStatus, number>>>({});
@@ -345,6 +349,9 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
   const loadCustomers = useCallback(async () => {
     try { setCustomers(await getCustomers(true)); } catch (error) { notify((error as { message?: string }).message ?? '客户档案加载失败', 'error'); }
   }, [notify]);
+  const loadCompanies = useCallback(async () => {
+    try { setCompanies((await listCompanies(true)).items); } catch (error) { notify((error as { message?: string }).message ?? '公司档案加载失败', 'error'); }
+  }, [notify]);
   const loadOrders = useCallback(async () => {
     setLoading(true);
     try {
@@ -370,8 +377,8 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
 
   useEffect(() => {
     // Workbench 只在 AuthGate 就绪后挂载，这里可以放心加载数据。
-    void Promise.all([loadProducts(), loadCustomers(), loadOrders(), loadCompanyProfile()]);
-  }, [loadProducts, loadCustomers, loadOrders, loadCompanyProfile]);
+    void Promise.all([loadProducts(), loadCustomers(), loadCompanies(), loadOrders(), loadCompanyProfile()]);
+  }, [loadProducts, loadCustomers, loadCompanies, loadOrders, loadCompanyProfile]);
 
   const toggleProductSaleStatus = async (product: ProductRecord, next: 'active' | 'discontinued') => {
     try {
@@ -869,8 +876,9 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
         <button type="button" className="button button-secondary" onClick={() => void productUploadQueue.retryFailures()}>重试</button>
       </span>
     </div>}
-    {active === 'finance' && <FinancePage onNotify={notify} initialOrderId={financeInitialOrderId} returnOrderId={financeReturnOrderId} customers={customers} onReturnToOrder={(orderId) => { setOrdersInitialOrderId(orderId); setFinanceReturnOrderId(undefined); navigate('orders'); }} />}
-    {active === 'orders' && <OrdersPage orders={orders} customers={customers} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); setFinanceReturnOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} />}
+    {active === 'finance' && <FinancePage onNotify={notify} initialOrderId={financeInitialOrderId} returnOrderId={financeReturnOrderId} customers={customers} companies={companies} onCompaniesChanged={loadCompanies} onReturnToOrder={(orderId) => { setOrdersInitialOrderId(orderId); setFinanceReturnOrderId(undefined); navigate('orders'); }} />}
+    {active === 'water-slips' && <WaterSlipPage companies={companies} onNotify={notify} onOpenOrder={(orderId) => { setOrdersInitialOrderId(orderId); navigate('orders'); }} onOpenFinance={(orderId) => { setFinanceInitialOrderId(orderId); setFinanceReturnOrderId(orderId); navigate('finance'); }} />}
+    {active === 'orders' && <OrdersPage orders={orders} customers={customers} companies={companies} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); setFinanceReturnOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} />}
     {active === 'stock' && <StockPage onNotify={notify} systemProducts={products} />}
     {active === 'quotations' && <QuotationPage onNotify={notify} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
     {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={async (orderId) => { await loadOrders(); setOrdersInitialOrderId(orderId); navigate('orders'); }} />}

@@ -163,6 +163,11 @@ export async function registerFinanceRoutes(app: FastifyInstance, options: Finan
       proofStatus: query.proofStatus as FinanceListFilters['proofStatus'],
       invoiceStatus: query.invoiceStatus as FinanceListFilters['invoiceStatus'],
       orderStatus: query.orderStatus,
+      companyId: query.companyId === 'unassigned'
+        ? 'unassigned'
+        : query.companyId && Number.isSafeInteger(Number(query.companyId)) && Number(query.companyId) > 0
+          ? Number(query.companyId)
+          : undefined,
       page: query.page ? Number(query.page) : undefined,
       pageSize: query.pageSize ? Number(query.pageSize) : undefined,
     };
@@ -176,6 +181,22 @@ export async function registerFinanceRoutes(app: FastifyInstance, options: Finan
       ...detail,
       proofs: detail.proofs.map(mapProof),
       invoices: detail.invoices.map(mapInvoice),
+    });
+  }, reply));
+
+  app.get('/api/finance/proofs', async (request, reply) => safeRoute(() => {
+    const query = request.query as Record<string, string | undefined>;
+    return sendSuccess(reply, {
+      items: service.listProofs({
+        month: query.month,
+        status: query.status as import('../../shared/finance.js').PaymentProofStatus | undefined,
+        companyId: query.companyId === 'unassigned'
+          ? 'unassigned'
+          : query.companyId && Number.isSafeInteger(Number(query.companyId)) && Number(query.companyId) > 0
+            ? Number(query.companyId)
+            : undefined,
+        query: query.q ?? query.query,
+      }),
     });
   }, reply));
 
@@ -206,6 +227,21 @@ export async function registerFinanceRoutes(app: FastifyInstance, options: Finan
   app.get('/api/finance/receipts/by-payee', async (request, reply) => safeRoute(() => {
     const query = request.query as Record<string, string | undefined>;
     return sendSuccess(reply, { items: service.listPayeeBreakdown(query.month) });
+  }, reply));
+
+  app.get('/api/finance/receipts/by-company', async (request, reply) => safeRoute(() => {
+    const query = request.query as Record<string, string | undefined>;
+    return sendSuccess(reply, { items: service.listCompanyBreakdown(query.month) });
+  }, reply));
+
+  app.get('/api/finance/companies/stats', async (request, reply) => safeRoute(() => {
+    const query = request.query as Record<string, string | undefined>;
+    return sendSuccess(reply, { items: service.listCompanyStats(query.month) });
+  }, reply));
+
+  app.get('/api/finance/orders/lookup', async (request, reply) => safeRoute(() => {
+    const query = request.query as Record<string, string | undefined>;
+    return sendSuccess(reply, { items: service.lookupOrders(query.orderNo ?? '') });
   }, reply));
 
   app.post('/api/finance/proofs/:id/reject', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(() => {

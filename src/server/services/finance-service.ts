@@ -53,6 +53,7 @@ export class FinanceServiceError extends Error {
       | 'INVOICE_AMOUNT_EXCEEDS_ORDER'
       | 'INVOICE_ALREADY_VOID'
       | 'INVALID_FINANCE_STATUS'
+      | 'COMPANY_REQUIRED'
       | 'VALIDATION_ERROR'
       | 'FILE_STORE_REQUIRED',
     message: string,
@@ -116,6 +117,22 @@ export class FinanceService {
 
   listPayeeBreakdown(month?: string): PayeeBreakdownRow[] {
     return this.repository.listPayeeBreakdown(month);
+  }
+
+  listProofs(filters: import('../../shared/finance.js').FinanceProofListFilters = {}) {
+    return this.repository.listProofsAcrossOrders(filters);
+  }
+
+  listCompanyBreakdown(month?: string) {
+    return this.repository.listCompanyBreakdown(month);
+  }
+
+  listCompanyStats(month?: string) {
+    return this.repository.listCompanyStats(month);
+  }
+
+  lookupOrders(query: string) {
+    return this.repository.lookupOrders(query);
   }
 
   get(orderId: number): FinanceDetail | undefined {
@@ -250,7 +267,10 @@ export class FinanceService {
   }
 
   createInvoice(orderId: number, input: FinanceInvoiceInput): FinanceInvoice {
-    this.assertOrder(orderId);
+    const order = this.assertOrder(orderId);
+    if (String(order.settlement_type ?? 'corporate') !== 'personal' && order.company_id == null) {
+      throw new FinanceServiceError('COMPANY_REQUIRED', '请先为订单分配收款/开票公司，再创建开票申请');
+    }
     const payload = this.normalizeInvoice(orderId, input, 'incomplete');
     this.assertInvoiceAmount(orderId, payload.amountCents);
     return withTransaction(this.options.database, (database) => {

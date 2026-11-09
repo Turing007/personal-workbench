@@ -142,6 +142,7 @@ function parseOrderInput(value: unknown, options: { allowEmptyOrderNo?: boolean 
     orderDetail: optionalText(body.orderDetail, 'orderDetail', '订单详情'),
     remark: optionalText(body.remark, 'remark', '订单备注'),
     settlementType: parseSettlementType(body.settlementType ?? body.settlement_type),
+    companyId: optionalId(body.companyId ?? body.company_id, 'companyId'),
     orderAttachments: parseRequirementAttachments(body.orderAttachments, 'orderAttachments'),
     items: body.items.map((raw, index) => {
       const item = asRecord(raw);

@@ -113,7 +113,7 @@
 
 .finance-detail-drawer .finance-detail { gap: 14px; }
 .finance-detail-drawer .finance-detail-summary {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   padding: 0 0 12px;
   border: 0;
   border-bottom: 1px solid var(--erp-divider);
@@ -121,6 +121,8 @@
   background: transparent;
 }
 .finance-detail-drawer .finance-detail-summary strong { font-size: 18px; }
+.finance-detail-summary > div > .badge,
+.finance-detail-summary > div > b { justify-self: start; }
 .finance-detail-drawer .finance-section {
   padding: 12px 0 0;
   border: 0;
@@ -595,14 +597,16 @@
   /* 窄桌面财务表只留「订单号 / 客户 / 应收 / 未收 / 付款 / 操作」 */
   .finance-page .finance-table th:nth-child(3),
   .finance-page .finance-table td:nth-child(3),
-  .finance-page .finance-table th:nth-child(5),
-  .finance-page .finance-table td:nth-child(5),
-  .finance-page .finance-table th:nth-child(8),
-  .finance-page .finance-table td:nth-child(8),
+  .finance-page .finance-table th:nth-child(4),
+  .finance-page .finance-table td:nth-child(4),
+  .finance-page .finance-table th:nth-child(6),
+  .finance-page .finance-table td:nth-child(6),
   .finance-page .finance-table th:nth-child(9),
   .finance-page .finance-table td:nth-child(9),
   .finance-page .finance-table th:nth-child(10),
-  .finance-page .finance-table td:nth-child(10) {
+  .finance-page .finance-table td:nth-child(10),
+  .finance-page .finance-table th:nth-child(11),
+  .finance-page .finance-table td:nth-child(11) {
     display: none;
   }
 }
@@ -3061,4 +3065,168 @@
   .library-inbox-copy strong { font-size: 12px; }
   .library-inbox-copy span { font-size: 10px; }
   .library-inbox-action { font-size: 10.5px; }
+}
+
+/* 水单收款：订单号定位 + 快速上传 + 按公司统计 */
+.water-slip-page { display: grid; align-content: start; gap: 12px; }
+.water-slip-head { align-items: flex-start; gap: 12px; }
+.water-slip-head > div:first-child { display: grid; gap: 2px; min-width: 0; }
+.water-slip-head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.water-slip-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--erp-border); border-radius: var(--erp-radius-surface); background: var(--erp-surface); overflow: hidden; }
+.water-slip-stat-grid > div { display: grid; gap: 2px; padding: 12px 14px; border-right: 1px solid var(--erp-divider); }
+.water-slip-stat-grid > div:last-child { border-right: 0; }
+.water-slip-stat-grid span { color: var(--erp-muted); font-size: 11px; }
+.water-slip-stat-grid strong { color: var(--erp-text); font-size: 19px; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.water-slip-stat-grid small { color: var(--erp-muted); font-size: 10.5px; }
+.water-slip-collect { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--erp-border); border-radius: var(--erp-radius-surface); background: var(--erp-surface); }
+.water-slip-collect.is-dragging { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.water-slip-collect-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.water-slip-collect-head > div { display: grid; gap: 2px; }
+.water-slip-collect-head strong { color: var(--erp-text); font-size: 14px; }
+.water-slip-collect-head span { color: var(--erp-muted); font-size: 11px; }
+.water-slip-order-search { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 10px; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface-subtle, var(--color-surface-subtle)); }
+.water-slip-order-search svg { color: var(--erp-muted); flex: none; }
+.water-slip-order-search input { flex: 1; min-width: 0; height: 36px; border: 0; outline: 0; background: transparent; color: var(--erp-text); font: inherit; font-size: 13px; }
+.water-slip-search-hint { flex: none; color: var(--erp-muted); font-size: 11px; white-space: nowrap; }
+.water-slip-candidates { display: grid; gap: 4px; max-height: 230px; overflow: auto; padding: 4px; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface); }
+.water-slip-candidate { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 9px; border: 0; border-radius: var(--radius-ui); background: transparent; color: var(--erp-text-2); cursor: pointer; text-align: left; }
+.water-slip-candidate:hover { background: var(--color-accent-soft); }
+.water-slip-candidate strong { color: var(--erp-text); font-size: 12px; }
+.water-slip-candidate span { overflow: hidden; color: var(--erp-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.water-slip-candidate small { color: var(--erp-muted); font-size: 10.5px; white-space: nowrap; }
+.water-slip-selected-order { display: grid; gap: 9px; padding: 10px 12px; border: 1px solid var(--color-accent-border); border-radius: var(--radius-ui); background: linear-gradient(135deg, var(--color-accent-soft), var(--erp-surface) 64%); }
+.water-slip-order-main { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.water-slip-order-main > div { display: grid; gap: 1px; min-width: 0; }
+.water-slip-order-main strong { color: var(--erp-text); font-size: 14px; }
+.water-slip-order-main span { color: var(--erp-muted); font-size: 11px; }
+.water-slip-order-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.water-slip-order-metrics > div { display: grid; gap: 1px; min-width: 0; }
+.water-slip-order-metrics span { color: var(--erp-muted); font-size: 10.5px; }
+.water-slip-order-metrics strong { color: var(--erp-text); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.water-slip-warning { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding: 7px 9px; border: 1px solid var(--color-warning-border, var(--color-border-control)); border-radius: var(--radius-ui); background: var(--color-warning-soft); color: var(--color-warning-text); font-size: 11px; }
+.water-slip-warning span { flex: 1; min-width: 180px; }
+.water-slip-upload { display: grid; grid-template-columns: minmax(180px, 210px) minmax(0, 1fr); gap: 12px; align-items: start; padding-top: 10px; border-top: 1px solid var(--erp-divider); }
+.water-slip-file-zone { display: grid; gap: 7px; }
+.water-slip-file-preview { display: grid; place-items: center; aspect-ratio: 4 / 3; overflow: hidden; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface-subtle, var(--color-surface-subtle)); }
+.water-slip-file-preview img { width: 100%; height: 100%; object-fit: contain; }
+.water-slip-file-placeholder { display: grid; place-items: center; gap: 4px; aspect-ratio: 4 / 3; border: 1px dashed var(--erp-border); border-radius: var(--radius-ui); color: var(--erp-muted); text-align: center; }
+.water-slip-file-placeholder span { color: var(--erp-text-2); font-size: 12px; }
+.water-slip-file-placeholder small { font-size: 10px; }
+.water-slip-file-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.water-slip-file-actions .button { height: 30px; min-height: 30px; padding: 0 9px; font-size: 11.5px; }
+.water-slip-paste-hint { display: inline-flex; align-items: center; gap: 3px; color: var(--erp-muted); font-size: 10.5px; }
+.water-slip-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.water-slip-form label { display: grid; gap: 3px; color: var(--erp-muted); font-size: 10.5px; }
+.water-slip-form input, .water-slip-form select { width: 100%; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface); color: var(--erp-text); font: inherit; font-size: 12px; }
+.water-slip-save-row { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.water-slip-save-row span { color: var(--erp-muted); font-size: 10.5px; }
+.water-slip-save-row .button { height: 34px; min-height: 34px; }
+.water-slip-company-stats, .water-slip-list-panel { border: 1px solid var(--erp-border); border-radius: var(--erp-radius-surface); background: var(--erp-surface); padding: 12px 14px; }
+.water-slip-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.water-slip-section-head > div { display: grid; gap: 2px; }
+.water-slip-section-head strong { color: var(--erp-text); font-size: 14px; }
+.water-slip-section-head span { color: var(--erp-muted); font-size: 11px; }
+.water-slip-company-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
+.water-slip-company-card { display: grid; gap: 7px; padding: 10px 11px; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface); color: var(--erp-text-2); cursor: pointer; text-align: left; }
+.water-slip-company-card:hover, .water-slip-company-card.is-active { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.water-slip-company-card-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.water-slip-company-card-head strong { overflow: hidden; color: var(--erp-text); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.water-slip-company-card-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.water-slip-company-card-metrics > div { display: grid; gap: 1px; min-width: 0; }
+.water-slip-company-card-metrics span { color: var(--erp-muted); font-size: 10px; }
+.water-slip-company-card-metrics strong { color: var(--erp-text); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.water-slip-company-card small { color: var(--erp-muted); font-size: 10px; }
+.water-slip-list-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.water-slip-filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.water-slip-filters .toolbar-select { height: 30px; font-size: 11.5px; }
+.water-slip-search { display: flex; align-items: center; gap: 5px; height: 30px; padding: 0 8px; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface); }
+.water-slip-search svg { color: var(--erp-muted); }
+.water-slip-search input { width: 150px; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--erp-text); font: inherit; font-size: 11.5px; }
+.water-slip-table { min-width: 840px; }
+.water-slip-table td { vertical-align: middle; }
+.water-slip-thumb { display: block; width: 46px; height: 36px; overflow: hidden; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface-subtle, var(--color-surface-subtle)); }
+.water-slip-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.water-slip-table .row-actions, .water-slip-card-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.water-slip-table .button, .water-slip-card-actions .button { height: 27px; min-height: 27px; padding: 0 7px; font-size: 11px; }
+.water-slip-card-list { display: grid; gap: 6px; }
+.water-slip-card { display: grid; gap: 6px; padding: 9px 10px; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface); }
+.water-slip-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.water-slip-card-head > div { display: grid; flex: 1; gap: 1px; min-width: 0; }
+.water-slip-card-head strong { color: var(--erp-text); font-size: 12.5px; }
+.water-slip-card-head span { overflow: hidden; color: var(--erp-muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.water-slip-card-head small { color: var(--erp-muted); font-size: 10.5px; }
+.water-slip-card-actions { justify-content: flex-end; padding-top: 5px; border-top: 1px solid var(--erp-divider); }
+
+/* 公司档案抽屉 */
+.company-manager { display: grid; gap: 12px; }
+.company-manager-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.company-manager-toolbar > div { display: grid; gap: 2px; }
+.company-manager-toolbar strong { color: var(--erp-text); font-size: 14px; }
+.company-manager-toolbar span { color: var(--erp-muted); font-size: 11px; }
+.company-form-panel { display: grid; gap: 9px; padding: 11px 12px; border: 1px solid var(--color-accent-border); border-radius: var(--radius-ui); background: var(--color-accent-soft); }
+.company-form-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.company-form-head strong { color: var(--erp-text); font-size: 13px; }
+.company-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.company-form-grid label { display: grid; gap: 3px; color: var(--erp-muted); font-size: 10.5px; }
+.company-form-grid input { width: 100%; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface); color: var(--erp-text); font: inherit; font-size: 12px; }
+.company-form-wide, .company-form-check { grid-column: 1 / -1; }
+.company-form-check { display: flex !important; align-items: center; gap: 6px; color: var(--erp-text-2) !important; font-size: 11px !important; }
+.company-form-check input { width: auto; height: auto; }
+.company-form-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.company-list { display: grid; gap: 0; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); overflow: hidden; }
+.company-list-head, .company-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 1.5fr) minmax(0, 1.5fr) 70px 74px; gap: 8px; align-items: center; padding: 8px 10px; }
+.company-list-head { background: var(--erp-surface-muted); color: var(--erp-muted); font-size: 10.5px; font-weight: 600; }
+.company-row { border-top: 1px solid var(--erp-divider); color: var(--erp-text-2); font-size: 11.5px; }
+.company-row.is-inactive { opacity: .62; }
+.company-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.company-name strong { overflow: hidden; color: var(--erp-text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.company-row > div:not(.company-name):not(.company-row-actions) { display: grid; gap: 1px; min-width: 0; }
+.company-row > div > span, .company-row > div > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.company-row > div > small { color: var(--erp-muted); font-size: 10.5px; }
+.company-row-actions { display: flex; gap: 3px; justify-content: flex-end; }
+.company-row-actions .icon-button { width: 28px; height: 28px; }
+.finance-invoice-company-warning { grid-column: 1 / -1; padding: 7px 9px; border: 1px solid var(--color-warning-border, var(--color-border-control)); border-radius: var(--radius-ui); background: var(--color-warning-soft); color: var(--color-warning-text); font-size: 11px; }
+
+@media (max-width: 1100px) {
+  .water-slip-company-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .water-slip-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 900px) {
+  .water-slip-page { gap: 8px; padding: 10px 10px calc(58px + env(safe-area-inset-bottom, 0px) + 10px); }
+  .water-slip-head { display: grid; gap: 8px; }
+  .water-slip-head .page-breadcrumb, .water-slip-head .page-subtitle { display: none; }
+  .water-slip-head .page-title { font-size: 16px; }
+  .water-slip-head-actions { justify-content: space-between; }
+  .water-slip-head-actions .month-control { flex: 1; }
+  .water-slip-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .water-slip-stat-grid > div { padding: 9px 10px; }
+  .water-slip-stat-grid > div:nth-child(2) { border-right: 0; }
+  .water-slip-stat-grid > div:nth-child(-n + 2) { border-bottom: 1px solid var(--erp-divider); }
+  .water-slip-stat-grid strong { font-size: 16px; }
+  .water-slip-collect { padding: 10px; gap: 8px; }
+  .water-slip-collect-head strong { font-size: 13px; }
+  .water-slip-collect-head span { font-size: 10.5px; }
+  .water-slip-order-search { min-height: 36px; }
+  .water-slip-order-search input { font-size: 13px; }
+  .water-slip-candidate { grid-template-columns: 1fr auto; gap: 2px 8px; }
+  .water-slip-candidate span { grid-column: 1 / -1; }
+  .water-slip-candidate small { grid-column: 1 / -1; }
+  .water-slip-order-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .water-slip-upload { grid-template-columns: minmax(0, 1fr); }
+  .water-slip-file-zone { grid-template-columns: 120px minmax(0, 1fr); align-items: start; }
+  .water-slip-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .water-slip-company-stats, .water-slip-list-panel { padding: 10px; }
+  .water-slip-company-grid { grid-template-columns: minmax(0, 1fr); }
+  .water-slip-list-toolbar { display: grid; gap: 7px; }
+  .water-slip-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+  .water-slip-filters .toolbar-select { width: 100%; }
+  .water-slip-search { grid-column: 1 / -1; }
+  .water-slip-search input { width: 100%; }
+  .company-manager-toolbar { display: grid; gap: 7px; }
+  .company-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .company-list-head { display: none; }
+  .company-row { grid-template-columns: 1fr auto; gap: 3px 8px; }
+  .company-row > div:nth-child(2), .company-row > div:nth-child(3) { grid-column: 1 / -1; }
+  .company-row-actions { grid-column: 2; grid-row: 1; }
 }

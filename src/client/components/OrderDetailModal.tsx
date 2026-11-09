@@ -131,6 +131,7 @@ export default function OrderDetailModal({
             <div style={detailStyle}><span style={labelStyle}>未收金额</span><strong style={{ fontSize: 13, color: order.financeSummary.outstandingCents > 0 ? 'var(--color-warning-text)' : 'var(--color-success)' }}>{`¥ ${(order.financeSummary.outstandingCents / 100).toFixed(2)}`}</strong></div>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <span style={{ padding: '3px 8px', borderRadius: 999, background: order.companyName ? 'var(--color-neutral-pill)' : 'var(--color-warning-soft)', color: order.companyName ? 'var(--color-text-secondary)' : 'var(--color-warning-text)', fontSize: 11 }}>公司：{order.companyName || '未分配'}</span>
             <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--color-neutral-pill)', color: 'var(--color-text-secondary)', fontSize: 11 }}>结算：{ORDER_SETTLEMENT_LABELS[order.settlementType ?? 'corporate']}</span>
             <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--color-neutral-pill)', color: 'var(--color-text-secondary)', fontSize: 11 }}>付款：{FINANCE_PAYMENT_STATUS_LABELS[financePaymentStatus]}</span>
             <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--color-neutral-pill)', color: 'var(--color-text-secondary)', fontSize: 11 }}>水单:{' '}{PAYMENT_PROOF_STATUS_LABELS[financeProofStatus]}</span>

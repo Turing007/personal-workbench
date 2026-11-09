@@ -2,6 +2,7 @@ import type { Readable } from 'node:stream';
 import type { DatabaseRepositories, CreateOrderInput, UpdateOrderInput } from '../db/repositories.js';
 import { CustomerProductRepository } from '../db/customer-product-repository.js';
 import { CustomerRepository } from '../db/customer-repository.js';
+import type { CompanyRepository } from '../db/company-repository.js';
 import { FileStore } from '../files/file-store.js';
 import { calculateLineAmountCents } from '../../shared/money.js';
 import { calculateOrderAmountCents } from '../../shared/order-prices.js';
@@ -40,6 +41,7 @@ export interface OrderServiceOptions {
   repositories: DatabaseRepositories;
   customerRepository?: CustomerRepository;
   customerProductRepository?: CustomerProductRepository;
+  companyRepository?: CompanyRepository;
   fileStore?: FileStore;
 }
 
@@ -180,12 +182,14 @@ export class OrderService {
   readonly repositories: DatabaseRepositories;
   readonly customerRepository?: CustomerRepository;
   readonly customerProductRepository?: CustomerProductRepository;
+  readonly companyRepository?: CompanyRepository;
   readonly fileStore?: FileStore;
 
   constructor(options: OrderServiceOptions) {
     this.repositories = options.repositories;
     this.customerRepository = options.customerRepository;
     this.customerProductRepository = options.customerProductRepository;
+    this.companyRepository = options.companyRepository;
     this.fileStore = options.fileStore;
   }
 
@@ -219,7 +223,16 @@ export class OrderService {
     const previous = this.repositories.getOrderDetail(orderId) as Record<string, unknown> | undefined;
     const wasDraft = isDraftStatus(previous?.status);
     const isDraft = input.isDraft === undefined ? wasDraft : Boolean(input.isDraft);
-    const normalized = this.normalizeInput(input);
+    const previousCompanyId = previous?.company_id == null ? null : Number(previous.company_id);
+    // 旧手机端不传 companyId：沿用原公司，不能把它当成“清空公司”。
+    const nextCompanyId = input.companyId === undefined ? previousCompanyId : input.companyId;
+    if (previousCompanyId !== nextCompanyId) {
+      const locks = this.repositories.getOrderFinanceLocks(orderId);
+      if (locks.hasReceipt || locks.hasValidInvoice) {
+        throw new Error('已有入账水单或有效发票，不能修改收款/开票公司；请先作废相关记录');
+      }
+    }
+    const normalized = this.normalizeInput({ ...input, companyId: nextCompanyId });
     const previousPaths = this.getOrderRequirementPaths(orderId);
     let withCustomerProducts: CreateOrderInput | undefined;
     let updated;
@@ -289,6 +302,7 @@ export class OrderService {
       orderDetail: String(detail.order_detail ?? ''),
       remark: String(detail.remark ?? ''),
       settlementType: String(detail.settlement_type ?? 'corporate'),
+      companyId: detail.company_id == null ? null : Number(detail.company_id),
       items: items.map((item) => ({
         customerProductId: item.customer_product_id == null ? null : Number(item.customer_product_id),
         name: String(item.name ?? ''),
@@ -584,6 +598,11 @@ export class OrderService {
     }
     // 草稿允许收件人为空，发布时才强制。
     if (!options.draft && !input.recipientName?.trim()) throw new Error('收件人名称不能为空');
+    if (this.companyRepository && input.companyId != null && !this.companyRepository.get(input.companyId)) {
+      throw new Error('收款/开票公司不存在');
+    }
+    // 公司必选放在网页端校验：旧版手机端和历史接口仍可创建未分配公司的订单，
+    // 这类订单在水单和财务统计里统一归入“未分配公司”，不会被静默丢弃。
 
     input.items.forEach((item, index) => {
       if (!item.name?.trim()) {

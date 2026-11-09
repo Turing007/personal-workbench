@@ -26,14 +26,18 @@ async function setup() {
   const fileStore = new FileStore(join(directory, 'files'));
   const app = await createApp({ database, filesDirectory: join(directory, 'files'), fileStore });
   await setupAdmin(app);
-  return { database, app, fileStore };
+  const companyId = Number(database.prepare(
+    `INSERT INTO companies (short_name, full_name, created_at, updated_at)
+     VALUES ('测试公司', '测试公司全称', '2026-08-20', '2026-08-20')`,
+  ).run().lastInsertRowid);
+  return { database, app, fileStore, companyId };
 }
 
-function insertOrder(database: DatabaseSync, amountCents = 10000): number {
+function insertOrder(database: DatabaseSync, amountCents = 10000, companyId: number | null = null): number {
   const result = database.prepare(`
-    INSERT INTO orders (order_no, ordered_at, recipient_name, amount, amount_cents, shipping_cents, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 0, 'pending_stock', ?, ?)
-  `).run(`FIN-${Date.now()}-${Math.random()}`, '2026-08-20', '客户', amountCents / 100, amountCents, new Date().toISOString(), new Date().toISOString());
+    INSERT INTO orders (order_no, ordered_at, recipient_name, amount, amount_cents, shipping_cents, company_id, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 0, ?, 'pending_stock', ?, ?)
+  `).run(`FIN-${Date.now()}-${Math.random()}`, '2026-08-20', '客户', amountCents / 100, amountCents, companyId, new Date().toISOString(), new Date().toISOString());
   const orderId = Number(result.lastInsertRowid);
   database.prepare(`INSERT INTO order_finance (order_id, receivable_cents, outstanding_cents, payment_status, proof_status, invoice_status, created_at, updated_at) VALUES (?, ?, ?, 'unpaid', 'none', 'not_requested', ?, ?)`).run(orderId, amountCents, amountCents, new Date().toISOString(), new Date().toISOString());
   return orderId;
@@ -61,8 +65,8 @@ describe('财务模块', () => {
   });
 
   it('状态聚合、发票金额校验和发票文件上传可用', async () => {
-    const { database, fileStore } = await setup();
-    const orderId = insertOrder(database, 10000);
+    const { database, fileStore, companyId } = await setup();
+    const orderId = insertOrder(database, 10000, companyId);
     const service = new FinanceService({ database, fileStore, repository: new FinanceRepository(database) });
     const invoice = service.createInvoice(orderId, { invoiceType: '电子普通发票', title: '测试公司', taxNo: '9133', amountCents: 10000, taxRateBps: 1300, taxCents: 1300 });
     expect(invoice.status).toBe('incomplete');
@@ -74,7 +78,7 @@ describe('财务模块', () => {
   });
 
   it('修改订单金额后财务应收、未收与付款状态同步更新', async () => {
-    const { database, app } = await setup();
+    const { database, app, companyId } = await setup();
     const created = await authInject(app, {
       method: 'POST',
       url: '/api/orders',
@@ -87,6 +91,7 @@ describe('财务模块', () => {
         trackingNo: '',
         paymentNote: '',
         remark: '',
+        companyId,
         items: [{ name: '测试产品', sku: 'VT-0001', specification: '标准规格', packagingName: '彩盒包装', packCount: 10, quantity: 10, unitPriceCents: 1000 }],
       },
     });
@@ -122,6 +127,7 @@ describe('财务模块', () => {
         trackingNo: '',
         paymentNote: '',
         remark: '',
+        companyId,
         items: [{ name: '测试产品', sku: 'VT-0001', specification: '标准规格', packagingName: '彩盒包装', packCount: 10, quantity: 20, unitPriceCents: 1000 }],
       },
     });
@@ -186,13 +192,13 @@ describe('财务模块', () => {
   });
 
   it('发票创建后保存客户开票快照，客户档案后续修改不回写已开发票', async () => {
-    const { database } = await setup();
+    const { database, companyId } = await setup();
     const customerId = Number(database.prepare(
       `INSERT INTO customers
         (name, contact_name, contact_phone, shipping_info, invoice_title, tax_no, created_at, updated_at)
        VALUES ('开票公司', '财务', '13800000000', '', '开票公司', '91330200MA2XYZ0C1F', '2026-09-04', '2026-09-04')`,
     ).run().lastInsertRowid);
-    const orderId = insertOrder(database, 10000);
+    const orderId = insertOrder(database, 10000, companyId);
     database.prepare('UPDATE orders SET customer_id = ? WHERE id = ?').run(customerId, orderId);
 
     const service = new FinanceService({ database, repository: new FinanceRepository(database) });
@@ -207,7 +213,7 @@ describe('财务模块', () => {
   });
 
   it('财务列表返回结算方式，对私订单不计入待处理发票统计', async () => {
-    const { app, database } = await setup();
+    const { app, database, companyId } = await setup();
     const createOrder = async (settlementType?: string) => {
       const created = await authInject(app, {
         method: 'POST',
@@ -222,6 +228,7 @@ describe('财务模块', () => {
           paymentNote: '',
           remark: '',
           ...(settlementType ? { settlementType } : {}),
+          companyId,
           items: [{ name: '测试产品', sku: 'VT-0001', specification: '标准规格', packagingName: '彩盒包装', packCount: 10, quantity: 10, unitPriceCents: 1000 }],
         },
       });

@@ -135,6 +135,8 @@ export interface FinanceListFilters {
   proofStatus?: FinanceProofStatus;
   invoiceStatus?: InvoiceStatus;
   orderStatus?: string;
+  /** 公司筛选；unassigned 表示历史订单尚未分配公司 */
+  companyId?: number | 'unassigned';
   page?: number;
   pageSize?: number;
 }
@@ -153,6 +155,9 @@ export interface FinanceListRow {
   orderStatus: string;
   /** 订单结算方式：corporate 对公（需开票）/ personal 对私（无需开票） */
   settlementType: string;
+  /** 订单所属收款/开票公司；历史订单可能为空 */
+  companyId: number | null;
+  companyName: string;
   updatedAt: string;
 }
 
@@ -170,6 +175,42 @@ export interface FinanceListResult {
   page: number;
   pageSize: number;
   stats: FinanceListStats;
+}
+
+/** 水单收款页的跨订单水单列表。 */
+export interface FinanceProofListRow extends PaymentProofRecord {
+  orderNo: string;
+  customerName: string;
+  orderDate: string;
+  settlementType: string;
+  companyId: number | null;
+  companyName: string;
+  url?: string;
+}
+
+export interface FinanceProofListFilters {
+  month?: string;
+  companyId?: number | 'unassigned';
+  status?: PaymentProofStatus;
+  query?: string;
+  limit?: number;
+}
+
+/** 水单页按订单号定位订单时返回的轻量订单信息。 */
+export interface FinanceOrderLookupRow {
+  orderId: number;
+  orderNo: string;
+  customerName: string;
+  orderDate: string;
+  settlementType: string;
+  companyId: number | null;
+  companyName: string;
+  receivableCents: number;
+  receivedCents: number;
+  outstandingCents: number;
+  paymentStatus: FinancePaymentStatus;
+  proofStatus: FinanceProofStatus;
+  invoiceStatus: InvoiceStatus;
 }
 
 function assertCents(value: number, field: string, allowNegative = false): void {

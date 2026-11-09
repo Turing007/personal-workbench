@@ -112,6 +112,8 @@ export interface CreateOrderInput {
   remark?: string;
   /** 结算方式：corporate 对公（需开票）/ personal 对私（免开票），历史订单默认 corporate */
   settlementType?: string;
+  /** 收款/开票公司；对公订单新建时必填，历史订单可为空 */
+  companyId?: number | null;
   orderAttachments?: OrderAttachmentInput[];
   sourceSalesDocumentId?: number | null;
   /** 草稿订单：宽松校验，status 存为 draft，发布后回到正式流程。 */
@@ -821,8 +823,9 @@ export class DatabaseRepositories {
         `INSERT INTO orders
           (customer_id, customer_name, customer_contact_name, customer_contact_phone, customer_shipping_info,
            order_no, ordered_at, recipient_name, recipient_info, amount, amount_cents, shipping_cents,
-           tracking_no, payment_note, order_detail, remark, status, source_sales_document_id, settlement_type, created_at, updated_at, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           tracking_no, payment_note, order_detail, remark, status, source_sales_document_id, settlement_type,
+           company_id, created_at, updated_at, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
           .run(
             input.customerId ?? null,
@@ -844,6 +847,7 @@ export class DatabaseRepositories {
             status,
             input.sourceSalesDocumentId ?? null,
             settlementType,
+            input.companyId ?? null,
             timestamp,
             timestamp,
             input.createdBy ?? '',
@@ -936,7 +940,7 @@ export class DatabaseRepositories {
           `UPDATE orders SET customer_id = ?, customer_name = ?, customer_contact_name = ?, customer_contact_phone = ?,
             customer_shipping_info = ?, order_no = ?, ordered_at = ?,
             recipient_name = ?, recipient_info = ?, amount = ?, amount_cents = ?, shipping_cents = ?,
-            tracking_no = ?, payment_note = ?, order_detail = ?, remark = ?, settlement_type = ?, updated_at = ? WHERE id = ?`,
+            tracking_no = ?, payment_note = ?, order_detail = ?, remark = ?, settlement_type = ?, company_id = ?, updated_at = ? WHERE id = ?`,
         )
         .run(
           input.customerId ?? null,
@@ -956,6 +960,7 @@ export class DatabaseRepositories {
           input.orderDetail ?? '',
           input.remark ?? '',
           settlementType,
+          input.companyId ?? null,
           timestamp,
           orderId,
         );
@@ -1069,6 +1074,15 @@ export class DatabaseRepositories {
   }
 
   /** 订单详情用的轻量财务摘要，避免详情页加载全部水单/发票附件。 */
+  getOrderFinanceLocks(orderId: number): { hasReceipt: boolean; hasValidInvoice: boolean } {
+    const row = this.database.prepare(`
+      SELECT
+        EXISTS(SELECT 1 FROM finance_receipts WHERE order_id = ?) AS has_receipt,
+        EXISTS(SELECT 1 FROM finance_invoices WHERE order_id = ? AND status <> 'void') AS has_valid_invoice
+    `).get(orderId, orderId);
+    return { hasReceipt: Number(row?.has_receipt ?? 0) === 1, hasValidInvoice: Number(row?.has_valid_invoice ?? 0) === 1 };
+  }
+
   getOrderFinanceSummary(orderId: number) {
     return this.database.prepare(`
       SELECT order_id, receivable_cents, received_cents, outstanding_cents,
@@ -1192,18 +1206,23 @@ export class DatabaseRepositories {
     const count = Number(this.database.prepare(`SELECT COUNT(*) AS count FROM orders o ${where}`).get(...values)?.count ?? 0);
     const rows = this.database
       .prepare(
-        `SELECT o.*,
+        `SELECT o.*, c.short_name AS company_name,
           COALESCE(o.label_printed_at, (SELECT MAX(ph.printed_at) FROM print_histories ph JOIN print_history_labels phl ON phl.print_history_id = ph.id WHERE phl.order_id = o.id)) AS label_printed_at,
           COALESCE((SELECT SUM(cli.total_count) FROM carton_labels cl JOIN carton_label_items cli ON cli.carton_label_id = cl.id WHERE cl.order_id = o.id), 0) AS total_quantity,
           COALESCE((SELECT MAX(cl.total_boxes) FROM carton_labels cl WHERE cl.order_id = o.id), 0) AS total_boxes
-         FROM orders o ${where} ORDER BY o.ordered_at DESC, o.id DESC LIMIT ? OFFSET ?`,
+         FROM orders o LEFT JOIN companies c ON c.id = o.company_id ${where}
+         ORDER BY o.ordered_at DESC, o.id DESC LIMIT ? OFFSET ?`,
       )
       .all(...values, pageSize, (page - 1) * pageSize);
     return { rows, total: count, page, pageSize };
   }
 
   getOrderDetail(orderId: number) {
-    const order = this.database.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
+    const order = this.database.prepare(`
+      SELECT o.*, c.short_name AS company_name
+      FROM orders o LEFT JOIN companies c ON c.id = o.company_id
+      WHERE o.id = ?
+    `).get(orderId);
     if (!order) return undefined;
     const items = this.database
       .prepare(

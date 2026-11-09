@@ -11,6 +11,7 @@ import { calculateFreightCents, calculateOrderLineAmountCents, calculateOrderTot
 import { dateInputValue, dateOnlyValue } from '../../shared/date-input';
 import { extractRecipientName } from '../order-recipient';
 import { ORDER_SETTLEMENT_LABELS, isSettlementType, type OrderSettlementType } from '../../shared/settlement';
+import type { Company } from '../../shared/companies';
 import type { Customer, CustomerProduct as CustomerProductRecord, CustomerProductAttachment, CustomerProductSaveInput, CustomerSaveInput } from '../../shared/customers';
 import ImagePasteUpload, { type ImageAttachment } from './ImagePasteUpload';
 import CustomerProductEditorModal from './customer-products/CustomerProductEditorModal';
@@ -103,6 +104,9 @@ export interface OrderDraft {
   customerShippingInfo?: string;
   /** 结算方式：corporate 对公（需开票）/ personal 对私（无需开票）。新建默认对私，历史订单按各自已存的值显示。 */
   settlementType?: OrderSettlementType;
+  /** 收款/开票公司；对公订单必选，历史订单可能为空。 */
+  companyId?: number | null;
+  companyName?: string;
   orderDetail: string;
   orderDetailImages: OrderDetailImageDraft[];
   recipientName: string;
@@ -128,6 +132,7 @@ export interface OrderDraft {
 export interface OrderFormProps {
   value?: Partial<OrderDraft>;
   customers: Customer[];
+  companies?: Company[];
   onSubmit: (value: OrderDraft) => void;
   onCancel?: () => void;
   onSaveDraft?: (value: OrderDraft) => void;
@@ -150,7 +155,7 @@ function makeItem(product?: CustomerProductRecord): OrderItemDraft {
 
 function defaultDraft(value: Partial<OrderDraft> | undefined): OrderDraft {
   return {
-    orderNo: value?.orderNo ?? '', orderNoAuto: value?.orderNoAuto ?? (!value?.id && !value?.orderNo), orderedAt: dateOnlyValue(value?.orderedAt ?? dateInputValue()), customerId: value?.customerId ?? null, customerName: value?.customerName ?? '', customerContactName: value?.customerContactName ?? '', customerContactPhone: value?.customerContactPhone ?? '', customerShippingInfo: value?.customerShippingInfo ?? '', settlementType: isSettlementType(value?.settlementType) ? value.settlementType : 'personal', orderDetail: value?.orderDetail ?? '', orderDetailImages: value?.orderDetailImages ?? [], recipientName: value?.recipientName ?? '', recipientInfo: value?.recipientInfo ?? '', amount: value?.amount ?? '', shippingCents: value?.shippingCents ?? 0, trackingNo: value?.trackingNo ?? '', paymentNote: value?.paymentNote ?? '', paymentProofs: value?.paymentProofs ?? [], remark: value?.remark ?? '', items: value?.items ?? [], contracts: value?.contracts ?? [], deletedContractIds: value?.deletedContractIds ?? [], status: value?.status ?? 'pending_stock', id: value?.id,
+    orderNo: value?.orderNo ?? '', orderNoAuto: value?.orderNoAuto ?? (!value?.id && !value?.orderNo), orderedAt: dateOnlyValue(value?.orderedAt ?? dateInputValue()), customerId: value?.customerId ?? null, customerName: value?.customerName ?? '', customerContactName: value?.customerContactName ?? '', customerContactPhone: value?.customerContactPhone ?? '', customerShippingInfo: value?.customerShippingInfo ?? '', settlementType: isSettlementType(value?.settlementType) ? value.settlementType : 'personal', companyId: value?.companyId ?? null, companyName: value?.companyName ?? '', orderDetail: value?.orderDetail ?? '', orderDetailImages: value?.orderDetailImages ?? [], recipientName: value?.recipientName ?? '', recipientInfo: value?.recipientInfo ?? '', amount: value?.amount ?? '', shippingCents: value?.shippingCents ?? 0, trackingNo: value?.trackingNo ?? '', paymentNote: value?.paymentNote ?? '', paymentProofs: value?.paymentProofs ?? [], remark: value?.remark ?? '', items: value?.items ?? [], contracts: value?.contracts ?? [], deletedContractIds: value?.deletedContractIds ?? [], status: value?.status ?? 'pending_stock', id: value?.id,
   };
 }
 
@@ -168,11 +173,20 @@ function customerAttachmentLabel(category: string): string {
   return category === 'label' ? '标贴文件' : category === 'instruction' ? '说明书文件' : category === 'packaging' ? '打包文件' : '客户产品附件';
 }
 
-export default function OrderForm({ value, customers, onSubmit, onCancel, onSaveDraft, onSaveCustomerProduct, onCreateCustomer, submitLabel = '保存订单', onGetNextOrderNumber }: OrderFormProps) {
+export default function OrderForm({ value, customers, companies = [], onSubmit, onCancel, onSaveDraft, onSaveCustomerProduct, onCreateCustomer, submitLabel = '保存订单', onGetNextOrderNumber }: OrderFormProps) {
   const [draft, setDraft] = useState<OrderDraft>(() => defaultDraft(value));
+  const companyAutoFilled = useRef(false);
   const [shippingInput, setShippingInput] = useState(() => ((value?.shippingCents ?? 0) / 100).toFixed(2));
   const [shippingOverridden, setShippingOverridden] = useState(Boolean(value?.id));
   const [error, setError] = useState('');
+  // 只有一个启用公司时直接选中，减少新建订单的点击。
+  useEffect(() => {
+    if (companyAutoFilled.current || draft.companyId != null) return;
+    const active = companies.filter((company) => company.isActive);
+    if (active.length !== 1) return;
+    companyAutoFilled.current = true;
+    setDraft((current) => ({ ...current, companyId: active[0].id, companyName: active[0].shortName }));
+  }, [companies, draft.companyId]);
   const [newProductOpen, setNewProductOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   /** 单价输入的本地编辑缓冲：允许 “”“12.”“12.3” 等中间态，失焦后再规范化。 */
@@ -373,6 +387,8 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
     if (!draft.recipientName.trim()) return setError('请填写收件人名称');
     if (!draft.items.length) return setError('请至少添加一行产品');
     if (draft.items.some((item) => !item.name.trim() || item.quantity < 1 || item.packSize < 1)) return setError('产品信息或数量不完整');
+    // 新建对公订单必须选公司；历史订单可能还没有公司，允继续编辑保存，避免卡住旧数据。
+    if (!draft.id && (draft.settlementType ?? 'personal') !== 'personal' && draft.companyId == null) return setError('对公订单请选择收款/开票公司');
     setError('');
     onSubmit({ ...draft, amount: calculatedAmount, shippingCents });
   };
@@ -396,6 +412,15 @@ export default function OrderForm({ value, customers, onSubmit, onCancel, onSave
           <label style={labelStyle}>结算方式<select aria-label="结算方式" style={controlStyle} value={draft.settlementType ?? 'personal'} onChange={(event) => update('settlementType', event.target.value === 'personal' ? 'personal' : 'corporate')}>
             <option value="corporate">{ORDER_SETTLEMENT_LABELS.corporate}（需要开票）</option>
             <option value="personal">{ORDER_SETTLEMENT_LABELS.personal}（无需开票）</option>
+          </select></label>
+          <label style={labelStyle}>收款/开票公司<select aria-label="收款/开票公司" style={controlStyle} value={draft.companyId ?? ''} onChange={(event) => {
+            const companyId = event.target.value ? Number(event.target.value) : null;
+            const company = companies.find((item) => item.id === companyId);
+            update('companyId', companyId);
+            update('companyName', company?.shortName ?? '');
+          }}>
+            <option value="">{draft.settlementType === 'personal' ? '未指定（可选）' : '请选择公司'}</option>
+            {companies.filter((company) => company.isActive || company.id === draft.companyId).map((company) => <option key={company.id} value={company.id}>{company.shortName}{company.isActive ? '' : '（已停用）'}</option>)}
           </select></label>
         </div>
         <div className="order-form-grid order-form-grid-recipient">
