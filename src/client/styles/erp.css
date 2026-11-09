@@ -123,6 +123,8 @@
 .finance-detail-drawer .finance-detail-summary strong { font-size: 18px; }
 .finance-detail-summary > div > .badge,
 .finance-detail-summary > div > b { justify-self: start; }
+.finance-company-mobile-button { display: none; }
+.finance-copy-invoice-button { justify-self: start; height: 24px; min-height: 24px; padding: 0 7px; font-size: 11px; }
 .finance-detail-drawer .finance-section {
   padding: 12px 0 0;
   border: 0;
@@ -2903,6 +2905,9 @@
 @media (max-width: 640px) {
   .finance-detail-drawer .finance-detail-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .finance-detail-drawer .finance-detail-summary strong { font-size: 16px; }
+  .finance-detail-drawer .finance-detail-summary > div:last-child { grid-column: 1 / -1; }
+  .finance-company-mobile-button { display: inline-flex; grid-column: span 2; align-items: center; justify-content: center; gap: 5px; width: 100%; height: 30px; min-height: 30px; padding: 0 9px; font-size: 11.5px; }
+  .finance-copy-invoice-button { width: 100%; justify-content: center; height: 30px; min-height: 30px; margin-top: 2px; }
 }
 
 /* 产品详情 · 手机端：单列字段，宽内容不再被挤进半格；底部四个操作按钮两列排布。 */

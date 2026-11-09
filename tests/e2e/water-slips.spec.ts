@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type APIRequestContext } from '@playwright/test';
 import { dateInputValue } from '../../src/shared/date-input';
 import { ensureAuthenticated, injectSession } from './helpers/auth';
 
@@ -18,6 +18,14 @@ test.beforeEach(async ({ context }) => {
 });
 
 test.describe.configure({ timeout: 120_000 });
+
+// 页面同时加载大量订单详情时，page.request 的清理请求可能排队；清理改用独立请求上下文。
+async function authenticatedDelete(request: APIRequestContext, path: string): Promise<void> {
+  const response = await request.delete(path, { headers: { Cookie: `wb_session=${sessionCookie}` } });
+  if (!response.ok() && response.status() !== 404) {
+    throw new Error(`清理失败：DELETE ${path} -> HTTP ${response.status()}`);
+  }
+}
 
 async function seedCompanyOrder(page: import('@playwright/test').Page, stamp: number) {
   const companyResponse = await page.request.post('/api/finance/companies', {
@@ -42,7 +50,7 @@ async function seedCompanyOrder(page: import('@playwright/test').Page, stamp: nu
   return { company, order };
 }
 
-test('水单收款：订单号定位、上传、确认入账并按公司统计', async ({ page, context }) => {
+test('水单收款：订单号定位、上传、确认入账并按公司统计', async ({ page, context, request }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   const stamp = Date.now();
   const { company, order } = await seedCompanyOrder(page, stamp);
@@ -96,18 +104,18 @@ test('水单收款：订单号定位、上传、确认入账并按公司统计',
     const financeDialog = page.getByRole('dialog', { name: /财务详情/ });
     await expect(financeDialog).toContainText(company.shortName);
     await expect(financeDialog).toContainText(`开票公司：${company.shortName}`);
-    await financeDialog.locator('.finance-detail-summary').getByTitle('复制开票信息（可直接发给客户）').click();
-    await expect(page.getByText(`已复制「${company.shortName}」开票信息，可直接发给客户`)).toBeVisible();
+    await financeDialog.getByRole('button', { name: '复制开票信息' }).click();
+    await expect(page.getByText(`已复制「${company.fullName}」开票信息，可直接发给客户`)).toBeVisible();
     const copiedInvoiceInfo = await page.evaluate(() => navigator.clipboard.readText());
     expect(copiedInvoiceInfo).toContain(`公司名称：${company.fullName}`);
     expect(copiedInvoiceInfo).toContain(`纳税人识别号：${company.taxNo}`);
   } finally {
-    await page.request.delete(`/api/orders/${order.id}`);
-    await page.request.delete(`/api/finance/companies/${company.id}`);
+    await authenticatedDelete(request, `/api/orders/${order.id}`);
+    await authenticatedDelete(request, `/api/finance/companies/${company.id}`);
   }
 });
 
-test('水单收款：公司档案可在财务模块新增和停用', async ({ page }) => {
+test('水单收款：公司档案可在财务模块新增和停用', async ({ page, request }) => {
   const stamp = Date.now();
   const name = `档案公司${stamp}`;
   let companyId: number | undefined;
@@ -133,7 +141,7 @@ test('水单收款：公司档案可在财务模块新增和停用', async ({ pa
     await manager.getByRole('button', { name: '保存公司' }).click();
     await expect(manager.locator('.company-row', { hasText: name })).toContainText('已停用');
   } finally {
-    if (companyId) await page.request.delete(`/api/finance/companies/${companyId}`);
+    if (companyId) await authenticatedDelete(request, `/api/finance/companies/${companyId}`);
   }
 });
 
