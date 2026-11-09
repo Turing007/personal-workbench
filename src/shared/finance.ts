@@ -201,10 +201,13 @@ export interface FinanceOrderLookupRow {
   orderId: number;
   orderNo: string;
   customerName: string;
+  recipientName: string;
   orderDate: string;
   settlementType: string;
   companyId: number | null;
   companyName: string;
+  /** 订单金额（不是应收快照），用于按金额查找 */
+  amountCents: number;
   receivableCents: number;
   receivedCents: number;
   outstandingCents: number;

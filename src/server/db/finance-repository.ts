@@ -102,6 +102,14 @@ function lastInsertId(result: { lastInsertRowid: number | bigint }): number {
   return Number(result.lastInsertRowid);
 }
 
+/** “4,820”“¥4820”“4820.00”都能当作金额查询；纯数字订单号也会同时作为金额尝试，不会影响订单号命中。 */
+function parseLookupAmountCents(value: string): number | null {
+  const normalized = value.replace(/[¥￥,\s]/g, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return null;
+  const cents = Math.round(Number(normalized) * 100);
+  return Number.isSafeInteger(cents) && cents >= 0 ? cents : null;
+}
+
 function mapFinance(row: SqlRow | undefined): OrderFinanceSummary | undefined {
   if (!row) return undefined;
   return {
@@ -563,14 +571,23 @@ export class FinanceRepository {
     return rows;
   }
 
-  /** 水单页订单号输入：模糊匹配，完全匹配排在最前。 */
+  /** 水单页快速收集：订单号、客户、收件人模糊匹配，金额按订单金额或未收金额精确匹配。 */
   lookupOrders(query: string, limit = 10): FinanceOrderLookupRow[] {
     const trimmed = query.trim();
     if (!trimmed) return [];
+    const like = `%${trimmed}%`;
+    const conditions = ['o.order_no LIKE ?', 'o.customer_name LIKE ?', 'o.recipient_name LIKE ?'];
+    const values: Array<string | number> = [like, like, like];
+    const amountCents = parseLookupAmountCents(trimmed);
+    if (amountCents != null) {
+      conditions.push('(o.amount_cents = ? OR COALESCE(f.outstanding_cents, o.amount_cents) = ?)');
+      values.push(amountCents, amountCents);
+    }
     const rows = this.database.prepare(`
-      SELECT o.id AS order_id, o.order_no, o.customer_name, o.ordered_at AS order_date,
+      SELECT o.id AS order_id, o.order_no, o.customer_name, o.recipient_name, o.ordered_at AS order_date,
         COALESCE(o.settlement_type, 'corporate') AS settlement_type,
         o.company_id, COALESCE(c.short_name, '') AS company_name,
+        o.amount_cents,
         COALESCE(f.receivable_cents, o.amount_cents) AS receivable_cents,
         COALESCE(f.received_cents, 0) AS received_cents,
         COALESCE(f.outstanding_cents, o.amount_cents) AS outstanding_cents,
@@ -580,18 +597,27 @@ export class FinanceRepository {
       FROM orders o
       LEFT JOIN order_finance f ON f.order_id = o.id
       LEFT JOIN companies c ON c.id = o.company_id
-      WHERE o.order_no LIKE ?
-      ORDER BY CASE WHEN o.order_no = ? THEN 0 ELSE 1 END, o.ordered_at DESC, o.id DESC
+      WHERE ${conditions.join(' OR ')}
+      ORDER BY
+        CASE
+          WHEN o.order_no = ? THEN 0
+          WHEN o.customer_name = ? THEN 1
+          WHEN o.recipient_name = ? THEN 2
+          ELSE 3
+        END,
+        o.ordered_at DESC, o.id DESC
       LIMIT ?
-    `).all(`%${trimmed}%`, trimmed, Math.max(1, Math.min(50, limit))) as SqlRow[];
+    `).all(...values, trimmed, trimmed, trimmed, Math.max(1, Math.min(50, limit))) as SqlRow[];
     return rows.map((row) => ({
       orderId: numberValue(row, 'order_id'),
       orderNo: stringValue(row, 'order_no'),
       customerName: stringValue(row, 'customer_name'),
+      recipientName: stringValue(row, 'recipient_name'),
       orderDate: stringValue(row, 'order_date'),
       settlementType: stringValue(row, 'settlement_type', 'corporate'),
       companyId: row.company_id == null ? null : numberValue(row, 'company_id'),
       companyName: stringValue(row, 'company_name'),
+      amountCents: numberValue(row, 'amount_cents'),
       receivableCents: numberValue(row, 'receivable_cents'),
       receivedCents: numberValue(row, 'received_cents'),
       outstandingCents: numberValue(row, 'outstanding_cents'),

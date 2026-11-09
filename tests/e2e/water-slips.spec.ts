@@ -52,10 +52,18 @@ test('水单收款：订单号定位、上传、确认入账并按公司统计',
     await page.locator('.sidebar-nav').getByRole('button', { name: '水单', exact: true }).click();
     await expect(page.getByText('水单收款', { exact: true })).toBeVisible();
 
-    const lookup = page.getByLabel('订单号');
+    const lookup = page.getByLabel('查找订单');
     await lookup.fill(orderNo);
     await expect(page.locator('.water-slip-selected-order')).toContainText(orderNo);
     await expect(page.locator('.water-slip-selected-order')).toContainText(company.shortName);
+
+    // 客户、收件人、金额都能用来查找订单。
+    await lookup.fill('水单收件人');
+    await page.locator('.water-slip-candidate', { hasText: orderNo }).click();
+    await expect(page.locator('.water-slip-selected-order')).toContainText(orderNo);
+    await lookup.fill('100');
+    await page.locator('.water-slip-candidate', { hasText: orderNo }).click();
+    await expect(page.locator('.water-slip-selected-order')).toContainText(orderNo);
 
     await page.locator('.water-slip-upload input[type=file]').setInputFiles({ name: `水单-${stamp}.png`, mimeType: 'image/png', buffer: PNG_1X1 });
     await page.locator('.water-slip-form label', { hasText: '付款金额' }).locator('input').fill('40');

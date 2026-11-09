@@ -280,16 +280,20 @@ export default function WaterSlipPage({ companies, onNotify, onOpenOrder, onOpen
 
     <section className={`water-slip-collect${dragging ? ' is-dragging' : ''}`} {...dropHandlers}>
       <div className="water-slip-collect-head">
-        <div><strong>快速收集</strong><span>输入订单号 → 自动带出客户和公司 → 上传水单</span></div>
+        <div><strong>快速收集</strong><span>按订单号、客户、收件人或金额查找订单 → 自动带出公司 → 上传水单</span></div>
         {selectedOrder && <button className="button button-ghost" type="button" onClick={clearOrder}><X size={14} />换订单</button>}
       </div>
       <div className="water-slip-order-search">
         <Search size={15} />
         <input
           value={lookupQuery}
-          onChange={(event) => { setLookupQuery(event.target.value); if (selectedOrder && event.target.value !== selectedOrder.orderNo) setSelectedOrder(undefined); }}
-          placeholder="输入订单号，如 SO-20261109-001"
-          aria-label="订单号"
+          onChange={(event) => {
+            setLookupQuery(event.target.value);
+            setLookupRows([]);
+            if (selectedOrder && event.target.value !== selectedOrder.orderNo) setSelectedOrder(undefined);
+          }}
+          placeholder="输入订单号、客户、收件人或金额"
+          aria-label="查找订单"
         />
         {lookupLoading && <span className="water-slip-search-hint">查询中…</span>}
         {!lookupLoading && lookupQuery.trim().length >= 2 && !selectedOrder && lookupRows.length === 0 && <span className="water-slip-search-hint">未找到订单</span>}
@@ -297,13 +301,13 @@ export default function WaterSlipPage({ companies, onNotify, onOpenOrder, onOpen
       {!selectedOrder && lookupRows.length > 0 && <div className="water-slip-candidates">
         {lookupRows.map((row) => <button type="button" key={row.orderId} className="water-slip-candidate" onClick={() => selectOrder(row)}>
           <strong>{row.orderNo}</strong>
-          <span>{row.customerName || '未填客户'} · {row.companyName || '未分配公司'}</span>
-          <small>应收 {money(row.receivableCents)} · 未收 {money(row.outstandingCents)}</small>
+          <span>{row.customerName || '未填客户'}{row.recipientName ? ` · 收件人 ${row.recipientName}` : ''} · {row.companyName || '未分配公司'}</span>
+          <small>金额 {money(row.amountCents)} · 未收 {money(row.outstandingCents)}</small>
         </button>)}
       </div>}
       {selectedOrder && <div className="water-slip-selected-order">
         <div className="water-slip-order-main">
-          <div><strong>{selectedOrder.orderNo}</strong><span>{selectedOrder.customerName || '未填客户'}</span></div>
+          <div><strong>{selectedOrder.orderNo}</strong><span>{selectedOrder.customerName || '未填客户'}{selectedOrder.recipientName ? ` · 收件人 ${selectedOrder.recipientName}` : ''}</span></div>
           <span className={selectedOrder.companyName ? 'badge badge-neutral' : 'badge badge-warning'}><Building2 size={12} />{selectedOrder.companyName || '未分配公司'}</span>
         </div>
         <div className="water-slip-order-metrics">

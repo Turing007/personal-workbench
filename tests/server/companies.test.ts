@@ -160,10 +160,24 @@ describe('公司档案与水单收款', () => {
     const order = await createOrder(app, company.id);
     const orderId = Number(order.json().data.id);
     const orderNo = String(order.json().data.order_no);
+    const customerId = Number(database.prepare(
+      `INSERT INTO customers (name, created_at, updated_at)
+       VALUES ('宁波海川采购部', '2026-08-20', '2026-08-20')`,
+    ).run().lastInsertRowid);
+    database.prepare('UPDATE orders SET customer_id = ?, customer_name = ? WHERE id = ?').run(customerId, '宁波海川采购部', orderId);
 
     const lookup = await authInject(app, { method: 'GET', url: `/api/finance/orders/lookup?orderNo=${encodeURIComponent(orderNo)}` });
     expect(lookup.statusCode).toBe(200);
-    expect(lookup.json().data.items[0]).toMatchObject({ orderId, orderNo, companyId: company.id, companyName: '宁波公司' });
+    expect(lookup.json().data.items[0]).toMatchObject({ orderId, orderNo, customerName: '宁波海川采购部', recipientName: '张三', amountCents: 10000, companyId: company.id, companyName: '宁波公司' });
+
+    const byCustomer = await authInject(app, { method: 'GET', url: `/api/finance/orders/lookup?orderNo=${encodeURIComponent('海川采购')}` });
+    expect(byCustomer.json().data.items).toEqual(expect.arrayContaining([expect.objectContaining({ orderId, orderNo })]));
+    const byRecipient = await authInject(app, { method: 'GET', url: `/api/finance/orders/lookup?orderNo=${encodeURIComponent('张三')}` });
+    expect(byRecipient.json().data.items).toEqual(expect.arrayContaining([expect.objectContaining({ orderId, orderNo })]));
+    const byAmount = await authInject(app, { method: 'GET', url: `/api/finance/orders/lookup?orderNo=${encodeURIComponent('100.00')}` });
+    expect(byAmount.json().data.items).toEqual(expect.arrayContaining([expect.objectContaining({ orderId, orderNo, amountCents: 10000 })]));
+    const byCurrencyAmount = await authInject(app, { method: 'GET', url: `/api/finance/orders/lookup?orderNo=${encodeURIComponent('¥100.00')}` });
+    expect(byCurrencyAmount.json().data.items).toEqual(expect.arrayContaining([expect.objectContaining({ orderId, orderNo, amountCents: 10000 })]));
 
     const proof = await uploadProof(app, orderId, 4000, '2026-08-23');
     const pendingStats = await authInject(app, { method: 'GET', url: '/api/finance/companies/stats?month=2026-08' });
