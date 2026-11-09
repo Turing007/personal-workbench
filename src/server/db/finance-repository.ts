@@ -206,7 +206,7 @@ export class FinanceRepository {
 
   getOrder(orderId: number): SqlRow | undefined {
     return this.database.prepare(`
-      SELECT o.*, c.short_name AS company_name, c.full_name AS company_full_name
+      SELECT o.*, COALESCE(NULLIF(c.full_name, ''), c.short_name) AS company_name, c.full_name AS company_full_name
       FROM orders o
       LEFT JOIN companies c ON c.id = o.company_id
       WHERE o.id = ?
@@ -295,7 +295,7 @@ export class FinanceRepository {
       SELECT o.id AS order_id, o.order_no, o.customer_name, o.ordered_at AS order_date,
         f.receivable_cents, f.received_cents, f.outstanding_cents, f.payment_status,
         f.proof_status, f.invoice_status, o.status AS order_status, o.settlement_type,
-        o.company_id, COALESCE(c.short_name, '') AS company_name, f.updated_at
+        o.company_id, COALESCE(NULLIF(c.full_name, ''), c.short_name, '') AS company_name, f.updated_at
       FROM order_finance f
       JOIN orders o ON o.id = f.order_id
       LEFT JOIN companies c ON c.id = o.company_id
@@ -362,7 +362,7 @@ export class FinanceRepository {
     const rows = this.database.prepare(`
       SELECT p.*, o.order_no, o.customer_name, o.ordered_at AS order_date,
         COALESCE(o.settlement_type, 'corporate') AS settlement_type,
-        o.company_id, COALESCE(c.short_name, '') AS company_name
+        o.company_id, COALESCE(NULLIF(c.full_name, ''), c.short_name, '') AS company_name
       FROM payment_proofs p
       JOIN orders o ON o.id = p.order_id
       LEFT JOIN companies c ON c.id = o.company_id
@@ -473,14 +473,14 @@ export class FinanceRepository {
     }
     const rows = this.database.prepare(`
       SELECT o.company_id,
-        COALESCE(NULLIF(c.short_name, ''), ?) AS company_name,
+        COALESCE(NULLIF(c.full_name, ''), NULLIF(c.short_name, ''), ?) AS company_name,
         COUNT(*) AS receipt_count,
         COALESCE(SUM(r.amount_cents), 0) AS amount_cents
       FROM finance_receipts r
       JOIN orders o ON o.id = r.order_id
       LEFT JOIN companies c ON c.id = o.company_id
       ${where}
-      GROUP BY o.company_id, c.short_name
+      GROUP BY o.company_id, c.full_name, c.short_name
       ORDER BY amount_cents DESC, receipt_count DESC
     `).all(...values) as SqlRow[];
     return rows.map((row) => ({
@@ -539,7 +539,7 @@ export class FinanceRepository {
     `).all(...invoiceValues) as SqlRow[];
 
     const companyRows = this.database
-      .prepare('SELECT id, short_name FROM companies ORDER BY is_active DESC, short_name COLLATE NOCASE, id')
+      .prepare("SELECT id, COALESCE(NULLIF(full_name, ''), short_name) AS short_name FROM companies ORDER BY is_active DESC, COALESCE(NULLIF(full_name, ''), short_name) COLLATE NOCASE, id")
       .all() as Array<{ id: number; short_name: string }>;
     const received = new Map<string, SqlRow>();
     const pending = new Map<string, SqlRow>();
@@ -586,7 +586,7 @@ export class FinanceRepository {
     const rows = this.database.prepare(`
       SELECT o.id AS order_id, o.order_no, o.customer_name, o.recipient_name, o.ordered_at AS order_date,
         COALESCE(o.settlement_type, 'corporate') AS settlement_type,
-        o.company_id, COALESCE(c.short_name, '') AS company_name,
+        o.company_id, COALESCE(NULLIF(c.full_name, ''), c.short_name, '') AS company_name,
         o.amount_cents,
         COALESCE(f.receivable_cents, o.amount_cents) AS receivable_cents,
         COALESCE(f.received_cents, 0) AS received_cents,

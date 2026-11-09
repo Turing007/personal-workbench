@@ -18,7 +18,8 @@ export interface Company {
 }
 
 export interface CompanySaveInput {
-  shortName: string;
+  /** 兼容旧接口；新前端只提交 fullName，服务端会用它作为内部唯一名。 */
+  shortName?: string;
   fullName?: string;
   taxNo?: string;
   bankName?: string;
@@ -29,6 +30,11 @@ export interface CompanySaveInput {
   remark?: string;
   invoiceCategories?: string[];
   isActive?: boolean;
+}
+
+/** 对外展示的公司名称：优先公司全称，历史数据没有全称时回退到简称。 */
+export function companyDisplayName(company: { shortName?: string; fullName?: string }): string {
+  return (company.fullName ?? '').trim() || (company.shortName ?? '').trim();
 }
 
 /** 可开票类目数量与单个类目长度上限，避免复制文本过长。 */
@@ -77,23 +83,22 @@ export function formatInvoiceCategories(categories: string[] | undefined): strin
 }
 
 export interface CompanyInvoiceInfoSource {
-  shortName: string;
+  shortName?: string;
   fullName?: string;
   taxNo?: string;
   bankName?: string;
   bankAccount?: string;
   address?: string;
   phone?: string;
-  invoiceCategories?: string[];
 }
 
 /**
- * 生成可直接发给客户的纯文本开票信息。
+ * 生成可直接发给客户的纯文本开票信息（不含可开票类目）。
  * 空字段整行省略，避免把「未填写」之类的内部提示发给客户。
  */
 export function buildCompanyInvoiceInfoText(company: CompanyInvoiceInfoSource): string {
   const lines = ['【开票信息】'];
-  const name = (company.fullName ?? '').trim() || company.shortName.trim();
+  const name = companyDisplayName(company);
   if (name) lines.push(`公司名称：${name}`);
   const taxNo = (company.taxNo ?? '').trim();
   if (taxNo) lines.push(`纳税人识别号：${taxNo}`);
@@ -105,8 +110,6 @@ export function buildCompanyInvoiceInfoText(company: CompanyInvoiceInfoSource): 
   if (bankName) lines.push(`开户行：${bankName}`);
   const bankAccount = (company.bankAccount ?? '').trim();
   if (bankAccount) lines.push(`银行账号：${bankAccount}`);
-  const categories = normalizeInvoiceCategories(company.invoiceCategories);
-  if (categories.length > 0) lines.push(`可开票类目：${categories.join('、')}`);
   return lines.join('\n');
 }
 

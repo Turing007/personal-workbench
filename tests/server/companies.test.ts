@@ -29,7 +29,7 @@ async function createCompany(app: Awaited<ReturnType<typeof setup>>['app'], shor
   const response = await authInject(app, {
     method: 'POST',
     url: '/api/finance/companies',
-    payload: { shortName, fullName: `${shortName}全称`, taxNo: `TAX-${shortName}` },
+    payload: { shortName, fullName: shortName, taxNo: `TAX-${shortName}` },
   });
   expect(response.statusCode).toBe(200);
   return response.json().data;
@@ -292,14 +292,14 @@ describe('公司档案与水单收款', () => {
     const updated = await authInject(app, {
       method: 'PUT',
       url: `/api/finance/companies/${companyId}`,
-      payload: { shortName: '类目公司', invoiceCategories: '配件、充电器' },
+      payload: { shortName: '类目公司', fullName: '类目公司全称', invoiceCategories: '配件、充电器' },
     });
     expect(updated.statusCode).toBe(200);
     expect(updated.json().data.invoiceCategories).toEqual(['配件', '充电器']);
 
     const list = await authInject(app, { method: 'GET', url: '/api/finance/companies?includeInactive=1' });
     expect(list.json().data.items.find((item: { id: number }) => item.id === companyId))
-      .toMatchObject({ shortName: '类目公司', invoiceCategories: ['配件', '充电器'] });
+      .toMatchObject({ shortName: '类目公司全称', fullName: '类目公司全称', invoiceCategories: ['配件', '充电器'] });
     await app.close();
     database.close();
   });

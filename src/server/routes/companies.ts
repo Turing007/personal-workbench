@@ -13,7 +13,7 @@ function text(value: unknown): string {
 function companyInput(body: Record<string, unknown>) {
   const rawActive = body.isActive ?? body.is_active;
   return {
-    shortName: text(body.shortName ?? body.short_name),
+    shortName: text(body.shortName ?? body.short_name) || text(body.fullName ?? body.full_name),
     fullName: text(body.fullName ?? body.full_name),
     taxNo: text(body.taxNo ?? body.tax_no),
     bankName: text(body.bankName ?? body.bank_name),

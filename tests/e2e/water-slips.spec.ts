@@ -118,13 +118,13 @@ test('水单收款：公司档案可在财务模块新增和停用', async ({ pa
     const manager = page.getByRole('dialog', { name: '公司档案' });
     await expect(manager).toBeVisible();
     await manager.getByRole('button', { name: '新增公司' }).click();
-    await manager.getByLabel('公司简称').fill(name);
-    await manager.locator('.company-form-grid label', { hasText: '公司全称' }).locator('input').fill(`${name}全称`);
+    const fullName = `${name}全称`;
+    await manager.getByLabel('公司名称').fill(fullName);
     await manager.getByRole('button', { name: '保存公司' }).click();
     await expect(manager.locator('.company-row', { hasText: name })).toBeVisible();
 
     const listResponse = await page.request.get('/api/finance/companies?includeInactive=1');
-    const created = (await listResponse.json()).data.items.find((item: { shortName: string; id: number }) => item.shortName === name);
+    const created = (await listResponse.json()).data.items.find((item: { fullName: string; id: number }) => item.fullName === fullName);
     companyId = created?.id;
     expect(companyId).toBeTruthy();
 

@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { normalizeInvoiceCategories, type Company, type CompanySaveInput } from '../../shared/companies.js';
+import { companyDisplayName, normalizeInvoiceCategories, type Company, type CompanySaveInput } from '../../shared/companies.js';
 
 interface CompanyRow {
   id: number;
@@ -38,10 +38,13 @@ function storedInvoiceCategories(value: unknown): string[] {
 }
 
 function mapCompany(row: CompanyRow): Company {
+  const fullName = String(row.full_name ?? '').trim();
+  const displayName = companyDisplayName({ shortName: String(row.short_name ?? ''), fullName });
   return {
     id: Number(row.id),
-    shortName: String(row.short_name ?? ''),
-    fullName: String(row.full_name ?? ''),
+    // 前端统一把 shortName 当作展示名使用；数据库 short_name 仍保留作兼容与唯一索引。
+    shortName: displayName,
+    fullName: fullName || displayName,
     taxNo: String(row.tax_no ?? ''),
     bankName: String(row.bank_name ?? ''),
     bankAccount: String(row.bank_account ?? ''),
@@ -66,7 +69,7 @@ export class CompanyRepository {
   list(includeInactive = false): Company[] {
     const where = includeInactive ? '' : 'WHERE is_active = 1';
     const rows = this.database
-      .prepare(`SELECT * FROM companies ${where} ORDER BY is_active DESC, short_name COLLATE NOCASE, id`)
+      .prepare(`SELECT * FROM companies ${where} ORDER BY is_active DESC, COALESCE(NULLIF(full_name, ''), short_name) COLLATE NOCASE, id`)
       .all() as unknown as CompanyRow[];
     return rows.map(mapCompany);
   }
@@ -77,8 +80,9 @@ export class CompanyRepository {
   }
 
   create(input: CompanySaveInput): Company {
-    const shortName = text(input.shortName);
-    if (!shortName) throw new CompanyRepositoryError('COMPANY_NAME_REQUIRED', '公司简称不能为空');
+    const fullName = text(input.fullName);
+    const name = fullName || text(input.shortName);
+    if (!name) throw new CompanyRepositoryError('COMPANY_NAME_REQUIRED', '公司名称不能为空');
     const timestamp = new Date().toISOString();
     try {
       const result = this.database.prepare(`
@@ -86,8 +90,8 @@ export class CompanyRepository {
           (short_name, full_name, tax_no, bank_name, bank_account, address, phone, contact_name, remark, invoice_categories, is_active, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        shortName,
-        text(input.fullName),
+        name,
+        fullName || name,
         text(input.taxNo),
         text(input.bankName),
         text(input.bankAccount),
@@ -103,7 +107,7 @@ export class CompanyRepository {
       return this.get(Number(result.lastInsertRowid))!;
     } catch (error) {
       if (/UNIQUE constraint failed.*companies/i.test(String(error))) {
-        throw new CompanyRepositoryError('COMPANY_NAME_EXISTS', '公司简称已存在');
+        throw new CompanyRepositoryError('COMPANY_NAME_EXISTS', '公司名称已存在');
       }
       throw error;
     }
@@ -112,8 +116,9 @@ export class CompanyRepository {
   update(id: number, input: CompanySaveInput): Company {
     const existing = this.get(id);
     if (!existing) throw new CompanyRepositoryError('COMPANY_NOT_FOUND', '公司不存在');
-    const shortName = text(input.shortName);
-    if (!shortName) throw new CompanyRepositoryError('COMPANY_NAME_REQUIRED', '公司简称不能为空');
+    const fullName = text(input.fullName);
+    const name = fullName || text(input.shortName);
+    if (!name) throw new CompanyRepositoryError('COMPANY_NAME_REQUIRED', '公司名称不能为空');
     const timestamp = new Date().toISOString();
     try {
       this.database.prepare(`
@@ -122,8 +127,8 @@ export class CompanyRepository {
           address = ?, phone = ?, contact_name = ?, remark = ?, invoice_categories = ?, is_active = ?, updated_at = ?
         WHERE id = ?
       `).run(
-        shortName,
-        text(input.fullName),
+        name,
+        fullName || name,
         text(input.taxNo),
         text(input.bankName),
         text(input.bankAccount),
@@ -139,7 +144,7 @@ export class CompanyRepository {
       return this.get(id)!;
     } catch (error) {
       if (/UNIQUE constraint failed.*companies/i.test(String(error))) {
-        throw new CompanyRepositoryError('COMPANY_NAME_EXISTS', '公司简称已存在');
+        throw new CompanyRepositoryError('COMPANY_NAME_EXISTS', '公司名称已存在');
       }
       throw error;
     }

@@ -1206,7 +1206,7 @@ export class DatabaseRepositories {
     const count = Number(this.database.prepare(`SELECT COUNT(*) AS count FROM orders o ${where}`).get(...values)?.count ?? 0);
     const rows = this.database
       .prepare(
-        `SELECT o.*, c.short_name AS company_name,
+        `SELECT o.*, COALESCE(NULLIF(c.full_name, ''), c.short_name) AS company_name,
           COALESCE(o.label_printed_at, (SELECT MAX(ph.printed_at) FROM print_histories ph JOIN print_history_labels phl ON phl.print_history_id = ph.id WHERE phl.order_id = o.id)) AS label_printed_at,
           COALESCE((SELECT SUM(cli.total_count) FROM carton_labels cl JOIN carton_label_items cli ON cli.carton_label_id = cl.id WHERE cl.order_id = o.id), 0) AS total_quantity,
           COALESCE((SELECT MAX(cl.total_boxes) FROM carton_labels cl WHERE cl.order_id = o.id), 0) AS total_boxes
@@ -1219,7 +1219,7 @@ export class DatabaseRepositories {
 
   getOrderDetail(orderId: number) {
     const order = this.database.prepare(`
-      SELECT o.*, c.short_name AS company_name
+      SELECT o.*, COALESCE(NULLIF(c.full_name, ''), c.short_name) AS company_name
       FROM orders o LEFT JOIN companies c ON c.id = o.company_id
       WHERE o.id = ?
     `).get(orderId);
