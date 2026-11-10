@@ -7,3 +7,13 @@
 	reverse_proxy workbench:52341
 	encode gzip zstd
 }
+
+# DSH Remote 自建中转站：独立子域，后端是同一 Docker 网络里的 dsh-remote-server。
+# 不要删除这个站点块，否则工作台下次部署后 dsh.vigortech.xyz 会 502。
+dsh.vigortech.xyz {
+	encode zstd gzip
+	reverse_proxy dsh-remote-server:8080 {
+		flush_interval -1
+		header_up X-Forwarded-For {remote_host}
+	}
+}
