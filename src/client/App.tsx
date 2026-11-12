@@ -17,6 +17,7 @@ import type { ProductRecord } from './components/ProductEditor';
 import type { Customer } from '../shared/customers';
 import type { Company } from '../shared/companies';
 import OrdersPage, { fallbackLabels } from './pages/OrdersPage';
+import DashboardPage from './pages/DashboardPage';
 import { getBatchAdvancePlan, type BatchAdvanceAction } from './order-workflow';
 import ProductsPage from './pages/ProductsPage';
 import CatalogPage from './pages/CatalogPage';
@@ -76,6 +77,7 @@ import {
 } from './api';
 import type { ApiOrderDetail, ApiOrderRow, AuthUser } from './api';
 import { isUnshippedStatus } from '../shared/domain';
+import type { PaymentProofStatus } from '../shared/finance';
 
 function createId(prefix: string) { return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 
@@ -162,7 +164,7 @@ function initialActiveNav(): NavigationKey {
     const saved = window.localStorage.getItem(ACTIVE_NAV_STORAGE_KEY);
     if (saved && navigationKeys.includes(saved as NavigationKey)) return saved as NavigationKey;
   } catch { /* localStorage 不可用时回退到默认模块 */ }
-  return 'orders';
+  return 'dashboard';
 }
 
 interface WorkbenchProps {
@@ -189,6 +191,11 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
   /** 从订单详情进入财务时记住来源订单，财务详情里可以一键返回并重新打开该订单。 */
   const [financeReturnOrderId, setFinanceReturnOrderId] = useState<number>();
   const [ordersInitialOrderId, setOrdersInitialOrderId] = useState<number | null>(null);
+  const [ordersInitialStatus, setOrdersInitialStatus] = useState<OrderStatus>();
+  const [ordersStartCreate, setOrdersStartCreate] = useState(false);
+  const [quotationStartCreate, setQuotationStartCreate] = useState(false);
+  const [productStartCreate, setProductStartCreate] = useState(false);
+  const [waterInitialStatus, setWaterInitialStatus] = useState<PaymentProofStatus>();
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSectionKey | null>(null);
   const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState<ToastMessage[]>([]);
@@ -876,13 +883,14 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
         <button type="button" className="button button-secondary" onClick={() => void productUploadQueue.retryFailures()}>重试</button>
       </span>
     </div>}
+    {active === 'dashboard' && <DashboardPage orders={orders} statusCounts={statusCounts} onOpenOrders={(status) => { if (status) setOrdersInitialStatus(status); navigate('orders'); }} onOpenFinance={() => navigate('finance')} onOpenWaterSlips={(status) => { if (status) setWaterInitialStatus(status); navigate('water-slips'); }} onNewOrder={() => { setOrdersStartCreate(true); navigate('orders'); }} onNewQuotation={() => { setQuotationStartCreate(true); navigate('quotations'); }} onNewProduct={() => { setProductStartCreate(true); navigate('products'); }} onRefresh={loadOrders} />}
     {active === 'finance' && <FinancePage onNotify={notify} initialOrderId={financeInitialOrderId} returnOrderId={financeReturnOrderId} customers={customers} companies={companies} onCompaniesChanged={loadCompanies} onReturnToOrder={(orderId) => { setOrdersInitialOrderId(orderId); setFinanceReturnOrderId(undefined); navigate('orders'); }} />}
-    {active === 'water-slips' && <WaterSlipPage companies={companies} onNotify={notify} onOpenOrder={(orderId) => { setOrdersInitialOrderId(orderId); navigate('orders'); }} onOpenFinance={(orderId) => { setFinanceInitialOrderId(orderId); setFinanceReturnOrderId(orderId); navigate('finance'); }} />}
-    {active === 'orders' && <OrdersPage orders={orders} customers={customers} companies={companies} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); setFinanceReturnOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} />}
+    {active === 'water-slips' && <WaterSlipPage companies={companies} onNotify={notify} initialStatus={waterInitialStatus} onInitialFiltersConsumed={() => setWaterInitialStatus(undefined)} onOpenOrder={(orderId) => { setOrdersInitialOrderId(orderId); navigate('orders'); }} onOpenFinance={(orderId) => { setFinanceInitialOrderId(orderId); setFinanceReturnOrderId(orderId); navigate('finance'); }} />}
+    {active === 'orders' && <OrdersPage orders={orders} customers={customers} companies={companies} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} initialStatus={ordersInitialStatus} onInitialStatusConsumed={() => setOrdersInitialStatus(undefined)} startCreate={ordersStartCreate} onStartCreateConsumed={() => setOrdersStartCreate(false)} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); setFinanceReturnOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} />}
     {active === 'stock' && <StockPage onNotify={notify} systemProducts={products} />}
-    {active === 'quotations' && <QuotationPage onNotify={notify} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
+    {active === 'quotations' && <QuotationPage onNotify={notify} startCreate={quotationStartCreate} onStartCreateConsumed={() => setQuotationStartCreate(false)} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
     {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={async (orderId) => { await loadOrders(); setOrdersInitialOrderId(orderId); navigate('orders'); }} />}
-    {active === 'products' && <ProductsPage products={products} loading={loading} onSave={saveProductRecord} saving={productSaving} onExport={exportProductLibrary} onOpenCatalog={() => navigate('product-catalog')} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onReloadProducts={async () => { await loadProducts(); }} onManagePresets={() => { setSettingsInitialSection('packaging'); navigate('settings'); }} onManageProductOptions={() => { setSettingsInitialSection('product-options'); navigate('settings'); }} onUpdateSaleStatus={(product, next) => { void toggleProductSaleStatus(product, next); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} uploadingProductIds={uploadQueue.uploadingProductIds} uploadFiles={uploadQueue.files} onRetryUploadFile={(taskId) => productUploadQueue.retryFailure(taskId)} />}
+    {active === 'products' && <ProductsPage products={products} loading={loading} startCreate={productStartCreate} onStartCreateConsumed={() => setProductStartCreate(false)} onSave={saveProductRecord} saving={productSaving} onExport={exportProductLibrary} onOpenCatalog={() => navigate('product-catalog')} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onReloadProducts={async () => { await loadProducts(); }} onManagePresets={() => { setSettingsInitialSection('packaging'); navigate('settings'); }} onManageProductOptions={() => { setSettingsInitialSection('product-options'); navigate('settings'); }} onUpdateSaleStatus={(product, next) => { void toggleProductSaleStatus(product, next); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} uploadingProductIds={uploadQueue.uploadingProductIds} uploadFiles={uploadQueue.files} onRetryUploadFile={(taskId) => productUploadQueue.retryFailure(taskId)} />}
     {active === 'product-catalog' && <CatalogPage products={products} loading={loading} onNotify={notify} />}
     {active === 'customer-products' && <CustomerProductsPage customers={customers} systemProducts={products} initialCustomerId={customerProductsInitialCustomerId ?? undefined} loading={loading} onCustomersChanged={loadCustomers} onNotify={notify} />}
     {active === 'library' && <LibraryPage customers={customers} onNotify={notify} />}

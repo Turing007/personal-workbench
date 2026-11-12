@@ -137,6 +137,12 @@ export interface FinanceListFilters {
   orderStatus?: string;
   /** 公司筛选；unassigned 表示历史订单尚未分配公司 */
   companyId?: number | 'unassigned';
+  /** 多选筛选（左侧筛选栏使用） */
+  companyIds?: number[];
+  includeUnassignedCompany?: boolean;
+  paymentStatuses?: FinancePaymentStatus[];
+  proofStatuses?: FinanceProofStatus[];
+  invoiceStatuses?: InvoiceStatus[];
   page?: number;
   pageSize?: number;
 }
@@ -192,6 +198,9 @@ export interface FinanceProofListFilters {
   month?: string;
   companyId?: number | 'unassigned';
   status?: PaymentProofStatus;
+  companyIds?: number[];
+  includeUnassignedCompany?: boolean;
+  statuses?: PaymentProofStatus[];
   query?: string;
   limit?: number;
 }

@@ -51,6 +51,7 @@ async function seedCompanyOrder(page: import('@playwright/test').Page, stamp: nu
 }
 
 test('水单收款：订单号定位、上传、确认入账并按公司统计', async ({ page, context, request }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   const stamp = Date.now();
   const { company, order } = await seedCompanyOrder(page, stamp);
@@ -91,13 +92,14 @@ test('水单收款：订单号定位、上传、确认入账并按公司统计',
     await expect(companyCard).toContainText('¥40.00');
     await expect(companyCard).toContainText('1 笔已入账');
 
-    // 公司筛选后仍能看到这笔水单。
-    await page.getByLabel('公司筛选').selectOption(String(company.id));
+    // 左侧筛选栏按公司筛选后仍能看到这笔水单。
+    const waterRail = page.locator('.filter-rail');
+    await waterRail.locator('label', { hasText: company.shortName }).locator('input').check();
     await expect(page.locator('.water-slip-table tbody tr', { hasText: orderNo })).toBeVisible();
 
     // 财务台账按公司筛选，并在详情里显示公司。
     await page.locator('.sidebar-nav').getByRole('button', { name: '财务', exact: true }).click();
-    await page.getByLabel('收款公司').selectOption(String(company.id));
+    await page.locator('.filter-rail label', { hasText: company.fullName }).locator('input').check();
     const financeRow = page.locator('tbody tr', { hasText: orderNo });
     await expect(financeRow).toContainText(company.shortName);
     await financeRow.getByRole('button', { name: '查看财务' }).click();

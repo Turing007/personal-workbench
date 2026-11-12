@@ -278,6 +278,26 @@ export class FinanceRepository {
       conditions.push('o.company_id = ?');
       values.push(filters.companyId);
     }
+    // 多选公司与“未分配公司”是并列关系：命中任一即可，不能叠加成 AND。
+    const companyConditions: string[] = [];
+    if (filters.companyIds?.length) {
+      companyConditions.push(`o.company_id IN (${filters.companyIds.map(() => '?').join(', ')})`);
+      values.push(...filters.companyIds);
+    }
+    if (filters.includeUnassignedCompany) companyConditions.push('o.company_id IS NULL');
+    if (companyConditions.length) conditions.push(`(${companyConditions.join(' OR ')})`);
+    if (filters.paymentStatuses?.length) {
+      conditions.push(`f.payment_status IN (${filters.paymentStatuses.map(() => '?').join(', ')})`);
+      values.push(...filters.paymentStatuses);
+    }
+    if (filters.proofStatuses?.length) {
+      conditions.push(`f.proof_status IN (${filters.proofStatuses.map(() => '?').join(', ')})`);
+      values.push(...filters.proofStatuses);
+    }
+    if (filters.invoiceStatuses?.length) {
+      conditions.push(`f.invoice_status IN (${filters.invoiceStatuses.map(() => '?').join(', ')})`);
+      values.push(...filters.invoiceStatuses);
+    }
     const month = filters.month?.trim();
     if (month) {
       conditions.push("substr(o.ordered_at, 1, 7) = ?");
@@ -346,6 +366,18 @@ export class FinanceRepository {
     } else if (filters.companyId != null) {
       conditions.push('o.company_id = ?');
       values.push(filters.companyId);
+    }
+    // 多选公司与“未分配公司”是并列关系：命中任一即可，不能叠加成 AND。
+    const companyConditions: string[] = [];
+    if (filters.companyIds?.length) {
+      companyConditions.push(`o.company_id IN (${filters.companyIds.map(() => '?').join(', ')})`);
+      values.push(...filters.companyIds);
+    }
+    if (filters.includeUnassignedCompany) companyConditions.push('o.company_id IS NULL');
+    if (companyConditions.length) conditions.push(`(${companyConditions.join(' OR ')})`);
+    if (filters.statuses?.length) {
+      conditions.push(`p.status IN (${filters.statuses.map(() => '?').join(', ')})`);
+      values.push(...filters.statuses);
     }
     const month = filters.month?.trim();
     if (month) {

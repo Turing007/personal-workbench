@@ -15,6 +15,16 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function listValues(value?: string): string[] {
+  return (value ?? '').split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+function listIds(value?: string): number[] {
+  return listValues(value)
+    .map((item) => Number(item))
+    .filter((item) => Number.isSafeInteger(item) && item > 0);
+}
+
 function parseOptionalNumber(value: unknown): unknown {
   if (value === undefined || value === null || value === '') return undefined;
   const parsed = Number(value);
@@ -168,6 +178,11 @@ export async function registerFinanceRoutes(app: FastifyInstance, options: Finan
         : query.companyId && Number.isSafeInteger(Number(query.companyId)) && Number(query.companyId) > 0
           ? Number(query.companyId)
           : undefined,
+      companyIds: listIds(query.companyIds),
+      includeUnassignedCompany: query.includeUnassignedCompany === '1' || query.includeUnassignedCompany === 'true',
+      paymentStatuses: listValues(query.paymentStatuses) as FinanceListFilters['paymentStatuses'],
+      proofStatuses: listValues(query.proofStatuses) as FinanceListFilters['proofStatuses'],
+      invoiceStatuses: listValues(query.invoiceStatuses) as FinanceListFilters['invoiceStatuses'],
       page: query.page ? Number(query.page) : undefined,
       pageSize: query.pageSize ? Number(query.pageSize) : undefined,
     };
@@ -195,7 +210,11 @@ export async function registerFinanceRoutes(app: FastifyInstance, options: Finan
           : query.companyId && Number.isSafeInteger(Number(query.companyId)) && Number(query.companyId) > 0
             ? Number(query.companyId)
             : undefined,
+        companyIds: listIds(query.companyIds),
+        includeUnassignedCompany: query.includeUnassignedCompany === '1' || query.includeUnassignedCompany === 'true',
+        statuses: listValues(query.statuses) as import('../../shared/finance.js').PaymentProofStatus[],
         query: query.q ?? query.query,
+        limit: query.limit ? Number(query.limit) : undefined,
       }),
     });
   }, reply));

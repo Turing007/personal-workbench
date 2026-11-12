@@ -54,6 +54,9 @@ export interface ProductsPageProps {
   uploadFiles?: UploadFileSnapshot[];
   /** 单张上传失败后的重试入口。 */
   onRetryUploadFile?: (taskId: string) => void;
+  /** 工作台快捷入口：进入页面后直接新建产品。 */
+  startCreate?: boolean;
+  onStartCreateConsumed?: () => void;
 }
 
 const statusFilterLabels: Array<{ value: StatusFilter; label: string }> = [
@@ -90,7 +93,7 @@ function extraQuoteCount(product: ProductRecord) {
   return Math.max(0, (product.purchaseQuotes?.length ?? 0) - 1);
 }
 
-export default function ProductsPage({ products, loading, onSave, saving, onDelete, onUpdateSaleStatus, onExport, onOpenCatalog, onDownloadTemplate, onImport, onRefresh, onReloadProducts, onManagePresets, onManageProductOptions, uploadingProductIds, uploadFiles, onRetryUploadFile }: ProductsPageProps) {
+export default function ProductsPage({ products, loading, onSave, saving, onDelete, onUpdateSaleStatus, onExport, onOpenCatalog, onDownloadTemplate, onImport, onRefresh, onReloadProducts, onManagePresets, onManageProductOptions, uploadingProductIds, uploadFiles, onRetryUploadFile, startCreate, onStartCreateConsumed }: ProductsPageProps) {
   const uploadingIds = new Set(uploadingProductIds ?? []);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -191,6 +194,12 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
 
   const [calculatorProduct, setCalculatorProduct] = useState<ProductRecord>();
   const openNew = () => { setEditing(undefined); setCopying(false); setEditorOpen(true); };
+  useEffect(() => {
+    if (!startCreate) return;
+    openNew();
+    onStartCreateConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startCreate]);
   const openEdit = (product: ProductRecord) => { setEditing(product); setCopying(false); setEditorOpen(true); };
   const openCopy = (product: ProductRecord) => { setEditing(cloneProductForNew(product)); setCopying(true); setEditorOpen(true); };
   const save = async (product: ProductRecord, mode: 'draft' | 'active', options?: { addToCatalogId?: number }) => {

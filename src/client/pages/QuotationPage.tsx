@@ -30,6 +30,9 @@ export interface QuotationPageProps {
   onOpenCustomerProducts?: (customerId: number) => void;
   onSaveCustomerProduct?: (customerId: number, input: import('../../shared/customers').CustomerProductSaveInput) => Promise<import('../../shared/customers').CustomerProduct>;
   onCreateCustomer?: (input: CustomerSaveInput) => Promise<Customer>;
+  /** 工作台快捷入口：进入页面后直接新建报价。 */
+  startCreate?: boolean;
+  onStartCreateConsumed?: () => void;
 }
 
 interface QuotationListRow extends QuotationSummary {
@@ -46,7 +49,7 @@ const statusOptions: Array<{ value: 'all' | QuotationStatus; label: string }> = 
   { value: 'expired', label: '已失效' },
 ];
 
-export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCustomerProducts, onSaveCustomerProduct, onCreateCustomer }: QuotationPageProps) {
+export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCustomerProducts, onSaveCustomerProduct, onCreateCustomer, startCreate, onStartCreateConsumed }: QuotationPageProps) {
   const [rows, setRows] = useState<QuotationListRow[]>([]);
   const [filter, setFilter] = useState<'all' | QuotationStatus>('all');
   const [query, setQuery] = useState('');
@@ -120,6 +123,12 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
     setDraft(createEmptyQuotationDraft(profile ?? undefined));
     setEditorOpen(true);
   };
+  useEffect(() => {
+    if (!startCreate) return;
+    void openNew();
+    onStartCreateConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startCreate]);
   const openEdit = async (id: number) => {
     setBusyId(id);
     try {

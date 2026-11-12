@@ -1188,8 +1188,12 @@ export function listFinanceProofs(filters: FinanceProofListFilters = {}) {
   const query = new URLSearchParams();
   if (filters.month) query.set('month', filters.month);
   if (filters.companyId != null) query.set('companyId', String(filters.companyId));
+  if (filters.companyIds?.length) query.set('companyIds', filters.companyIds.join(','));
+  if (filters.includeUnassignedCompany) query.set('includeUnassignedCompany', '1');
   if (filters.status) query.set('status', filters.status);
+  if (filters.statuses?.length) query.set('statuses', filters.statuses.join(','));
   if (filters.query?.trim()) query.set('q', filters.query.trim());
+  if (filters.limit != null) query.set('limit', String(filters.limit));
   return request<{ items: FinanceProofListRow[] }>(`/api/finance/proofs?${query.toString()}`);
 }
 

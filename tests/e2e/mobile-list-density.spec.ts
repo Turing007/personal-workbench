@@ -99,7 +99,7 @@ test.describe('手机端列表页密度：去掉多余容器留白', () => {
 
       const metrics = await page.evaluate(() => {
         const shell = document.querySelector('.orders-page') as HTMLElement;
-        const panel = document.querySelector('.orders-page > .table-panel') as HTMLElement;
+        const panel = document.querySelector('.orders-page .table-panel') as HTMLElement;
         const toolbar = document.querySelector('.orders-page .orders-table-toolbar') as HTMLElement;
         const list = document.querySelector('.orders-card-list') as HTMLElement;
         const first = list.querySelector('.order-card') as HTMLElement;

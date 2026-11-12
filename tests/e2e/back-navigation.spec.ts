@@ -19,6 +19,9 @@ test.beforeEach(async ({ context }) => {
 test.describe('返回键逐级返回', () => {
   test('切换模块后，返回键回到上一级菜单而不是退出', async ({ page }) => {
     await page.goto('/');
+    await expect(page.locator('.dashboard-page')).toBeVisible();
+
+    await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
     await expect(page.locator('.orders-page')).toBeVisible();
 
     await page.getByRole('button', { name: '财务', exact: true }).click();
@@ -56,7 +59,7 @@ test.describe('返回键逐级返回（手机端）', () => {
 
     await page.goBack();
     await expect(sidebar).not.toHaveClass(/is-mobile-open/);
-    // 关抽屉同样不算页面跳转。
-    await expect(page.locator('.orders-page')).toBeVisible();
+    // 关抽屉同样不算页面跳转，仍停在工作台。
+    await expect(page.locator('.dashboard-page')).toBeVisible();
   });
 });

@@ -366,13 +366,18 @@
   }
 
   .orders-page .orders-bulk-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 15;
     display: flex;
     flex: 0 0 auto;
+    flex-wrap: wrap;
     align-items: center;
     gap: 6px;
-    padding: 5px 10px;
-    border-bottom: 1px solid var(--erp-divider);
+    padding: 6px 10px;
+    border-top: 1px solid var(--erp-border);
     background: var(--erp-surface-muted);
+    box-shadow: 0 -4px 12px rgba(16, 32, 51, .06);
   }
 
   .orders-page .table-scroll {
@@ -389,6 +394,7 @@
   .orders-page .orders-data-table .order-check-cell { width: 36px; padding-right: 4px; }
   .orders-page .orders-data-table .order-no-cell { width: 142px; white-space: nowrap; }
   .orders-page .orders-data-table .order-customer-cell { width: 190px; overflow: hidden; }
+  .orders-page .orders-data-table .order-date-cell { width: 88px; white-space: nowrap; }
   .orders-page .order-party { display: grid; gap: 1px; min-width: 0; }
   .orders-page .order-party-customer,
   .orders-page .order-party-recipient { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -597,17 +603,17 @@
   .finance-page .finance-toolbar .search-control { flex: 1 1 200px; }
 
   /* 窄桌面财务表只留「订单号 / 客户 / 应收 / 未收 / 付款 / 操作」 */
-  .finance-page .finance-table th:nth-child(3),
+  .finance-page .finance-table .finance-column-head th:nth-child(3),
   .finance-page .finance-table td:nth-child(3),
-  .finance-page .finance-table th:nth-child(4),
+  .finance-page .finance-table .finance-column-head th:nth-child(4),
   .finance-page .finance-table td:nth-child(4),
-  .finance-page .finance-table th:nth-child(6),
+  .finance-page .finance-table .finance-column-head th:nth-child(6),
   .finance-page .finance-table td:nth-child(6),
-  .finance-page .finance-table th:nth-child(9),
+  .finance-page .finance-table .finance-column-head th:nth-child(9),
   .finance-page .finance-table td:nth-child(9),
-  .finance-page .finance-table th:nth-child(10),
+  .finance-page .finance-table .finance-column-head th:nth-child(10),
   .finance-page .finance-table td:nth-child(10),
-  .finance-page .finance-table th:nth-child(11),
+  .finance-page .finance-table .finance-column-head th:nth-child(11),
   .finance-page .finance-table td:nth-child(11) {
     display: none;
   }
@@ -720,13 +726,18 @@
   }
 
   .orders-page .orders-bulk-bar {
+    position: sticky;
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    z-index: 25;
     display: flex;
     align-items: center;
     gap: 6px;
     overflow-x: auto;
-    padding: 4px 0 6px;
-    border-bottom: 0;
-    background: transparent;
+    margin: 0 -10px;
+    padding: 7px 10px;
+    border-top: 1px solid var(--erp-border);
+    background: var(--erp-surface);
+    box-shadow: 0 -4px 14px rgba(16, 32, 51, .1);
   }
 
   .orders-page .orders-card-list {
@@ -980,8 +991,8 @@
   .finance-page .finance-table th.is-right,
   .finance-page .finance-table td.is-right { text-align: right; }
 
-  /* 财务列多：窄桌面横向滚动时订单号固定左、操作固定右 */
-  .finance-page .finance-table th:nth-child(1),
+  /* 财务列多：窄桌面横向滚动时订单号固定左、操作固定右（分组表头不参与固定） */
+  .finance-page .finance-table .finance-column-head th:nth-child(1),
   .finance-page .finance-table td:nth-child(1) {
     position: sticky;
     left: 0;
@@ -989,14 +1000,14 @@
     background: var(--erp-surface);
   }
 
-  .finance-page .finance-table th:nth-child(1) {
+  .finance-page .finance-table .finance-column-head th:nth-child(1) {
     z-index: 3;
     background: var(--erp-surface-muted);
   }
 
   .finance-page .finance-table tr:hover td:nth-child(1) { background: var(--erp-surface-muted); }
 
-  .finance-page .finance-table th:last-child,
+  .finance-page .finance-table .finance-column-head th:last-child,
   .finance-page .finance-table td:last-child {
     position: sticky;
     right: 0;
@@ -1005,7 +1016,7 @@
     box-shadow: -1px 0 0 var(--erp-divider);
   }
 
-  .finance-page .finance-table th:last-child {
+  .finance-page .finance-table .finance-column-head th:last-child {
     z-index: 3;
     background: var(--erp-surface-muted);
   }
@@ -1553,13 +1564,13 @@
 
   .finance-page .finance-table { min-width: 940px; }
 
-  .finance-page .finance-table th:nth-child(5),
+  .finance-page .finance-table .finance-column-head th:nth-child(5),
   .finance-page .finance-table td:nth-child(5),
-  .finance-page .finance-table th:nth-child(8),
+  .finance-page .finance-table .finance-column-head th:nth-child(8),
   .finance-page .finance-table td:nth-child(8),
-  .finance-page .finance-table th:nth-child(9),
+  .finance-page .finance-table .finance-column-head th:nth-child(9),
   .finance-page .finance-table td:nth-child(9),
-  .finance-page .finance-table th:nth-child(10),
+  .finance-page .finance-table .finance-column-head th:nth-child(10),
   .finance-page .finance-table td:nth-child(10) {
     display: none;
   }
@@ -3147,8 +3158,15 @@
 .water-slip-search { display: flex; align-items: center; gap: 5px; height: 30px; padding: 0 8px; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface); }
 .water-slip-search svg { color: var(--erp-muted); }
 .water-slip-search input { width: 150px; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--erp-text); font: inherit; font-size: 11.5px; }
-.water-slip-table { min-width: 840px; }
+.water-slip-table { min-width: 900px; }
+.water-slip-table th, .water-slip-table td { padding-left: 7px; padding-right: 7px; }
 .water-slip-table td { vertical-align: middle; }
+.water-slip-table td:nth-child(3),
+.water-slip-table td:nth-child(4),
+.water-slip-table td:nth-child(5),
+.water-slip-table td:nth-child(6),
+.water-slip-table td:nth-child(7),
+.water-slip-table td:nth-child(8) { white-space: nowrap; }
 .water-slip-thumb { display: block; width: 46px; height: 36px; overflow: hidden; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface-subtle, var(--color-surface-subtle)); }
 .water-slip-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .water-slip-table .row-actions, .water-slip-card-actions { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -3343,4 +3361,423 @@
   .quotation-config-card-grid > label:nth-child(1) { grid-column: 1 / -1; }
   .quotation-config-card-grid > label:nth-child(5),
   .quotation-config-card-grid > label:nth-child(6) { grid-column: span 1; }
+}
+
+/* 工作台首页：待办、指标、按公司收款与最近动态 */
+.dashboard-page { display: grid; align-content: start; gap: 12px; }
+.dashboard-head { align-items: flex-start; gap: 12px; }
+.dashboard-heading { display: grid; gap: 2px; min-width: 0; }
+.dashboard-heading .page-subtitle { display: inline-flex; align-items: center; gap: 5px; color: var(--erp-muted); font-size: 11px; }
+.dashboard-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.dashboard-actions .button { height: 32px; min-height: 32px; padding: 0 10px; font-size: 11.5px; }
+.dashboard-error { padding: 8px 10px; border: 1px solid var(--color-danger-border); border-radius: var(--radius-ui); background: var(--color-danger-soft); color: var(--color-danger); font-size: 11.5px; }
+.dashboard-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--erp-border); border-radius: var(--erp-radius-surface); background: var(--erp-surface); overflow: hidden; }
+.dashboard-metrics > div { display: grid; gap: 2px; padding: 12px 14px; border-right: 1px solid var(--erp-divider); }
+.dashboard-metrics > div:last-child { border-right: 0; }
+.dashboard-metrics span { color: var(--erp-muted); font-size: 11px; }
+.dashboard-metrics strong { color: var(--erp-text); font-size: 20px; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.dashboard-metrics strong small { font-size: 11px; font-weight: 500; color: var(--erp-muted); }
+.dashboard-metrics em { color: var(--erp-muted); font-size: 10.5px; font-style: normal; }
+.dashboard-section { display: grid; gap: 8px; }
+.dashboard-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.dashboard-section-head > div { display: grid; gap: 2px; }
+.dashboard-section-head strong { color: var(--erp-text); font-size: 14px; }
+.dashboard-section-head span { color: var(--erp-muted); font-size: 11px; }
+.dashboard-section-head .button { height: 28px; min-height: 28px; padding: 0 7px; font-size: 11px; }
+.dashboard-task-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.dashboard-task { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 10px 11px; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface); color: var(--erp-text-2); cursor: pointer; text-align: left; }
+.dashboard-task:hover { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.dashboard-task.is-warning { border-color: color-mix(in srgb, var(--color-warning-text) 35%, var(--erp-border)); }
+.dashboard-task.is-danger { border-color: var(--color-danger-border); }
+.dashboard-task.is-empty { opacity: .62; }
+.dashboard-task-icon { display: grid; width: 32px; height: 32px; place-items: center; border-radius: var(--radius-ui); background: var(--color-accent-soft); color: var(--color-accent); }
+.dashboard-task.is-warning .dashboard-task-icon { background: var(--color-warning-soft); color: var(--color-warning-text); }
+.dashboard-task.is-danger .dashboard-task-icon { background: var(--color-danger-soft); color: var(--color-danger); }
+.dashboard-task-copy { display: grid; gap: 1px; min-width: 0; }
+.dashboard-task-copy strong { color: var(--erp-text); font-size: 12.5px; }
+.dashboard-task-copy small { overflow: hidden; color: var(--erp-muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-task b { color: var(--erp-text); font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.dashboard-columns { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 12px; }
+.dashboard-panel { display: grid; align-content: start; gap: 9px; padding: 12px 14px; border: 1px solid var(--erp-border); border-radius: var(--erp-radius-surface); background: var(--erp-surface); }
+.dashboard-company-list, .dashboard-recent-list, .dashboard-order-list { display: grid; gap: 1px; }
+.dashboard-company-row, .dashboard-recent-row, .dashboard-order-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 2px; border: 0; border-top: 1px solid var(--erp-divider); background: transparent; color: var(--erp-text-2); cursor: pointer; text-align: left; }
+.dashboard-company-row:first-child, .dashboard-recent-row:first-child, .dashboard-order-row:first-child { border-top: 0; }
+.dashboard-company-row:hover, .dashboard-recent-row:hover, .dashboard-order-row:hover { background: var(--color-surface-subtle); }
+.dashboard-company-row > div, .dashboard-recent-row > div, .dashboard-order-row > div { display: grid; gap: 1px; min-width: 0; }
+.dashboard-company-row > div:last-child, .dashboard-recent-row > div:last-child, .dashboard-order-row > div:last-child { text-align: right; }
+.dashboard-company-row strong, .dashboard-recent-row strong, .dashboard-order-row strong { overflow: hidden; color: var(--erp-text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dashboard-company-row span, .dashboard-recent-row span, .dashboard-order-row span { overflow: hidden; color: var(--erp-muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-empty { padding: 18px 8px; color: var(--erp-muted); font-size: 11.5px; text-align: center; }
+.dashboard-recent-orders { margin-bottom: 4px; }
+
+@media (max-width: 1100px) {
+  .dashboard-task-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dashboard-columns { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 900px) {
+  .dashboard-page { gap: 8px; padding: 10px 10px calc(58px + env(safe-area-inset-bottom, 0px) + 10px); }
+  .dashboard-head { display: grid; gap: 8px; }
+  .dashboard-heading .page-breadcrumb, .dashboard-heading .page-subtitle { display: none; }
+  .dashboard-heading .page-title { font-size: 16px; }
+  .dashboard-actions { justify-content: flex-start; gap: 5px; }
+  .dashboard-actions .button { height: 30px; min-height: 30px; padding: 0 8px; font-size: 11px; }
+  .dashboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-metrics > div { padding: 9px 10px; }
+  .dashboard-metrics > div:nth-child(2n) { border-right: 0; }
+  .dashboard-metrics > div:nth-child(-n + 2) { border-bottom: 1px solid var(--erp-divider); }
+  .dashboard-metrics strong { font-size: 16px; }
+  .dashboard-task-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .dashboard-task { grid-template-columns: 30px minmax(0, 1fr) auto; gap: 7px; padding: 8px 9px; }
+  .dashboard-task-icon { width: 28px; height: 28px; }
+  .dashboard-task-copy strong { font-size: 12px; }
+  .dashboard-task-copy small { font-size: 10px; }
+  .dashboard-task b { font-size: 18px; }
+  .dashboard-columns { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .dashboard-panel { padding: 10px; }
+  .dashboard-section-head .button { height: 26px; min-height: 26px; font-size: 10.5px; }
+  .dashboard-company-row, .dashboard-recent-row, .dashboard-order-row { padding: 7px 2px; }
+}
+
+/* 左侧筛选栏与常用视图（订单/财务/水单共用） */
+.filter-rail-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  min-width: 0;
+}
+.filter-rail-main { display: grid; gap: 12px; min-width: 0; }
+.filter-rail {
+  position: sticky;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: calc(100dvh - 90px);
+  overflow: hidden;
+  padding: 10px;
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-radius-surface);
+  background: var(--erp-surface);
+}
+.filter-rail-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.filter-rail-head strong { display: inline-flex; align-items: center; gap: 5px; color: var(--erp-text); font-size: 12.5px; }
+.filter-rail-head .icon-button { width: 26px; height: 26px; }
+.filter-rail-collapsed {
+  position: sticky;
+  top: 12px;
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  width: 36px;
+  min-height: 100px;
+  padding: 8px 4px;
+  border: 1px solid var(--erp-border);
+  border-radius: var(--erp-radius-surface);
+  background: var(--erp-surface);
+  color: var(--erp-muted);
+  cursor: pointer;
+}
+.filter-rail-collapsed span { font-size: 10px; writing-mode: vertical-rl; letter-spacing: 2px; }
+.filter-rail-section { display: grid; gap: 6px; padding-top: 9px; border-top: 1px solid var(--erp-divider); }
+.filter-rail-section:first-child { border-top: 0; padding-top: 0; }
+.filter-rail-section-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.filter-rail-section-head strong { color: var(--erp-text-2); font-size: 11px; font-weight: 600; }
+.filter-rail-section-head span { color: var(--color-warning-text); font-size: 10px; }
+.filter-rail-section-head button { border: 0; background: transparent; color: var(--color-accent); font: inherit; font-size: 10px; cursor: pointer; }
+.filter-rail-search {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--erp-border);
+  border-radius: var(--radius-ui);
+  background: var(--erp-surface);
+  color: var(--erp-text);
+  font: inherit;
+  font-size: 11px;
+}
+.filter-check-list { display: grid; gap: 1px; max-height: 180px; overflow: auto; }
+.filter-check-option {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 2px 4px;
+  border-radius: var(--radius-ui);
+  color: var(--erp-text-2);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.filter-check-option:hover { background: var(--color-surface-subtle); }
+.filter-check-option.is-checked { color: var(--erp-text); background: var(--color-accent-soft); }
+.filter-check-option input { width: 13px; height: 13px; margin: 0; accent-color: var(--color-accent); }
+.filter-check-option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter-check-option b { color: var(--erp-muted); font-size: 10px; font-weight: 500; }
+.filter-rail-empty { padding: 8px 4px; color: var(--erp-muted); font-size: 10.5px; }
+.filter-rail-views { display: grid; gap: 5px; padding-bottom: 9px; border-bottom: 1px solid var(--erp-divider); }
+.filter-rail-views .toolbar-select { width: 100%; height: 28px; font-size: 11px; }
+.filter-rail-view-actions { display: flex; gap: 2px; justify-content: flex-end; }
+.filter-rail-view-actions .icon-button { width: 26px; height: 26px; }
+/* 筛选项多时只滚动选项区，「重置全部筛选」始终留在栏底可见。 */
+.filter-rail-body { display: grid; gap: 9px; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 2px; }
+.filter-rail-reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 28px;
+  border: 1px solid var(--erp-border);
+  border-radius: var(--radius-ui);
+  background: var(--erp-surface);
+  color: var(--erp-muted);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.filter-rail-reset:hover { color: var(--erp-text); background: var(--color-surface-subtle); }
+.filter-rail-date-range { display: grid; gap: 4px; }
+.filter-rail-date-range span { color: var(--erp-muted); font-size: 10px; }
+.filter-rail-date-range input {
+  width: 100%;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--erp-border);
+  border-radius: var(--radius-ui);
+  background: var(--erp-surface);
+  color: var(--erp-text);
+  font: inherit;
+  font-size: 10.5px;
+}
+@media (min-width: 901px) {
+  /* 桌面端公司/状态筛选统一收进左侧栏，工具条下拉只保留给手机端 */
+  .finance-status-row,
+  .water-slip-filters .toolbar-select { display: none; }
+}
+@media (max-width: 1199px) {
+  .filter-rail-layout { grid-template-columns: 36px minmax(0, 1fr); gap: 8px; }
+}
+@media (min-width: 901px) and (max-width: 1439px) {
+  /* 1440 以下默认收起；主动展开时浮在表格上方，不挤压宽表。 */
+  .filter-rail-layout { position: relative; }
+  .filter-rail-main { grid-column: 2; }
+  .filter-rail-layout .filter-rail {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 40;
+    width: 240px;
+    max-height: calc(100dvh - 90px);
+    box-shadow: var(--shadow-popover);
+  }
+}
+@media (max-width: 900px) {
+  .filter-rail-layout { display: block; }
+  .filter-rail, .filter-rail-collapsed { display: none; }
+  .filter-rail-main { gap: 8px; }
+}
+/* 筛选栏展开要占 232px，1440 笔记本上的表格会不够宽。
+   展开时按 1200–1419 的密度收掉次要列，避免横向滚动和固定操作列压住状态列。 */
+@media (min-width: 1440px) and (max-width: 1601px) {
+  .orders-page .filter-rail-layout:has(.filter-rail) .orders-data-table { min-width: 940px; }
+  .orders-page .filter-rail-layout:has(.filter-rail) .orders-data-table th:nth-child(6),
+  .orders-page .filter-rail-layout:has(.filter-rail) .orders-data-table td:nth-child(6),
+  .orders-page .filter-rail-layout:has(.filter-rail) .orders-data-table th:nth-child(9),
+  .orders-page .filter-rail-layout:has(.filter-rail) .orders-data-table td:nth-child(9) {
+    display: none;
+  }
+}
+@media (min-width: 1440px) and (max-width: 1561px) {
+  .finance-page .filter-rail-layout:has(.filter-rail) .finance-table { min-width: 940px; }
+  .finance-page .filter-rail-layout:has(.filter-rail) .finance-table .finance-column-head th:nth-child(4),
+  .finance-page .filter-rail-layout:has(.filter-rail) .finance-table td:nth-child(4),
+  .finance-page .filter-rail-layout:has(.filter-rail) .finance-table .finance-column-head th:nth-child(11),
+  .finance-page .filter-rail-layout:has(.filter-rail) .finance-table td:nth-child(11) {
+    display: none;
+  }
+}
+
+/* 订单行内展开：桌面表格与手机卡片共用同一套内容 */
+.orders-page .order-no-wrap { display: flex; align-items: center; gap: 3px; min-width: 0; }
+.orders-page .order-expand-toggle { width: 22px; height: 22px; min-width: 22px; color: var(--erp-muted); }
+.orders-page .order-expand-toggle:hover { color: var(--erp-text); background: var(--erp-surface-muted); }
+.orders-page .orders-data-table tr.is-expanded > td { background: var(--erp-surface-muted); }
+.orders-page .order-expand-row > td { padding: 0 !important; border-bottom: 1px solid var(--erp-border); background: var(--erp-surface-muted); }
+.order-expand-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 10px 16px;
+  padding: 12px 14px 10px 46px;
+  background: var(--erp-surface-subtle, var(--color-surface-subtle));
+  border-left: 3px solid var(--color-accent);
+}
+.order-expand-products { display: grid; align-content: start; gap: 6px; min-width: 0; }
+.order-expand-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.order-expand-section-head strong { color: var(--erp-text); font-size: 11.5px; font-weight: 650; }
+.order-expand-section-head span { color: var(--erp-muted); font-size: 10.5px; }
+.order-expand-product-list { display: grid; gap: 4px; }
+.order-expand-product-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--erp-divider);
+  border-radius: 6px;
+  background: var(--erp-surface);
+}
+.order-expand-product-name { display: grid; gap: 1px; min-width: 0; }
+.order-expand-product-name strong { overflow: hidden; color: var(--erp-text); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.order-expand-product-name span, .order-expand-product-name small { overflow: hidden; color: var(--erp-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.order-expand-qty { color: var(--erp-muted); font-size: 10.5px; white-space: nowrap; }
+.order-expand-amount { color: var(--erp-text); font-size: 12px; font-weight: 650; white-space: nowrap; }
+.order-expand-side { display: grid; align-content: start; gap: 8px; min-width: 0; }
+.order-expand-info, .order-expand-finance { display: grid; gap: 5px; padding: 8px 10px; border: 1px solid var(--erp-divider); border-radius: 6px; background: var(--erp-surface); }
+.order-expand-info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 10px; }
+.order-expand-info-grid > div { display: grid; gap: 1px; min-width: 0; }
+.order-expand-info-grid span { color: var(--erp-muted); font-size: 10px; }
+.order-expand-info-grid strong { overflow-wrap: anywhere; color: var(--erp-text); font-size: 11.5px; font-weight: 500; }
+.order-expand-finance-body { display: grid; gap: 6px; }
+.order-expand-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.order-expand-metrics > div { display: grid; gap: 1px; }
+.order-expand-metrics span { color: var(--erp-muted); font-size: 10px; }
+.order-expand-metrics strong { color: var(--erp-text); font-size: 12px; font-weight: 650; white-space: nowrap; }
+.order-expand-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.order-expand-badges .badge { font-size: 10px; }
+.order-expand-empty { padding: 4px 0; color: var(--erp-muted); font-size: 10.5px; }
+.order-expand-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; padding-top: 8px; border-top: 1px solid var(--erp-divider); }
+.order-expand-actions .button { height: 28px; min-height: 28px; font-size: 11.5px; }
+
+@media (max-width: 900px) {
+  .order-expand-panel { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px; }
+  .order-expand-side { grid-column: 1; }
+  .order-expand-product-row { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; }
+  .order-expand-product-name { grid-column: 1; grid-row: 1; }
+  .order-expand-amount { grid-column: 2; grid-row: 1; }
+  .order-expand-qty { grid-column: 1; grid-row: 2; }
+  .order-expand-info-grid { grid-template-columns: minmax(0, 1fr); }
+  .order-expand-actions { justify-content: stretch; }
+  .order-expand-actions .button { flex: 1 1 auto; }
+}
+
+/* 水单行内展开与批量确认 */
+.water-slip-check-cell { width: 32px; padding-right: 2px !important; }
+.water-slip-check-cell input, .water-slip-card-check { width: 15px; height: 15px; accent-color: var(--color-accent); }
+.water-slip-thumb-toggle { position: relative; padding: 0; cursor: pointer; }
+.water-slip-thumb-chevron {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border: 1px solid var(--erp-border);
+  border-radius: 50%;
+  background: var(--erp-surface);
+  color: var(--erp-muted);
+}
+.water-slip-thumb-toggle:hover .water-slip-thumb-chevron { color: var(--erp-text); }
+.water-slip-table tr.is-expanded > td { background: var(--erp-surface-muted); }
+.water-proof-expand-row > td { padding: 0 !important; border-bottom: 1px solid var(--erp-border); background: var(--erp-surface-muted); }
+.water-proof-expand-panel {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 10px 14px;
+  padding: 12px 14px;
+  background: var(--erp-surface-subtle, var(--color-surface-subtle));
+  border-left: 3px solid var(--color-accent);
+}
+.water-proof-expand-preview { display: grid; align-content: start; gap: 4px; color: var(--color-accent); font-size: 10.5px; text-decoration: none; }
+.water-proof-expand-preview img { width: 180px; max-height: 220px; object-fit: contain; border: 1px solid var(--erp-border); border-radius: 6px; background: var(--erp-surface); }
+.water-proof-expand-preview span { display: inline-flex; align-items: center; gap: 4px; }
+.water-proof-expand-info { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; align-content: start; }
+.water-proof-expand-info > div { display: grid; gap: 1px; min-width: 0; }
+.water-proof-expand-info span { color: var(--erp-muted); font-size: 10px; }
+.water-proof-expand-info strong { color: var(--erp-text); font-size: 11.5px; font-weight: 500; overflow-wrap: anywhere; }
+.water-proof-expand-info .is-wide { grid-column: 1 / -1; }
+.water-proof-expand-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; padding-top: 8px; border-top: 1px solid var(--erp-divider); }
+.water-slip-bulk-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-top: 1px solid var(--erp-border);
+  background: var(--erp-surface-muted);
+  box-shadow: 0 -4px 12px rgba(16, 32, 51, .06);
+}
+
+@media (max-width: 900px) {
+  .water-slip-bulk-bar {
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    z-index: 25;
+    margin: 0 -10px;
+    background: var(--erp-surface);
+    box-shadow: 0 -4px 14px rgba(16, 32, 51, .1);
+  }
+  .water-slip-bulk-bar .badge { flex: 1 1 100%; justify-content: center; }
+  .water-proof-expand-panel { grid-template-columns: minmax(0, 1fr); padding: 10px; }
+  .water-proof-expand-preview img { width: 150px; max-height: 180px; }
+  .water-proof-expand-info { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .water-slip-card.is-expanded { border-color: var(--color-accent); }
+}
+
+/* 财务分组表头与列设置 */
+.finance-table .finance-table-groups th.finance-group-th {
+  height: 26px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--erp-border);
+  background: var(--erp-surface-muted);
+  color: var(--erp-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .5px;
+  text-align: center;
+}
+.finance-table .finance-table-groups th + th { border-left: 1px solid var(--erp-border); }
+.finance-table .finance-group-amount { background: color-mix(in srgb, var(--color-accent) 7%, var(--erp-surface-muted)); }
+.finance-table .finance-group-progress { background: color-mix(in srgb, var(--color-warning) 9%, var(--erp-surface-muted)); }
+.finance-table .finance-group-fulfillment { background: color-mix(in srgb, var(--color-info) 7%, var(--erp-surface-muted)); }
+.finance-table .finance-group-ops { background: var(--erp-surface-muted); }
+.finance-table .finance-column-head th { border-top: 0; }
+
+.finance-table.hide-col-customer .finance-column-head th:nth-child(2),
+.finance-table.hide-col-customer td:nth-child(2),
+.finance-table.hide-col-company .finance-column-head th:nth-child(3),
+.finance-table.hide-col-company td:nth-child(3),
+.finance-table.hide-col-date .finance-column-head th:nth-child(4),
+.finance-table.hide-col-date td:nth-child(4),
+.finance-table.hide-col-amounts .finance-column-head th:nth-child(5),
+.finance-table.hide-col-amounts td:nth-child(5),
+.finance-table.hide-col-amounts .finance-column-head th:nth-child(6),
+.finance-table.hide-col-amounts td:nth-child(6),
+.finance-table.hide-col-amounts .finance-column-head th:nth-child(7),
+.finance-table.hide-col-amounts td:nth-child(7),
+.finance-table.hide-col-payment .finance-column-head th:nth-child(8),
+.finance-table.hide-col-payment td:nth-child(8),
+.finance-table.hide-col-proof .finance-column-head th:nth-child(9),
+.finance-table.hide-col-proof td:nth-child(9),
+.finance-table.hide-col-invoice .finance-column-head th:nth-child(10),
+.finance-table.hide-col-invoice td:nth-child(10),
+.finance-table.hide-col-logistics .finance-column-head th:nth-child(11),
+.finance-table.hide-col-logistics td:nth-child(11) {
+  display: none;
+}
+
+.finance-columns-button { height: 28px; min-height: 28px; padding: 0 8px; font-size: 11.5px; }
+.finance-column-panel { display: grid; gap: 5px; }
+.finance-column-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 5px; border-bottom: 1px solid var(--erp-divider); }
+.finance-column-panel-head strong { color: var(--erp-text); font-size: 12px; }
+.finance-column-panel-head button { display: inline-flex; align-items: center; gap: 3px; border: 0; background: transparent; color: var(--color-accent); font: inherit; font-size: 10.5px; cursor: pointer; }
+.finance-column-option { display: flex; align-items: center; gap: 6px; padding: 3px 1px; color: var(--erp-text); font-size: 11.5px; cursor: pointer; }
+.finance-column-option input { width: 14px; height: 14px; accent-color: var(--color-accent); }
+.finance-column-panel p { margin: 3px 0 0; color: var(--erp-muted); font-size: 10.5px; line-height: 1.4; }
+
+@media (max-width: 900px) {
+  .finance-columns-button { display: none; }
 }

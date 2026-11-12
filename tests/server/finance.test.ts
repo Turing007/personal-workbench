@@ -262,4 +262,38 @@ describe('财务模块', () => {
     await app.close();
     database.close();
   });
+
+  it('财务与水单列表支持多选公司、状态和未分配公司', async () => {
+    const { database, companyId } = await setup();
+    const otherCompanyId = Number(database.prepare(
+      `INSERT INTO companies (short_name, full_name, created_at, updated_at)
+       VALUES ('第二公司', '第二公司全称', '2026-08-20', '2026-08-20')`,
+    ).run().lastInsertRowid);
+    const orderA = insertOrder(database, 10000, companyId);
+    const orderB = insertOrder(database, 20000, otherCompanyId);
+    const orderC = insertOrder(database, 30000, null);
+    database.prepare("UPDATE order_finance SET payment_status = 'paid', received_cents = 10000, outstanding_cents = 0 WHERE order_id = ?").run(orderA);
+    database.prepare("UPDATE order_finance SET payment_status = 'partial', received_cents = 5000, outstanding_cents = 15000 WHERE order_id = ?").run(orderB);
+    const insertProof = (orderId: number, status: string) => database.prepare(
+      `INSERT INTO payment_proofs (order_id, relative_path, original_name, mime_type, size_bytes, payment_date, amount_cents, status, created_at)
+       VALUES (?, ?, ?, 'image/png', 1, '2026-08-20', 5000, ?, '2026-08-20T08:00:00.000Z')`,
+    ).run(orderId, `proof-${orderId}-${status}.png`, `proof-${orderId}.png`, status);
+    insertProof(orderA, 'approved');
+    insertProof(orderB, 'pending');
+    insertProof(orderC, 'pending');
+
+    const service = new FinanceService({ database, repository: new FinanceRepository(database) });
+    const orderIds = (filters: Parameters<FinanceService['list']>[0]) => service.list(filters).rows.map((row) => row.orderId).sort((a, b) => a - b);
+
+    expect(orderIds({ companyIds: [companyId, otherCompanyId] })).toEqual([orderA, orderB].sort((a, b) => a - b));
+    expect(orderIds({ includeUnassignedCompany: true })).toContain(orderC);
+    expect(orderIds({ paymentStatuses: ['paid', 'partial'] })).toEqual([orderA, orderB].sort((a, b) => a - b));
+
+    expect(service.listProofs({ statuses: ['approved'] }).map((proof) => proof.orderId)).toEqual([orderA]);
+    expect(service.listProofs({ statuses: ['approved', 'pending'] })).toHaveLength(3);
+    expect(service.listProofs({ companyIds: [companyId], includeUnassignedCompany: true }).map((proof) => proof.orderId).sort((a, b) => a - b)).toEqual([orderA, orderC].sort((a, b) => a - b));
+    expect(service.listProofs({ limit: 2 })).toHaveLength(2);
+
+    database.close();
+  });
 });
