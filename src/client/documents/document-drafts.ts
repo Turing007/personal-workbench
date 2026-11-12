@@ -8,6 +8,7 @@ import type {
   SalesDocumentDisplayConfig,
   SalesDocumentStatus,
 } from '../../shared/documents';
+import type { QuotationItemConfiguration, QuotationPricingBasis } from '../../shared/quotation-config';
 
 export interface DocumentImageDraft {
   relativePath: string | null;
@@ -37,6 +38,7 @@ export interface DocumentItemDraft {
   quantity: string;
   unitPrice: string;
   priceTiers?: DocumentItemPriceTierDraft[];
+  configuration?: QuotationItemConfiguration;
   remark: string;
   freightPerBoxCents?: number | null;
   image: DocumentImageDraft;
@@ -62,6 +64,7 @@ export interface QuotationDraft {
   validUntil: string;
   remark: string;
   taxRate: string;
+  pricingBasis: QuotationPricingBasis;
   subtotal: string;
   tax: string;
   total: string;
@@ -84,6 +87,7 @@ export interface SalesDocumentDraft {
   purchaseOrderNo: string;
   shipping: string;
   taxRate: string;
+  pricingBasis: QuotationPricingBasis;
   subtotal: string;
   tax: string;
   total: string;
@@ -116,6 +120,7 @@ export interface DocumentItemPayload {
   quantity: number;
   unitPriceCents: number;
   priceTiers?: Array<{ minQuantity: number; maxQuantity: number | null; unitPriceCents: number }>;
+  configuration?: QuotationItemConfiguration;
   remark: string;
   sortOrder: number;
 }
@@ -131,6 +136,7 @@ export interface QuotationDraftPayload {
   validUntil: string;
   remark: string;
   taxRateBps: number;
+  pricingBasis: QuotationPricingBasis;
   companySnapshot: CompanySnapshot;
   displayConfig: QuotationDisplayConfig;
   items: DocumentItemPayload[];
@@ -153,6 +159,7 @@ export interface SalesDocumentDraftPayload {
   purchaseOrderNo: string;
   shippingCents: number;
   taxRateBps: number;
+  pricingBasis: QuotationPricingBasis;
   issuer: string;
   consignee: string;
   remark: string;
@@ -221,6 +228,7 @@ function itemToDraft(
     quantity: 'quantity' in item ? String(item.quantity) : '1',
     unitPrice: centsToInput(item.unitPriceCents),
     ...(priceTiers ? { priceTiers } : {}),
+    ...(item.configuration ? { configuration: { ...item.configuration } } : {}),
     remark: item.remark,
     image: {
       relativePath: item.imageRelativePath,
@@ -253,6 +261,7 @@ export function quotationDetailToDraft(detail: QuotationDetail): QuotationDraft 
     validUntil: detail.validUntil,
     remark: detail.remark,
     taxRate: basisPointsToInput(detail.taxRateBps),
+    pricingBasis: detail.pricingBasis,
     subtotal: centsToInput(detail.subtotalCents),
     tax: centsToInput(detail.taxCents),
     total: centsToInput(detail.totalCents),
@@ -277,6 +286,7 @@ export function salesDocumentDetailToDraft(detail: SalesDocumentDetail): SalesDo
     purchaseOrderNo: detail.purchaseOrderNo,
     shipping: centsToInput(detail.shippingCents),
     taxRate: basisPointsToInput(detail.taxRateBps),
+    pricingBasis: detail.pricingBasis,
     subtotal: centsToInput(detail.subtotalCents),
     tax: centsToInput(detail.taxCents),
     total: centsToInput(detail.totalCents),
@@ -322,6 +332,7 @@ function itemToPayload(item: DocumentItemDraft, sortOrder: number): DocumentItem
     quantity: Number(item.quantity || 0),
     unitPriceCents: inputToCents(item.unitPrice),
     ...(priceTiers ? { priceTiers } : {}),
+    ...(item.configuration ? { configuration: item.configuration } : {}),
     remark: item.remark.trim(),
     sortOrder,
   };
@@ -339,6 +350,7 @@ export function quotationDraftToPayload(draft: QuotationDraft): QuotationDraftPa
     validUntil: draft.validUntil,
     remark: draft.remark.trim(),
     taxRateBps: inputToBasisPoints(draft.taxRate),
+    pricingBasis: draft.pricingBasis,
     companySnapshot: { ...draft.companySnapshot },
     displayConfig: { ...draft.displayConfig, columns: { ...draft.displayConfig.columns } },
     // 报价单按产品报价、不含数量，固定按 1 计价
@@ -364,6 +376,7 @@ export function salesDocumentDraftToPayload(draft: SalesDocumentDraft): SalesDoc
     purchaseOrderNo: draft.purchaseOrderNo.trim(),
     shippingCents: inputToCents(draft.shipping),
     taxRateBps: inputToBasisPoints(draft.taxRate),
+    pricingBasis: draft.pricingBasis,
     issuer: draft.issuer.trim(),
     consignee: draft.consignee.trim(),
     remark: draft.remark.trim(),

@@ -32,7 +32,13 @@ import type {
 } from '../../shared/documents.js';
 import type { CustomerProduct } from '../../shared/customers.js';
 import {
-  calculateDocumentTotals,
+  calculateDocumentTotalsForBasis,
+  isQuotationPricingBasis,
+  normalizeQuotationConfiguration,
+  type QuotationItemConfiguration,
+  type QuotationPricingBasis,
+} from '../../shared/quotation-config.js';
+import {
   calculateLineAmountCents,
   calculateOutstandingCents,
   centsToChineseUppercase,
@@ -144,6 +150,7 @@ export interface SalesDocumentItemInput {
   packCount?: number | null;
   unitPriceCents?: number;
   unitPrice?: number;
+  configuration?: QuotationItemConfiguration;
   remark?: string;
   sortOrder?: number;
 }
@@ -161,6 +168,7 @@ export interface SalesDocumentInput {
   shippingCents?: number;
   shipping?: number;
   taxRateBps: number;
+  pricingBasis?: QuotationPricingBasis;
   issuer?: string;
   consignee?: string;
   remark?: string;
@@ -536,6 +544,7 @@ export class SalesDocumentService {
         quantity: 1,
         packCount: item.packCount,
         unitPriceCents: item.unitPriceCents,
+        configuration: item.configuration,
         remark: item.remark,
         sortOrder: index,
       };
@@ -550,6 +559,7 @@ export class SalesDocumentService {
       purchaseOrderNo: '',
       shippingCents: 0,
       taxRateBps: quotation.taxRateBps,
+      pricingBasis: quotation.pricingBasis,
       issuer: quotation.companySnapshot.defaultIssuer,
       consignee: quotation.contactName,
       remark: quotation.remark,
@@ -727,6 +737,9 @@ export class SalesDocumentService {
     if (input.documentStatus != null) normalizeDocumentStatus(input.documentStatus);
     const items = Array.isArray(input.items) ? input.items : [];
     const taxRateBps = validateTaxRateBps(input.taxRateBps);
+    const pricingBasis = isQuotationPricingBasis(input.pricingBasis)
+      ? input.pricingBasis
+      : existing?.pricingBasis ?? 'shipping_ex_tax';
     const shippingCents = normalizeShippingCents(input);
     const productRows: SalesDocumentPersistenceItem[] = [];
     const assetInputs: DocumentItemImageInput[] = [];
@@ -808,6 +821,7 @@ export class SalesDocumentService {
           : Math.max(1, Math.trunc(item.packCount)),
         unitPriceCents,
         amountCents: 0,
+        configuration: item.isTemporary ? undefined : normalizeQuotationConfiguration(item.configuration),
         remark: normalizeText(item.remark),
         imageRelativePath: image?.relativePath ?? null,
         imageOriginalName: image?.originalName ?? normalizeText(item.imageOriginalName),
@@ -819,7 +833,7 @@ export class SalesDocumentService {
     productRows.forEach((row) => {
       row.amountCents = calculateLineAmountCents(row.quantity, row.unitPriceCents);
     });
-    const totals = calculateDocumentTotals(productRows, taxRateBps, shippingCents);
+    const totals = calculateDocumentTotalsForBasis(productRows, taxRateBps, shippingCents, pricingBasis);
     const fallbackCompany = this.settingsRepository.getCompanyProfile() ?? EMPTY_COMPANY_PROFILE;
     const companySnapshot = normalizeCompanySnapshot(input.companySnapshot, fallbackCompany);
     const updatedAt = this.now();
@@ -841,6 +855,7 @@ export class SalesDocumentService {
       remark: normalizeText(input.remark),
       shippingCents,
       taxRateBps,
+      pricingBasis,
       subtotalCents: totals.subtotalCents,
       taxCents: totals.taxCents,
       totalCents: totals.totalCents,

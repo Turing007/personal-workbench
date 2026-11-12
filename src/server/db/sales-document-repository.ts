@@ -9,6 +9,7 @@ import type {
   SalesReceipt,
   SalesReceiptFile,
 } from '../../shared/documents.js';
+import { isQuotationPricingBasis, normalizeQuotationConfiguration, type QuotationItemConfiguration, type QuotationPricingBasis } from '../../shared/quotation-config.js';
 
 export interface SalesDocumentPersistenceItem {
   productId: number | null;
@@ -23,6 +24,7 @@ export interface SalesDocumentPersistenceItem {
   quantity: number;
   unitPriceCents: number;
   amountCents: number;
+  configuration?: QuotationItemConfiguration;
   remark: string;
   imageRelativePath: string | null;
   imageOriginalName: string;
@@ -46,6 +48,7 @@ export interface SalesDocumentPersistenceInput {
   remark: string;
   shippingCents: number;
   taxRateBps: number;
+  pricingBasis: QuotationPricingBasis;
   subtotalCents: number;
   taxCents: number;
   totalCents: number;
@@ -81,6 +84,7 @@ export interface SalesDocumentRepositoryDetail extends SalesDocumentSummary {
   shippingCents: number;
   subtotalCents: number;
   taxRateBps: number;
+  pricingBasis: QuotationPricingBasis;
   taxCents: number;
   receivedCents: number;
   issuer: string;
@@ -203,6 +207,7 @@ function mapItem(row: SqlRow): SalesDocumentRepositoryItem {
     quantity: numberValue(row, 'quantity'),
     unitPriceCents: numberValue(row, 'unit_price_cents'),
     amountCents: numberValue(row, 'amount_cents'),
+    configuration: normalizeQuotationConfiguration(parseJson<unknown>(row.configuration_json, undefined)),
     remark: rowValue(row, 'remark'),
     sortOrder: numberValue(row, 'sort_order'),
   };
@@ -307,6 +312,7 @@ export class SalesDocumentRepository {
       shippingCents: numberValue(row, 'shipping_cents'),
       subtotalCents: numberValue(row, 'subtotal_cents'),
       taxRateBps: numberValue(row, 'tax_rate_bps'),
+      pricingBasis: isQuotationPricingBasis(row.pricing_basis) ? row.pricing_basis : 'shipping_ex_tax',
       taxCents: numberValue(row, 'tax_cents'),
       receivedCents: numberValue(row, 'received_cents'),
       issuer: rowValue(row, 'issuer'),
@@ -326,14 +332,14 @@ export class SalesDocumentRepository {
       `INSERT INTO sales_documents
         (number, customer_id, source_quotation_id, document_status, payment_status, document_date, customer_name,
          contact_name, contact_phone, address, purchase_order_no, issuer, recipient, remark, shipping_cents,
-         tax_rate_bps, subtotal_cents, tax_cents, total_cents, received_cents, outstanding_cents,
+         tax_rate_bps, pricing_basis, subtotal_cents, tax_cents, total_cents, received_cents, outstanding_cents,
          company_snapshot_json, display_config_json, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       record.number, record.customerId, record.sourceQuotationId, record.documentStatus, record.paymentStatus, record.documentDate,
       record.customerName, record.contactName, record.contactPhone, record.customerAddress,
       record.purchaseOrderNo, record.issuer, record.consignee, record.remark, record.shippingCents,
-      record.taxRateBps, record.subtotalCents, record.taxCents, record.totalCents, record.receivedCents,
+      record.taxRateBps, record.pricingBasis, record.subtotalCents, record.taxCents, record.totalCents, record.receivedCents,
       record.outstandingCents, JSON.stringify(record.companySnapshot), JSON.stringify(record.displayConfig),
       record.createdAt, record.updatedAt,
     ));
@@ -345,13 +351,13 @@ export class SalesDocumentRepository {
     const result = database.prepare(
       `UPDATE sales_documents SET document_status = ?, payment_status = ?, document_date = ?, customer_id = ?, customer_name = ?,
         contact_name = ?, contact_phone = ?, address = ?, purchase_order_no = ?, issuer = ?, recipient = ?,
-        remark = ?, shipping_cents = ?, tax_rate_bps = ?, subtotal_cents = ?, tax_cents = ?, total_cents = ?,
+        remark = ?, shipping_cents = ?, tax_rate_bps = ?, pricing_basis = ?, subtotal_cents = ?, tax_cents = ?, total_cents = ?,
         received_cents = ?, outstanding_cents = ?, company_snapshot_json = ?, display_config_json = ?, updated_at = ?
        WHERE id = ?`,
     ).run(
       record.documentStatus, record.paymentStatus, record.documentDate, record.customerId, record.customerName, record.contactName,
       record.contactPhone, record.customerAddress, record.purchaseOrderNo, record.issuer, record.consignee,
-      record.remark, record.shippingCents, record.taxRateBps, record.subtotalCents, record.taxCents,
+      record.remark, record.shippingCents, record.taxRateBps, record.pricingBasis, record.subtotalCents, record.taxCents,
       record.totalCents, record.receivedCents, record.outstandingCents, JSON.stringify(record.companySnapshot),
       JSON.stringify(record.displayConfig), record.updatedAt, id,
     );
@@ -463,13 +469,14 @@ export class SalesDocumentRepository {
     const insert = database.prepare(
       `INSERT INTO sales_document_items
         (sales_document_id, product_id, customer_product_id, is_temporary, product_code, name, sku, specification, parameters, pack_count, quantity,
-         unit_price_cents, amount_cents, remark, image_relative_path, image_original_name, sort_order,
+         unit_price_cents, amount_cents, configuration_json, remark, image_relative_path, image_original_name, sort_order,
          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     record.items.forEach((item) => insert.run(
       salesDocumentId, item.productId, item.customerProductId, item.isTemporary ? 1 : 0, item.productCode, item.name, item.sku,
-      item.specification, item.parameters, item.packCount, item.quantity, item.unitPriceCents, item.amountCents, item.remark,
+      item.specification, item.parameters, item.packCount, item.quantity, item.unitPriceCents, item.amountCents,
+      item.configuration ? JSON.stringify(item.configuration) : '', item.remark,
       item.imageRelativePath, item.imageOriginalName, item.sortOrder, record.updatedAt, record.updatedAt,
     ));
   }

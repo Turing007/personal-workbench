@@ -11,16 +11,18 @@ export interface DocumentTotalsProps {
   outstandingCents?: number;
   showTax?: boolean;
   showOutstanding?: boolean;
+  /** 单价已含税时，税额只展示“其中税额”，不再加到合计。 */
+  taxIncluded?: boolean;
 }
 
 function formatMoney(cents: number): string {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY', minimumFractionDigits: 2 }).format(Math.max(0, cents) / 100);
 }
 
-export default function DocumentTotals({ subtotalCents, taxRateBps = 0, taxCents = 0, shippingCents = 0, totalCents, receivedCents = 0, outstandingCents = Math.max(0, totalCents - receivedCents), showTax = true, showOutstanding = false }: DocumentTotalsProps) {
+export default function DocumentTotals({ subtotalCents, taxRateBps = 0, taxCents = 0, shippingCents = 0, totalCents, receivedCents = 0, outstandingCents = Math.max(0, totalCents - receivedCents), showTax = true, showOutstanding = false, taxIncluded = false }: DocumentTotalsProps) {
   const rows: Array<[string, string, boolean?]> = [['小计', formatMoney(subtotalCents)]];
   if (shippingCents > 0) rows.push(['运费', formatMoney(shippingCents)]);
-  if (showTax) rows.push([`税额（${(taxRateBps / 100).toFixed(2)}%）`, formatMoney(taxCents)]);
+  if (showTax) rows.push([`${taxIncluded ? '其中税额' : '税额'}（${(taxRateBps / 100).toFixed(2)}%）`, formatMoney(taxCents)]);
   rows.push(['含税合计', formatMoney(totalCents), true]);
   if (showOutstanding) {
     rows.push(['已收金额', formatMoney(receivedCents)]);

@@ -1,3 +1,5 @@
+import type { QuotationItemConfiguration, QuotationPricingBasis } from './quotation-config.js';
+
 export type QuotationStatus = 'draft' | 'sent' | 'won' | 'expired';
 
 export type SalesDocumentStatus = 'draft' | 'issued' | 'void';
@@ -72,6 +74,7 @@ export interface QuotationItem extends DocumentProductSnapshot {
   quotationId: number;
   unitPriceCents: number;
   priceTiers?: QuotationPriceTier[];
+  configuration?: QuotationItemConfiguration;
   remark: string;
   sortOrder: number;
 }
@@ -83,6 +86,7 @@ export interface SalesDocumentItem extends DocumentProductSnapshot {
   quantity: number;
   unitPriceCents: number;
   amountCents: number;
+  configuration?: QuotationItemConfiguration;
   remark: string;
   sortOrder: number;
 }
@@ -135,6 +139,7 @@ export interface QuotationDetail extends QuotationSummary {
   validUntil: string;
   remark: string;
   taxRateBps: number;
+  pricingBasis: QuotationPricingBasis;
   subtotalCents: number;
   taxCents: number;
   companySnapshot: CompanySnapshot;
@@ -157,6 +162,7 @@ export interface QuotationSaveInput {
   validUntil: string;
   remark: string;
   taxRateBps: number;
+  pricingBasis?: QuotationPricingBasis;
   companySnapshot: CompanySnapshot;
   displayConfig: QuotationDisplayConfig;
   items: Array<QuotationItemInput>;
@@ -175,6 +181,7 @@ export interface QuotationItemInput {
   packCount?: number | null;
   imageRelativePath?: string | null;
   unitPriceCents: number;
+  configuration?: QuotationItemConfiguration;
   remark: string;
   sortOrder: number;
 }
@@ -209,6 +216,7 @@ export interface SalesDocumentDetail extends SalesDocumentSummary {
   shippingCents: number;
   subtotalCents: number;
   taxRateBps: number;
+  pricingBasis: QuotationPricingBasis;
   taxCents: number;
   receivedCents: number;
   issuer: string;
@@ -234,6 +242,7 @@ export interface SalesDocumentSaveInput {
   purchaseOrderNo: string;
   shippingCents: number;
   taxRateBps: number;
+  pricingBasis?: QuotationPricingBasis;
   issuer: string;
   consignee: string;
   remark: string;
@@ -257,6 +266,7 @@ export interface SalesDocumentItemInput {
   imageRelativePath?: string | null;
   quantity: number;
   unitPriceCents: number;
+  configuration?: QuotationItemConfiguration;
   remark: string;
   sortOrder: number;
 }

@@ -20,10 +20,19 @@ import type {
   QuotationStatus,
 } from '../../shared/documents.js';
 import {
-  calculateDocumentTotals,
   centsToYuan,
   yuanToCents,
 } from '../../shared/money.js';
+import {
+  calculateDocumentTotalsForBasis,
+  calculateQuotationConfigPrice,
+  isQuotationPricingBasis,
+  normalizeQuotationConfiguration,
+  pricingBasisIncludesShipping,
+  pricingBasisIncludesTax,
+  type QuotationItemConfiguration,
+  type QuotationPricingBasis,
+} from '../../shared/quotation-config.js';
 import {
   DocumentValidationError,
   validateDocumentLines,
@@ -124,6 +133,7 @@ export interface QuotationItemInput {
   /** Convenience input for form layers that still express prices in yuan. */
   unitPrice?: number;
   priceTiers?: readonly QuotationPriceTierInput[];
+  configuration?: QuotationItemConfiguration;
   remark?: string;
   sortOrder?: number;
 }
@@ -140,6 +150,7 @@ export interface QuotationInput {
   validUntil?: string;
   remark?: string;
   taxRateBps: number;
+  pricingBasis?: QuotationPricingBasis;
   companySnapshot?: Partial<CompanySnapshot>;
   displayConfig?: Partial<QuotationDisplayConfig> & { columns?: Partial<QuotationDisplayConfig['columns']> };
   items: readonly QuotationItemInput[];
@@ -453,6 +464,9 @@ export class QuotationService {
     if (input.status != null) normalizeStatus(input.status);
     const normalizedStatus = existing?.status ?? 'draft';
     const taxRateBps = validateTaxRateBps(input.taxRateBps);
+    const pricingBasis = isQuotationPricingBasis(input.pricingBasis)
+      ? input.pricingBasis
+      : existing?.pricingBasis ?? 'shipping_ex_tax';
     const quotationDate = normalizeDate(input.quotationDate, '报价日期');
     const customFields = this.normalizeCustomFields(input.customFields ?? []);
     const productRows: QuotationPersistenceItem[] = [];
@@ -502,8 +516,36 @@ export class QuotationService {
           ? itemInput.parameters ?? previousItem?.parameters
           : product?.parameters ?? itemInput.parameters,
       );
-      const unitPriceCents = this.normalizePriceCents(itemInput, index, customerProduct);
+      let unitPriceCents = this.normalizePriceCents(itemInput, index, customerProduct);
       const priceTiers = normalizePriceTiers(itemInput, index);
+      let configuration = normalizeQuotationConfiguration(itemInput.configuration);
+      if (configuration && (itemInput.isTemporary || (itemInput.productId ?? product?.id) == null)) {
+        configuration = undefined;
+      }
+      if (configuration) {
+        const taxPercent = pricingBasisIncludesTax(pricingBasis) ? taxRateBps / 100 : 0;
+        const shippingCents = pricingBasisIncludesShipping(pricingBasis) ? configuration.shippingCostCents : 0;
+        const recomputed = calculateQuotationConfigPrice({
+          baseCostCents: configuration.baseCostCents,
+          packagingCents: configuration.packaging?.costCents ?? 0,
+          otherCostCents: configuration.otherCostCents,
+          accessoryCents: configuration.accessoryPriceCents,
+          batteryUnitPriceCents: configuration.battery?.batteryUnitPriceCents ?? 0,
+          batteryCount: configuration.battery?.batteryCount ?? 0,
+          chargerPriceCents: configuration.battery?.chargerPriceCents ?? 0,
+          shippingCents,
+          taxPercent,
+          markupPercent: configuration.markupPercent,
+        });
+        configuration = {
+          ...configuration,
+          priceBasis: pricingBasis,
+          taxPercent,
+          totalCostCents: recomputed.totalCostCents,
+          computedSalePriceCents: recomputed.salePriceCents,
+        };
+        if (!configuration.priceOverridden) unitPriceCents = recomputed.salePriceCents;
+      }
       const image = this.resolveImage(itemInput, product);
       const key = normalizeText(itemInput.clientKey) || `item-${index}`;
       if (image && !image.relativePath.startsWith('quotation-assets/')) {
@@ -536,6 +578,7 @@ export class QuotationService {
           : Math.max(1, Math.trunc(itemInput.packCount)),
         unitPriceCents,
         priceTiers,
+        configuration,
         remark: normalizeText(itemInput.remark),
         imageRelativePath,
         imageOriginalName: image?.originalName ?? normalizeText(itemInput.imageOriginalName),
@@ -544,9 +587,11 @@ export class QuotationService {
     });
 
     validateDocumentLines(productRows.map((row) => ({ name: row.name, quantity: 1, unitPriceCents: row.unitPriceCents })));
-    const totals = calculateDocumentTotals(
+    const totals = calculateDocumentTotalsForBasis(
       productRows.map((row) => ({ quantity: 1, unitPriceCents: row.unitPriceCents })),
       taxRateBps,
+      0,
+      pricingBasis,
     );
     const fallbackCompany = this.settingsRepository.getCompanyProfile();
     const companySnapshot = normalizeCompanySnapshot(input.companySnapshot, fallbackCompany ?? EMPTY_COMPANY_PROFILE);
@@ -564,6 +609,7 @@ export class QuotationService {
       validUntil: input.validUntil ? normalizeDate(input.validUntil, '有效期') : '',
       remark: normalizeText(input.remark),
       taxRateBps,
+      pricingBasis,
       subtotalCents: totals.subtotalCents,
       taxCents: totals.taxCents,
       totalCents: totals.totalCents,

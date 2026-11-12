@@ -3237,3 +3237,110 @@
   .company-row > div:nth-child(2) { grid-column: 1 / -1; }
   .company-row-actions { grid-column: 2; grid-row: 1; }
 }
+
+/* 报价单配置报价表：一行一个产品，每列一个配置项 */
+.quotation-config-table-scroll {
+  overflow: auto;
+  max-height: min(62vh, 620px);
+  border: 1px solid var(--erp-border);
+  border-radius: var(--radius-ui);
+}
+.quotation-config-table {
+  width: 100%;
+  min-width: 1240px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 11.5px;
+}
+.quotation-config-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 7px 6px;
+  border-bottom: 1px solid var(--erp-border);
+  background: var(--erp-surface-muted);
+  color: var(--erp-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+.quotation-config-table td {
+  padding: 6px;
+  border-bottom: 1px solid var(--erp-divider);
+  background: var(--erp-surface);
+  vertical-align: top;
+}
+.quotation-config-table tr:hover td { background: var(--color-surface-subtle); }
+.quotation-config-table .is-sticky-left {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 260px;
+  box-shadow: 1px 0 0 var(--erp-divider);
+}
+.quotation-config-table th.is-sticky-left { z-index: 3; }
+.quotation-config-table .is-sticky-right {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  min-width: 148px;
+  box-shadow: -1px 0 0 var(--erp-divider);
+}
+.quotation-config-table th.is-sticky-right { z-index: 3; }
+.quotation-config-index { width: 30px; color: var(--erp-muted); text-align: center; }
+.quotation-config-actions { white-space: nowrap; }
+.quotation-config-actions .icon-button { width: 28px; height: 28px; }
+.quotation-config-table input,
+.quotation-config-table select { font-size: 11.5px; }
+.quotation-config-extra-row td { padding: 4px 8px 8px; background: var(--color-surface-subtle); }
+.quotation-config-extra { display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
+.quotation-config-extra > div { display: grid; gap: 3px; color: var(--erp-muted); font-size: 10.5px; }
+.quotation-config-extra > label { display: grid; flex: 1; gap: 3px; min-width: 180px; color: var(--erp-muted); font-size: 10.5px; }
+
+.quotation-config-card-list { display: grid; gap: 8px; }
+.quotation-config-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--erp-border);
+  border-radius: var(--radius-ui);
+  background: var(--erp-surface);
+}
+.quotation-config-card-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+.quotation-config-card-head > span { color: var(--erp-muted); font-size: 10.5px; }
+.quotation-config-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--erp-divider);
+}
+.quotation-config-card-actions .icon-button { width: 30px; height: 30px; }
+.quotation-config-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+.quotation-config-card-grid > label,
+.quotation-config-card-remark {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  color: var(--erp-muted);
+  font-size: 10.5px;
+}
+.quotation-config-card-extra { display: grid; gap: 4px; color: var(--erp-muted); font-size: 10.5px; }
+.quotation-config-card .quotation-config-card-remark { grid-column: auto; }
+
+@media (max-width: 900px) {
+  .quotation-config-card-grid { gap: 6px; }
+  .quotation-config-card-grid > label:nth-child(1) { grid-column: 1 / -1; }
+  .quotation-config-card-grid > label:nth-child(5),
+  .quotation-config-card-grid > label:nth-child(6) { grid-column: span 1; }
+}

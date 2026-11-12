@@ -11,6 +11,7 @@ import type {
   CompanySnapshot,
   QuotationStatus,
 } from '../../../shared/documents';
+import { QUOTATION_PRICING_BASIS_LABELS, type QuotationPricingBasis } from '../../../shared/quotation-config';
 import type { Customer, CustomerProduct, CustomerProductSaveInput, CustomerSaveInput } from '../../../shared/customers';
 import type { QuotationDraft as SharedQuotationDraft } from '../../documents/document-drafts';
 import { createDocumentClientKey } from '../../documents/document-drafts';
@@ -140,9 +141,19 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
     </section>
 
     <section style={sectionStyle}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
         <strong style={{ fontSize: 13 }}>产品明细<span style={{ marginLeft: 8, fontSize: 12, fontWeight: 400, color: 'var(--color-text-secondary)' }}>共 {value.items.length} 行</span></strong>
-        <button type="button" className="button" title="在弹窗中添加或编辑产品明细" onClick={() => setItemsOpen(true)}><Edit3 size={14} />编辑产品明细</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--color-text-secondary)', fontSize: 11 }}>价格口径
+            <select aria-label="价格口径" value={value.pricingBasis} onChange={(event) => setDraft('pricingBasis', event.target.value as QuotationPricingBasis)} style={{ ...fieldStyle, width: 132 }}>
+              {Object.entries(QUOTATION_PRICING_BASIS_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select>
+          </label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--color-text-secondary)', fontSize: 11 }}>税率 %
+            <input aria-label="税率" type="number" min="0" max="100" step="0.01" value={value.taxRate} onChange={(event) => setDraft('taxRate', event.target.value)} style={{ ...fieldStyle, width: 72 }} />
+          </label>
+          <button type="button" className="button" title="在弹窗中添加或编辑产品明细" onClick={() => setItemsOpen(true)}><Edit3 size={14} />编辑产品明细</button>
+        </div>
       </div>
       {value.items.length ? <div style={{ overflow: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -160,6 +171,7 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 550, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name.trim() || <span style={{ color: 'var(--color-danger-strong)' }}>（未填写品名）</span>}</div>
                   {item.specification.trim() && <div style={{ color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.specification}</div>}
+                  {item.configuration?.label && <div style={{ color: 'var(--color-accent)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.configuration.label}</div>}
                 </div>
               </div></td>
               <td style={{ padding: 7, whiteSpace: 'nowrap' }}>{formatMoney(unitPriceCents)}{tierCount > 0 && <span title="该行设置了数量区间价，供客户按量选择" style={{ marginLeft: 6, fontSize: 11, color: 'var(--color-accent)', background: 'var(--color-accent-soft)', border: '1px solid var(--color-accent-border)', borderRadius: 'var(--radius-ui)', padding: '1px 5px' }}>区间价×{tierCount}</span>}</td>
@@ -193,6 +205,8 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
       items={value.items}
       error={itemsError}
       columns={value.displayConfig.columns}
+      pricingBasis={value.pricingBasis}
+      taxRateBps={Math.round((Number(value.taxRate || 0) + Number.EPSILON) * 100)}
       onColumnsChange={(columns) => setDraft('displayConfig', { ...value.displayConfig, columns })}
       onChange={updateItems}
       onClose={() => setItemsOpen(false)}
@@ -216,6 +230,7 @@ export function createEmptyQuotationDraft(companySnapshot?: CompanySnapshot): Qu
     validUntil,
     remark: '',
     taxRate: '0',
+    pricingBasis: 'shipping_ex_tax',
     subtotal: '0.00',
     tax: '0.00',
     total: '0.00',

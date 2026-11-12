@@ -91,7 +91,7 @@ const columns: readonly ColumnDefinition[] = [
       ? `<img class="product-image" src="${escapeHtml(imageDataUrl)}" alt="${escapeHtml(item.name)}">`
       : '<span class="image-placeholder">-</span>',
   },
-  { key: 'name', label: '品名', render: (item) => escapeHtml(item.name) },
+  { key: 'name', label: '品名', render: (item) => `${escapeHtml(item.name)}${item.configuration?.label ? `<div class="item-config">${escapeHtml(item.configuration.label)}</div>` : ''}` },
   { key: 'specification', label: '规格', render: (item) => escapeHtml(item.specification) },
   { key: 'unitPrice', label: '单价', className: 'money', render: (item) => escapeHtml(formatMoney(item.unitPriceCents)) },
   { key: 'tierPrice', label: '数量区间价', className: 'tier-price', render: (item) => renderPriceTiers(item) },
@@ -170,6 +170,7 @@ export async function renderQuotationHtml(
     .image-column { width: 22mm; text-align: center; }
     .product-image { display: block; width: 18mm; height: 18mm; margin: auto; object-fit: contain; }
     .image-placeholder { color: #9aa1a8; }
+    .item-config { margin-top: 1mm; color: #58616c; font-size: 9pt; }
     .footer { display: grid; grid-template-columns: 1fr 1fr; gap: 2mm 7mm; margin-top: 5mm; padding-top: 3mm; border-top: 1px solid #a4aab0; }
     .remark { grid-column: 1 / -1; white-space: pre-wrap; }
   </style>

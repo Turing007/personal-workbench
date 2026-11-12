@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { QuotationDetail, QuotationPriceTier } from '../../../shared/documents';
+import { QUOTATION_PRICING_BASIS_LABELS } from '../../../shared/quotation-config';
 import * as api from '../../api';
 import Modal from '../Modal';
 import { formatMoney } from './quotation-lines';
@@ -66,6 +67,7 @@ export default function QuotationProductDetailModal({ open, quotationId, onClose
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, ...fieldStyle }}>
           <span>客户：<strong style={{ color: 'var(--color-text)' }}>{detail.customerName || '-'}</strong></span>
           <span>报价日期：{detail.quotationDate}</span>
+          <span>价格口径：{QUOTATION_PRICING_BASIS_LABELS[detail.pricingBasis]}</span>
           <span>产品数：{detail.items.length}</span>
         </div>
         {detail.items.length ? <div className="sticky-thead" style={{ overflow: 'auto', maxHeight: 'min(56vh, 480px)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)' }}>
@@ -78,7 +80,7 @@ export default function QuotationProductDetailModal({ open, quotationId, onClose
               <td style={{ padding: 7 }}><span style={{ width: 40, height: 40, display: 'grid', placeItems: 'center', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface)', overflow: 'hidden' }}>{item.imageRelativePath
                 ? <img src={`/files/${item.imageRelativePath}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 : <span style={{ color: 'var(--color-text-muted)' }}>-</span>}</span></td>
-              <td style={{ padding: 7, fontWeight: 550 }}>{item.name || '-'}</td>
+              <td style={{ padding: 7, fontWeight: 550 }}>{item.name || '-'}{item.configuration?.label && <div style={{ marginTop: 3, color: 'var(--color-accent)', fontSize: 11, fontWeight: 400 }}>{item.configuration.label}</div>}</td>
               <td style={{ padding: 7, color: 'var(--color-text-secondary)' }}>{item.specification || '-'}</td>
               <td style={{ padding: 7, fontWeight: 650, whiteSpace: 'nowrap' }}>{formatMoney(item.unitPriceCents)}</td>
               <td style={{ padding: 7, whiteSpace: 'pre-line', color: 'var(--color-text-secondary)' }}>{renderTiers(item.priceTiers)}</td>

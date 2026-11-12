@@ -48,7 +48,7 @@ function detailRow(label: string, value: string): string {
 
 const columns: readonly ColumnDefinition[] = [
   { key: 'productCode', label: '产品编号', render: (item) => escapeHtml(item.productCode) },
-  { key: 'productName', label: '品名', render: (item) => escapeHtml(item.name) },
+  { key: 'productName', label: '品名', render: (item) => `${escapeHtml(item.name)}${item.configuration?.label ? `<div class="item-config">${escapeHtml(item.configuration.label)}</div>` : ''}` },
   { key: 'specification', label: '规格', render: (item) => escapeHtml(item.specification) },
   { key: 'quantity', label: '数量', className: 'number', render: (item) => escapeHtml(item.quantity) },
   { key: 'unitPrice', label: '单价', className: 'money', render: (item) => escapeHtml(formatMoney(item.unitPriceCents)) },
@@ -121,6 +121,7 @@ export async function renderSalesDocumentHtml(
     .image-column { width: 22mm; text-align: center; }
     .product-image { display: block; width: 18mm; height: 18mm; margin: auto; object-fit: contain; }
     .image-placeholder { color: #9aa1a8; }
+    .item-config { margin-top: 1mm; color: #58616c; font-size: 9pt; }
     .summary { width: 88mm; margin: 4mm 0 0 auto; }
     .summary div { display: flex; justify-content: space-between; gap: 8mm; padding: 1.3mm 0; }
     .summary .grand-total { border-top: 1px solid #303841; margin-top: 1mm; padding-top: 2mm; font-size: 12pt; }

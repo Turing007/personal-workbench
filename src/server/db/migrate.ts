@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 41;
+const CURRENT_SCHEMA_VERSION = 42;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -1484,6 +1484,18 @@ function migrateVersionFortyOne(database: DatabaseSync, now: string): void {
 }
 
 /**
+ * 报价单配置化：整单价格口径 + 每行配置快照；销售单同步保留。
+ * 历史数据默认不含运不含税，配置为空，不影响已有报价和销售单。
+ */
+function migrateVersionFortyTwo(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'quotations', 'pricing_basis', "TEXT NOT NULL DEFAULT 'shipping_ex_tax'");
+  addColumnIfMissing(database, 'quotation_items', 'configuration_json', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(database, 'sales_documents', 'pricing_basis', "TEXT NOT NULL DEFAULT 'shipping_ex_tax'");
+  addColumnIfMissing(database, 'sales_document_items', 'configuration_json', "TEXT NOT NULL DEFAULT ''");
+  upsertSetting(database, 'schema_version', '42', now);
+}
+
+/**
  * 资料库：合同表格、客户标贴、产品资料等常用文件的统一存放。
  * 删除先写 deleted_at 进回收站，30 天后由服务端清理；文件本身仍在 data/files/library。
  */
@@ -1580,6 +1592,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionThirtyNine(transactionDatabase, now);
     migrateVersionForty(transactionDatabase, now);
     migrateVersionFortyOne(transactionDatabase, now);
+    migrateVersionFortyTwo(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

@@ -51,7 +51,7 @@ test.describe('报价单客户选择', () => {
     const itemsDialog = page.getByRole('dialog', { name: '产品明细' });
     await expect(itemsDialog).toBeVisible();
     await itemsDialog.getByPlaceholder('品名').fill('E2E测试产品');
-    await itemsDialog.locator('tbody tr').first().locator('input[type="number"]').first().fill('12.5');
+    await itemsDialog.getByLabel('单价').first().fill('12.5');
     await itemsDialog.getByRole('button', { name: '完成', exact: true }).click();
 
     await dialog.getByRole('button', { name: '保存报价单' }).click();
@@ -97,7 +97,7 @@ test.describe('报价单客户选择', () => {
     const itemsDialog = page.getByRole('dialog', { name: '产品明细' });
     await expect(itemsDialog).toBeVisible();
     await itemsDialog.getByPlaceholder('品名').fill('E2E测试产品');
-    await itemsDialog.locator('tbody tr').first().locator('input[type="number"]').first().fill('8.8');
+    await itemsDialog.getByLabel('单价').first().fill('8.8');
     await itemsDialog.getByRole('button', { name: '完成', exact: true }).click();
 
     await dialog.getByRole('button', { name: '保存报价单' }).click();

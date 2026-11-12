@@ -6,7 +6,7 @@ import type {
   SalesReceipt,
 } from '../../../shared/documents';
 import type { Customer, CustomerProduct, CustomerProductSaveInput, CustomerSaveInput } from '../../../shared/customers';
-import { calculateDocumentTotals } from '../../../shared/money';
+import { calculateDocumentTotalsForBasis } from '../../../shared/quotation-config';
 import { calculateFreightCents } from '../../../shared/order-prices';
 import type { DocumentItemDraft, SalesDocumentDraft } from '../../documents/document-drafts';
 import { createDocumentClientKey } from '../../documents/document-drafts';
@@ -111,6 +111,7 @@ export function createEmptySalesDocumentDraft(company?: CompanySnapshot): SalesD
     purchaseOrderNo: '',
     shipping: '0.00',
     taxRate: '0.00',
+    pricingBasis: 'shipping_ex_tax',
     subtotal: '0.00',
     tax: '0.00',
     total: '0.00',
@@ -266,11 +267,11 @@ export default function SalesDocumentForm({
     const shipping = Math.round((parseNonNegative(value.shipping) ?? 0) * 100);
     const taxRate = Math.round((parseNonNegative(value.taxRate) ?? 0) * 100);
     try {
-      return calculateDocumentTotals(lines, taxRate, shipping);
+      return calculateDocumentTotalsForBasis(lines, taxRate, shipping, value.pricingBasis);
     } catch {
       return { subtotalCents: 0, taxCents: 0, shippingCents: 0, totalCents: 0 };
     }
-  }, [value.items, value.shipping, value.taxRate]);
+  }, [value.items, value.shipping, value.taxRate, value.pricingBasis]);
 
   const receivedCents = receipts.reduce((sum, receipt) => sum + receipt.amountCents, 0);
   const outstandingCents = Math.max(0, totals.totalCents - receivedCents);
@@ -365,7 +366,10 @@ export default function SalesDocumentForm({
               <td style={{ padding: 7 }}><input value={item.productCode} onChange={(event) => updateLine(item.clientKey, { productCode: event.target.value, sku: event.target.value })} style={fieldStyle} /></td>
               <td style={{ padding: 7 }}><div style={{ display: 'grid', gridTemplateColumns: '36px minmax(0, 1fr)', gap: 6, alignItems: 'center' }}>
                 <button type="button" title={preview ? '更换产品图片' : '添加产品图片'} onClick={() => fileInputs.current[item.clientKey]?.click()} style={{ width: 36, height: 36, padding: 0, border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface)', display: 'grid', placeItems: 'center', overflow: 'hidden', cursor: 'pointer' }}>{preview ? <img src={preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <ImageIcon size={15} color="var(--color-text-muted)" />}</button>
-                <input value={item.name} onChange={(event) => updateLine(item.clientKey, { name: event.target.value, isTemporary: item.productId == null })} style={fieldStyle} placeholder="品名" />
+                <div style={{ display: 'grid', gap: 2, minWidth: 0 }}>
+                  <input value={item.name} onChange={(event) => updateLine(item.clientKey, { name: event.target.value, isTemporary: item.productId == null })} style={fieldStyle} placeholder="品名" />
+                  {item.configuration?.label && <span style={{ color: 'var(--color-accent)', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.configuration.label}</span>}
+                </div>
                 <input ref={(node) => { fileInputs.current[item.clientKey] = node; }} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; updateLine(item.clientKey, { image: { relativePath: null, originalName: file.name, mimeType: file.type, file } }); event.target.value = ''; }} />
               </div></td>
               <td style={{ padding: 7 }}><input value={item.specification} onChange={(event) => updateLine(item.clientKey, { specification: event.target.value })} style={fieldStyle} /></td>
@@ -390,7 +394,7 @@ export default function SalesDocumentForm({
       <div style={{ display: 'grid', gap: 8 }}>
         <label style={{ display: 'grid', gridTemplateColumns: '1fr 100px', alignItems: 'center', gap: 8 }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>运费{!shippingOverridden && <small style={{ color: 'var(--color-accent)' }}>自动</small>}</span><input type="number" min="0" step="0.01" value={value.shipping} onChange={(event) => { setShippingOverridden(true); setDraft('shipping', event.target.value); }} style={fieldStyle} /></label>
         <label style={{ display: 'grid', gridTemplateColumns: '1fr 100px', alignItems: 'center', gap: 8 }}>税率（%）<input type="number" min="0" max="100" step="0.01" value={value.taxRate} onChange={(event) => setDraft('taxRate', event.target.value)} style={fieldStyle} /></label>
-        <DocumentTotals {...totals} receivedCents={receivedCents} outstandingCents={outstandingCents} showOutstanding />
+        <DocumentTotals {...totals} receivedCents={receivedCents} outstandingCents={outstandingCents} showOutstanding taxIncluded={value.pricingBasis === 'shipping_inc_tax'} />
       </div>
     </section>
 
