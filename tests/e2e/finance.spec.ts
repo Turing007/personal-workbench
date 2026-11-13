@@ -39,6 +39,7 @@ test.describe('财务管理工作台', () => {
     await expect(page.getByText('本期应收')).toBeVisible();
     await expect(page.getByText('待审核水单')).toBeVisible();
     await expect(page.getByRole('textbox', { name: '搜索订单号或客户' })).toBeVisible();
+    await page.getByRole('button', { name: '展开筛选' }).click();
     const rail = page.locator('.filter-rail');
     await expect(rail).toBeVisible();
     for (const title of ['收款公司', '付款状态', '水单状态', '发票状态']) {

@@ -15,6 +15,7 @@ test('财务左侧筛选：多选状态、保存和应用常用视图', async ({
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
   await page.locator('.sidebar-nav').getByRole('button', { name: '财务', exact: true }).click();
+  await page.getByRole('button', { name: '展开筛选' }).click();
   const rail = page.locator('.filter-rail');
   await expect(rail).toBeVisible();
 
@@ -47,6 +48,7 @@ test('水单左侧筛选：状态多选、保存视图，手机端回落下拉',
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
   await page.locator('.sidebar-nav').getByRole('button', { name: '水单', exact: true }).click();
+  await page.getByRole('button', { name: '展开筛选' }).click();
   const rail = page.locator('.filter-rail');
   await expect(rail).toBeVisible();
 

@@ -3441,25 +3441,31 @@
 
 /* 左侧筛选栏与常用视图（订单/财务/水单共用） */
 .filter-rail-layout {
+  position: relative;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: 36px minmax(0, 1fr);
   align-items: start;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
 }
-.filter-rail-main { display: grid; gap: 12px; min-width: 0; }
+.filter-rail-main { grid-column: 2; display: grid; gap: 12px; min-width: 0; }
+/* 展开的筛选栏浮在内容上方，不占主区宽度；收起时只留 36px 的竖条。 */
 .filter-rail {
-  position: sticky;
-  top: 12px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 40;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  width: 250px;
   max-height: calc(100dvh - 90px);
   overflow: hidden;
   padding: 10px;
   border: 1px solid var(--erp-border);
   border-radius: var(--erp-radius-surface);
   background: var(--erp-surface);
+  box-shadow: var(--shadow-popover);
 }
 .filter-rail-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .filter-rail-head strong { display: inline-flex; align-items: center; gap: 5px; color: var(--erp-text); font-size: 12.5px; }
@@ -3555,47 +3561,10 @@
   .finance-status-row,
   .water-slip-filters .toolbar-select { display: none; }
 }
-@media (max-width: 1199px) {
-  .filter-rail-layout { grid-template-columns: 36px minmax(0, 1fr); gap: 8px; }
-}
-@media (min-width: 901px) and (max-width: 1439px) {
-  /* 1440 以下默认收起；主动展开时浮在表格上方，不挤压宽表。 */
-  .filter-rail-layout { position: relative; }
-  .filter-rail-main { grid-column: 2; }
-  .filter-rail-layout .filter-rail {
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 40;
-    width: 240px;
-    max-height: calc(100dvh - 90px);
-    box-shadow: var(--shadow-popover);
-  }
-}
 @media (max-width: 900px) {
   .filter-rail-layout { display: block; }
   .filter-rail, .filter-rail-collapsed { display: none; }
   .filter-rail-main { gap: 8px; }
-}
-/* 筛选栏展开要占 232px，1440 笔记本上的表格会不够宽。
-   展开时按 1200–1419 的密度收掉次要列，避免横向滚动和固定操作列压住状态列。 */
-@media (min-width: 1440px) and (max-width: 1601px) {
-  .orders-page .filter-rail-layout:has(.filter-rail) .orders-data-table { min-width: 940px; }
-  .orders-page .filter-rail-layout:has(.filter-rail) .orders-data-table th:nth-child(6),
-  .orders-page .filter-rail-layout:has(.filter-rail) .orders-data-table td:nth-child(6),
-  .orders-page .filter-rail-layout:has(.filter-rail) .orders-data-table th:nth-child(9),
-  .orders-page .filter-rail-layout:has(.filter-rail) .orders-data-table td:nth-child(9) {
-    display: none;
-  }
-}
-@media (min-width: 1440px) and (max-width: 1561px) {
-  .finance-page .filter-rail-layout:has(.filter-rail) .finance-table { min-width: 940px; }
-  .finance-page .filter-rail-layout:has(.filter-rail) .finance-table .finance-column-head th:nth-child(4),
-  .finance-page .filter-rail-layout:has(.filter-rail) .finance-table td:nth-child(4),
-  .finance-page .filter-rail-layout:has(.filter-rail) .finance-table .finance-column-head th:nth-child(11),
-  .finance-page .filter-rail-layout:has(.filter-rail) .finance-table td:nth-child(11) {
-    display: none;
-  }
 }
 
 /* 订单行内展开：桌面表格与手机卡片共用同一套内容 */
@@ -3619,7 +3588,7 @@
 .order-expand-product-list { display: grid; gap: 4px; }
 .order-expand-product-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   padding: 6px 8px;
@@ -3627,6 +3596,8 @@
   border-radius: 6px;
   background: var(--erp-surface);
 }
+.order-expand-product-thumb { display: grid; place-items: center; width: 40px; height: 40px; overflow: hidden; border: 1px solid var(--erp-border); border-radius: 6px; background: var(--erp-surface-muted); color: var(--erp-muted); }
+.order-expand-product-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .order-expand-product-name { display: grid; gap: 1px; min-width: 0; }
 .order-expand-product-name strong { overflow: hidden; color: var(--erp-text); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .order-expand-product-name span, .order-expand-product-name small { overflow: hidden; color: var(--erp-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
@@ -3652,10 +3623,11 @@
 @media (max-width: 900px) {
   .order-expand-panel { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px; }
   .order-expand-side { grid-column: 1; }
-  .order-expand-product-row { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; }
-  .order-expand-product-name { grid-column: 1; grid-row: 1; }
-  .order-expand-amount { grid-column: 2; grid-row: 1; }
-  .order-expand-qty { grid-column: 1; grid-row: 2; }
+  .order-expand-product-row { grid-template-columns: 40px minmax(0, 1fr) auto; gap: 2px 8px; }
+  .order-expand-product-thumb { grid-column: 1; grid-row: 1 / span 2; align-self: start; width: 40px; height: 40px; }
+  .order-expand-product-name { grid-column: 2; grid-row: 1; }
+  .order-expand-amount { grid-column: 3; grid-row: 1; }
+  .order-expand-qty { grid-column: 2; grid-row: 2; }
   .order-expand-info-grid { grid-template-columns: minmax(0, 1fr); }
   .order-expand-actions { justify-content: stretch; }
   .order-expand-actions .button { flex: 1 1 auto; }

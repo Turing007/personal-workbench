@@ -93,12 +93,14 @@ test('水单收款：订单号定位、上传、确认入账并按公司统计',
     await expect(companyCard).toContainText('1 笔已入账');
 
     // 左侧筛选栏按公司筛选后仍能看到这笔水单。
+    await page.getByRole('button', { name: '展开筛选' }).click();
     const waterRail = page.locator('.filter-rail');
     await waterRail.locator('label', { hasText: company.shortName }).locator('input').check();
     await expect(page.locator('.water-slip-table tbody tr', { hasText: orderNo })).toBeVisible();
 
     // 财务台账按公司筛选，并在详情里显示公司。
     await page.locator('.sidebar-nav').getByRole('button', { name: '财务', exact: true }).click();
+    await page.getByRole('button', { name: '展开筛选' }).click();
     await page.locator('.filter-rail label', { hasText: company.fullName }).locator('input').check();
     const financeRow = page.locator('tbody tr', { hasText: orderNo });
     await expect(financeRow).toContainText(company.shortName);

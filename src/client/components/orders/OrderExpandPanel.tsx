@@ -1,5 +1,8 @@
-import { ExternalLink, Pencil, Printer, ScrollText } from 'lucide-react';
+import { ExternalLink, Package, Pencil, Printer, ScrollText } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { FINANCE_PAYMENT_STATUS_LABELS, INVOICE_STATUS_LABELS, PAYMENT_PROOF_STATUS_LABELS } from '../../../shared/finance';
+import { getOrderItemImages } from '../../api';
+import { thumbUrl } from '../../image-urls';
 import { money } from '../finance/finance-format';
 import type { OrderDraft } from '../OrderForm';
 
@@ -16,6 +19,15 @@ export interface OrderExpandPanelProps {
 export default function OrderExpandPanel({ order, onOpenDetail, onEdit, onOpenFinance, onOpenLabels, onPublish }: OrderExpandPanelProps) {
   const summary = order.financeSummary;
   const isDraft = order.status === 'draft';
+  const [itemImages, setItemImages] = useState<Record<number, Array<{ url: string; name: string; mimeType: string }>>>({});
+  useEffect(() => {
+    if (!order.id) return undefined;
+    let cancelled = false;
+    void getOrderItemImages(order.id).then((result) => {
+      if (!cancelled) setItemImages(result.itemImages);
+    }).catch(() => { /* 图片加载失败不阻断明细 */ });
+    return () => { cancelled = true; };
+  }, [order.id]);
   return <div className="order-expand-panel">
     <section className="order-expand-products">
       <div className="order-expand-section-head"><strong>产品明细</strong><span>{order.items.length} 项 · {order.items.reduce((sum, item) => sum + Math.max(0, item.quantity), 0)} 件</span></div>
@@ -23,7 +35,13 @@ export default function OrderExpandPanel({ order, onOpenDetail, onEdit, onOpenFi
         {order.items.length ? order.items.map((item) => {
           const unitPriceCents = item.unitPriceCents ?? 0;
           const amountCents = item.amountCents ?? unitPriceCents * item.quantity;
+          const image = itemImages[Number(item.id)]?.[0];
           return <div className="order-expand-product-row" key={item.id}>
+            <div className="order-expand-product-thumb">
+              {image
+                ? <a href={image.url} target="_blank" rel="noreferrer" title="查看产品图"><img src={thumbUrl(image.url, 240)} alt={image.name || item.name} loading="lazy" decoding="async" /></a>
+                : <span title="暂无产品图"><Package size={16} /></span>}
+            </div>
             <div className="order-expand-product-name">
               <strong>{item.name || '未填产品'}</strong>
               <span>{[item.sku, item.specification].filter(Boolean).join(' · ') || '未填规格'}</span>

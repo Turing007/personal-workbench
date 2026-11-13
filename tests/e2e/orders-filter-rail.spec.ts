@@ -15,8 +15,15 @@ test('订单左侧筛选：多选状态、保存常用视图、应用和收起',
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
   await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
+  const main = page.locator('.filter-rail-main');
+  const beforeOpen = await main.boundingBox();
+  await page.getByRole('button', { name: '展开筛选' }).click();
   const rail = page.locator('.filter-rail');
   await expect(rail).toBeVisible();
+  // 展开后的筛选栏浮在内容上方，主区域宽度和左缘不变。
+  const afterOpen = await main.boundingBox();
+  expect(afterOpen?.width).toBe(beforeOpen?.width);
+  expect(afterOpen?.x).toBe(beforeOpen?.x);
 
   const pendingStock = rail.locator('label', { hasText: '待备货' }).locator('input');
   await pendingStock.check();

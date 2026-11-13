@@ -110,8 +110,8 @@ export function useFilterRailOpen(pageKey: string) {
       const stored = window.localStorage.getItem(railStorageKey(pageKey));
       if (stored != null) return stored === '1';
     } catch { /* 忽略存储失败 */ }
-    // 1440 以下展开筛选栏会明显压缩表格列（订单/财务），默认收起留出完整表格。
-    return window.innerWidth >= 1440;
+    // 展开后是浮层，不占主区宽度；默认仍收起，避免一进页面就盖住标题和表格。
+    return false;
   });
   const toggle = useCallback(() => {
     setOpen((current) => {
