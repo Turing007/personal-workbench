@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import type { CompanySnapshot } from '../../shared/documents.js';
 import type { CatalogProduct } from '../documents/product-catalog-template.js';
-import { pickCatalogImage } from '../documents/product-catalog-template.js';
-import type { CatalogRepository, CatalogSummaryRecord } from '../db/catalog-repository.js';
+import { parseParameterRows, pickCatalogImage } from '../documents/product-catalog-template.js';
+import type { CatalogRecord, CatalogRepository, CatalogSummaryRecord } from '../db/catalog-repository.js';
 import type { SettingsRepository } from '../db/settings-repository.js';
 import { mapProduct, toCatalogProduct, type MappedProduct } from './product-record-mapper.js';
 import { BATTERY_MATRIX_DEFAULTS } from '../../shared/battery-prices.js';
@@ -32,6 +32,42 @@ export interface PublicCatalog {
 
 /** 新品起算：2026-10-10 起「新加入图册」的才算新品；建册时的批量存量不算，之后不设到期。 */
 const NEW_ARRIVAL_START_AT = Date.parse('2026-10-10T00:00:00+08:00');
+
+export interface PublicCatalogQuoteItem {
+  productId: number;
+  quantity: number;
+  /** 该产品行的备注（选填）；同一产品重复出现时合并到一行。 */
+  note?: string;
+}
+
+/** 公开报价单的一行：单价取该产品在当前图册的最低价（起价），无报价的产品为 null。 */
+export interface PublicCatalogQuoteLine {
+  productId: number;
+  name: string;
+  sku: string;
+  spec: string;
+  quantity: number;
+  unitPriceCents: number | null;
+  amountCents: number | null;
+  /** 该产品行的备注（选填）。 */
+  note: string;
+  /** 图册主图的相对路径；服务端导出 PDF 时据此取缩略图，不发给浏览器。 */
+  imageRelativePath: string | null;
+}
+
+export interface PublicCatalogQuote {
+  catalogName: string;
+  company: CompanySnapshot;
+  lines: PublicCatalogQuoteLine[];
+  totalCents: number;
+  pricedCount: number;
+  inquiryCount: number;
+}
+
+interface PublicCatalogEntry {
+  product: PublicCatalogProduct;
+  addedAt: string | null;
+}
 
 interface CatalogServiceOptions {
   /** 产品全量行（仓储原样），在服务内统一走 mapProduct 口径。 */
@@ -94,29 +130,99 @@ export class CatalogService {
    * 命中时记一次打开（列表里能看到「打开次数 + 最近打开时间」）。
    */
   getPublic(token: string): PublicCatalog | undefined {
-    if (!TOKEN_PATTERN.test(token)) return undefined;
-    const catalog = this.repository.getByToken(token);
-    if (!catalog || !catalog.enabled) return undefined;
+    const resolved = this.resolvePublicEntries(token);
+    if (!resolved) return undefined;
+    const { catalog, entries } = resolved;
     this.repository.recordView(catalog.id);
-    const byId = new Map(this.mappedProducts().map((product) => [product.id, product] as const));
-    const batteryMatrix = this.options.settingsRepository.readBatteryPriceMatrix() ?? BATTERY_MATRIX_DEFAULTS;
-    const chargerPrices = this.options.settingsRepository.readChargerPrices();
-    const resolved = this.repository.listItems(catalog.id).flatMap((item) => {
-      const product = byId.get(item.productId);
-      if (!product) return [];
-      const priceTable = buildCatalogPriceTable(product, { batteryMatrix, chargerPrices, markupPercent: catalog.markupPercent });
-      return [{ product: { ...toCatalogProduct(product), priceTable }, addedAt: item.addedAt }];
-    });
-    const newArrivals = resolved
+    const newArrivals = entries
       .filter((entry) => entry.addedAt != null && Date.parse(entry.addedAt) >= NEW_ARRIVAL_START_AT)
       .sort((a, b) => Date.parse(b.addedAt ?? '') - Date.parse(a.addedAt ?? ''))
       .map((entry) => entry.product);
     return {
       catalog: { id: catalog.id, name: catalog.name, token, markupPercent: catalog.markupPercent },
       company: this.options.settingsRepository.getCompanyProfile(),
-      groups: groupByCategory(resolved.map((entry) => entry.product)),
+      groups: groupByCategory(entries.map((entry) => entry.product)),
       newArrivals,
     };
+  }
+
+  /**
+   * 免登录选品报价：只接受当前图册里的产品，重复产品合并数量。
+   * 单价用图册最低售价（页面上的「¥xx 起」）；没有报价的产品按询价处理。
+   * 不记图册打开次数——导出 PDF 不算一次浏览。
+   */
+  buildPublicQuote(token: string, items: PublicCatalogQuoteItem[]): PublicCatalogQuote | undefined {
+    const resolved = this.resolvePublicEntries(token);
+    if (!resolved) return undefined;
+    const products = new Map(resolved.entries.map((entry) => [entry.product.id, entry.product] as const));
+    const merged = new Map<number, { quantity: number; note: string }>();
+    for (const item of items) {
+      if (!Number.isSafeInteger(item.productId) || item.productId <= 0) continue;
+      if (!products.has(item.productId)) continue;
+      if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) continue;
+      const note = String(item.note ?? '').trim().slice(0, 120);
+      const current = merged.get(item.productId);
+      if (current) {
+        current.quantity = Math.min(9999, current.quantity + item.quantity);
+        if (note && !current.note) current.note = note;
+      } else {
+        merged.set(item.productId, { quantity: item.quantity, note });
+      }
+    }
+    const lines: PublicCatalogQuoteLine[] = [];
+    let totalCents = 0;
+    let pricedCount = 0;
+    let inquiryCount = 0;
+    for (const [productId, entry] of merged) {
+      const { quantity } = entry;
+      const product = products.get(productId)!;
+      const spec = parseParameterRows(product.parameters).slice(0, 2)
+        .map((row) => row.label ? `${row.label}：${row.value}` : row.value)
+        .filter(Boolean)
+        .join(' · ');
+      const unitPriceCents = product.priceTable ? product.priceTable.minPrice * 100 : null;
+      const amountCents = unitPriceCents == null ? null : unitPriceCents * quantity;
+      if (amountCents == null) inquiryCount += 1;
+      else {
+        totalCents += amountCents;
+        pricedCount += 1;
+      }
+      lines.push({
+        productId,
+        name: product.name,
+        sku: product.sku,
+        spec,
+        quantity,
+        unitPriceCents,
+        amountCents,
+        note: entry.note,
+        imageRelativePath: pickCatalogImage(product) ?? null,
+      });
+    }
+    return {
+      catalogName: resolved.catalog.name,
+      company: this.options.settingsRepository.getCompanyProfile(),
+      lines,
+      totalCents,
+      pricedCount,
+      inquiryCount,
+    };
+  }
+
+  private resolvePublicEntries(token: string): { catalog: CatalogRecord; entries: PublicCatalogEntry[] } | undefined {
+    if (!TOKEN_PATTERN.test(token)) return undefined;
+    const catalog = this.repository.getByToken(token);
+    if (!catalog || !catalog.enabled) return undefined;
+    const byId = new Map(this.mappedProducts().map((product) => [product.id, product] as const));
+    const batteryMatrix = this.options.settingsRepository.readBatteryPriceMatrix() ?? BATTERY_MATRIX_DEFAULTS;
+    const chargerPrices = this.options.settingsRepository.readChargerPrices();
+    const entries = this.repository.listItems(catalog.id).flatMap((item) => {
+      const product = byId.get(item.productId);
+      if (!product) return [];
+      const priceTable = buildCatalogPriceTable(product, { batteryMatrix, chargerPrices, markupPercent: catalog.markupPercent });
+      return [{ product: { ...toCatalogProduct(product), priceTable }, addedAt: item.addedAt }];
+    });
+    return { catalog, entries };
   }
 
   /** 公开页图片：按 token 校验，返回该产品在哪张主图（仍要再经缩略图服务出图）。 */

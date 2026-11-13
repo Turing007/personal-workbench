@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
+import sharp from 'sharp';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase } from '../../src/server/db/connection';
 import { migrateDatabase } from '../../src/server/db/migrate';
@@ -22,7 +23,10 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
-async function createFixture() {
+async function createFixture(
+  pdfRenderer?: { render(html: string): Promise<Buffer> },
+  thumbnailService?: { get(size: unknown, relativePath: string): Promise<Buffer> },
+) {
   const directory = await mkdtemp(join(tmpdir(), 'personal-workbench-public-catalog-'));
   directories.push(directory);
   const database = openDatabase(join(directory, 'workbench.sqlite'));
@@ -37,7 +41,7 @@ async function createFixture() {
   const app = Fastify();
   app.addHook('onClose', async () => database.close());
   await registerCatalogRoutes(app, { service });
-  await registerPublicCatalogRoutes(app, { service, fileStore: new FileStore(join(directory, 'files')) });
+  await registerPublicCatalogRoutes(app, { service, fileStore: new FileStore(join(directory, 'files')), pdfRenderer, thumbnailService: thumbnailService as never });
   // 「编辑器勾选添加到图册」走产品保存接口：这里同时挂上产品路由（与线上接线一致）。
   await registerProductRoutes(app, { repositories, catalogRepository });
   apps.push(app);
@@ -265,6 +269,54 @@ describe('产品图册（在线链接版）', () => {
     });
     expect(updated.statusCode).toBe(200);
     expect(catalogRepository.listItemProductIds(catalog.id)).toEqual([firstId, createdId]);
+  });
+
+  it('购物车导出 PDF：免登录按 token 校验图册与选品，带图片、备注、数量、起价和合计', async () => {
+    let captured = '';
+    const thumb = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#ffffff' } }).jpeg().toBuffer();
+    const { app, repositories, settingsRepository } = await createFixture(
+      {
+        render: async (html: string) => {
+          captured = html;
+          return Buffer.from('%PDF-1.7 e2e');
+        },
+      },
+      { get: async () => thumb },
+    );
+    settingsRepository.saveCompanyProfile({ name: '维高工具', phone: '13800000000', address: '深圳市宝安区' });
+    const saved = repositories.saveProduct(productInput('圆锯-7寸', 'VT-9101'));
+    const productId = Number((saved as { id?: number }).id);
+    repositories.addProductImage(productId, { relativePath: 'product-images/e2e.png', originalName: 'e2e.png', mimeType: 'image/png', size: 1 });
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/catalogs',
+      payload: { name: '主推图册', productIds: [productId], markupPercent: 20 },
+    });
+    expect(created.statusCode).toBe(201);
+    const catalog = created.json().data as { token: string };
+
+    // 混入一个不属于图册的产品编号：必须被忽略，只按图册内产品出单。
+    // 备注按产品行走 base64url，里面带逗号也不会拆错产品。
+    const lineNote = Buffer.from('请按木架包装，交期 30 天', 'utf8').toString('base64url');
+    const response = await app.inject({ method: 'GET', url: `/c/${catalog.token}/quote.pdf?items=${productId}:2:${lineNote},999999:5` });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toContain('application/pdf');
+    expect(String(response.headers['content-disposition'])).toContain('attachment');
+    // (128.5 + 3.2) × 1.2 = 158.04 → 159 起；×2 = 318.00
+    expect(captured).toContain('圆锯-7寸');
+    expect(captured).toContain('¥159.00 起');
+    expect(captured).toContain('¥318.00');
+    expect(captured).toContain('2');
+    expect(captured).toContain('>图片<');
+    expect(captured).toContain('data:image/jpeg;base64,');
+    expect(captured).toContain('>备注<');
+    expect(captured).toContain('请按木架包装，交期 30 天');
+    for (const secret of ['东莞某某五金厂', '128.5', '3.2', '内部备注']) {
+      expect(captured).not.toContain(secret);
+    }
+
+    expect((await app.inject({ method: 'GET', url: `/c/${catalog.token}/quote.pdf` })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'GET', url: '/c/not-a-valid-token/quote.pdf?items=1:1' })).statusCode).toBe(404);
   });
 
   it('「添加到产品图册」的图册不存在时：产品照常保存成功，图册不动', async () => {
