@@ -179,14 +179,15 @@ export default function OrderForm({ value, customers, companies = [], onSubmit, 
   const [shippingInput, setShippingInput] = useState(() => ((value?.shippingCents ?? 0) / 100).toFixed(2));
   const [shippingOverridden, setShippingOverridden] = useState(Boolean(value?.id));
   const [error, setError] = useState('');
-  // 只有一个启用公司时直接选中，减少新建订单的点击。
+  // 只有一个启用公司时直接选中，减少新建对公订单的点击；对私订单不需要开票公司，不自动带出。
   useEffect(() => {
+    if ((draft.settlementType ?? 'personal') === 'personal') return;
     if (companyAutoFilled.current || draft.companyId != null) return;
     const active = companies.filter((company) => company.isActive);
     if (active.length !== 1) return;
     companyAutoFilled.current = true;
     setDraft((current) => ({ ...current, companyId: active[0].id, companyName: active[0].shortName }));
-  }, [companies, draft.companyId]);
+  }, [companies, draft.companyId, draft.settlementType]);
   const [newProductOpen, setNewProductOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   /** 单价输入的本地编辑缓冲：允许 “”“12.”“12.3” 等中间态，失焦后再规范化。 */
@@ -409,19 +410,28 @@ export default function OrderForm({ value, customers, companies = [], onSubmit, 
           <CustomerSelector value={draft.customerId ?? null} customers={customers} onChange={selectCustomer} onCreateCustomer={onCreateCustomer} />
           <label style={labelStyle}>订单号<input style={controlStyle} value={draft.orderNo} onChange={(event) => { const orderNo = event.target.value; update('orderNo', orderNo); update('orderNoAuto', !orderNo.trim()); }} placeholder="自动生成，可手动修改" /></label>
           <label style={labelStyle}>下单时间<input type="date" style={{ ...controlStyle, minWidth: 0 }} value={draft.orderedAt} onChange={(event) => update('orderedAt', event.target.value)} /></label>
-          <label style={labelStyle}>结算方式<select aria-label="结算方式" style={controlStyle} value={draft.settlementType ?? 'personal'} onChange={(event) => update('settlementType', event.target.value === 'personal' ? 'personal' : 'corporate')}>
+          <label style={labelStyle}>结算方式<select aria-label="结算方式" style={controlStyle} value={draft.settlementType ?? 'personal'} onChange={(event) => {
+            const settlementType = event.target.value === 'personal' ? 'personal' : 'corporate';
+            if (settlementType === 'personal') {
+              // 对私不需要开票公司：切过来时清掉，避免带着公司保存；再切回对公时允许重新自动带出。
+              companyAutoFilled.current = false;
+              setDraft((current) => ({ ...current, settlementType, companyId: null, companyName: '' }));
+            } else {
+              update('settlementType', settlementType);
+            }
+          }}>
             <option value="corporate">{ORDER_SETTLEMENT_LABELS.corporate}（需要开票）</option>
             <option value="personal">{ORDER_SETTLEMENT_LABELS.personal}（无需开票）</option>
           </select></label>
-          <label style={labelStyle}>收款/开票公司<select aria-label="收款/开票公司" style={controlStyle} value={draft.companyId ?? ''} onChange={(event) => {
+          {(draft.settlementType ?? 'personal') !== 'personal' && <label style={labelStyle}>收款/开票公司<select aria-label="收款/开票公司" style={controlStyle} value={draft.companyId ?? ''} onChange={(event) => {
             const companyId = event.target.value ? Number(event.target.value) : null;
             const company = companies.find((item) => item.id === companyId);
             update('companyId', companyId);
             update('companyName', company?.shortName ?? '');
           }}>
-            <option value="">{draft.settlementType === 'personal' ? '未指定（可选）' : '请选择公司'}</option>
+            <option value="">请选择公司</option>
             {companies.filter((company) => company.isActive || company.id === draft.companyId).map((company) => <option key={company.id} value={company.id}>{company.shortName}{company.isActive ? '' : '（已停用）'}</option>)}
-          </select></label>
+          </select></label>}
         </div>
         <div className="order-form-grid order-form-grid-recipient">
           <label style={labelStyle}>收件人名称<input style={controlStyle} value={draft.recipientName} onChange={(event) => { autoRecipientNameRef.current = ''; update('recipientName', event.target.value); }} placeholder="从收件信息自动提取，可修改" /></label>

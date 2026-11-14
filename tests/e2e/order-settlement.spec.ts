@@ -53,7 +53,15 @@ test.describe('订单对公/对私结算与开票状态', () => {
     await page.getByRole('button', { name: '订单', exact: true }).click();
     await page.getByRole('button', { name: '新建订单' }).click();
     const formDialog = page.getByRole('dialog', { name: '新建订单' });
-    await expect(formDialog.getByRole('combobox', { name: '结算方式' })).toHaveValue('personal');
+    const settlement = formDialog.getByRole('combobox', { name: '结算方式' });
+    const companySelect = formDialog.getByRole('combobox', { name: '收款/开票公司' });
+    await expect(settlement).toHaveValue('personal');
+    // 对私订单不需要开票公司：字段直接不显示；切到对公才出现。
+    await expect(companySelect).toHaveCount(0);
+    await settlement.selectOption('corporate');
+    await expect(companySelect).toBeVisible();
+    await settlement.selectOption('personal');
+    await expect(companySelect).toHaveCount(0);
     await formDialog.getByRole('button', { name: '取消' }).click();
 
     // 订单页列表：开票状态与结算方式都不再展示（收进详情与财务模块），列表保持紧凑
