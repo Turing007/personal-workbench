@@ -23,6 +23,7 @@ export interface OrderDetailModalProps {
   onPublishOrder?: (order: OrderDraft) => void;
   onOpenShipping?: (order: OrderDraft) => void;
   onOpenFinance?: (order: OrderDraft) => void;
+  onPromoteCustomer?: (order: OrderDraft) => void;
 }
 
 const statusLabels: Record<OrderStatus, string> = {
@@ -74,6 +75,7 @@ export default function OrderDetailModal({
   onPublishOrder,
   onOpenShipping,
   onOpenFinance,
+  onPromoteCustomer,
 }: OrderDetailModalProps) {
   const [deletingContractId, setDeletingContractId] = useState<string>();
   const [generatingContract, setGeneratingContract] = useState(false);
@@ -142,7 +144,7 @@ export default function OrderDetailModal({
         <section style={{ display: 'grid', gap: 9, padding: 12, background: 'var(--tone-surface-frost)', borderRadius: 'var(--radius-ui)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><UserRound size={15} /><strong style={{ fontSize: 13 }}>客户与收件信息</strong></div>
           <div className="order-detail-customer-fields">
-            <div style={detailStyle}><span style={labelStyle}>客户名称</span><span style={valueStyle}>{order.customerName || '未填写'}</span></div>
+            <div style={detailStyle}><span style={labelStyle}>客户名称</span><span style={valueStyle}>{order.customerName || '未填写'}{order.customerId == null && order.customerName?.trim() && <span className="badge badge-neutral" style={{ marginLeft: 6 }}>临时</span>}</span></div>
             <div style={detailStyle}><span style={labelStyle}>联系人</span><span style={valueStyle}>{order.customerContactName || '未填写'}</span></div>
             <div style={detailStyle}><span style={labelStyle}>联系电话</span><span style={valueStyle}>{order.customerContactPhone || '未填写'}</span></div>
           </div>
@@ -185,6 +187,7 @@ export default function OrderDetailModal({
         {order.remark && <div style={{ display: 'grid', gap: 4 }}><span style={labelStyle}>订单备注</span><span style={{ ...valueStyle, whiteSpace: 'pre-wrap' }}>{order.remark}</span></div>}
         <div className="order-detail-actions">
           {onEditOrder && <button type="button" onClick={() => onEditOrder(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--tone-border-cool)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-surface)', cursor: 'pointer', fontSize: 12 }}>编辑订单</button>}
+          {onPromoteCustomer && order.customerId == null && order.customerName?.trim() && <button type="button" title="把临时客户转成正式客户档案，并挂接同名历史订单" onClick={() => onPromoteCustomer(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--color-accent-border)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-soft)', color: 'var(--tone-accent-text)', cursor: 'pointer', fontSize: 12 }}><UserRound size={14} />转正为客户</button>}
           {order.status === 'draft'
             ? onPublishOrder && <button type="button" title="校验并发布草稿订单，进入正式流程" onClick={() => { if (window.confirm(`确定发布草稿订单“${order.orderNo}”吗？发布后将进入待备货流程。`)) onPublishOrder(order); }} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-fill)', color: '#fff', cursor: 'pointer', fontSize: 12 }}><Truck size={14} />发布订单</button>
             : <>{onEditLabels && <button type="button" onClick={() => onEditLabels(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--tone-border-cool)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-surface)', cursor: 'pointer', fontSize: 12 }}><ExternalLink size={14} />编辑箱唛</button>}

@@ -517,7 +517,7 @@ export function draftToInput(draft: OrderDraft) {
     remark: draft.remark,
     settlementType: draft.settlementType === 'personal' ? 'personal' : 'corporate',
     companyId: draft.companyId ?? null,
-    items: draft.items.map((item) => ({ customerProductId: item.customerProductId ?? (item.productId ? Number(item.productId) : null), name: item.name.trim(), sku: item.sku.trim(), specification: item.specification.trim(), packCount: Math.max(1, Math.trunc(item.packSize)), quantity: Math.max(1, Math.trunc(item.quantity)), unitPriceCents: Math.max(0, Math.trunc(item.unitPriceCents ?? 0)), freightPerBoxCents: Math.max(0, Math.trunc(item.freightPerBoxCents ?? 0)), packaging: item.packaging?.length ? item.packaging.map((pack) => ({ name: pack.name, innerSize: pack.innerSize, innerWeight: Number(pack.innerWeight) || 0, outerSize: pack.outerSize, outerWeight: Number(pack.outerWeight) || 0, packCount: Math.max(1, Math.trunc(pack.packSize)) })) : [{ name: '', packCount: Math.max(1, Math.trunc(item.packSize)) }], remark: item.remark, labelRequirement: (item.labelRequirement ?? '').trim() }))
+    items: draft.items.map((item) => ({ customerProductId: item.customerProductId ?? null, productId: item.productId ? Number(item.productId) : null, name: item.name.trim(), sku: item.sku.trim(), specification: item.specification.trim(), packCount: Math.max(1, Math.trunc(item.packSize)), quantity: Math.max(1, Math.trunc(item.quantity)), unitPriceCents: Math.max(0, Math.trunc(item.unitPriceCents ?? 0)), freightPerBoxCents: Math.max(0, Math.trunc(item.freightPerBoxCents ?? 0)), packaging: item.packaging?.length ? item.packaging.map((pack) => ({ name: pack.name, innerSize: pack.innerSize, innerWeight: Number(pack.innerWeight) || 0, outerSize: pack.outerSize, outerWeight: Number(pack.outerWeight) || 0, packCount: Math.max(1, Math.trunc(pack.packSize)) })) : [{ name: '', packCount: Math.max(1, Math.trunc(item.packSize)) }], remark: item.remark, labelRequirement: (item.labelRequirement ?? '').trim() }))
     , orderAttachments: draft.items.flatMap((item) => (item.customerProductAttachments ?? []).map((attachment) => ({ category: attachment.category, sourceCustomerProductId: item.customerProductId ?? null, relativePath: attachment.relativePath, originalName: attachment.originalName, mimeType: attachment.mimeType, size: attachment.size })))
   };
 }
@@ -535,6 +535,20 @@ export function getOrderDetail(id: number | string) { return request<ApiOrderDet
 export function getNextOrderNumber() { return request<{ number: string; date: string }>('/api/orders/next-number'); }
 export function getOrderItemImages(orderId: number | string) {
   return request<{ itemImages: Record<number, Array<{ url: string; name: string; mimeType: string }>> }>(`/api/orders/${orderId}/items-images`);
+}
+
+export interface TemporaryCustomerPreview {
+  name: string;
+  existingCustomer: import('../shared/customers').Customer | null;
+  orders: Array<{ id: number; orderNo: string; customerName: string; status: string }>;
+}
+
+export function previewTemporaryCustomer(name: string) {
+  return request<TemporaryCustomerPreview>(`/api/temporary-customer/preview?name=${encodeURIComponent(name)}`);
+}
+
+export function promoteTemporaryCustomer(input: { name: string; contactName?: string; contactPhone?: string; shippingInfo?: string; invoiceTitle?: string; taxNo?: string }) {
+  return request<{ customer: import('../shared/customers').Customer; linkedCount: number; linkedOrderIds: number[] }>('/api/temporary-customer/promote', { method: 'POST', body: JSON.stringify(input) });
 }
 
 export function saveOrder(draft: OrderDraft) {

@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 42;
+const CURRENT_SCHEMA_VERSION = 43;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -206,7 +206,8 @@ CREATE TABLE IF NOT EXISTS order_items (
   packaging_requirement TEXT NOT NULL DEFAULT '',
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  product_id INTEGER REFERENCES products(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS order_item_box_sizes (
@@ -1496,6 +1497,15 @@ function migrateVersionFortyTwo(database: DatabaseSync, now: string): void {
 }
 
 /**
+ * 订单行支持直接引用系统产品（从系统产品库选品、临时客户开单）。
+ * 新列追加在表尾，与备份恢复的按列位置复制保持一致；存量行回填空。
+ */
+function migrateVersionFortyThree(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'order_items', 'product_id', 'INTEGER REFERENCES products(id) ON DELETE SET NULL');
+  upsertSetting(database, 'schema_version', '43', now);
+}
+
+/**
  * 资料库：合同表格、客户标贴、产品资料等常用文件的统一存放。
  * 删除先写 deleted_at 进回收站，30 天后由服务端清理；文件本身仍在 data/files/library。
  */
@@ -1593,6 +1603,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionForty(transactionDatabase, now);
     migrateVersionFortyOne(transactionDatabase, now);
     migrateVersionFortyTwo(transactionDatabase, now);
+    migrateVersionFortyThree(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

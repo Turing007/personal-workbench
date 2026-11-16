@@ -849,3 +849,78 @@ describe('订单草稿', () => {
     database.close();
   });
 });
+
+describe('临时客户开单与系统产品直选', () => {
+  it('未建客户档案也能开单：customer_id 为空、名称快照保留，系统产品行落 product_id 并回退系统图', async () => {
+    const { app, database } = await makeContext();
+    const now = new Date().toISOString();
+    const productId = Number(database.prepare(
+      `INSERT INTO products (name, specification, sku, category, status, created_at, updated_at) VALUES (?, ?, ?, '', 'active', ?, ?) RETURNING id`,
+    ).run('系统电钻', '20V', 'VT-9001', now, now).lastInsertRowid);
+    database.prepare(
+      `INSERT INTO product_images (product_id, relative_path, original_name, mime_type, size_bytes, created_at) VALUES (?, ?, ?, 'image/png', 10, ?)`,
+    ).run(productId, 'products/drill.png', 'drill.png', now);
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      payload: orderInput({
+        customerId: null,
+        customerName: '临时客户王五',
+        items: [{ productId, name: '系统电钻', sku: 'VT-9001', specification: '20V', packagingName: '纸箱', packCount: 10, quantity: 5, unitPriceCents: 1500 }],
+      }),
+    });
+    expect(created.statusCode).toBe(201);
+    const orderId = created.json().data.id;
+    const orderItemId = created.json().data.items[0].id;
+    expect(database.prepare('SELECT customer_id, customer_name FROM orders WHERE id = ?').get(orderId)).toEqual({ customer_id: null, customer_name: '临时客户王五' });
+    expect(database.prepare('SELECT customer_product_id, product_id FROM order_items WHERE id = ?').get(orderItemId)).toEqual({ customer_product_id: null, product_id: productId });
+
+    const images = await app.inject({ method: 'GET', url: `/api/orders/${orderId}/items-images` });
+    expect(images.json().data.itemImages[orderItemId]).toEqual([{ url: '/files/products/drill.png', name: 'drill.png', mimeType: 'image/png' }]);
+    await app.close();
+    database.close();
+  });
+
+  it('转正预览列出同名未挂客户订单，确认后新建客户并批量挂接', async () => {
+    const { app, database } = await makeContext();
+    const first = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput({ customerId: null, customerName: '临时客户王五' }) });
+    const second = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput({ customerId: null, customerName: '临时客户王五' }) });
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(201);
+
+    const preview = await app.inject({ method: 'GET', url: `/api/temporary-customer/preview?name=${encodeURIComponent('临时客户王五')}` });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json().data.existingCustomer).toBeNull();
+    expect(preview.json().data.orders).toHaveLength(2);
+
+    const promoted = await app.inject({ method: 'POST', url: '/api/temporary-customer/promote', payload: { name: '临时客户王五', contactName: '王五', contactPhone: '13800000000' } });
+    expect(promoted.statusCode).toBe(200);
+    expect(promoted.json().data.linkedCount).toBe(2);
+    const customerId = promoted.json().data.customer.id;
+    expect(database.prepare('SELECT COUNT(*) AS n FROM orders WHERE customer_id = ?').get(customerId)).toEqual({ n: 2 });
+    expect(database.prepare('SELECT contact_name FROM customers WHERE id = ?').get(customerId)).toEqual({ contact_name: '王五' });
+    expect(database.prepare('SELECT customer_name FROM orders WHERE id = ?').get(first.json().data.id)).toEqual({ customer_name: '临时客户王五' });
+    await app.close();
+    database.close();
+  });
+
+  it('转正遇到同名正式客户直接挂接，不重复创建', async () => {
+    const { app, database } = await makeContext();
+    const customerId = insertCustomer(database, '张三');
+    const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput({ customerId: null, customerName: '张三' }) });
+    expect(created.statusCode).toBe(201);
+
+    const preview = await app.inject({ method: 'GET', url: `/api/temporary-customer/preview?name=${encodeURIComponent('张三')}` });
+    expect(preview.json().data.existingCustomer?.id).toBe(customerId);
+
+    const promoted = await app.inject({ method: 'POST', url: '/api/temporary-customer/promote', payload: { name: '张三' } });
+    expect(promoted.statusCode).toBe(200);
+    expect(promoted.json().data.customer.id).toBe(customerId);
+    expect(promoted.json().data.linkedCount).toBe(1);
+    expect(database.prepare('SELECT COUNT(*) AS n FROM customers').get()).toEqual({ n: 1 });
+    expect(database.prepare('SELECT customer_id FROM orders WHERE id = ?').get(created.json().data.id)).toEqual({ customer_id: customerId });
+    await app.close();
+    database.close();
+  });
+});

@@ -6,7 +6,7 @@ import type { CompanyRepository } from '../db/company-repository.js';
 import { FileStore } from '../files/file-store.js';
 import { calculateLineAmountCents } from '../../shared/money.js';
 import { calculateOrderAmountCents } from '../../shared/order-prices.js';
-import type { CustomerProduct } from '../../shared/customers.js';
+import type { CustomerProduct, CustomerSaveInput } from '../../shared/customers.js';
 
 import {
   ORDER_STATUS_LABELS,
@@ -202,6 +202,32 @@ export class OrderService {
 
   get(orderId: number) {
     return this.repositories.getOrderDetail(orderId);
+  }
+
+  /** 转正预览：返回重名正式客户（若有）与将被挂接的同名未挂客户订单。 */
+  previewTemporaryCustomer(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error('客户名称不能为空');
+    return {
+      name: trimmed,
+      existingCustomer: this.customerRepository?.findByName(trimmed) ?? null,
+      orders: this.repositories.listTemporaryOrdersByName(trimmed),
+    };
+  }
+
+  /** 临时客户转正：建/取正式客户（重名挂已有），事务内挂接同名历史订单；名称快照保留。 */
+  promoteTemporaryCustomer(name: string, input: CustomerSaveInput) {
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error('客户名称不能为空');
+    const customerRepository = this.customerRepository;
+    if (!customerRepository) throw new Error('客户仓储未配置');
+    return this.repositories.runInTransaction(() => {
+      const customer = customerRepository.findByName(trimmed)
+        ?? customerRepository.create({ ...input, name: trimmed });
+      const orders = this.repositories.listTemporaryOrdersByName(trimmed);
+      const linkedCount = this.repositories.linkOrdersToCustomer(orders.map((order) => order.id), customer.id);
+      return { customer, linkedCount, linkedOrderIds: orders.map((order) => order.id) };
+    });
   }
 
   async create(input: CreateOrderInput) {

@@ -149,6 +149,7 @@ function parseOrderInput(value: unknown, options: { allowEmptyOrderNo?: boolean 
       const prefix = `items[${index}]`;
       return {
         customerProductId: optionalId(item.customerProductId, `${prefix}.customerProductId`),
+        productId: optionalId(item.productId, `${prefix}.productId`),
         name: optionalText(item.name, `${prefix}.name`, '产品品名'),
         sku: optionalText(item.sku, `${prefix}.sku`, 'SKU'),
         specification: optionalText(item.specification, `${prefix}.specification`, '规格'),
@@ -274,6 +275,30 @@ export async function registerOrderRoutes(app: FastifyInstance, options: OrderRo
       number: options.repositories.previewNextOrderNumber(),
       date: orderDateKey(new Date()),
     }), reply),
+  );
+
+  app.get('/api/temporary-customer/preview', async (request, reply) =>
+    safeRoute(() => {
+      const query = request.query as Record<string, string | undefined>;
+      const name = requiredText(query.name, 'name', '客户名称');
+      return sendSuccess(reply, service.previewTemporaryCustomer(name));
+    }, reply),
+  );
+
+  app.post('/api/temporary-customer/promote', async (request, reply) =>
+    safeRoute(() => {
+      const body = asRecord(request.body);
+      const name = requiredText(body.name, 'name', '客户名称');
+      const input = {
+        name,
+        contactName: optionalText(body.contactName, 'contactName', '联系人'),
+        contactPhone: optionalText(body.contactPhone, 'contactPhone', '联系电话'),
+        shippingInfo: optionalText(body.shippingInfo, 'shippingInfo', '收件信息'),
+        invoiceTitle: optionalText(body.invoiceTitle, 'invoiceTitle', '开票抬头'),
+        taxNo: optionalText(body.taxNo, 'taxNo', '税号'),
+      };
+      return sendSuccess(reply, service.promoteTemporaryCustomer(name, input));
+    }, reply),
   );
 
   app.get('/api/orders/:id/contracts', async (request: FastifyRequest<{ Params: IdParams }>, reply) =>

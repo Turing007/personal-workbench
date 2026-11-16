@@ -68,6 +68,8 @@ export interface CustomerProductInput {
 
 export interface OrderItemInput {
   customerProductId?: number | null;
+  /** 系统产品引用：从系统产品库直选的行带上，用于图片回退与后续存入客户产品库。 */
+  productId?: number | null;
   name: string;
   sku?: string;
   specification?: string;
@@ -862,10 +864,10 @@ export class DatabaseRepositories {
       const itemIds: number[] = [];
       const insertItem = database.prepare(
         `INSERT INTO order_items
-          (order_id, customer_product_id, name, sku, specification, packaging_name, pack_count, quantity,
+          (order_id, customer_product_id, product_id, name, sku, specification, packaging_name, pack_count, quantity,
            unit_price_cents, amount_cents, freight_per_box_cents, remark, label_requirement,
            sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const insertBoxSize = database.prepare(
         `INSERT INTO order_item_box_sizes
@@ -890,6 +892,7 @@ export class DatabaseRepositories {
           insertItem.run(
             orderId,
             item.customerProductId ?? null,
+            item.productId ?? null,
             item.name,
             item.sku ?? '',
             item.specification ?? '',
@@ -981,10 +984,10 @@ export class DatabaseRepositories {
       const itemIds: number[] = [];
       const insertItem = database.prepare(
         `INSERT INTO order_items
-          (order_id, customer_product_id, name, sku, specification, packaging_name, pack_count, quantity,
+          (order_id, customer_product_id, product_id, name, sku, specification, packaging_name, pack_count, quantity,
            unit_price_cents, amount_cents, freight_per_box_cents, remark, label_requirement,
            sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const insertBoxSize = database.prepare(
         `INSERT INTO order_item_box_sizes
@@ -1009,6 +1012,7 @@ export class DatabaseRepositories {
           insertItem.run(
             orderId,
             item.customerProductId ?? null,
+            item.productId ?? null,
             item.name,
             item.sku ?? '',
             item.specification ?? '',
@@ -1258,16 +1262,20 @@ export class DatabaseRepositories {
   getOrderItemImages(orderId: number): Record<number, Array<{ url: string; name: string; mimeType: string }>> {
     const rows = this.database
       .prepare(
-        `SELECT oi.id AS order_item_id, cp.image_relative_path AS cp_image,
+        `SELECT oi.id AS order_item_id,
+            cp.id AS cp_id, cp.image_cleared AS cp_image_cleared,
+            NULLIF(trim(cp.image_relative_path), '') AS cp_image,
             pi.relative_path AS pi_relative_path, pi.original_name, pi.mime_type
          FROM order_items oi
          LEFT JOIN customer_products cp ON cp.id = oi.customer_product_id
-         LEFT JOIN product_images pi ON pi.product_id = cp.system_product_id
+         LEFT JOIN product_images pi ON pi.product_id = CASE WHEN cp.id IS NOT NULL THEN cp.system_product_id ELSE oi.product_id END
          WHERE oi.order_id = ?
          ORDER BY oi.id, pi.sort_order, pi.id`,
       )
       .all(orderId) as Array<{
         order_item_id: number;
+        cp_id: number | null;
+        cp_image_cleared: number | null;
         cp_image: string | null;
         pi_relative_path: string | null;
         original_name: string | null;
@@ -1276,19 +1284,56 @@ export class DatabaseRepositories {
     const result: Record<number, Array<{ url: string; name: string; mimeType: string }>> = {};
     for (const row of rows) {
       if (!result[row.order_item_id]) result[row.order_item_id] = [];
-      // 客户产品自有图片优先；无自有图片时使用系统产品图片
-      const relativePath = row.cp_image && row.cp_image.trim()
-        ? row.cp_image.trim()
-        : row.pi_relative_path;
-      if (!relativePath) continue;
       if (result[row.order_item_id].length >= 5) continue;
+      const linked = row.cp_id != null;
+      // 客户产品已主动清除图片：尊重清除，不回退系统图。
+      if (linked && Number(row.cp_image_cleared) === 1) continue;
+      const own = linked && row.cp_image && row.cp_image.trim() ? row.cp_image.trim() : null;
+      // 客户产品自有图优先且只用自有图；无自有图（或未挂客户产品）时用系统产品图。
+      if (own) {
+        if (!result[row.order_item_id].length) {
+          result[row.order_item_id].push({ url: `/files/${own}`, name: '', mimeType: 'image/png' });
+        }
+        continue;
+      }
+      if (!row.pi_relative_path) continue;
       result[row.order_item_id].push({
-        url: `/files/${relativePath}`,
+        url: `/files/${row.pi_relative_path}`,
         name: String(row.original_name ?? ''),
         mimeType: String(row.mime_type ?? 'image/png'),
       });
     }
     return result;
+  }
+
+  /** 在同一连接上开事务，供跨仓储的原子操作（如临时客户转正）使用。 */
+  runInTransaction<T>(callback: () => T): T {
+    return withTransaction(this.database, () => callback());
+  }
+
+  /** 列出某临时客户名称下尚未挂接正式客户的订单（含草稿，不分创建人），供转正预览与挂接。 */
+  listTemporaryOrdersByName(name: string): Array<{ id: number; orderNo: string; customerName: string; status: string }> {
+    const rows = this.database.prepare(`
+      SELECT id, order_no, customer_name, status FROM orders
+      WHERE customer_id IS NULL AND lower(trim(customer_name)) = lower(trim(?))
+      ORDER BY ordered_at DESC, id DESC
+    `).all(name) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      id: Number(row.id),
+      orderNo: String(row.order_no ?? ''),
+      customerName: String(row.customer_name ?? ''),
+      status: String(row.status ?? ''),
+    }));
+  }
+
+  /** 把未挂客户的订单挂接到正式客户；只改 customer_id，不刷新 updated_at，避免打乱列表排序。 */
+  linkOrdersToCustomer(orderIds: number[], customerId: number): number {
+    if (!orderIds.length) return 0;
+    const placeholders = orderIds.map(() => '?').join(',');
+    const result = this.database.prepare(`
+      UPDATE orders SET customer_id = ? WHERE customer_id IS NULL AND id IN (${placeholders})
+    `).run(customerId, ...orderIds);
+    return Number(result.changes);
   }
 
   listPaymentProofs(orderId: number) {

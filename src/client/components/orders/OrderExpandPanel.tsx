@@ -1,4 +1,4 @@
-import { ExternalLink, Package, Pencil, Printer, ScrollText } from 'lucide-react';
+import { ExternalLink, Package, Pencil, Printer, ScrollText, UserRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { FINANCE_PAYMENT_STATUS_LABELS, INVOICE_STATUS_LABELS, PAYMENT_PROOF_STATUS_LABELS } from '../../../shared/finance';
 import { getOrderItemImages } from '../../api';
@@ -13,12 +13,14 @@ export interface OrderExpandPanelProps {
   onOpenFinance?: () => void;
   onOpenLabels?: () => void;
   onPublish?: () => void;
+  onPromoteCustomer?: () => void;
 }
 
 /** 订单行内展开：产品、收件信息、财务摘要和常用操作；桌面表格与手机卡片共用。 */
-export default function OrderExpandPanel({ order, onOpenDetail, onEdit, onOpenFinance, onOpenLabels, onPublish }: OrderExpandPanelProps) {
+export default function OrderExpandPanel({ order, onOpenDetail, onEdit, onOpenFinance, onOpenLabels, onPublish, onPromoteCustomer }: OrderExpandPanelProps) {
   const summary = order.financeSummary;
   const isDraft = order.status === 'draft';
+  const isTemporary = order.customerId == null && Boolean(order.customerName?.trim());
   const [itemImages, setItemImages] = useState<Record<number, Array<{ url: string; name: string; mimeType: string }>>>({});
   useEffect(() => {
     if (!order.id) return undefined;
@@ -56,7 +58,7 @@ export default function OrderExpandPanel({ order, onOpenDetail, onEdit, onOpenFi
 
     <div className="order-expand-side">
       <section className="order-expand-info">
-        <div className="order-expand-section-head"><strong>收件信息</strong></div>
+        <div className="order-expand-section-head"><strong>收件信息</strong>{isTemporary && <span className="badge badge-neutral">临时客户 · {order.customerName}</span>}</div>
         <div className="order-expand-info-grid">
           <div><span>收件人</span><strong>{order.recipientName || '未填写'}</strong></div>
           <div><span>收件地址</span><strong>{order.recipientInfo || '未填写'}</strong></div>
@@ -85,6 +87,7 @@ export default function OrderExpandPanel({ order, onOpenDetail, onEdit, onOpenFi
     <div className="order-expand-actions">
       <button type="button" className="button button-secondary button-sm" onClick={onOpenDetail}><ScrollText size={14} />查看详情</button>
       <button type="button" className="button button-secondary button-sm" onClick={onEdit}><Pencil size={14} />编辑订单</button>
+      {onPromoteCustomer && <button type="button" className="button button-secondary button-sm" title="把临时客户转成正式客户档案，并挂接同名历史订单" onClick={onPromoteCustomer}><UserRound size={14} />转正为客户</button>}
       {onOpenFinance && <button type="button" className="button button-secondary button-sm" onClick={onOpenFinance}><ExternalLink size={14} />财务详情</button>}
       {isDraft
         ? (onPublish && <button type="button" className="button button-primary button-sm" onClick={onPublish}><ScrollText size={14} />发布草稿</button>)

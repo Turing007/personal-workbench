@@ -121,6 +121,18 @@ export class CustomerRepository {
     return Boolean(row);
   }
 
+  /** 按名称精确查找客户（忽略大小写与首尾空格），优先返回启用中的那条；临时客户转正时用于重名挂接。 */
+  findByName(name: string): Customer | undefined {
+    const row = this.database.prepare(`
+      ${customerSelect}
+      WHERE lower(trim(c.name)) = lower(trim(?))
+      GROUP BY c.id
+      ORDER BY c.is_active DESC, c.id
+      LIMIT 1
+    `).get(name) as CustomerRow | undefined;
+    return mapCustomer(row);
+  }
+
   create(input: CustomerSaveInput): Customer {
     const timestamp = new Date().toISOString();
     const result = this.database.prepare(`

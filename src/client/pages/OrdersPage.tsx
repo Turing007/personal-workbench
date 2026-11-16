@@ -8,6 +8,7 @@ import OrderDetailModal from '../components/OrderDetailModal';
 import OrderItemsTable from '../components/OrderItemsTable';
 import OrderForm, { type CustomerProduct, type OrderDraft, type OrderStatus } from '../components/OrderForm';
 import OrderExpandPanel from '../components/orders/OrderExpandPanel';
+import PromoteCustomerModal from '../components/orders/PromoteCustomerModal';
 import PrintWorkspace from '../components/PrintWorkspace';
 import StatusCards from '../components/StatusCards';
 import FilterRail, { FilterCheckList } from '../components/FilterRail';
@@ -51,6 +52,9 @@ export interface OrdersPageProps {
   onMergeLabels?: (order: OrderDraft, labelIds: string[]) => Promise<CartonLabel[] | undefined> | CartonLabel[] | undefined;
   onRestoreAutoLabels?: (order: OrderDraft) => Promise<CartonLabel[] | undefined> | CartonLabel[] | undefined;
   onPrintHistory?: (labels: CartonLabel[]) => void | Promise<void>;
+  /** 临时客户转正后刷新订单与客户数据。 */
+  onRefreshOrders?: () => void | Promise<void>;
+  onNotify?: (message: string, kind?: 'success' | 'info' | 'error') => void;
 }
 
 const statusLabels: Record<OrderStatus, string> = {
@@ -151,7 +155,7 @@ export function fallbackLabels(order: OrderDraft): CartonLabel[] {
   });
 }
 
-export default function OrdersPage({ orders, customers, companies = [], statusCounts, labelsByOrderId, initialOrderId, initialStatus, onInitialStatusConsumed, startCreate, onStartCreateConsumed, onSaveOrder, onSaveDraft, onDeleteOrder, onSaveCustomerProduct, onCreateCustomer, onGetNextOrderNumber, onDeleteContract, onGenerateContract, onAdvanceStatus, onBatchAdvance, onPublishOrder, onOpenShipping, onOpenFinance, onSaveLabels, onMergeLabels, onRestoreAutoLabels, onPrintHistory }: OrdersPageProps) {
+export default function OrdersPage({ orders, customers, companies = [], statusCounts, labelsByOrderId, initialOrderId, initialStatus, onInitialStatusConsumed, startCreate, onStartCreateConsumed, onSaveOrder, onSaveDraft, onDeleteOrder, onSaveCustomerProduct, onCreateCustomer, onGetNextOrderNumber, onDeleteContract, onGenerateContract, onAdvanceStatus, onBatchAdvance, onPublishOrder, onOpenShipping, onOpenFinance, onSaveLabels, onMergeLabels, onRestoreAutoLabels, onPrintHistory, onRefreshOrders, onNotify }: OrdersPageProps) {
   const [statusFilters, setStatusFilters] = useState<OrderStatus[]>([]);
   const [customerFilters, setCustomerFilters] = useState<number[]>([]);
   const [companyFilters, setCompanyFilters] = useState<number[]>([]);
@@ -167,6 +171,7 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
   const [labelOrder, setLabelOrder] = useState<OrderDraft>();
   const [labels, setLabels] = useState<CartonLabel[]>([]);
   const [printLabels, setPrintLabels] = useState<CartonLabel[]>([]);
+  const [promoteName, setPromoteName] = useState<string | null>(null);
   const consumedInitialOrderId = useRef<number | null>(null);
   useEffect(() => {
     if (!initialStatus) return;
@@ -320,6 +325,7 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
     onOpenFinance={onOpenFinance ? () => onOpenFinance(order) : undefined}
     onOpenLabels={order.status === 'draft' ? undefined : () => openLabels(order)}
     onPublish={order.status === 'draft' && onPublishOrder ? () => publishOrder(order) : undefined}
+    onPromoteCustomer={order.customerId == null && order.customerName?.trim() ? () => setPromoteName(order.customerName!.trim()) : undefined}
   />;
   const expandToggle = (order: OrderDraft, className?: string) => {
     const expanded = expandedIds.includes(orderKey(order));
@@ -415,7 +421,7 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
               <tr className={expanded ? 'is-expanded' : undefined}>
                 <td className="order-check-cell"><input type="checkbox" disabled={!isUnshippedOrder(order) || isDraftOrder(order)} checked={isUnshippedOrder(order) && !isDraftOrder(order) && selectedIds.includes(id)} onChange={() => setSelectedIds((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id])} aria-label={`选择订单${order.orderNo}`} /></td>
                 <td className="strong-cell order-no-cell"><div className="order-no-wrap">{expandToggle(order)}<span>{order.orderNo}</span></div></td>
-                <td className="order-customer-cell"><div className="order-party"><strong className="order-party-customer" title={order.customerName || undefined}>{order.customerName || '未填客户'}</strong><span className="order-party-recipient" title={order.recipientName || undefined}>收件人：{order.recipientName || '—'}</span></div></td>
+                <td className="order-customer-cell"><div className="order-party"><strong className="order-party-customer" title={order.customerName || undefined}>{order.customerName || '未填客户'}{order.customerId == null && order.customerName?.trim() && <span className="badge badge-neutral" style={{ marginLeft: 5 }}>临时</span>}</strong><span className="order-party-recipient" title={order.recipientName || undefined}>收件人：{order.recipientName || '—'}</span></div></td>
                 <td>{order.orderedAt.replace('T', ' ')}</td>
                 <td className="order-product-cell"><button type="button" className="link-button order-product-link" title={productSummary} onClick={() => setProductsOrder(order)}>{productSummary || '查看明细'}</button></td>
                 <td className="order-box-cell">{boxCount}</td>
@@ -436,7 +442,7 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
         return <article key={orderKey(order)} className={`order-card${expanded ? ' is-expanded' : ''}`}>
           <div className="order-card-head">
             {expandToggle(order, 'order-card-expand')}
-            <div className="order-card-title"><strong>{order.orderNo}</strong><span>{order.customerName || '未填客户'} · {order.orderedAt.replace('T', ' ')} · {order.recipientName || '未填收件人'}</span></div>
+            <div className="order-card-title"><strong>{order.orderNo}</strong><span>{order.customerId == null && order.customerName?.trim() ? '临时 · ' : ''}{order.customerName || '未填客户'} · {order.orderedAt.replace('T', ' ')} · {order.recipientName || '未填收件人'}</span></div>
             {renderCardStatus(order)}
           </div>
           <div className="order-card-mid">
@@ -464,7 +470,7 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
     </section>
 
     <Modal open={creating || Boolean(editingOrder)} title={editingOrder ? `编辑订单 · ${editingOrder.orderNo}` : '新建订单'} onClose={() => { setCreating(false); setEditingOrder(undefined); }} width={1040}><OrderForm key={editingOrder?.id ?? (creating ? 'new' : 'closed')} value={editingOrder} customers={customers} companies={companies} onSaveCustomerProduct={onSaveCustomerProduct} onCreateCustomer={onCreateCustomer} onGetNextOrderNumber={onGetNextOrderNumber} onSubmit={(order) => { onSaveOrder(order); setCreating(false); setEditingOrder(undefined); }} onSaveDraft={onSaveDraft ? (order) => { onSaveDraft(order); setCreating(false); setEditingOrder(undefined); } : undefined} onCancel={() => { setCreating(false); setEditingOrder(undefined); }} /></Modal>
-    <OrderDetailModal open={Boolean(detailOrder)} order={detailOrder} onClose={() => setDetailOrder(undefined)} onEditOrder={openEdit} onEditLabels={(order) => { setDetailOrder(undefined); openLabels(order); }} onPrintLabels={(order) => { setDetailOrder(undefined); setPrintLabels(labelsByOrderId?.[orderKey(order)] ?? fallbackLabels(order)); }} onDeleteContract={onDeleteContract} onDeleteOrder={onDeleteOrder ? confirmDeleteOrder : undefined} onAdvanceStatus={onAdvanceStatus} onPublishOrder={onPublishOrder} onOpenFinance={onOpenFinance} />
+    <OrderDetailModal open={Boolean(detailOrder)} order={detailOrder} onClose={() => setDetailOrder(undefined)} onEditOrder={openEdit} onEditLabels={(order) => { setDetailOrder(undefined); openLabels(order); }} onPrintLabels={(order) => { setDetailOrder(undefined); setPrintLabels(labelsByOrderId?.[orderKey(order)] ?? fallbackLabels(order)); }} onDeleteContract={onDeleteContract} onDeleteOrder={onDeleteOrder ? confirmDeleteOrder : undefined} onAdvanceStatus={onAdvanceStatus} onPublishOrder={onPublishOrder} onOpenFinance={onOpenFinance} onPromoteCustomer={(order) => setPromoteName(order.customerName?.trim() ?? '')} />
     <Modal open={Boolean(productsOrder)} title={productsOrder ? `产品明细 · ${productsOrder.orderNo}` : '产品明细'} onClose={() => setProductsOrder(undefined)} width={920}>{productsOrder && <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ display: 'grid', gridTemplateColumns: narrow ? 'repeat(2, minmax(0, 1fr))' : 'repeat(6, minmax(0, 1fr))', gap: 12, padding: 12, background: 'var(--tone-surface-frost)', border: '1px solid var(--tone-border-soft)', borderRadius: 'var(--radius-ui)' }}>
         <div style={{ display: 'grid', gap: 4, minWidth: 0 }}><span style={{ color: 'var(--tone-text-faint)', fontSize: 11 }}>订单号</span><strong style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{productsOrder.orderNo}</strong></div>
@@ -478,6 +484,7 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
     </div>}</Modal>
     <LabelEditorModal open={Boolean(labelOrder)} order={labelOrder} labels={labels} onClose={() => setLabelOrder(undefined)} onSave={saveLabels} onMerge={onMergeLabels && labelOrder ? (ids) => { void Promise.resolve(onMergeLabels(labelOrder, ids)).then((next) => { if (next) setLabels(next); }); } : undefined} onRestoreAuto={onRestoreAutoLabels && labelOrder ? () => { void Promise.resolve(onRestoreAutoLabels(labelOrder)).then((next) => { if (next) setLabels(next); }); } : undefined} onPrint={(next) => setPrintLabels(next)} />
     <PrintWorkspace open={printLabels.length > 0} labels={printLabels} onClose={() => setPrintLabels([])} onPrinted={onPrintHistory} />
+    <PromoteCustomerModal name={promoteName ?? ''} open={Boolean(promoteName)} onClose={() => setPromoteName(null)} onPromoted={async ({ customer, linkedCount }) => { setPromoteName(null); setDetailOrder(undefined); await onRefreshOrders?.(); onNotify?.(`已转正为客户「${customer.name}」，挂接 ${linkedCount} 个订单`, 'success'); }} />
       </div>
     </div>
   </div>;
