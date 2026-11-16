@@ -126,6 +126,7 @@ function mapSummary(row: SqlRow): QuotationSummary {
     contactName: rowValue(row, 'contact_name'),
     contactPhone: rowValue(row, 'contact_phone'),
     totalCents: numberValue(row, 'total_cents'),
+    itemCount: numberValue(row, 'item_count'),
     updatedAt: rowValue(row, 'updated_at'),
   };
 }
@@ -210,7 +211,8 @@ export class QuotationRepository {
     const rows = this.database
       .prepare(
         `SELECT q.id, q.number, q.status, q.quotation_date, q.customer_id, q.customer_name, q.contact_name,
-          q.contact_phone, q.total_cents, q.updated_at
+          q.contact_phone, q.total_cents, q.updated_at,
+          (SELECT COUNT(*) FROM quotation_items qi WHERE qi.quotation_id = q.id) AS item_count
          FROM quotations q ${where}
          ORDER BY q.updated_at DESC, q.id DESC LIMIT ? OFFSET ?`,
       )
@@ -219,7 +221,10 @@ export class QuotationRepository {
   }
 
   get(id: number): QuotationRepositoryDetail | undefined {
-    const row = this.database.prepare('SELECT * FROM quotations WHERE id = ?').get(id) as SqlRow | undefined;
+    const row = this.database.prepare(
+      `SELECT q.*, (SELECT COUNT(*) FROM quotation_items qi WHERE qi.quotation_id = q.id) AS item_count
+       FROM quotations q WHERE q.id = ?`,
+    ).get(id) as SqlRow | undefined;
     if (!row) return undefined;
 
     const summary = mapSummary(row);

@@ -33,6 +33,8 @@ interface CopyQuotationToSales {
 export interface QuotationRouteOptions {
   service: QuotationService;
   fileStore?: Pick<FileStore, 'readFile'>;
+  /** 缩略图服务：PDF 内联 480px 派生图而非原图，导出更快、内存更稳。 */
+  thumbnailService?: { get(size: 240 | 480 | 960, relativePath: string): Promise<Buffer> };
   pdfRenderer?: Pick<PdfRenderer, 'render'>;
   copyQuotationToSales?: CopyQuotationToSales;
   customerProductSyncService?: QuotationCustomerProductSyncService;
@@ -264,6 +266,9 @@ export async function registerQuotationRoutes(
     const html = await renderQuotationHtml(quotation, {
       readFile: options.fileStore
         ? (relativePath) => options.fileStore!.readFile(relativePath)
+        : undefined,
+      readImage: options.thumbnailService
+        ? (relativePath) => options.thumbnailService!.get(480, relativePath)
         : undefined,
     });
     const pdf = await pdfRenderer.render(html);

@@ -294,6 +294,7 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   await registerQuotationRoutes(app, {
     service: quotationService,
     fileStore: options.fileStore,
+    thumbnailService,
     customerProductSyncService: new QuotationCustomerProductSyncService(options.database, {
       quotationRepository,
       customerRepository,

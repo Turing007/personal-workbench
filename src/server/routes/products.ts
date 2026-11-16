@@ -478,6 +478,15 @@ export async function registerProductRoutes(app: FastifyInstance, options: Produ
   app.get('/api/products', async (request, reply) =>
     safeRoute(() => {
       const query = request.query as Record<string, string | undefined>;
+      // 按 ids 批量取产品：报价单明细弹窗一次拉齐全部产品行，避免逐行 N+1 请求。
+      if (query.ids !== undefined) {
+        const ids = query.ids.split(',').map((value) => value.trim()).filter(Boolean).map((value) => parseId(value, 'ids'));
+        if (ids.length > 100) throw new ApiError(400, 'VALIDATION_ERROR', '一次最多查询 100 个产品', 'ids');
+        const items = ids
+          .map((id) => mapProduct(repositories.getProduct(id)))
+          .filter((product): product is NonNullable<typeof product> => Boolean(product));
+        return sendSuccess(reply, { items, total: items.length, page: 1, pageSize: Math.max(1, items.length) });
+      }
       const page = Math.max(1, Number(query.page ?? 1) || 1);
       const pageSize = Math.min(200, Math.max(1, Number(query.pageSize ?? 50) || 50));
       const all = repositories.listProducts({

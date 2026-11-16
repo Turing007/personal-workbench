@@ -2825,14 +2825,20 @@
   background: var(--color-surface);
 }
 
-/* 报价/销售表单的字段栅格：桌面 2/3 列，手机单列。 */
+/* 报价/销售表单的字段栅格：桌面 2/3/4 列，手机单列。 */
 .doc-form-grid { display: grid; gap: 8px; }
 .doc-form-grid.is-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .doc-form-grid.is-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.doc-form-grid.is-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+@media (max-width: 900px) {
+  .doc-form-grid.is-four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 @media (max-width: 640px) {
   .doc-form-grid.is-two,
-  .doc-form-grid.is-three { grid-template-columns: minmax(0, 1fr); }
+  .doc-form-grid.is-three,
+  .doc-form-grid.is-four { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* 客户产品编辑：桌面三列，手机单列；批量行在窄屏改成两行。 */
@@ -3314,7 +3320,6 @@
 .quotation-config-extra-row td { padding: 4px 8px 8px; background: var(--color-surface-subtle); }
 .quotation-config-extra { display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
 .quotation-config-extra > div { display: grid; gap: 3px; color: var(--erp-muted); font-size: 10.5px; }
-.quotation-config-extra > label { display: grid; flex: 1; gap: 3px; min-width: 180px; color: var(--erp-muted); font-size: 10.5px; }
 
 .quotation-config-card-list { display: grid; gap: 8px; }
 .quotation-config-card {

@@ -1,5 +1,7 @@
 import {
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   CopyPlus,
   Download,
   Edit3,
@@ -10,17 +12,19 @@ import {
   Trash2,
   XCircle,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CompanySnapshot, QuotationStatus, QuotationSummary } from '../../shared/documents';
 import type { Customer, CustomerSaveInput } from '../../shared/customers';
 import * as api from '../api';
 import { saveFileOrDownload } from '../file-save';
+import { pageWindow, totalPages } from '../pagination';
 import { quotationDetailToDraft, quotationDraftToFormData, type QuotationDraft } from '../documents/document-drafts';
 import Modal from '../components/Modal';
 import SearchInput from '../components/SearchInput';
 import QuotationForm, { createEmptyQuotationDraft } from '../components/quotations/QuotationForm';
 import QuotationProductDetailModal from '../components/quotations/QuotationProductDetailModal';
 import QuotationSyncModal from '../components/quotations/QuotationSyncModal';
+import { formatMoney } from '../components/quotations/quotation-lines';
 import { useIsNarrow } from '../use-is-narrow';
 import { useHideOnScroll } from '../use-hide-on-scroll';
 
@@ -35,10 +39,8 @@ export interface QuotationPageProps {
   onStartCreateConsumed?: () => void;
 }
 
-interface QuotationListRow extends QuotationSummary {
-  itemCount?: number;
-  subtotalCents?: number;
-}
+/** 服务端分页页大小：报价单持续增长，列表不再一次性拉全量。 */
+const PAGE_SIZE = 50;
 
 const statusLabels: Record<QuotationStatus, string> = { draft: '草稿', sent: '已发送', won: '已成交', expired: '已失效' };
 const statusOptions: Array<{ value: 'all' | QuotationStatus; label: string }> = [
@@ -50,7 +52,11 @@ const statusOptions: Array<{ value: 'all' | QuotationStatus; label: string }> = 
 ];
 
 export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCustomerProducts, onSaveCustomerProduct, onCreateCustomer, startCreate, onStartCreateConsumed }: QuotationPageProps) {
-  const [rows, setRows] = useState<QuotationListRow[]>([]);
+  const [rows, setRows] = useState<QuotationSummary[]>([]);
+  /** 手机端「加载更多」累积行；桌面表格始终只渲染当前页 rows。 */
+  const [mobileRows, setMobileRows] = useState<QuotationSummary[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [filter, setFilter] = useState<'all' | QuotationStatus>('all');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -65,6 +71,8 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
   const [searchFocused, setSearchFocused] = useState(false);
   // 手机端搜索框悬浮在顶部：连续下滑收起，回滑展开；输入时锁住展开避免打字途中消失。
   const searchHidden = useHideOnScroll(narrow && !searchFocused);
+  // 搜索/翻页连续触发时，只认最后一次请求的结果，避免旧响应覆盖新响应。
+  const loadSeq = useRef(0);
 
   const notify = useCallback((message: string, tone: 'success' | 'error' | 'info' = 'info') => {
     onNotify?.(message, tone);
@@ -78,19 +86,34 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
     return customer;
   }, [onCreateCustomer]);
 
-  const load = useCallback(async () => {
+  // 搜索与筛选以服务端为准（覆盖单号/客户/联系人/电话/地址/产品名/SKU/规格），前端不再二次过滤。
+  const load = useCallback(async (targetPage: number, mode: 'replace' | 'append' = 'replace') => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
-      const result = await api.listQuotations({ status: filter, q: query.trim(), page: 1, pageSize: 100 });
+      const params = { status: filter, q: query.trim(), pageSize: PAGE_SIZE };
+      let result = await api.listQuotations({ ...params, page: targetPage });
+      let landedPage = targetPage;
+      // 删除后当前页可能变空：回退一页，避免停在空白页。
+      if (!result.rows.length && result.total > 0 && targetPage > 1) {
+        landedPage = targetPage - 1;
+        result = await api.listQuotations({ ...params, page: landedPage });
+      }
+      if (seq !== loadSeq.current) return;
+      setPage(landedPage);
+      setTotal(result.total);
       setRows(result.rows);
+      setMobileRows((current) => (mode === 'append' ? [...current, ...result.rows] : result.rows));
     } catch (error) {
+      if (seq !== loadSeq.current) return;
       notify(error instanceof Error ? error.message : '加载报价单失败', 'error');
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [filter, notify, query]);
 
-  useEffect(() => { void load(); }, [load]);
+  // 筛选/搜索词变化：回到第 1 页重新拉取。
+  useEffect(() => { void load(1); }, [load]);
   useEffect(() => {
     let active = true;
     void api.getCompanyProfile().then((company) => {
@@ -105,11 +128,6 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
     }).catch((error) => notify(error instanceof Error ? error.message : '加载客户档案失败', 'error'));
     return () => { active = false; };
   }, [notify]);
-
-  const visibleRows = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return rows.filter((row) => (filter === 'all' || row.status === filter) && (!needle || [row.number, row.customerName, row.contactName, row.contactPhone].join(' ').toLowerCase().includes(needle)));
-  }, [filter, query, rows]);
 
   const openNew = async () => {
     let profile = companyProfile;
@@ -147,27 +165,27 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
       const saved = nextDraft.id ? await api.updateQuotation(nextDraft.id, body) : await api.createQuotation(body);
       setDraft(quotationDetailToDraft(saved));
       notify('报价单已保存', 'success');
-      await load();
+      await load(page);
     } catch (error) {
       notify(error instanceof Error ? error.message : '保存报价单失败', 'error');
     } finally {
       setBusyId(undefined);
     }
   };
-  const setStatus = async (row: QuotationListRow, status: QuotationStatus) => {
+  const setStatus = async (row: QuotationSummary, status: QuotationStatus) => {
     if (row.status === status) return;
     setBusyId(row.id);
     try {
       await api.setQuotationStatus(row.id, status);
       notify(`报价单已更新为${statusLabels[status]}`, 'success');
-      await load();
+      await load(page);
     } catch (error) {
       notify(error instanceof Error ? error.message : '更新状态失败', 'error');
     } finally {
       setBusyId(undefined);
     }
   };
-  const remove = async (row: QuotationListRow) => {
+  const remove = async (row: QuotationSummary) => {
     const warning = row.status === 'won' ? `“${row.number}”已成交，删除后仍无法恢复。确定继续吗？` : `确定删除报价单“${row.number}”吗？`;
     if (!window.confirm(warning)) return;
     if (row.status === 'won' && !window.confirm('请再次确认：确实要删除这份已成交报价单？')) return;
@@ -175,14 +193,14 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
     try {
       await api.deleteQuotation(row.id, row.status === 'won');
       notify('报价单已删除', 'success');
-      await load();
+      await load(page);
     } catch (error) {
       notify(error instanceof Error ? error.message : '删除报价单失败', 'error');
     } finally {
       setBusyId(undefined);
     }
   };
-  const exportPdf = async (row: QuotationListRow) => {
+  const exportPdf = async (row: QuotationSummary) => {
     setBusyId(row.id);
     try {
       // App 壳里由原生写进手机「下载」并弹分享；浏览器里回退 blob 链接下载。
@@ -193,7 +211,7 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
       setBusyId(undefined);
     }
   };
-  const copyToSales = async (row: QuotationListRow) => {
+  const copyToSales = async (row: QuotationSummary) => {
     if (row.status !== 'won') return;
     setBusyId(row.id);
     try {
@@ -207,6 +225,10 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
     }
   };
 
+  const pageCount = totalPages(total, PAGE_SIZE);
+  const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(total, page * PAGE_SIZE);
+
   return <div className="page-shell quotation-page">
     <div className="quotation-page-head">
       <div className="quotation-heading-copy">
@@ -216,20 +238,21 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
       </div>
     </div>
     <div className="page-toolbar quotation-toolbar">
-      <SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索单号、客户、联系人、电话" />
+      <SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索单号、客户、联系人、产品" />
       <div className="segmented">{statusOptions.map((option) => <button key={option.value} className={`segmented-item${filter === option.value ? ' is-active' : ''}`} type="button" title={`筛选${option.label}报价单`} onClick={() => setFilter(option.value)}>{option.label}</button>)}</div>
-      <span className="toolbar-count">{visibleRows.length} 份</span>
-      <button className="icon-button" type="button" title="刷新报价列表" disabled={loading} onClick={() => void load()}><RefreshCw size={15} /></button>
+      <span className="toolbar-count">{total} 份</span>
+      <button className="icon-button" type="button" title="刷新报价列表" disabled={loading} onClick={() => void load(page)}><RefreshCw size={15} /></button>
       <button className="button button-primary" type="button" title="新建报价单" onClick={() => { void openNew(); }}><Plus size={15} />新建报价</button>
     </div>
 
     <section className="table-panel quotation-panel">
-      <div className="table-scroll quotation-table-desktop"><table className="data-table quotation-data-table"><thead><tr>{['报价单号', '日期', '客户', '产品数', '状态', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
-        <tbody>{visibleRows.map((row) => <tr key={row.id}>
+      <div className="table-scroll quotation-table-desktop"><table className="data-table quotation-data-table"><thead><tr>{['报价单号', '日期', '客户', '产品数', '金额', '状态', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
+        <tbody>{rows.map((row) => <tr key={row.id}>
           <td className="strong-cell" style={{ color: 'var(--color-accent)' }}>{row.number}</td>
           <td>{row.quotationDate}</td>
           <td><strong style={{ display: 'block' }}>{row.customerName || '-'}</strong><small style={{ color: 'var(--color-text-secondary)' }}>{[row.contactName, row.contactPhone].filter(Boolean).join(' · ')}</small></td>
-          <td>{row.itemCount ?? '-'}</td>
+          <td>{row.itemCount}</td>
+          <td className="quotation-amount-cell">{formatMoney(row.totalCents)}</td>
           <td><select className="toolbar-select" aria-label={`${row.number}状态`} value={row.status} disabled={busyId === row.id} onChange={(event) => void setStatus(row, event.target.value as QuotationStatus)}><option value="draft">草稿</option><option value="sent">已发送</option><option value="won">已成交</option><option value="expired">已失效</option></select></td>
           <td style={{ color: 'var(--color-text-secondary)' }}>{row.updatedAt.replace('T', ' ').slice(0, 16)}</td>
           <td><div className="row-actions">
@@ -245,7 +268,7 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
           </div></td>
         </tr>)}</tbody></table></div>
       <div className="quotation-card-list">
-        {visibleRows.map((row) => <article key={row.id} className="quotation-card">
+        {mobileRows.map((row) => <article key={row.id} className="quotation-card">
           <div className="quotation-card-head">
             <div className="quotation-card-title">
               <strong>{row.number}</strong>
@@ -254,8 +277,9 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
             <select className="toolbar-select" aria-label={`${row.number}状态`} value={row.status} disabled={busyId === row.id} onChange={(event) => void setStatus(row, event.target.value as QuotationStatus)}><option value="draft">草稿</option><option value="sent">已发送</option><option value="won">已成交</option><option value="expired">已失效</option></select>
           </div>
           <div className="quotation-card-grid">
-            <div className="quotation-card-field"><span>客户</span><strong>{row.customerName || '-'}</strong><em>{[row.contactName, row.contactPhone].filter(Boolean).join(' · ')}</em></div>
-            <div className="quotation-card-field"><span>产品数</span><strong>{row.itemCount ?? '-'}</strong></div>
+            <div className="quotation-card-field is-wide"><span>客户</span><strong>{row.customerName || '-'}</strong><em>{[row.contactName, row.contactPhone].filter(Boolean).join(' · ')}</em></div>
+            <div className="quotation-card-field"><span>产品数</span><strong>{row.itemCount}</strong></div>
+            <div className="quotation-card-field"><span>金额</span><strong>{formatMoney(row.totalCents)}</strong></div>
           </div>
           <div className="row-actions">
             <button className="icon-button" type="button" title="产品详情" disabled={busyId === row.id} onClick={() => setProductDetailId(row.id)}><PackageSearch size={14} /></button>
@@ -271,11 +295,27 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
         </article>)}
       </div>
       {loading && <div className="table-state">正在加载报价单...</div>}
-      {!loading && !visibleRows.length && <div className="table-state">暂无符合条件的报价单，点击“新建报价”开始。</div>}
+      {!loading && total === 0 && <div className="table-state">暂无符合条件的报价单，点击“新建报价”开始。</div>}
+      {!narrow && total > 0 && <div className="quotation-pagination">
+        <span>第 {rangeStart}-{rangeEnd} 条</span>
+        <div className="quotation-pagination-controls">
+          <div className="quotation-pager">
+            <button className="icon-button quotation-page-step" type="button" aria-label="上一页" title="上一页" disabled={page <= 1 || loading} onClick={() => void load(page - 1)}><ChevronLeft size={14} /></button>
+            {pageWindow(page, pageCount).map((entry, index) => entry === 'gap'
+              ? <span className="quotation-page-gap" key={`gap-${index}`}>…</span>
+              : <button className={entry === page ? 'quotation-page-button is-current' : 'quotation-page-button'} key={entry} type="button" aria-current={entry === page ? 'page' : undefined} disabled={loading} onClick={() => void load(entry)}>{entry}</button>)}
+            <button className="icon-button quotation-page-step" type="button" aria-label="下一页" title="下一页" disabled={page >= pageCount || loading} onClick={() => void load(page + 1)}><ChevronRight size={14} /></button>
+          </div>
+          <span>第 {page} / {pageCount} 页</span>
+        </div>
+      </div>}
+      {narrow && mobileRows.length < total && <div className="quotation-load-more">
+        <button className="button" type="button" disabled={loading} onClick={() => void load(page + 1, 'append')}>{loading ? '正在加载…' : `加载更多（还有 ${total - mobileRows.length} 份）`}</button>
+      </div>}
     </section>
 
     <Modal open={editorOpen} title={draft.number ? `编辑报价 · ${draft.number}` : '新建报价单'} onClose={() => setEditorOpen(false)} width={1200}>
-      <QuotationForm customers={customers} value={draft} saving={busyId === (draft.id ?? -1)} onChange={setDraft} onSave={save} onCancel={() => setEditorOpen(false)} onSaveCustomerProduct={onSaveCustomerProduct} onCreateCustomer={createCustomer} />
+      <QuotationForm customers={customers} value={draft} saving={busyId === (draft.id ?? -1)} onChange={setDraft} onSave={save} onCancel={() => setEditorOpen(false)} onSaveCustomerProduct={onSaveCustomerProduct} onCreateCustomer={createCustomer} onDownloadPdf={draft.id != null ? () => api.downloadQuotationPdf(draft.id as number) : undefined} />
     </Modal>
     <QuotationSyncModal
       open={syncQuotationId != null}

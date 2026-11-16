@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   Edit3,
   Image as ImageIcon,
   Plus,
@@ -9,13 +10,13 @@ import {
 import { useState } from 'react';
 import type {
   CompanySnapshot,
-  QuotationStatus,
 } from '../../../shared/documents';
 import { QUOTATION_PRICING_BASIS_LABELS, type QuotationPricingBasis } from '../../../shared/quotation-config';
 import type { Customer, CustomerProduct, CustomerProductSaveInput, CustomerSaveInput } from '../../../shared/customers';
 import type { QuotationDraft as SharedQuotationDraft } from '../../documents/document-drafts';
 import { createDocumentClientKey } from '../../documents/document-drafts';
 import CompanySnapshotFields from '../documents/CompanySnapshotFields';
+import PdfDownloadButton from '../documents/PdfDownloadButton';
 import CustomerSelector from '../customers/CustomerSelector';
 import QuotationItemsModal from './QuotationItemsModal';
 import { emptyLine, formatMoney, lineUnitPriceCents, validateQuotationLines, type QuotationLineDraft } from './quotation-lines';
@@ -44,6 +45,8 @@ export interface QuotationFormProps {
   onCancel: () => void;
   onSaveCustomerProduct?: (customerId: number, input: CustomerProductSaveInput) => Promise<CustomerProduct>;
   onCreateCustomer?: (input: CustomerSaveInput) => Promise<Customer>;
+  /** 已保存单据可在编辑器内直接导出 PDF（导出的是最近保存的版本）。 */
+  onDownloadPdf?: () => Promise<Blob>;
 }
 
 const fieldStyle = {
@@ -68,10 +71,12 @@ const sectionStyle = {
   background: 'transparent',
 };
 
-export default function QuotationForm({ customers, value, saving, onChange, onSave, onCancel, onSaveCustomerProduct, onCreateCustomer }: QuotationFormProps) {
+export default function QuotationForm({ customers, value, saving, onChange, onSave, onCancel, onSaveCustomerProduct, onCreateCustomer, onDownloadPdf }: QuotationFormProps) {
   const [itemsOpen, setItemsOpen] = useState(false);
   const [itemsError, setItemsError] = useState('');
   const [error, setError] = useState('');
+  // 公司显示低频调整：默认折叠，标题行带公司名与显示状态摘要，展开才露出控件。
+  const [companyOpen, setCompanyOpen] = useState(false);
 
   const setDraft = <K extends keyof QuotationDraft>(key: K, next: QuotationDraft[K]) => {
     onChange({ ...value, [key]: next });
@@ -113,31 +118,36 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
     if (validate()) void onSave(value);
   };
 
+  // 折叠态摘要：不展开也能看到公司名与当前打印了哪些公司要素。
+  const companyDisplaySummary = [
+    value.displayConfig.showLogo ? 'Logo' : null,
+    value.displayConfig.showCompanyPhone ? '电话' : null,
+    value.displayConfig.showCompanyAddress ? '地址' : null,
+    value.displayConfig.showContactPhone ? '客户电话' : null,
+  ].filter(Boolean).join(' / ') || '全部隐藏';
+
   return <div className="quotation-form" style={{ display: 'grid', gap: 14, fontSize: 12 }}>
     <section style={sectionStyle}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <strong style={{ fontSize: 13 }}>单据信息</strong>
-        <select aria-label="报价状态" value={value.status} onChange={(event) => setDraft('status', event.target.value as QuotationStatus)} style={{ ...fieldStyle, width: 112 }}>
-          <option value="draft">草稿</option><option value="sent">已发送</option><option value="won">已成交</option><option value="expired">已失效</option>
-        </select>
-      </div>
-      <div className="doc-form-grid is-two">
-        <label>报价日期<input type="date" value={value.quotationDate} onChange={(event) => setDraft('quotationDate', event.target.value)} style={fieldStyle} /></label>
-        <label>有效期至<input type="date" value={value.validUntil} onChange={(event) => setDraft('validUntil', event.target.value)} style={fieldStyle} /></label>
-      </div>
-      <CustomerSelector value={value.customerId} customers={customers} onChange={chooseCustomer} onCreateCustomer={onCreateCustomer} />
-      <div className="doc-form-grid is-three">
+      <strong style={{ fontSize: 13 }}>单据信息</strong>
+      <div className="doc-form-grid is-four">
+        <CustomerSelector value={value.customerId} customers={customers} onChange={chooseCustomer} onCreateCustomer={onCreateCustomer} />
         <label>客户名称<input value={value.customerName} onChange={(event) => setDraft('customerName', event.target.value)} style={fieldStyle} placeholder="可手动补充" /></label>
         <label>联系人<input value={value.contactName} onChange={(event) => setDraft('contactName', event.target.value)} style={fieldStyle} /></label>
         <label>联系电话<input value={value.contactPhone} onChange={(event) => setDraft('contactPhone', event.target.value)} style={fieldStyle} /></label>
       </div>
-      <label>客户地址/收件信息<textarea rows={2} value={value.customerAddress} onChange={(event) => setDraft('customerAddress', event.target.value)} style={{ ...fieldStyle, resize: 'vertical' }} /></label>
+      <label>客户地址/收件信息<textarea rows={1} value={value.customerAddress} onChange={(event) => setDraft('customerAddress', event.target.value)} style={{ ...fieldStyle, resize: 'vertical' }} /></label>
     </section>
 
     <section style={sectionStyle}>
-      <strong style={{ fontSize: 13 }}>公司显示</strong>
-      <CompanySnapshotFields value={value.companySnapshot} onChange={(companySnapshot) => setDraft('companySnapshot', companySnapshot)} display={{ showLogo: value.displayConfig.showLogo, showCompanyPhone: value.displayConfig.showCompanyPhone, showCompanyAddress: value.displayConfig.showCompanyAddress }} onDisplayChange={(display) => setDraft('displayConfig', { ...value.displayConfig, ...display })} />
-      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><input type="checkbox" checked={value.displayConfig.showContactPhone} onChange={(event) => setDraft('displayConfig', { ...value.displayConfig, showContactPhone: event.target.checked })} />显示客户联系电话</label>
+      <button type="button" aria-expanded={companyOpen} title={companyOpen ? '收起公司显示设置' : '展开公司显示设置'} onClick={() => setCompanyOpen((current) => !current)} style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'pointer', font: 'inherit', color: 'var(--color-text)', textAlign: 'left' }}>
+        <strong style={{ fontSize: 13, flexShrink: 0 }}>公司显示</strong>
+        <span style={{ flex: 1, minWidth: 0, color: 'var(--color-text-secondary)', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {value.companySnapshot.name.trim() || '未填写公司名'} · 显示 {companyDisplaySummary}
+        </span>
+        <ChevronDown size={14} style={{ flexShrink: 0, color: 'var(--color-text-muted)', transform: companyOpen ? 'rotate(180deg)' : undefined }} />
+      </button>
+      {companyOpen && <CompanySnapshotFields value={value.companySnapshot} onChange={(companySnapshot) => setDraft('companySnapshot', companySnapshot)} display={{ showLogo: value.displayConfig.showLogo, showCompanyPhone: value.displayConfig.showCompanyPhone, showCompanyAddress: value.displayConfig.showCompanyAddress }} onDisplayChange={(display) => setDraft('displayConfig', { ...value.displayConfig, ...display })} />}
+      {companyOpen && <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><input type="checkbox" checked={value.displayConfig.showContactPhone} onChange={(event) => setDraft('displayConfig', { ...value.displayConfig, showContactPhone: event.target.checked })} />显示客户联系电话</label>}
     </section>
 
     <section style={sectionStyle}>
@@ -197,6 +207,7 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
     {error && <div role="alert" style={{ color: 'var(--color-danger)', background: 'var(--color-danger-soft)', border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-ui)', padding: '8px 10px' }}>{error}</div>}
     <div className="doc-form-actions">
       <button type="button" className="button" title="取消编辑" onClick={onCancel}><X size={15} />取消</button>
+      {value.id != null && onDownloadPdf && <PdfDownloadButton number={value.number} download={onDownloadPdf} onError={setError} label="导出 PDF" className="button" />}
       <button type="button" className="button button-primary" title="保存报价单" disabled={saving} onClick={submit}><Save size={15} />{saving ? '正在保存' : '保存报价单'}</button>
     </div>
     <QuotationItemsModal
@@ -216,8 +227,8 @@ export default function QuotationForm({ customers, value, saving, onChange, onSa
 }
 
 export function createEmptyQuotationDraft(companySnapshot?: CompanySnapshot): QuotationDraft {
+  // 报价日期不再手填：新建自动取当天（服务端必填），编辑保留原日期。
   const today = new Date().toISOString().slice(0, 10);
-  const validUntil = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
   return {
     number: '',
     status: 'draft',
@@ -227,7 +238,8 @@ export function createEmptyQuotationDraft(companySnapshot?: CompanySnapshot): Qu
     contactName: '',
     contactPhone: '',
     customerAddress: '',
-    validUntil,
+    // 有效期不再手填：新建留空（PDF 不打印该项），历史单据已存值保留。
+    validUntil: '',
     remark: '',
     taxRate: '0',
     pricingBasis: 'shipping_ex_tax',

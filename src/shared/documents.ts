@@ -131,6 +131,8 @@ export interface QuotationSummary {
   contactName: string;
   contactPhone: string;
   totalCents: number;
+  /** 产品行数：列表 SQL 子查询带出，供列表「产品数」列展示。 */
+  itemCount: number;
   updatedAt: string;
 }
 

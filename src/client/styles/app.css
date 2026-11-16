@@ -6283,6 +6283,46 @@ select {
 
 /* 访问密码登录门样式已由多账号 AuthGate 的样式取代（见上方登录 / 管理员初始化段）。 */
 
+/* 报价单列表分页（服务端分页；视觉规格与产品库页码条一致） */
+.quotation-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-4) var(--space-7);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-subtle);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.quotation-pagination-controls { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
+.quotation-pager { display: inline-flex; align-items: center; gap: var(--space-1); }
+
+.quotation-page-button {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--color-text-secondary);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.quotation-page-button:hover { border-color: var(--color-accent-border); color: var(--tone-accent-text); background: var(--color-accent-soft); }
+.quotation-page-button.is-current { border-color: var(--color-accent-border); color: var(--tone-accent-text); background: var(--color-accent-soft); font-weight: var(--weight-semibold); }
+.quotation-page-button:disabled { opacity: .5; cursor: default; }
+.quotation-page-gap { padding: 0 var(--space-1); color: var(--color-text-muted); }
+.quotation-page-step:disabled { opacity: .4; cursor: default; }
+.quotation-page-step:disabled:hover { border-color: transparent; background: transparent; }
+.quotation-amount-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.quotation-load-more { display: none; }
+
 /* ===== 移动端卡片视图：报价 / 销售单 / 产品 / 客户产品 / 发货 ===== */
 /* 桌面端沿用原有表格；≤900px 由卡片列表接管（与订单、财务页同一套双视图模式）。 */
 .quotation-card-list, .sales-doc-card-list, .products-card-list, .customer-product-card-list { display: none; }
@@ -6335,6 +6375,11 @@ select {
   .quotation-card-field strong { color: var(--color-text-strong); font-size: var(--text-sm); font-weight: var(--weight-medium); overflow-wrap: anywhere; }
   .quotation-card-field em { font-style: normal; color: var(--color-text-muted); font-size: var(--text-2xs); }
   .quotation-card .row-actions { flex-wrap: wrap; gap: var(--space-4) var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--color-divider); }
+  .quotation-card-field.is-wide { grid-column: 1 / -1; }
+  .quotation-pagination { gap: var(--space-3); padding: var(--space-4) var(--space-5); }
+  .quotation-page-button, .quotation-page-step { min-width: 34px; height: 34px; }
+  .quotation-load-more { display: grid; padding: 0 var(--space-4) var(--space-4); }
+  .quotation-load-more .button { width: 100%; justify-content: center; }
 
   /* —— 销售单卡片 —— */
   .sales-doc-table-desktop { display: none; }

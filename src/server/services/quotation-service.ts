@@ -19,20 +19,30 @@ import type {
   QuotationPriceTier,
   QuotationStatus,
 } from '../../shared/documents.js';
-import {
-  centsToYuan,
-  yuanToCents,
-} from '../../shared/money.js';
+import { centsToYuan } from '../../shared/money.js';
 import {
   calculateDocumentTotalsForBasis,
-  calculateQuotationConfigPrice,
   isQuotationPricingBasis,
   normalizeQuotationConfiguration,
-  pricingBasisIncludesShipping,
-  pricingBasisIncludesTax,
   type QuotationItemConfiguration,
   type QuotationPricingBasis,
 } from '../../shared/quotation-config.js';
+import {
+  commitAssetBatches,
+  deleteAssetFiles,
+  deleteReplacedAssetFiles,
+  isRecord,
+  normalizeCompanySnapshot,
+  normalizeCustomFields,
+  normalizeDate,
+  normalizeDisplayConfig,
+  normalizeParameters,
+  normalizePriceCents,
+  normalizePriceTiers,
+  normalizeText,
+  recomputeQuotationConfiguration,
+  rollbackAssetBatches,
+} from './quotation-save.js';
 import {
   DocumentValidationError,
   validateDocumentLines,
@@ -208,146 +218,11 @@ interface PreparedSave {
   assetPaths: Set<string>;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function normalizeText(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function normalizeParameters(value: unknown): string {
-  return typeof value === 'string' ? value : '';
-}
-
-function normalizeDate(value: unknown, field: string): string {
-  const normalized = normalizeText(value);
-  const parsed = new Date(`${normalized}T00:00:00.000Z`);
-  if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(normalized) ||
-    Number.isNaN(parsed.getTime()) ||
-    parsed.toISOString().slice(0, 10) !== normalized
-  ) {
-    throw new DocumentValidationError(`${field}无效`, field);
-  }
-  return normalized;
-}
-
 function normalizeStatus(value: unknown, field = 'status'): QuotationStatus {
   if (typeof value === 'string' && (QUOTATION_STATUSES as readonly string[]).includes(value)) {
     return value as QuotationStatus;
   }
   throw new QuotationServiceError('INVALID_STATUS', '报价单状态无效，可选值：草稿、已发送、已成交、已失效', field);
-}
-
-function normalizeCompanySnapshot(value: Partial<CompanySnapshot> | undefined, fallback: CompanySnapshot): CompanySnapshot {
-  return {
-    name: normalizeText(value?.name ?? fallback.name),
-    logoRelativePath: value?.logoRelativePath === undefined
-      ? (fallback.logoRelativePath ?? null)
-      : (value.logoRelativePath ? normalizeText(value.logoRelativePath) : null),
-    phone: normalizeText(value?.phone ?? fallback.phone),
-    address: normalizeText(value?.address ?? fallback.address),
-    defaultIssuer: normalizeText(value?.defaultIssuer ?? fallback.defaultIssuer),
-    wechatQrRelativePath: value?.wechatQrRelativePath === undefined
-      ? (fallback.wechatQrRelativePath ?? null)
-      : (value.wechatQrRelativePath ? normalizeText(value.wechatQrRelativePath) : null),
-  };
-}
-
-const DEFAULT_COLUMNS: QuotationDisplayConfig['columns'] = {
-  image: true,
-  name: true,
-  specification: true,
-  unitPrice: true,
-  tierPrice: true,
-  remark: true,
-};
-
-function normalizeDisplayConfig(input: QuotationInput['displayConfig']): QuotationDisplayConfig {
-  return {
-    showLogo: input?.showLogo ?? false,
-    showCompanyPhone: input?.showCompanyPhone ?? false,
-    showCompanyAddress: input?.showCompanyAddress ?? false,
-    showContactPhone: input?.showContactPhone ?? true,
-    showTax: input?.showTax ?? true,
-    showTaxIncludedTotal: input?.showTaxIncludedTotal ?? true,
-    columns: { ...DEFAULT_COLUMNS, ...(input?.columns ?? {}) },
-  };
-}
-
-function normalizePriceCents(item: QuotationItemInput, index: number): number {
-  if (Object.prototype.hasOwnProperty.call(item, 'unitPriceCents')) {
-    const value = item.unitPriceCents;
-    if (!Number.isFinite(value) || !Number.isInteger(value)) {
-      throw new DocumentValidationError('单价必须是整数分', `items.${index}.unitPriceCents`);
-    }
-    if ((value as number) < 0) throw new DocumentValidationError('单价不能小于 0', `items.${index}.unitPriceCents`);
-    return value as number;
-  }
-  const value = item.unitPrice;
-  if (!Number.isFinite(value)) throw new DocumentValidationError('单价必须是有效数字', `items.${index}.unitPriceCents`);
-  try {
-    return yuanToCents(value as number);
-  } catch (error) {
-    throw new DocumentValidationError((error as Error).message, `items.${index}.unitPriceCents`);
-  }
-}
-
-const MAX_PRICE_TIERS = 8;
-
-function normalizePriceTiers(item: QuotationItemInput, index: number): QuotationPriceTier[] {
-  const tiers = item.priceTiers;
-  if (tiers === undefined || tiers === null) return [];
-  if (!Array.isArray(tiers)) {
-    throw new DocumentValidationError('数量区间价必须是数组', `items.${index}.priceTiers`);
-  }
-  if (tiers.length > MAX_PRICE_TIERS) {
-    throw new DocumentValidationError(`每行产品最多 ${MAX_PRICE_TIERS} 个数量区间`, `items.${index}.priceTiers`);
-  }
-
-  const normalized = tiers.map((tier, tierIndex): QuotationPriceTier => {
-    const field = `items.${index}.priceTiers.${tierIndex}`;
-    if (tier == null || typeof tier !== 'object') {
-      throw new DocumentValidationError('数量区间必须是对象', field);
-    }
-    const record = tier as Partial<QuotationPriceTierInput>;
-    const minQuantity = Number(record.minQuantity);
-    if (!Number.isFinite(minQuantity) || minQuantity < 0) {
-      throw new DocumentValidationError('区间起始数量必须是大于等于 0 的数字', `${field}.minQuantity`);
-    }
-    let maxQuantity: number | null = null;
-    if (record.maxQuantity !== undefined && record.maxQuantity !== null) {
-      maxQuantity = Number(record.maxQuantity);
-      if (!Number.isFinite(maxQuantity) || maxQuantity < minQuantity) {
-        throw new DocumentValidationError('区间截止数量必须大于等于起始数量', `${field}.maxQuantity`);
-      }
-    }
-    let unitPriceCents: number;
-    if (record.unitPriceCents !== undefined) {
-      unitPriceCents = Number(record.unitPriceCents);
-      if (!Number.isSafeInteger(unitPriceCents) || unitPriceCents < 0) {
-        throw new DocumentValidationError('区间单价必须是大于等于 0 的整数分', `${field}.unitPriceCents`);
-      }
-    } else if (record.unitPrice !== undefined) {
-      const yuan = Number(record.unitPrice);
-      if (!Number.isFinite(yuan) || yuan < 0) {
-        throw new DocumentValidationError('区间单价必须是有效数字', `${field}.unitPrice`);
-      }
-      unitPriceCents = yuanToCents(yuan);
-    } else {
-      throw new DocumentValidationError('区间单价不能为空', `${field}.unitPriceCents`);
-    }
-    return { minQuantity, maxQuantity, unitPriceCents };
-  });
-
-  const sorted = [...normalized].sort((a, b) => a.minQuantity - b.minQuantity);
-  for (let i = 1; i < sorted.length; i += 1) {
-    if (sorted[i].minQuantity <= sorted[i - 1].minQuantity) {
-      throw new DocumentValidationError('数量区间的起始数量必须从小到大递增', `items.${index}.priceTiers`);
-    }
-  }
-  return sorted;
 }
 
 function asDetail(value: QuotationRepositoryDetail): QuotationServiceDetail {
@@ -468,7 +343,7 @@ export class QuotationService {
       ? input.pricingBasis
       : existing?.pricingBasis ?? 'shipping_ex_tax';
     const quotationDate = normalizeDate(input.quotationDate, '报价日期');
-    const customFields = this.normalizeCustomFields(input.customFields ?? []);
+    const customFields = normalizeCustomFields(input.customFields ?? []);
     const productRows: QuotationPersistenceItem[] = [];
     const assetInputs: DocumentItemImageInput[] = [];
     const assetKeys = new Set<string>();
@@ -523,28 +398,8 @@ export class QuotationService {
         configuration = undefined;
       }
       if (configuration) {
-        const taxPercent = pricingBasisIncludesTax(pricingBasis) ? taxRateBps / 100 : 0;
-        const shippingCents = pricingBasisIncludesShipping(pricingBasis) ? configuration.shippingCostCents : 0;
-        const recomputed = calculateQuotationConfigPrice({
-          baseCostCents: configuration.baseCostCents,
-          packagingCents: configuration.packaging?.costCents ?? 0,
-          otherCostCents: configuration.otherCostCents,
-          accessoryCents: configuration.accessoryPriceCents,
-          batteryUnitPriceCents: configuration.battery?.batteryUnitPriceCents ?? 0,
-          batteryCount: configuration.battery?.batteryCount ?? 0,
-          chargerPriceCents: configuration.battery?.chargerPriceCents ?? 0,
-          shippingCents,
-          taxPercent,
-          markupPercent: configuration.markupPercent,
-        });
-        configuration = {
-          ...configuration,
-          priceBasis: pricingBasis,
-          taxPercent,
-          totalCostCents: recomputed.totalCostCents,
-          computedSalePriceCents: recomputed.salePriceCents,
-        };
-        if (!configuration.priceOverridden) unitPriceCents = recomputed.salePriceCents;
+        configuration = recomputeQuotationConfiguration(configuration, pricingBasis, taxRateBps);
+        if (!configuration.priceOverridden) unitPriceCents = configuration.computedSalePriceCents;
       }
       const image = this.resolveImage(itemInput, product);
       const key = normalizeText(itemInput.clientKey) || `item-${index}`;
@@ -737,22 +592,6 @@ export class QuotationService {
     };
   }
 
-  private normalizeCustomFields(fields: readonly QuotationCustomFieldSaveInput[]): QuotationPersistenceInput['customFields'] {
-    return fields.map((field, index) => {
-      if (field.placement !== 'header' && field.placement !== 'footer') {
-        throw new DocumentValidationError('自定义字段位置无效', `customFields.${index}.placement`);
-      }
-      const label = normalizeText(field.label);
-      if (!label) throw new DocumentValidationError('自定义字段名称不能为空', `customFields.${index}.label`);
-      return {
-        placement: field.placement,
-        label,
-        value: normalizeText(field.value),
-        sortOrder: Number.isInteger(field.sortOrder) && (field.sortOrder as number) >= 0 ? field.sortOrder as number : index,
-      };
-    });
-  }
-
   private requireDetail(id: number): QuotationServiceDetail {
     const detail = this.get(id);
     if (!detail) throw new QuotationServiceError('QUOTATION_NOT_FOUND', '报价单不存在');
@@ -760,22 +599,19 @@ export class QuotationService {
   }
 
   private async commitAssets(batches: readonly PreparedDocumentAssetBatch[]): Promise<void> {
-    if (!this.assetManager) return;
-    for (const batch of batches) await this.assetManager.commit(batch);
+    await commitAssetBatches(this.assetManager, batches);
   }
 
   private async rollbackAssets(batches: readonly PreparedDocumentAssetBatch[]): Promise<void> {
-    if (!this.assetManager) return;
-    await Promise.all(batches.map((batch) => this.assetManager!.rollback(batch)));
+    await rollbackAssetBatches(this.assetManager, batches);
   }
 
   private async deleteAssets(paths: readonly string[]): Promise<void> {
-    if (!this.assetManager?.deleteFile) return;
-    await Promise.all(paths.map((path) => this.assetManager!.deleteFile!(path)));
+    await deleteAssetFiles(this.assetManager, paths);
   }
 
   private async deleteReplacedAssets(previousPaths: readonly string[], currentPaths: Set<string>): Promise<void> {
-    await this.deleteAssets(previousPaths.filter((path) => !currentPaths.has(path)));
+    await deleteReplacedAssetFiles(this.assetManager, previousPaths, currentPaths);
   }
 }
 

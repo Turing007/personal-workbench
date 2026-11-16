@@ -2,6 +2,8 @@ import type { QuotationServiceDetail } from '../services/quotation-service.js';
 
 export interface QuotationTemplateOptions {
   readFile?: (relativePath: string) => Promise<Buffer>;
+  /** 缩略图服务提供的压缩派生图（480px webp）；不可用时回退原图。 */
+  readImage?: (relativePath: string) => Promise<Buffer>;
 }
 
 type QuotationItem = QuotationServiceDetail['items'][number];
@@ -38,10 +40,21 @@ function mimeTypeForPath(relativePath: string): string {
 
 async function readDataUrl(
   relativePath: string | null | undefined,
-  readFile: QuotationTemplateOptions['readFile'],
+  options: QuotationTemplateOptions,
 ): Promise<string | undefined> {
-  if (!relativePath || !readFile) return undefined;
-  const content = await readFile(relativePath);
+  if (!relativePath) return undefined;
+  // 18mm 打印 300dpi 只需约 213px：内联 480px 派生图足够清晰，
+  // 避免多 MB 原图把 HTML 撑到几十 MB（导出慢、内存峰值高）。
+  if (options.readImage) {
+    try {
+      const content = await options.readImage(relativePath);
+      return `data:image/webp;base64,${content.toString('base64')}`;
+    } catch {
+      // 派生图不可用（极少数格式）：回退原图，保证导出不中断。
+    }
+  }
+  if (!options.readFile) return undefined;
+  const content = await options.readFile(relativePath);
   return `data:${mimeTypeForPath(relativePath)};base64,${content.toString('base64')}`;
 }
 
@@ -105,15 +118,15 @@ export async function renderQuotationHtml(
   const enabledColumns = columns.filter((column) => quotation.displayConfig.columns[column.key]);
   const imageDataUrls = new Map<number, string>();
 
-  if (quotation.displayConfig.columns.image && options.readFile) {
+  if (quotation.displayConfig.columns.image && (options.readFile || options.readImage)) {
     await Promise.all(quotation.items.map(async (item) => {
-      const dataUrl = await readDataUrl(item.imageRelativePath, options.readFile);
+      const dataUrl = await readDataUrl(item.imageRelativePath, options);
       if (dataUrl) imageDataUrls.set(item.id, dataUrl);
     }));
   }
 
   const logoDataUrl = quotation.displayConfig.showLogo
-    ? await readDataUrl(quotation.companySnapshot.logoRelativePath, options.readFile)
+    ? await readDataUrl(quotation.companySnapshot.logoRelativePath, options)
     : undefined;
   const companyDetails = [
     quotation.displayConfig.showCompanyPhone

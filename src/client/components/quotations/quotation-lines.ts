@@ -52,6 +52,11 @@ export function formatMoney(cents: number): string {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(cents / 100);
 }
 
+/** 配置表/弹层用的紧凑金额：¥123.45（无千分位，与原有显示一致）。 */
+export function formatCentsPlain(cents: number): string {
+  return `¥${(Math.max(0, cents) / 100).toFixed(2)}`;
+}
+
 /** 校验产品行内容与数量区间价，返回错误文案；合法时返回 null。 */
 export function validateQuotationLines(items: QuotationLineDraft[]): string | null {
   if (!items.length) return '至少需要一行产品';
