@@ -8,6 +8,7 @@ import OrderDetailModal from '../components/OrderDetailModal';
 import OrderItemsTable from '../components/OrderItemsTable';
 import OrderForm, { type CustomerProduct, type OrderDraft, type OrderStatus } from '../components/OrderForm';
 import OrderExpandPanel from '../components/orders/OrderExpandPanel';
+import OrderProductQuickList from '../components/orders/OrderProductQuickList';
 import PromoteCustomerModal from '../components/orders/PromoteCustomerModal';
 import PrintWorkspace from '../components/PrintWorkspace';
 import StatusCards from '../components/StatusCards';
@@ -234,10 +235,10 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
   const filterRail = useFilterRailOpen('orders');
   // 展开行 colspan 必须和当前实际可见列一致；否则多出的 colspan 会挤窄产品列。
   const orderTableColSpan = viewportWidth <= 900
-    ? 10
-    : viewportWidth <= 1199 ? 7
-      : viewportWidth <= 1419 ? 8
-        : (viewportWidth <= 1601 && filterRail.open) ? 8 : 10;
+    ? 9
+    : viewportWidth <= 1199 ? 6
+      : viewportWidth <= 1599 ? 7
+        : (viewportWidth <= 1601 && filterRail.open) ? 7 : 9;
 
   const visibleOrders = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -406,7 +407,6 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
           <thead><tr><th className="order-check-cell"><input type="checkbox" checked={allPrintableSelected} onChange={toggleAll} aria-label="选择当前列表待打印箱唛订单" /></th>{[
             ['订单号', 'order-no-cell'],
             ['客户 / 收件人', 'order-customer-cell'],
-            ['下单时间', 'order-date-cell'],
             ['产品详情', 'order-product-cell'],
             ['总箱数', 'order-box-cell'],
             ['金额', 'order-amount-cell is-right'],
@@ -415,18 +415,17 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
             ['操作', 'order-ops-cell'],
           ].map(([title, className]) => <th key={title} className={className}>{title}</th>)}</tr></thead>
           <tbody>{visibleOrders.map((order) => {
-            const id = orderKey(order); const boxCount = orderBoxCount(order); const productSummary = order.items.map((item) => item.name).filter(Boolean).join('、'); const paymentStatus = orderPaymentStatus(order);
+            const id = orderKey(order); const boxCount = orderBoxCount(order); const paymentStatus = orderPaymentStatus(order);
             const expanded = expandedIds.includes(id);
             return <Fragment key={id}>
               <tr className={expanded ? 'is-expanded' : undefined}>
                 <td className="order-check-cell"><input type="checkbox" disabled={!isUnshippedOrder(order) || isDraftOrder(order)} checked={isUnshippedOrder(order) && !isDraftOrder(order) && selectedIds.includes(id)} onChange={() => setSelectedIds((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id])} aria-label={`选择订单${order.orderNo}`} /></td>
-                <td className="strong-cell order-no-cell"><div className="order-no-wrap">{expandToggle(order)}<span>{order.orderNo}</span></div></td>
+                <td className="strong-cell order-no-cell"><div className="order-no-stack"><div className="order-no-wrap">{expandToggle(order)}<span title={order.orderNo}>{order.orderNo}</span></div><span className="order-no-date">{order.orderedAt.replace('T', ' ')}</span></div></td>
                 <td className="order-customer-cell"><div className="order-party"><strong className="order-party-customer" title={order.customerName || undefined}>{order.customerName || '未填客户'}{order.customerId == null && order.customerName?.trim() && <span className="badge badge-neutral" style={{ marginLeft: 5 }}>临时</span>}</strong><span className="order-party-recipient" title={order.recipientName || undefined}>收件人：{order.recipientName || '—'}</span></div></td>
-                <td>{order.orderedAt.replace('T', ' ')}</td>
-                <td className="order-product-cell"><button type="button" className="link-button order-product-link" title={productSummary} onClick={() => setProductsOrder(order)}>{productSummary || '查看明细'}</button></td>
+                <td className="order-product-cell"><OrderProductQuickList order={order} onOpen={() => setProductsOrder(order)} /></td>
                 <td className="order-box-cell">{boxCount}</td>
                 <td className="amount order-amount-cell"><div>¥ {order.amount || '0.00'}</div><div className="payment-sub" style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</div></td>
-                <td className="order-status-cell"><span className={statusBadgeClass(order.status)}>{order.status ? statusLabels[order.status] : '-'}</span><div className={`status-sub ${order.labelPrintedAt ? 'is-printed' : 'is-pending'}`}>{order.status === 'draft' ? '草稿订单，发布后进入流程' : order.labelPrintedAt ? `已打印箱唛 · ${formatDateTime(order.labelPrintedAt)}` : '箱唛待打印'}</div></td>
+                <td className="order-status-cell"><span className={statusBadgeClass(order.status)}>{order.status ? statusLabels[order.status] : '-'}</span><div className={`status-sub ${order.labelPrintedAt ? 'is-printed' : 'is-pending'}`} title={order.labelPrintedAt ? `箱唛打印时间：${formatDateTime(order.labelPrintedAt)}` : undefined}>{order.status === 'draft' ? '草稿订单，发布后进入流程' : order.labelPrintedAt ? '已打印箱唛' : '箱唛待打印'}</div></td>
                 <td className="order-tracking-cell">{order.trackingNo || '—'}</td>
                 <td className="order-ops-cell">{renderOrderActions(order)}</td>
               </tr>
@@ -437,7 +436,7 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
         {!visibleOrders.length && <div className="table-state">暂无符合条件的订单</div>}
       </div>
       <div className="orders-card-list" aria-label="订单卡片列表">{visibleOrders.map((order) => {
-        const boxCount = orderBoxCount(order); const productSummary = order.items.map((item) => item.name).filter(Boolean).join('、'); const paymentStatus = orderPaymentStatus(order);
+        const boxCount = orderBoxCount(order); const paymentStatus = orderPaymentStatus(order);
         const expanded = expandedIds.includes(orderKey(order));
         return <article key={orderKey(order)} className={`order-card${expanded ? ' is-expanded' : ''}`}>
           <div className="order-card-head">
@@ -446,7 +445,7 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
             {renderCardStatus(order)}
           </div>
           <div className="order-card-mid">
-            <button type="button" className="order-card-products" title={productSummary} onClick={() => setProductsOrder(order)}>{productSummary || '查看产品明细'}</button>
+            <OrderProductQuickList order={order} className="order-card-products" onOpen={() => setProductsOrder(order)} />
             <strong className="order-card-amount">¥ {order.amount || '0.00'}</strong>
           </div>
           <div className="order-card-meta">

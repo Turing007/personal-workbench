@@ -671,6 +671,8 @@ describe('订单号基础设施', () => {
     const images = await app.inject({ method: 'GET', url: `/api/orders/${orderId}/items-images` });
     expect(images.statusCode).toBe(200);
     expect(images.json().data.itemImages[orderItemId]).toEqual([{ url: '/files/products/test.png', name: 'test.png', mimeType: 'image/png' }]);
+    const detail = await app.inject({ method: 'GET', url: `/api/orders/${orderId}/detail` });
+    expect(detail.json().data.itemImages[orderItemId]).toEqual([{ url: '/files/products/test.png', name: 'test.png', mimeType: 'image/png' }]);
 
     database.close();
   });

@@ -386,6 +386,7 @@ export async function registerOrderRoutes(app: FastifyInstance, options: OrderRo
         paymentProofs: mapProofs(service.listPaymentProofs(orderId)),
         contracts: mapContracts(service.listContracts(orderId)),
         orderDetailImages: mapOrderDetailImages(service.listOrderDetailImages(orderId)),
+        itemImages: options.repositories.getOrderItemImages(orderId),
         financeSummary,
       });
     }, reply),

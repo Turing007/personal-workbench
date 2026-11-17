@@ -31,7 +31,7 @@ test('订单展开的产品明细带产品图', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const stamp = Date.now();
   const createdProduct = await page.request.post('/api/products', {
-    data: { name: `E2E展开带图${stamp}`, status: 'active', packaging: [{ name: '彩盒包装', packCount: 10, innerWeight: 0.5, outerSize: '40×30×25', outerWeight: 8 }] },
+    data: { name: `E2E展开带图${stamp}`, specification: '12V 100Ah', status: 'active', packaging: [{ name: '彩盒包装', packCount: 10, innerWeight: 0.5, outerSize: '40×30×25', outerWeight: 8 }] },
   });
   expect(createdProduct.ok()).toBe(true);
   const product = (await createdProduct.json()).data as { id: string };
@@ -65,11 +65,28 @@ test('订单展开的产品明细带产品图', async ({ page }) => {
     await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
     await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(`E2E-IMG-${stamp}`);
     const row = page.locator('.orders-table-desktop tbody tr', { hasText: `E2E-IMG-${stamp}` }).first();
+    await expect(page.locator('.orders-data-table thead')).not.toContainText('下单时间');
+    await expect(row.locator('.order-no-cell')).toContainText(`E2E-IMG-${stamp}`);
+    await expect(row.locator('.order-no-date')).toHaveText(dateInputValue());
+    const productCell = row.locator('.order-product-cell');
+    await expect(productCell).toContainText(`E2E展开带图${stamp}`);
+    await expect(productCell).toContainText('12V 100Ah');
+    await expect(productCell).toContainText('2 件');
+    await expect(productCell.locator('.order-product-quick-thumb img')).toHaveAttribute('src', /\/api\/thumbs\/240\//);
+    expect(await productCell.locator('.order-product-quick-list').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(3);
     await row.getByRole('button', { name: `展开订单 E2E-IMG-${stamp}` }).click();
     const panel = page.locator('.order-expand-row .order-expand-panel');
     await expect(panel.locator('.order-expand-product-thumb img')).toHaveCount(1);
     await expect(panel.locator('.order-expand-product-thumb img')).toBeVisible();
     await expect(panel.locator('.order-expand-product-thumb img')).toHaveAttribute('src', /\/api\/thumbs\/240\//);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const card = page.locator('.orders-card-list .order-card', { hasText: `E2E-IMG-${stamp}` }).first();
+    const cardProducts = card.locator('.order-card-products');
+    await expect(cardProducts).toContainText('12V 100Ah');
+    await expect(cardProducts).toContainText('2 件');
+    await expect(cardProducts.locator('.order-product-quick-thumb img')).toBeVisible();
+    expect(await cardProducts.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2);
   } finally {
     await page.request.delete(`/api/orders/${orderId}`);
     await page.request.delete(`/api/customer-products/${customerProduct.id}`);
@@ -108,6 +125,31 @@ test('订单桌面行内展开显示产品、收件信息和财务摘要，批�
 
     await row.getByRole('button', { name: `收起订单 ${orderNo}` }).click();
     await expect(panel).toHaveCount(0);
+  } finally {
+    await page.request.delete(`/api/orders/${orderId}`);
+  }
+});
+
+test('状态列只显示箱唛已打印，打印时间通过悬停提示查看', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const orderNo = `E2E-PRINT-HINT-${Date.now()}`;
+  const orderId = await seedOrder(page, orderNo);
+  try {
+    const labels = await page.request.get(`/api/orders/${orderId}/labels`);
+    expect(labels.ok()).toBeTruthy();
+    const labelId = Number((await labels.json()).data.labels[0].id);
+    const printed = await page.request.post('/api/labels/print-history', {
+      data: { orderIds: [orderId], labels: [{ orderId, id: labelId }], actionType: 'print' },
+    });
+    expect(printed.ok()).toBeTruthy();
+
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
+    await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(orderNo);
+    const statusText = page.locator('.orders-table-desktop tbody tr', { hasText: orderNo }).first().locator('.order-status-cell .status-sub');
+    await expect(statusText).toHaveText('已打印箱唛');
+    await expect(statusText).not.toContainText(/\d{4}/);
+    await expect(statusText).toHaveAttribute('title', /^箱唛打印时间：/);
   } finally {
     await page.request.delete(`/api/orders/${orderId}`);
   }

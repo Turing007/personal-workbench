@@ -147,6 +147,7 @@ export interface ApiOrderDetail extends ApiOrderRow {
   payment_note: string;
   remark: string;
   items: ApiOrderItemDetail[];
+  itemImages?: Record<number, Array<{ url: string; name: string; mimeType: string }>>;
   labels: Array<Record<string, unknown>>;
   paymentProofs: ApiOrderPaymentProof[];
   contracts: ApiOrderContract[];
