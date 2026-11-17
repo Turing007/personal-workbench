@@ -18,7 +18,7 @@ import type { Customer } from '../shared/customers';
 import type { Company } from '../shared/companies';
 import OrdersPage, { fallbackLabels } from './pages/OrdersPage';
 import DashboardPage from './pages/DashboardPage';
-import { getBatchAdvancePlan, type BatchAdvanceAction } from './order-workflow';
+import { getBatchAdvancePlan, getOrderRollbackAction, type BatchAdvanceAction } from './order-workflow';
 import ProductsPage from './pages/ProductsPage';
 import CatalogPage from './pages/CatalogPage';
 import CustomerProductsPage from './pages/CustomerProductsPage';
@@ -32,6 +32,7 @@ import WaterSlipPage from './pages/WaterSlipPage';
 import StockPage from './pages/StockPage';
 import {
   advanceOrderStatus,
+  rollbackOrderStatus,
   createBackup,
   getAutoBackupStatus,
   deleteProduct,
@@ -705,6 +706,19 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     }
     try { await advanceOrderStatus(Number(order.id), status); await loadOrders(); notify(`订单 ${order.orderNo} 已推进到下一状态`, 'success'); } catch (error) { notify((error as { message?: string }).message ?? '状态推进失败', 'error'); }
   };
+  const rollback = async (order: OrderDraft, status: OrderStatus) => {
+    if (!order.id) return;
+    const action = getOrderRollbackAction(order.status);
+    if (!action || action.target !== status) return;
+    if (!window.confirm(`确定把订单“${order.orderNo}”${action.label}吗？\n物流单号、箱唛打印记录、订单附件和收款数据都会保留。`)) return;
+    try {
+      await rollbackOrderStatus(Number(order.id), action.target);
+      await loadOrders();
+      notify(`订单 ${order.orderNo} 已${action.label}`, 'success');
+    } catch (error) {
+      notify((error as { message?: string }).message ?? '订单状态回退失败', 'error');
+    }
+  };
   // 批量推进：一键备货 / 一键打包 / 一键发货，逐单推进、单单容错，结束后统一汇总。
   const batchAdvance = async (selected: OrderDraft[], action: BatchAdvanceAction) => {
     const actionLabels = { stock: '备货', pack: '打包', ship: '发货' } as const;
@@ -890,7 +904,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     {active === 'dashboard' && <DashboardPage orders={orders} statusCounts={statusCounts} onOpenOrders={(status) => { if (status) setOrdersInitialStatus(status); navigate('orders'); }} onOpenFinance={() => navigate('finance')} onOpenWaterSlips={(status) => { if (status) setWaterInitialStatus(status); navigate('water-slips'); }} onNewOrder={() => { setOrdersStartCreate(true); navigate('orders'); }} onNewQuotation={() => { setQuotationStartCreate(true); navigate('quotations'); }} onNewProduct={() => { setProductStartCreate(true); navigate('products'); }} onRefresh={loadOrders} />}
     {active === 'finance' && <FinancePage onNotify={notify} initialOrderId={financeInitialOrderId} returnOrderId={financeReturnOrderId} customers={customers} companies={companies} onCompaniesChanged={loadCompanies} onReturnToOrder={(orderId) => { setOrdersInitialOrderId(orderId); setFinanceReturnOrderId(undefined); navigate('orders'); }} />}
     {active === 'water-slips' && <WaterSlipPage companies={companies} onNotify={notify} initialStatus={waterInitialStatus} onInitialFiltersConsumed={() => setWaterInitialStatus(undefined)} onOpenOrder={(orderId) => { setOrdersInitialOrderId(orderId); navigate('orders'); }} onOpenFinance={(orderId) => { setFinanceInitialOrderId(orderId); setFinanceReturnOrderId(orderId); navigate('finance'); }} />}
-    {active === 'orders' && <OrdersPage orders={orders} customers={customers} companies={companies} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} initialStatus={ordersInitialStatus} onInitialStatusConsumed={() => setOrdersInitialStatus(undefined)} startCreate={ordersStartCreate} onStartCreateConsumed={() => setOrdersStartCreate(false)} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); setFinanceReturnOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} onRefreshOrders={async () => { await Promise.all([loadOrders(), loadCustomers()]); }} onNotify={notify} />}
+    {active === 'orders' && <OrdersPage orders={orders} customers={customers} companies={companies} statusCounts={statusCounts} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} initialStatus={ordersInitialStatus} onInitialStatusConsumed={() => setOrdersInitialStatus(undefined)} startCreate={ordersStartCreate} onStartCreateConsumed={() => setOrdersStartCreate(false)} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onRollbackStatus={(order, status) => { void rollback(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onOpenShipping={(order) => { setShippingInitialOrder(order); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); setFinanceReturnOrderId(Number(order.id)); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} onRefreshOrders={async () => { await Promise.all([loadOrders(), loadCustomers()]); }} onNotify={notify} />}
     {active === 'stock' && <StockPage onNotify={notify} systemProducts={products} />}
     {active === 'quotations' && <QuotationPage onNotify={notify} startCreate={quotationStartCreate} onStartCreateConsumed={() => setQuotationStartCreate(false)} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
     {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={async (orderId) => { await loadOrders(); setOrdersInitialOrderId(orderId); navigate('orders'); }} />}

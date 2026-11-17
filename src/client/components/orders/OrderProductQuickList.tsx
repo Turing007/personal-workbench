@@ -36,10 +36,8 @@ export default function OrderProductQuickList({ order, onOpen, className }: Orde
         </span>
         <span className="order-product-quick-copy">
           <strong>{item.name || '未填产品'}</strong>
-          <span className="order-product-quick-meta">
-            <span className="order-product-quick-spec">{item.specification ? `规格 ${item.specification}` : '规格未填写'}</span>
-            <span className="order-product-quick-qty">{item.quantity} 件</span>
-          </span>
+          <span className="order-product-quick-spec" title={item.specification || undefined}>{item.specification || '—'}</span>
+          <span className="order-product-quick-qty">{item.quantity} 件</span>
         </span>
       </span>;
     }) : <span className="order-product-quick-empty">查看产品明细</span>}

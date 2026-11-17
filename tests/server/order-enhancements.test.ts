@@ -198,6 +198,50 @@ describe('订单号基础设施', () => {
     database.close();
   });
 
+  it('可回退误点的备货/打包状态，但已发货和跳级回退必须拒绝', async () => {
+    const { app, database } = await makeContext();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      payload: orderInput({ trackingNo: 'SF-ROLLBACK' }),
+    });
+    const orderId = Number(created.json().data.id);
+
+    for (const to of ['stock_reported', 'pending_packing', 'ship_pending']) {
+      const advanced = await app.inject({ method: 'POST', url: `/api/orders/${orderId}/status`, payload: { to } });
+      expect(advanced.statusCode).toBe(200);
+    }
+
+    const rolledBack = await app.inject({
+      method: 'POST',
+      url: `/api/orders/${orderId}/status`,
+      payload: { to: 'pending_packing', reason: 'rollback' },
+    });
+    expect(rolledBack.statusCode).toBe(200);
+    expect(database.prepare('SELECT status, tracking_no FROM orders WHERE id = ?').get(orderId)).toEqual({
+      status: 'pending_packing',
+      tracking_no: 'SF-ROLLBACK',
+    });
+
+    await app.inject({ method: 'POST', url: `/api/orders/${orderId}/status`, payload: { to: 'ship_pending' } });
+    const jumpBack = await app.inject({
+      method: 'POST',
+      url: `/api/orders/${orderId}/status`,
+      payload: { to: 'stock_reported', reason: 'rollback' },
+    });
+    expect(jumpBack.statusCode).toBe(400);
+
+    const shipped = await app.inject({ method: 'POST', url: `/api/orders/${orderId}/status`, payload: { to: 'shipped' } });
+    expect(shipped.statusCode).toBe(200);
+    const shippedRollback = await app.inject({
+      method: 'POST',
+      url: `/api/orders/${orderId}/status`,
+      payload: { to: 'ship_pending', reason: 'rollback' },
+    });
+    expect(shippedRollback.statusCode).toBe(400);
+    database.close();
+  });
+
   it('新建订单直接进入待备货，打印箱唛只记录提醒不改变状态', async () => {
     const { app, database } = await makeContext();
     const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput() });

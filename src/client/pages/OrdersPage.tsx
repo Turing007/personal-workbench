@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Package, PackageCheck, ListFilter, Plus, Printer, Trash2, Truck } from 'lucide-react';
+import { ChevronDown, ChevronUp, Package, PackageCheck, ListFilter, Paperclip, Plus, Printer, Trash2, Truck } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { autoPack } from '../../shared/packing';
 import LabelEditorModal, { type CartonLabel } from '../components/LabelEditorModal';
@@ -15,7 +15,7 @@ import StatusCards from '../components/StatusCards';
 import FilterRail, { FilterCheckList } from '../components/FilterRail';
 import { useFilterRailOpen, useSavedFilterViews } from '../filter-views';
 import { ORDER_STATUS_LABELS_WITH_DRAFT } from '../../shared/domain';
-import { getOrderNextAction, isDraftOrder, isUnshippedOrder, type BatchAdvanceAction, type OrderNextAction } from '../order-workflow';
+import { getOrderNextAction, getOrderRollbackAction, isDraftOrder, isUnshippedOrder, type BatchAdvanceAction, type OrderNextAction } from '../order-workflow';
 import { FINANCE_PAYMENT_STATUS_LABELS, type FinancePaymentStatus } from '../../shared/finance';
 import { formatDateTime } from '../../shared/formatters';
 import type { Company } from '../../shared/companies';
@@ -45,6 +45,7 @@ export interface OrdersPageProps {
   onDeleteContract?: (contractId: string) => Promise<void>;
   onGenerateContract?: (order: OrderDraft) => Promise<void>;
   onAdvanceStatus?: (order: OrderDraft, status: OrderStatus) => void;
+  onRollbackStatus?: (order: OrderDraft, status: OrderStatus) => void;
   onBatchAdvance?: (orders: OrderDraft[], action: BatchAdvanceAction) => void;
   onPublishOrder?: (order: OrderDraft) => void;
   onOpenShipping?: (order: OrderDraft) => void;
@@ -156,7 +157,7 @@ export function fallbackLabels(order: OrderDraft): CartonLabel[] {
   });
 }
 
-export default function OrdersPage({ orders, customers, companies = [], statusCounts, labelsByOrderId, initialOrderId, initialStatus, onInitialStatusConsumed, startCreate, onStartCreateConsumed, onSaveOrder, onSaveDraft, onDeleteOrder, onSaveCustomerProduct, onCreateCustomer, onGetNextOrderNumber, onDeleteContract, onGenerateContract, onAdvanceStatus, onBatchAdvance, onPublishOrder, onOpenShipping, onOpenFinance, onSaveLabels, onMergeLabels, onRestoreAutoLabels, onPrintHistory, onRefreshOrders, onNotify }: OrdersPageProps) {
+export default function OrdersPage({ orders, customers, companies = [], statusCounts, labelsByOrderId, initialOrderId, initialStatus, onInitialStatusConsumed, startCreate, onStartCreateConsumed, onSaveOrder, onSaveDraft, onDeleteOrder, onSaveCustomerProduct, onCreateCustomer, onGetNextOrderNumber, onDeleteContract, onGenerateContract, onAdvanceStatus, onRollbackStatus, onBatchAdvance, onPublishOrder, onOpenShipping, onOpenFinance, onSaveLabels, onMergeLabels, onRestoreAutoLabels, onPrintHistory, onRefreshOrders, onNotify }: OrdersPageProps) {
   const [statusFilters, setStatusFilters] = useState<OrderStatus[]>([]);
   const [customerFilters, setCustomerFilters] = useState<number[]>([]);
   const [companyFilters, setCompanyFilters] = useState<number[]>([]);
@@ -236,9 +237,8 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
   // 展开行 colspan 必须和当前实际可见列一致；否则多出的 colspan 会挤窄产品列。
   const orderTableColSpan = viewportWidth <= 900
     ? 9
-    : viewportWidth <= 1199 ? 6
-      : viewportWidth <= 1599 ? 7
-        : (viewportWidth <= 1601 && filterRail.open) ? 7 : 9;
+    : viewportWidth <= 1199 ? 7
+      : viewportWidth <= 1599 ? 8 : 9;
 
   const visibleOrders = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -312,10 +312,11 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
   // 手机卡片里状态胶囊已承担「下一步」，用 hideNextAction 去掉重复的小字入口。
   const renderOrderActions = (order: OrderDraft, options?: { hideNextAction?: boolean }) => {
     const nextAction = getOrderNextAction(order.status);
+    const rollbackAction = getOrderRollbackAction(order.status);
     const showNextAction = !options?.hideNextAction;
     return <div className="row-actions"><button type="button" className="link-button" onClick={() => setDetailOrder(order)}>详情</button><button type="button" className="link-button" onClick={() => openEdit(order)}>编辑</button>{order.status === 'draft'
       ? showNextAction && onPublishOrder && <button type="button" className="link-button muted" title="校验并发布草稿订单，进入正式流程" onClick={() => publishOrder(order)}>发布</button>
-      : <><button type="button" className="link-button" onClick={() => openLabels(order)}>箱唛</button>{showNextAction && nextAction?.kind === 'advance' && onAdvanceStatus && <button type="button" className="link-button muted" title={nextAction.label} onClick={() => onAdvanceStatus(order, nextAction.target)}>{nextAction.label}</button>}{showNextAction && nextAction?.kind === 'shipping' && onOpenShipping && <button type="button" className="link-button muted" title={nextAction.label} onClick={() => onOpenShipping(order)}>{nextAction.label}</button>}</>}{onDeleteOrder && <button type="button" className="icon-button danger" title="删除订单" onClick={() => confirmDeleteOrder(order)}><Trash2 size={14} /></button>}</div>;
+      : <><button type="button" className="link-button" onClick={() => openLabels(order)}>箱唛</button>{showNextAction && nextAction?.kind === 'advance' && onAdvanceStatus && <button type="button" className="link-button muted" title={nextAction.label} onClick={() => onAdvanceStatus(order, nextAction.target)}>{nextAction.label}</button>}{showNextAction && nextAction?.kind === 'shipping' && onOpenShipping && <button type="button" className="link-button muted" title={nextAction.label} onClick={() => onOpenShipping(order)}>{nextAction.label}</button>}{rollbackAction && onRollbackStatus && <button type="button" className="link-button muted" title={`${rollbackAction.label}（保留物流、附件与收款数据）`} onClick={() => onRollbackStatus(order, rollbackAction.target)}>回退</button>}</>}{onDeleteOrder && <button type="button" className="icon-button danger" title="删除订单" onClick={() => confirmDeleteOrder(order)}><Trash2 size={14} /></button>}</div>;
   };
 
   const toggleExpanded = (id: string) => setExpandedIds((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id]);
@@ -411,11 +412,13 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
             ['总箱数', 'order-box-cell'],
             ['金额', 'order-amount-cell is-right'],
             ['状态', 'order-status-cell'],
-            ['物流单号', 'order-tracking-cell'],
+            ['附件 / 备注', 'order-extra-cell'],
             ['操作', 'order-ops-cell'],
           ].map(([title, className]) => <th key={title} className={className}>{title}</th>)}</tr></thead>
           <tbody>{visibleOrders.map((order) => {
             const id = orderKey(order); const boxCount = orderBoxCount(order); const paymentStatus = orderPaymentStatus(order);
+            const attachmentCount = order.contracts?.length ?? 0;
+            const attachmentNames = (order.contracts ?? []).map((contract) => contract.name).join('、');
             const expanded = expandedIds.includes(id);
             return <Fragment key={id}>
               <tr className={expanded ? 'is-expanded' : undefined}>
@@ -426,7 +429,11 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
                 <td className="order-box-cell">{boxCount}</td>
                 <td className="amount order-amount-cell"><div>¥ {order.amount || '0.00'}</div><div className="payment-sub" style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</div></td>
                 <td className="order-status-cell"><span className={statusBadgeClass(order.status)}>{order.status ? statusLabels[order.status] : '-'}</span><div className={`status-sub ${order.labelPrintedAt ? 'is-printed' : 'is-pending'}`} title={order.labelPrintedAt ? `箱唛打印时间：${formatDateTime(order.labelPrintedAt)}` : undefined}>{order.status === 'draft' ? '草稿订单，发布后进入流程' : order.labelPrintedAt ? '已打印箱唛' : '箱唛待打印'}</div></td>
-                <td className="order-tracking-cell">{order.trackingNo || '—'}</td>
+                <td className="order-extra-cell"><div className="order-extra-stack">
+                  {attachmentCount > 0 && <span className="order-extra-attachments" title={attachmentNames}><Paperclip size={11} />{attachmentCount} 个附件</span>}
+                  {order.remark ? <span className="order-remark-preview" title={order.remark}>{order.remark}</span> : null}
+                  {!attachmentCount && !order.remark ? <span className="order-extra-empty">—</span> : null}
+                </div></td>
                 <td className="order-ops-cell">{renderOrderActions(order)}</td>
               </tr>
               {expanded && <tr className="order-expand-row"><td colSpan={orderTableColSpan}>{renderExpandPanel(order)}</td></tr>}
@@ -437,6 +444,8 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
       </div>
       <div className="orders-card-list" aria-label="订单卡片列表">{visibleOrders.map((order) => {
         const boxCount = orderBoxCount(order); const paymentStatus = orderPaymentStatus(order);
+        const attachmentCount = order.contracts?.length ?? 0;
+        const attachmentNames = (order.contracts ?? []).map((contract) => contract.name).join('、');
         const expanded = expandedIds.includes(orderKey(order));
         return <article key={orderKey(order)} className={`order-card${expanded ? ' is-expanded' : ''}`}>
           <div className="order-card-head">
@@ -452,7 +461,8 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
             <span>{boxCount} 箱</span>
             <span style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</span>
             <span>{order.status === 'draft' ? '草稿未发布' : order.labelPrintedAt ? '箱唛已打印' : '箱唛待打印'}</span>
-            {order.trackingNo && <span>物流 {order.trackingNo}</span>}
+            {attachmentCount > 0 && <span className="order-card-attachments" title={attachmentNames}><Paperclip size={11} />{attachmentCount} 个附件</span>}
+            {order.remark && <span className="order-card-remark" title={order.remark}>备注：{order.remark}</span>}
           </div>
           {expanded && renderExpandPanel(order)}
           {renderOrderActions(order, { hideNextAction: true })}
@@ -469,7 +479,7 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
     </section>
 
     <Modal open={creating || Boolean(editingOrder)} title={editingOrder ? `编辑订单 · ${editingOrder.orderNo}` : '新建订单'} onClose={() => { setCreating(false); setEditingOrder(undefined); }} width={1040}><OrderForm key={editingOrder?.id ?? (creating ? 'new' : 'closed')} value={editingOrder} customers={customers} companies={companies} onSaveCustomerProduct={onSaveCustomerProduct} onCreateCustomer={onCreateCustomer} onGetNextOrderNumber={onGetNextOrderNumber} onSubmit={(order) => { onSaveOrder(order); setCreating(false); setEditingOrder(undefined); }} onSaveDraft={onSaveDraft ? (order) => { onSaveDraft(order); setCreating(false); setEditingOrder(undefined); } : undefined} onCancel={() => { setCreating(false); setEditingOrder(undefined); }} /></Modal>
-    <OrderDetailModal open={Boolean(detailOrder)} order={detailOrder} onClose={() => setDetailOrder(undefined)} onEditOrder={openEdit} onEditLabels={(order) => { setDetailOrder(undefined); openLabels(order); }} onPrintLabels={(order) => { setDetailOrder(undefined); setPrintLabels(labelsByOrderId?.[orderKey(order)] ?? fallbackLabels(order)); }} onDeleteContract={onDeleteContract} onDeleteOrder={onDeleteOrder ? confirmDeleteOrder : undefined} onAdvanceStatus={onAdvanceStatus} onPublishOrder={onPublishOrder} onOpenFinance={onOpenFinance} onPromoteCustomer={(order) => setPromoteName(order.customerName?.trim() ?? '')} />
+    <OrderDetailModal open={Boolean(detailOrder)} order={detailOrder} onClose={() => setDetailOrder(undefined)} onEditOrder={openEdit} onEditLabels={(order) => { setDetailOrder(undefined); openLabels(order); }} onPrintLabels={(order) => { setDetailOrder(undefined); setPrintLabels(labelsByOrderId?.[orderKey(order)] ?? fallbackLabels(order)); }} onDeleteContract={onDeleteContract} onDeleteOrder={onDeleteOrder ? confirmDeleteOrder : undefined} onAdvanceStatus={onAdvanceStatus} onRollbackStatus={onRollbackStatus} onPublishOrder={onPublishOrder} onOpenFinance={onOpenFinance} onPromoteCustomer={(order) => setPromoteName(order.customerName?.trim() ?? '')} />
     <Modal open={Boolean(productsOrder)} title={productsOrder ? `产品明细 · ${productsOrder.orderNo}` : '产品明细'} onClose={() => setProductsOrder(undefined)} width={920}>{productsOrder && <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ display: 'grid', gridTemplateColumns: narrow ? 'repeat(2, minmax(0, 1fr))' : 'repeat(6, minmax(0, 1fr))', gap: 12, padding: 12, background: 'var(--tone-surface-frost)', border: '1px solid var(--tone-border-soft)', borderRadius: 'var(--radius-ui)' }}>
         <div style={{ display: 'grid', gap: 4, minWidth: 0 }}><span style={{ color: 'var(--tone-text-faint)', fontSize: 11 }}>订单号</span><strong style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{productsOrder.orderNo}</strong></div>

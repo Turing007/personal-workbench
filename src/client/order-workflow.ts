@@ -1,4 +1,5 @@
 import type { OrderDraft, OrderStatus } from './components/OrderForm';
+import { ORDER_STATUS_LABELS, ORDER_ROLLBACK_TARGETS, type OrderStatus as DomainOrderStatus } from '../shared/domain';
 
 export type OrderNextAction =
   | { kind: 'advance'; label: string; target: OrderStatus }
@@ -16,6 +17,18 @@ const actions: Partial<Record<OrderStatus, OrderNextAction>> = {
 
 export function getOrderNextAction(status?: OrderStatus): OrderNextAction | undefined {
   return status ? actions[status] : undefined;
+}
+
+export interface OrderRollbackAction {
+  label: string;
+  target: DomainOrderStatus;
+}
+
+/** 撤销最近一次流程动作；白名单由 shared/domain 统一约束，避免前端与服务端漂移。 */
+export function getOrderRollbackAction(status?: OrderStatus): OrderRollbackAction | undefined {
+  if (!status || status === 'draft') return undefined;
+  const target = ORDER_ROLLBACK_TARGETS[status];
+  return target ? { label: `回退到${ORDER_STATUS_LABELS[target]}`, target } : undefined;
 }
 
 export function isUnshippedOrder(order: OrderDraft): boolean {

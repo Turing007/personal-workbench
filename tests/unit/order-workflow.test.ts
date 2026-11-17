@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getBatchAdvancePlan, getOrderNextAction, isDraftOrder, type BatchAdvanceAction } from '../../src/client/order-workflow';
+import { getBatchAdvancePlan, getOrderNextAction, getOrderRollbackAction, isDraftOrder, type BatchAdvanceAction } from '../../src/client/order-workflow';
 import type { OrderStatus } from '../../src/client/components/OrderForm';
 
 describe('订单下一步动作', () => {
@@ -22,6 +22,17 @@ describe('订单下一步动作', () => {
     expect(isDraftOrder({ status: 'draft' })).toBe(true);
     expect(isDraftOrder({ status: 'pending_stock' })).toBe(false);
     expect(isDraftOrder({ status: undefined })).toBe(false);
+  });
+});
+
+describe('订单状态回退动作', () => {
+  it('只给可撤销的业务节点提供回退入口', () => {
+    expect(getOrderRollbackAction('stock_reported')).toEqual({ label: '回退到待备货', target: 'pending_stock' });
+    expect(getOrderRollbackAction('pending_packing')).toEqual({ label: '回退到已备货', target: 'stock_reported' });
+    expect(getOrderRollbackAction('ship_pending')).toEqual({ label: '回退到待打包', target: 'pending_packing' });
+    expect(getOrderRollbackAction('shipped')).toBeUndefined();
+    expect(getOrderRollbackAction('pending_stock')).toBeUndefined();
+    expect(getOrderRollbackAction('draft')).toBeUndefined();
   });
 });
 

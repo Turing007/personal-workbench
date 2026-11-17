@@ -1,4 +1,4 @@
-import { Download, ExternalLink, FileText, Image as ImageIcon, Package, Printer, Trash2, Truck, UserRound, Wallet } from 'lucide-react';
+import { Download, ExternalLink, FileText, Image as ImageIcon, Package, Printer, Trash2, Truck, Undo2, UserRound, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { FINANCE_PAYMENT_STATUS_LABELS, INVOICE_STATUS_LABELS, PAYMENT_PROOF_STATUS_LABELS } from '../../shared/finance';
 import { ORDER_SETTLEMENT_LABELS, invoiceDisplayLabel } from '../../shared/settlement';
@@ -7,7 +7,7 @@ import { thumbUrl } from '../image-urls';
 import Modal from './Modal';
 import OrderItemsTable from './OrderItemsTable';
 import type { OrderContractDraft, OrderDraft, OrderStatus } from './OrderForm';
-import { getOrderNextAction } from '../order-workflow';
+import { getOrderNextAction, getOrderRollbackAction } from '../order-workflow';
 
 export interface OrderDetailModalProps {
   open: boolean;
@@ -20,6 +20,7 @@ export interface OrderDetailModalProps {
   onGenerateContract?: (order: OrderDraft) => Promise<void>;
   onDeleteOrder?: (order: OrderDraft) => void;
   onAdvanceStatus?: (order: OrderDraft, status: OrderStatus) => void;
+  onRollbackStatus?: (order: OrderDraft, status: OrderStatus) => void;
   onPublishOrder?: (order: OrderDraft) => void;
   onOpenShipping?: (order: OrderDraft) => void;
   onOpenFinance?: (order: OrderDraft) => void;
@@ -72,6 +73,7 @@ export default function OrderDetailModal({
   onGenerateContract,
   onDeleteOrder,
   onAdvanceStatus,
+  onRollbackStatus,
   onPublishOrder,
   onOpenShipping,
   onOpenFinance,
@@ -83,6 +85,7 @@ export default function OrderDetailModal({
   if (!order) return null;
 
   const nextAction = getOrderNextAction(order.status);
+  const rollbackAction = getOrderRollbackAction(order.status);
   const contracts = order.contracts ?? [];
   const paymentProofs = order.paymentProofs ?? [];
   const labels = order.labels ?? [];
@@ -195,6 +198,7 @@ export default function OrderDetailModal({
           {onGenerateContract && <button type="button" onClick={() => { void generateContract(); }} disabled={generatingContract} title="按设置中的合同模板生成购销合同 PDF，并归档到订单附件" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--tone-accent-text)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-soft)', color: 'var(--tone-accent-text)', cursor: generatingContract ? 'wait' : 'pointer', opacity: generatingContract ? 0.6 : 1, fontSize: 12 }}><FileText size={14} />{generatingContract ? '正在生成…' : '生成购销合同'}</button>}
           {onOpenFinance && <button type="button" onClick={() => onOpenFinance(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--color-accent-border)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-soft)', color: 'var(--tone-accent-text)', cursor: 'pointer', fontSize: 12 }}>财务详情</button>}
           {onDeleteOrder && <button type="button" onClick={() => onDeleteOrder(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-surface)', color: 'var(--tone-danger-text)', cursor: 'pointer', fontSize: 12 }}><Trash2 size={14} />删除订单</button>}
+          {rollbackAction && onRollbackStatus && <button type="button" title={`${rollbackAction.label}（保留物流、附件与收款数据）`} onClick={() => onRollbackStatus(order, rollbackAction.target)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--tone-border-cool)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 12 }}><Undo2 size={14} />{rollbackAction.label}</button>}
           {nextAction?.kind === 'advance' && onAdvanceStatus && <button type="button" onClick={() => onAdvanceStatus(order, nextAction.target)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-fill)', color: '#fff', cursor: 'pointer', fontSize: 12 }}><Truck size={14} />{nextAction.label}</button>}{nextAction?.kind === 'shipping' && onOpenShipping && <button type="button" onClick={() => onOpenShipping(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-fill)', color: '#fff', cursor: 'pointer', fontSize: 12 }}><Truck size={14} />{nextAction.label}</button>}
         </div>
       </div>

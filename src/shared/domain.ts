@@ -44,7 +44,18 @@ export function isDraftStatus(status: unknown): status is typeof ORDER_DRAFT_STA
   return status === ORDER_DRAFT_STATUS;
 }
 
-export type TransitionReason = 'manual' | 'first-print';
+export type TransitionReason = 'manual' | 'first-print' | 'rollback';
+
+/** 只开放可撤销的上一步业务动作，不按序号盲目回退；已发货必须走正式撤销流程。 */
+export const ORDER_ROLLBACK_TARGETS: Partial<Record<OrderStatus, OrderStatus>> = {
+  stock_reported: 'pending_stock',
+  pending_packing: 'stock_reported',
+  ship_pending: 'pending_packing',
+};
+
+export function canRollback(from: OrderStatus, to: OrderStatus): boolean {
+  return ORDER_ROLLBACK_TARGETS[from] === to;
+}
 
 export interface StatusTransitionContext {
   reason?: TransitionReason;
@@ -128,6 +139,7 @@ export function canTransition(
   to: OrderStatus,
   context: StatusTransitionContext = {},
 ): boolean {
+  if (context.reason === 'rollback') return canRollback(from, to);
   const fromIndex = ORDER_STATUS_SEQUENCE.indexOf(from);
   const toIndex = ORDER_STATUS_SEQUENCE.indexOf(to);
 
@@ -155,6 +167,9 @@ export function getTransitionError(
   context: StatusTransitionContext = {},
 ): string | null {
   if (from === to) return '订单状态未发生变化';
+  if (context.reason === 'rollback') {
+    return canRollback(from, to) ? null : '该订单当前状态不支持回退到目标状态';
+  }
 
   const fromIndex = ORDER_STATUS_SEQUENCE.indexOf(from);
   const toIndex = ORDER_STATUS_SEQUENCE.indexOf(to);

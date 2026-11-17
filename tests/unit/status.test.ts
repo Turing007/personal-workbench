@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ORDER_STATUS_SEQUENCE,
+  canRollback,
   canTransition,
   getTransitionError,
   isUnshippedStatus,
@@ -43,6 +44,19 @@ describe('订单状态流转', () => {
     expect(canTransition('label_pending', 'stock_reported', { reason: 'manual' })).toBe(false);
     expect(canTransition('pending_packing', 'stock_reported', { reason: 'manual' })).toBe(false);
     expect(canTransition('shipped', 'ship_pending', { reason: 'manual' })).toBe(false);
+  });
+
+  it('只允许撤销最近一次备货/打包动作，已发货不能直接回退', () => {
+    expect(canRollback('stock_reported', 'pending_stock')).toBe(true);
+    expect(canRollback('pending_packing', 'stock_reported')).toBe(true);
+    expect(canRollback('ship_pending', 'pending_packing')).toBe(true);
+    expect(canTransition('ship_pending', 'pending_packing', { reason: 'rollback' })).toBe(true);
+    expect(getTransitionError('ship_pending', 'pending_packing', { reason: 'rollback' })).toBeNull();
+
+    expect(canRollback('ship_pending', 'stock_reported')).toBe(false);
+    expect(canRollback('shipped', 'ship_pending')).toBe(false);
+    expect(canRollback('pending_stock', 'label_pending')).toBe(false);
+    expect(getTransitionError('shipped', 'ship_pending', { reason: 'rollback' })).toContain('不支持回退');
   });
 
   it('发货工作区收所有未发货状态，草稿与已发货排除在外', () => {

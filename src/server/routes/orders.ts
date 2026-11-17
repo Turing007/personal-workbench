@@ -420,8 +420,8 @@ export async function registerOrderRoutes(app: FastifyInstance, options: OrderRo
     safeRoute(() => {
       const body = asRecord(request.body);
       const reason = body.reason === undefined ? 'manual' : body.reason;
-      if (reason !== 'manual' && reason !== 'first-print') {
-        throw new ApiError(400, 'VALIDATION_ERROR', 'reason 必须是 manual 或 first-print', 'reason');
+      if (reason !== 'manual' && reason !== 'first-print' && reason !== 'rollback') {
+        throw new ApiError(400, 'VALIDATION_ERROR', 'reason 必须是 manual、first-print 或 rollback', 'reason');
       }
       const order = service.transition(
         parseId(request.params.id),
