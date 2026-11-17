@@ -1,5 +1,5 @@
-import { Download, ExternalLink, FilePlus2, ImagePlus, Plus, Save, Trash2, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Check, Download, ExternalLink, FilePlus2, ImagePlus, Plus, Save, Trash2, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent } from 'react';
 import type { CustomerProduct, CustomerProductAttachmentCategory, CustomerProductBatchItemInput, CustomerProductBatchSaveInput, CustomerProductPackaging, CustomerProductSaveInput } from '../../../shared/customers';
 import type { ProductRecord } from '../ProductEditor';
@@ -10,6 +10,7 @@ import ImagePasteUpload, { type ImageAttachment } from '../ImagePasteUpload';
 import Modal from '../Modal';
 import SystemProductOptionRow from '../SystemProductOptionRow';
 import PackagingTable from '../PackagingTable';
+import { thumbUrl } from '../../image-urls';
 
 export interface CustomerProductEditorModalProps {
   open: boolean;
@@ -116,6 +117,8 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
   const [labelRequirement, setLabelRequirement] = useState('');
   const [packaging, setPackaging] = useState<ReturnType<typeof systemPackaging>>([]);
   const [images, setImages] = useState<ImageAttachment[]>([]);
+  const [systemImagePickerOpen, setSystemImagePickerOpen] = useState(false);
+  const systemImagePickerRef = useRef<HTMLDivElement>(null);
   const [attachments, setAttachments] = useState<CustomerProductAttachmentDraft[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -158,6 +161,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
     setLabelRequirement(product?.labelRequirement ?? '');
     setPackaging(packagingToEditor(product?.packaging));
     setImages(product?.imageRelativePath ? [{ id: product.imageRelativePath, name: '客户产品图片', url: `/files/${product.imageRelativePath}` }] : []);
+    setSystemImagePickerOpen(false);
     setAttachments(enableAttachments ? (product?.attachments ?? []).map((attachment) => ({
       id: attachment.id,
       name: attachment.originalName,
@@ -188,6 +192,14 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
     return () => { cancelled = true; };
   }, [open, product, copyMode, copyFromImageURL, enableAttachments]);
 
+  useEffect(() => {
+    if (!open || !systemImagePickerOpen) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      systemImagePickerRef.current?.scrollIntoView({ block: 'center' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, systemImagePickerOpen]);
+
   const chooseSystemProduct = (value: string) => {
     const id = value ? Number(value) : null;
     setSystemProductId(id);
@@ -208,6 +220,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
     setPackaging(systemPackaging(next.packaging));
     const image = next.images[0];
     setImages(image ? [{ id: image.id, name: image.name, url: image.url }] : []);
+    setSystemImagePickerOpen(false);
   };
 
   const toggleBatchMode = () => {
@@ -275,6 +288,9 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
     } else if (!name.trim()) return setError('请填写品名');
     if (finalPrice.trim() && price === null) return setError('最终价格必须是大于等于 0 的数字');
     if (costPrice.trim() && cost === null) return setError('成本价必须是大于等于 0 的数字');
+    const selectedImagePath = images.length
+      ? (imagePathFromUrl(images[0]?.url) ?? (images[0]?.file ? product?.imageRelativePath ?? null : null))
+      : null;
     setBusy(true);
     setError('');
     try {
@@ -301,9 +317,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
           freightPerBoxCents: freight,
           remark: remark.trim(),
           packaging: packagingPayloadInput(),
-          imageRelativePath: images.length
-            ? (product?.imageRelativePath ?? imagePathFromUrl(images[0]?.url))
-            : null,
+          imageRelativePath: selectedImagePath,
         }, images.find((item) => item.file)?.file, attachments);
       }
     } catch (reason) {
@@ -399,6 +413,44 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
       <PackagingTable value={packaging} onChange={setPackaging} compact showPurchasePrice={false} showImages={false} />
       {!batchMode && <>
         <ImagePasteUpload label="客户产品图片" value={images} onChange={setImages} multiple={false} maxFiles={1} showNotes={false} />
+        {selectedSystemProduct && selectedSystemProduct.images.length > 0 && <section style={{ display: 'grid', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="button button-secondary"
+              style={{ minHeight: 28, padding: '4px 9px', fontSize: 11 }}
+              disabled={busy}
+              aria-expanded={systemImagePickerOpen}
+              onClick={() => setSystemImagePickerOpen((current) => !current)}
+            ><ImagePlus size={13} />{systemImagePickerOpen ? '收起系统产品图片' : '选择系统产品图片'}</button>
+            <span style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>系统产品「{selectedSystemProduct.name}」共 {selectedSystemProduct.images.length} 张图</span>
+          </div>
+          {systemImagePickerOpen && <div ref={systemImagePickerRef} role="region" aria-label="系统产品图片" style={{ display: 'grid', gap: 8, padding: 9, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface-subtle)' }}>
+            <span style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>选择一张替换当前客户产品图片，保存后生效。</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(76px, 1fr))', gap: 7 }}>
+              {selectedSystemProduct.images.map((image) => {
+                const selected = imagePathFromUrl(images[0]?.url) === imagePathFromUrl(image.url);
+                return <button
+                  key={image.id}
+                  type="button"
+                  aria-label={`使用系统产品图片 ${image.name}`}
+                  aria-pressed={selected}
+                  title={image.name}
+                  disabled={busy}
+                  onClick={() => {
+                    setImages([{ id: image.id, name: image.name, url: image.url }]);
+                    setSystemImagePickerOpen(false);
+                  }}
+                  style={{ position: 'relative', display: 'grid', gap: 4, padding: 4, border: `1px solid ${selected ? 'var(--color-accent)' : 'var(--color-border-control)'}`, borderRadius: 'var(--radius-ui)', background: selected ? 'var(--color-accent-soft)' : 'var(--color-surface)', cursor: busy ? 'wait' : 'pointer', color: 'var(--color-text-secondary)', fontSize: 10 }}
+                >
+                  <img src={thumbUrl(image.url, 240)} alt="" loading="lazy" decoding="async" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: 'calc(var(--radius-ui) - 1px)' }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{image.name || '产品图片'}</span>
+                  {selected && <span aria-hidden="true" style={{ position: 'absolute', top: 6, right: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 999, background: 'var(--color-accent)', color: '#fff' }}><Check size={12} /></span>}
+                </button>;
+              })}
+            </div>
+          </div>}
+        </section>}
         {enableAttachments && <CustomerProductAttachments value={attachments} onChange={setAttachments} />}
       </>}
       {product?.latestQuoteCents != null && <div style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>最近报价：¥{(product.latestQuoteCents / 100).toFixed(2)}（只读）</div>}

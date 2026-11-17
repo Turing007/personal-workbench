@@ -229,12 +229,16 @@ export async function registerCustomerProductRoutes(
     const existing = options.service.get(id);
     const product = options.service.update(id, input);
     if (!product) throw new ApiError(404, 'NOT_FOUND', '客户产品不存在');
+    const previousOwnImage = existing?.imageRelativePath?.startsWith('customer-product-images/')
+      ? existing.imageRelativePath
+      : null;
     if (
       options.fileStore
-      && input.imageRelativePath === null
-      && existing?.imageRelativePath?.startsWith('customer-product-images/')
+      && input.imageRelativePath !== undefined
+      && previousOwnImage
+      && input.imageRelativePath !== previousOwnImage
     ) {
-      await options.fileStore.deleteFile(existing.imageRelativePath);
+      await options.fileStore.deleteFile(previousOwnImage);
     }
     return sendSuccess(reply, product);
   }, reply));

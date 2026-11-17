@@ -147,3 +147,48 @@ test('客户产品：删掉自有的客户图后再保存，也不会回退系�
     await page.request.delete(`/api/products/${system.id}`);
   }
 });
+
+test('客户产品保存后可改选系统产品的其他图片', async ({ page }) => {
+  const stamp = Date.now();
+  const system = await seedSystemProductWithImage(page, stamp);
+  const customer = await seedCustomer(page, stamp);
+  const secondImageName = `system-second-${stamp}.png`;
+  try {
+    const secondUpload = await page.request.post(`/api/products/${system.id}/images?category=product`, {
+      multipart: { file: { name: secondImageName, mimeType: 'image/png', buffer: PNG_1X1 } },
+    });
+    expect(secondUpload.status(), await secondUpload.text()).toBe(201);
+
+    const productDetail = await page.request.get(`/api/products/${system.id}`);
+    const systemImages = (await productDetail.json()).data.images as Array<{ relativePath: string; originalName: string }>;
+    const targetImage = systemImages.find((image) => image.originalName === secondImageName);
+    expect(targetImage).toBeTruthy();
+
+    const imported = await page.request.post(`/api/customers/${customer.id}/products/from-library`, { data: { systemProductId: Number(system.id) } });
+    expect(imported.status(), await imported.text()).toBe(201);
+    const customerProductId = (await imported.json()).data.id as number;
+
+    await openCustomerProducts(page, `E2E图片删除客户${stamp}`);
+    const row = page.locator('.customer-products-table-desktop tbody tr').first();
+    await row.getByRole('button', { name: '编辑客户产品' }).click();
+    const editor = page.getByRole('dialog');
+    await expect(editor).toBeVisible();
+
+    await editor.getByRole('button', { name: '选择系统产品图片' }).click();
+    const systemImageRegion = editor.getByRole('region', { name: '系统产品图片' });
+    await expect(systemImageRegion).toBeVisible();
+    await expect(systemImageRegion.getByRole('button')).toHaveCount(2);
+    await systemImageRegion.getByRole('button', { name: `使用系统产品图片 ${secondImageName}` }).click();
+    await expect(systemImageRegion).toHaveCount(0);
+    await expect(editor.locator('.image-card')).toHaveCount(1);
+
+    await editor.getByRole('button', { name: '保存产品' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    const detail = await page.request.get(`/api/customer-products/${customerProductId}`);
+    expect((await detail.json()).data.imageRelativePath).toBe(targetImage!.relativePath);
+  } finally {
+    await page.request.delete(`/api/customers/${customer.id}`);
+    await page.request.delete(`/api/products/${system.id}`);
+  }
+});

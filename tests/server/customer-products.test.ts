@@ -501,6 +501,17 @@ describe('按客户维护的产品 API', () => {
     await expect(fileStore.readFile(firstPath)).rejects.toThrow();
     await expect(fileStore.readFile(secondPath)).resolves.toEqual(Buffer.from('second'));
 
+    const switchedToSystem = await authInject(app, {
+      method: 'PUT',
+      url: `/api/customer-products/${customerProductId}`,
+      payload: productInput('无刷电钻', '20V', { imageRelativePath: 'products/second.png' }),
+    });
+    expect(switchedToSystem.statusCode).toBe(200);
+    expect(switchedToSystem.json().data.imageRelativePath).toBe('products/second.png');
+    // 改选系统图后，旧客户自有图要清理；系统产品自己的图片不能删。
+    await expect(fileStore.readFile(secondPath)).rejects.toThrow();
+    await expect(readFile(join(directory, 'files', 'products', 'second.png'))).resolves.toEqual(Buffer.from('system'));
+
     const cleared = await authInject(app, {
       method: 'PUT',
       url: `/api/customer-products/${customerProductId}`,
