@@ -22,6 +22,7 @@ import {
   deleteCustomerProducts,
   getCustomerProducts,
   importCustomerProductWithInput,
+  linkCustomerProductToSystem,
   saveCustomerProduct,
   saveCustomerProductsBatch,
   setCustomerActive,
@@ -216,6 +217,11 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
       : input.systemProductId
         ? await importCustomerProductWithInput(selectedCustomerId, input.systemProductId, input)
         : await saveCustomerProduct(selectedCustomerId, input);
+    const previousSystemProductId = editingProduct?.systemProductId ?? null;
+    const nextSystemProductId = input.systemProductId ?? null;
+    if (editingProduct && nextSystemProductId !== previousSystemProductId) {
+      await linkCustomerProductToSystem(saved.id, nextSystemProductId, input.supplierProductName ?? '');
+    }
     if (imageFile) await uploadCustomerProductImage(saved.id, imageFile);
     if (!imageFile && input.imageRelativePath === null) await deleteCustomerProductImage(saved.id);
     const keptAttachmentIds = new Set(

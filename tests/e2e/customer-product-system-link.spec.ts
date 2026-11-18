@@ -192,3 +192,53 @@ test('客户产品保存后可改选系统产品的其他图片', async ({ page 
     await page.request.delete(`/api/products/${system.id}`);
   }
 });
+
+test('临时添加的客户产品保存后可关联系统产品，且不覆盖客户自己的资料', async ({ page }) => {
+  const stamp = Date.now();
+  const system = await seedSystemProductWithImage(page, stamp);
+  const customer = await seedCustomer(page, stamp);
+  const customName = `客户自定义产品${stamp}`;
+  try {
+    const created = await page.request.post(`/api/customers/${customer.id}/products`, {
+      data: {
+        name: customName,
+        specification: '客户自定义规格',
+        sku: `CUSTOM-${stamp}`,
+        packCount: 24,
+        finalPriceCents: 1234,
+        costPriceCents: null,
+        freightPerBoxCents: null,
+        remark: '客户自己维护的备注',
+        labelRequirement: '',
+        imageRelativePath: null,
+        packaging: [{ name: '客户包装', innerSize: '', innerWeight: 0, outerSize: '', outerWeight: 0, packCount: 24 }],
+      },
+    });
+    expect(created.status(), await created.text()).toBe(201);
+    const customerProductId = (await created.json()).data.id as number;
+
+    await openCustomerProducts(page, `E2E图片删除客户${stamp}`);
+    const row = page.locator('.customer-products-table-desktop tbody tr', { hasText: customName }).first();
+    await row.getByRole('button', { name: '编辑客户产品' }).click();
+    const editor = page.getByRole('dialog');
+    const systemPicker = editor.getByRole('combobox', { name: '搜索系统产品' });
+    await expect(systemPicker).toBeVisible();
+    await systemPicker.fill(`E2E系统产品${stamp}`);
+    await editor.getByRole('option', { name: new RegExp(`E2E系统产品${stamp}`) }).click();
+    await editor.getByRole('button', { name: '保存产品' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    const detail = await page.request.get(`/api/customer-products/${customerProductId}`);
+    expect((await detail.json()).data).toMatchObject({
+      systemProductId: Number(system.id),
+      name: customName,
+      specification: '客户自定义规格',
+      finalPriceCents: 1234,
+      remark: '客户自己维护的备注',
+    });
+    await expect(page.locator('.customer-products-table-desktop tbody tr', { hasText: customName }).first()).toContainText('系统产品库');
+  } finally {
+    await page.request.delete(`/api/customers/${customer.id}`);
+    await page.request.delete(`/api/products/${system.id}`);
+  }
+});
