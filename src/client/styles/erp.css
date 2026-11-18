@@ -317,11 +317,11 @@
 
 .orders-page .order-product-quick-card {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-columns: 32px minmax(0, 1fr);
   align-items: start;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
-  padding: 5px;
+  padding: 4px;
   border: 1px solid var(--erp-border);
   border-radius: var(--radius-ui);
   background: var(--erp-surface);
@@ -330,8 +330,8 @@
 .orders-page .order-product-quick-thumb {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   overflow: hidden;
   border: 1px solid var(--erp-border);
   border-radius: var(--radius-ui);
@@ -358,7 +358,7 @@
   display: -webkit-box;
   overflow: hidden;
   color: var(--erp-text);
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   line-height: 1.25;
   -webkit-box-orient: vertical;
@@ -368,19 +368,11 @@
 .orders-page .order-product-quick-spec {
   display: block;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   color: var(--erp-muted);
-  font-size: 10px;
-}
-
-.orders-page .order-product-quick-qty {
-  flex: none;
-  color: var(--erp-text);
-  font-size: 10.5px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  font-size: 9.5px;
+  line-height: 1.35;
+  white-space: normal;
 }
 
 .orders-page .order-product-quick-empty {
@@ -388,6 +380,42 @@
   color: var(--color-link);
   font-size: 10.5px;
 }
+
+.orders-page .order-extra-stack { display: grid; gap: 6px; min-width: 0; }
+.orders-page .order-extra-section { display: grid; gap: 3px; min-width: 0; }
+.orders-page .order-extra-section + .order-extra-section {
+  padding-top: 5px;
+  border-top: 1px dashed var(--erp-divider);
+}
+.orders-page .order-extra-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--erp-muted);
+  font-size: 9.5px;
+  font-weight: 650;
+}
+.orders-page .order-extra-files { display: grid; gap: 2px; min-width: 0; }
+.orders-page .order-extra-files a {
+  display: flex;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+  color: var(--color-accent);
+  font-size: 10.5px;
+  line-height: 1.3;
+  text-decoration: none;
+}
+.orders-page .order-extra-files a:hover { text-decoration: underline; }
+.orders-page .order-extra-files a span { min-width: 0; overflow-wrap: anywhere; }
+.orders-page .order-remark-full {
+  color: var(--erp-text-2);
+  font-size: 10.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.orders-page .order-extra-empty { color: var(--erp-muted); font-size: 10.5px; }
 
 @media (min-width: 901px) {
   .orders-page {
@@ -485,37 +513,18 @@
 
   .orders-page .orders-data-table .order-check-cell { width: 36px; padding-right: 4px; }
   .orders-page .orders-data-table .order-no-cell { width: 150px; white-space: nowrap; }
-  .orders-page .orders-data-table .order-customer-cell { width: 120px; overflow: hidden; }
+  .orders-page .orders-data-table .order-customer-cell { width: 110px; overflow: hidden; }
   .orders-page .order-party { display: grid; gap: 1px; min-width: 0; }
   .orders-page .order-party-customer,
   .orders-page .order-party-recipient { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .orders-page .order-party-customer { color: var(--erp-text); font-size: 12px; font-weight: 600; }
   .orders-page .order-party-recipient { color: var(--erp-muted); font-size: 10.5px; }
-  .orders-page .orders-data-table .order-product-cell { width: 340px; overflow: hidden; }
+  .orders-page .orders-data-table .order-product-cell { width: 350px; overflow: hidden; }
   .orders-page .orders-data-table .order-box-cell { width: 52px; text-align: right; }
-  .orders-page .orders-data-table .order-amount-cell { width: 95px; text-align: right; }
-  .orders-page .orders-data-table .order-status-cell { width: 110px; }
-  .orders-page .orders-data-table .order-extra-cell { width: 120px; overflow: hidden; }
-  .orders-page .orders-data-table .order-ops-cell { width: 160px; }
-
-  .orders-page .order-extra-stack { display: grid; gap: 2px; min-width: 0; }
-  .orders-page .order-extra-attachments {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    color: var(--color-accent);
-    font-size: 10.5px;
-    white-space: nowrap;
-  }
-  .orders-page .order-remark-preview {
-    overflow: hidden;
-    color: var(--erp-muted);
-    font-size: 10.5px;
-    line-height: 1.25;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .orders-page .order-extra-empty { color: var(--erp-muted); font-size: 10.5px; }
+  .orders-page .orders-data-table .order-amount-cell { width: 90px; text-align: right; }
+  .orders-page .orders-data-table .order-status-cell { width: 105px; }
+  .orders-page .orders-data-table .order-extra-cell { width: 180px; overflow: hidden; }
+  .orders-page .orders-data-table .order-ops-cell { width: 140px; }
 
   .orders-page .orders-data-table th.is-right,
   .orders-page .orders-data-table td.is-right { text-align: right; }
@@ -938,18 +947,11 @@
     line-height: 1.3;
   }
 
-  .orders-page .order-card-attachments {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    color: var(--color-accent);
-  }
-
-  .orders-page .order-card-remark {
-    flex-basis: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .orders-page .order-card-extra {
+    display: grid;
+    gap: 5px;
+    padding-top: 5px;
+    border-top: 1px solid var(--erp-divider);
   }
 
   .orders-page .order-card .row-actions {
@@ -1668,7 +1670,7 @@
 /* 1200–1419 常见笔记本：隐藏次要列，保证金额/状态/操作不被横向滚动藏掉 */
 @media (min-width: 1200px) and (max-width: 1419px) {
   .orders-page .orders-data-table { min-width: 960px; }
-  .orders-page .orders-data-table .order-product-cell { width: 320px; }
+  .orders-page .orders-data-table .order-product-cell { width: 280px; }
 
   .orders-page .orders-data-table th:nth-child(5),
   .orders-page .orders-data-table td:nth-child(5) {
@@ -3269,6 +3271,24 @@
 .water-slip-section-head > div { display: grid; gap: 2px; }
 .water-slip-section-head strong { color: var(--erp-text); font-size: 14px; }
 .water-slip-section-head span { color: var(--erp-muted); font-size: 11px; }
+.water-slip-list-toolbar .water-slip-section-head { flex-wrap: wrap; }
+.water-slip-active-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--color-accent-border);
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.water-slip-active-filter:hover { border-color: var(--color-accent); }
+.water-slip-active-filter span { color: inherit; font-size: inherit; }
+.water-slip-active-filter b { font-size: 10.5px; font-weight: 650; text-decoration: underline; }
 .water-slip-company-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
 .water-slip-company-card { display: grid; gap: 7px; padding: 10px 11px; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface); color: var(--erp-text-2); cursor: pointer; text-align: left; }
 .water-slip-company-card:hover, .water-slip-company-card.is-active { border-color: var(--color-accent); background: var(--color-accent-soft); }
@@ -3565,202 +3585,10 @@
   .dashboard-company-row, .dashboard-recent-row, .dashboard-order-row { padding: 7px 2px; }
 }
 
-/* 左侧筛选栏与常用视图（订单/财务/水单共用） */
-.filter-rail-layout {
-  position: relative;
-  display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
-  align-items: start;
-  gap: 8px;
-  min-width: 0;
-}
-.filter-rail-main { grid-column: 2; display: grid; gap: 12px; min-width: 0; }
-/* 展开的筛选栏浮在内容上方，不占主区宽度；收起时只留 36px 的竖条。 */
-.filter-rail {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 250px;
-  max-height: calc(100dvh - 90px);
-  overflow: hidden;
-  padding: 10px;
-  border: 1px solid var(--erp-border);
-  border-radius: var(--erp-radius-surface);
-  background: var(--erp-surface);
-  box-shadow: var(--shadow-popover);
-}
-.filter-rail-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.filter-rail-head strong { display: inline-flex; align-items: center; gap: 5px; color: var(--erp-text); font-size: 12.5px; }
-.filter-rail-head .icon-button { width: 26px; height: 26px; }
-.filter-rail-collapsed {
-  position: sticky;
-  top: 12px;
-  display: grid;
-  place-items: center;
-  gap: 4px;
-  width: 36px;
-  min-height: 100px;
-  padding: 8px 4px;
-  border: 1px solid var(--erp-border);
-  border-radius: var(--erp-radius-surface);
-  background: var(--erp-surface);
-  color: var(--erp-muted);
-  cursor: pointer;
-}
-.filter-rail-collapsed span { font-size: 10px; writing-mode: vertical-rl; letter-spacing: 2px; }
-.filter-rail-section { display: grid; gap: 6px; padding-top: 9px; border-top: 1px solid var(--erp-divider); }
-.filter-rail-section:first-child { border-top: 0; padding-top: 0; }
-.filter-rail-section-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.filter-rail-section-head strong { color: var(--erp-text-2); font-size: 11px; font-weight: 600; }
-.filter-rail-section-head span { color: var(--color-warning-text); font-size: 10px; }
-.filter-rail-section-head button { border: 0; background: transparent; color: var(--color-accent); font: inherit; font-size: 10px; cursor: pointer; }
-.filter-rail-search {
-  width: 100%;
-  height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--erp-border);
-  border-radius: var(--radius-ui);
-  background: var(--erp-surface);
-  color: var(--erp-text);
-  font: inherit;
-  font-size: 11px;
-}
-.filter-check-list { display: grid; gap: 1px; max-height: 180px; overflow: auto; }
-.filter-check-option {
-  display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 6px;
-  min-height: 26px;
-  padding: 2px 4px;
-  border-radius: var(--radius-ui);
-  color: var(--erp-text-2);
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.filter-check-option:hover { background: var(--color-surface-subtle); }
-.filter-check-option.is-checked { color: var(--erp-text); background: var(--color-accent-soft); }
-.filter-check-option input { width: 13px; height: 13px; margin: 0; accent-color: var(--color-accent); }
-.filter-check-option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.filter-check-option b { color: var(--erp-muted); font-size: 10px; font-weight: 500; }
-.filter-rail-empty { padding: 8px 4px; color: var(--erp-muted); font-size: 10.5px; }
-.filter-rail-views { display: grid; gap: 5px; padding-bottom: 9px; border-bottom: 1px solid var(--erp-divider); }
-.filter-rail-views .toolbar-select { width: 100%; height: 28px; font-size: 11px; }
-.filter-rail-view-actions { display: flex; gap: 2px; justify-content: flex-end; }
-.filter-rail-view-actions .icon-button { width: 26px; height: 26px; }
-/* 筛选项多时只滚动选项区，「重置全部筛选」始终留在栏底可见。 */
-.filter-rail-body { display: grid; gap: 9px; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 2px; }
-.filter-rail-reset {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  min-height: 28px;
-  border: 1px solid var(--erp-border);
-  border-radius: var(--radius-ui);
-  background: var(--erp-surface);
-  color: var(--erp-muted);
-  font: inherit;
-  font-size: 10.5px;
-  cursor: pointer;
-}
-.filter-rail-reset:hover { color: var(--erp-text); background: var(--color-surface-subtle); }
-.filter-rail-date-range { display: grid; gap: 4px; }
-.filter-rail-date-range span { color: var(--erp-muted); font-size: 10px; }
-.filter-rail-date-range input {
-  width: 100%;
-  height: 28px;
-  padding: 0 6px;
-  border: 1px solid var(--erp-border);
-  border-radius: var(--radius-ui);
-  background: var(--erp-surface);
-  color: var(--erp-text);
-  font: inherit;
-  font-size: 10.5px;
-}
-@media (min-width: 901px) {
-  /* 桌面端公司/状态筛选统一收进左侧栏，工具条下拉只保留给手机端 */
-  .finance-status-row,
-  .water-slip-filters .toolbar-select { display: none; }
-}
-@media (max-width: 900px) {
-  .filter-rail-layout { display: block; }
-  .filter-rail, .filter-rail-collapsed { display: none; }
-  .filter-rail-main { gap: 8px; }
-}
-
-/* 订单行内展开：桌面表格与手机卡片共用同一套内容 */
-.orders-page .order-no-wrap { display: flex; align-items: center; gap: 3px; min-width: 0; overflow: hidden; }
-.orders-page .order-no-wrap > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 订单号与下单日期 */
 .orders-page .order-no-stack { display: grid; gap: 2px; min-width: 0; }
-.orders-page .order-no-date { padding-left: 25px; color: var(--erp-muted); font-size: 10px; line-height: 1.2; white-space: nowrap; }
-.orders-page .order-expand-toggle { width: 22px; height: 22px; min-width: 22px; color: var(--erp-muted); }
-.orders-page .order-expand-toggle:hover { color: var(--erp-text); background: var(--erp-surface-muted); }
-.orders-page .orders-data-table tr.is-expanded > td { background: var(--erp-surface-muted); }
-.orders-page .order-expand-row > td { padding: 0 !important; border-bottom: 1px solid var(--erp-border); background: var(--erp-surface-muted); }
-.order-expand-panel {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-  gap: 10px 16px;
-  padding: 12px 14px 10px 46px;
-  background: var(--erp-surface-subtle, var(--color-surface-subtle));
-  border-left: 3px solid var(--color-accent);
-}
-.order-expand-products { display: grid; align-content: start; gap: 6px; min-width: 0; }
-.order-expand-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.order-expand-section-head strong { color: var(--erp-text); font-size: 11.5px; font-weight: 650; }
-.order-expand-section-head span { color: var(--erp-muted); font-size: 10.5px; }
-.order-expand-product-list { display: grid; gap: 4px; }
-.order-expand-product-row {
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  border: 1px solid var(--erp-divider);
-  border-radius: 6px;
-  background: var(--erp-surface);
-}
-.order-expand-product-thumb { display: grid; place-items: center; width: 40px; height: 40px; overflow: hidden; border: 1px solid var(--erp-border); border-radius: 6px; background: var(--erp-surface-muted); color: var(--erp-muted); }
-.order-expand-product-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.order-expand-product-name { display: grid; gap: 1px; min-width: 0; }
-.order-expand-product-name strong { overflow: hidden; color: var(--erp-text); font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.order-expand-product-name span, .order-expand-product-name small { overflow: hidden; color: var(--erp-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.order-expand-qty { color: var(--erp-muted); font-size: 10.5px; white-space: nowrap; }
-.order-expand-amount { color: var(--erp-text); font-size: 12px; font-weight: 650; white-space: nowrap; }
-.order-expand-side { display: grid; align-content: start; gap: 8px; min-width: 0; }
-.order-expand-info, .order-expand-finance { display: grid; gap: 5px; padding: 8px 10px; border: 1px solid var(--erp-divider); border-radius: 6px; background: var(--erp-surface); }
-.order-expand-info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 10px; }
-.order-expand-info-grid > div { display: grid; gap: 1px; min-width: 0; }
-.order-expand-info-grid span { color: var(--erp-muted); font-size: 10px; }
-.order-expand-info-grid strong { overflow-wrap: anywhere; color: var(--erp-text); font-size: 11.5px; font-weight: 500; }
-.order-expand-finance-body { display: grid; gap: 6px; }
-.order-expand-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.order-expand-metrics > div { display: grid; gap: 1px; }
-.order-expand-metrics span { color: var(--erp-muted); font-size: 10px; }
-.order-expand-metrics strong { color: var(--erp-text); font-size: 12px; font-weight: 650; white-space: nowrap; }
-.order-expand-badges { display: flex; flex-wrap: wrap; gap: 4px; }
-.order-expand-badges .badge { font-size: 10px; }
-.order-expand-empty { padding: 4px 0; color: var(--erp-muted); font-size: 10.5px; }
-.order-expand-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; padding-top: 8px; border-top: 1px solid var(--erp-divider); }
-.order-expand-actions .button { height: 28px; min-height: 28px; font-size: 11.5px; }
-
-@media (max-width: 900px) {
-  .order-expand-panel { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px; }
-  .order-expand-side { grid-column: 1; }
-  .order-expand-product-row { grid-template-columns: 40px minmax(0, 1fr) auto; gap: 2px 8px; }
-  .order-expand-product-thumb { grid-column: 1; grid-row: 1 / span 2; align-self: start; width: 40px; height: 40px; }
-  .order-expand-product-name { grid-column: 2; grid-row: 1; }
-  .order-expand-amount { grid-column: 3; grid-row: 1; }
-  .order-expand-qty { grid-column: 2; grid-row: 2; }
-  .order-expand-info-grid { grid-template-columns: minmax(0, 1fr); }
-  .order-expand-actions { justify-content: stretch; }
-  .order-expand-actions .button { flex: 1 1 auto; }
-}
+.orders-page .order-no-stack > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.orders-page .order-no-date { color: var(--erp-muted); font-size: 10px; line-height: 1.2; white-space: nowrap; }
 
 /* 水单行内展开与批量确认 */
 .water-slip-check-cell { width: 32px; padding-right: 2px !important; }

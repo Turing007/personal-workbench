@@ -35,16 +35,13 @@ test.describe('财务管理工作台', () => {
     await expect(page.getByRole('button', { name: '财务', exact: true })).toBeVisible();
     await page.getByRole('button', { name: '财务', exact: true }).click();
 
-    // 页头标题 / 副标题已移除（手机端太占地方），改为断言工具栏里的搜索框与三个状态筛选已就位。
+    // 财务页已移除左侧筛选器，只保留搜索、月份导航和列设置。
     await expect(page.getByText('本期应收')).toBeVisible();
     await expect(page.getByText('待审核水单')).toBeVisible();
     await expect(page.getByRole('textbox', { name: '搜索订单号或客户' })).toBeVisible();
-    await page.getByRole('button', { name: '展开筛选' }).click();
-    const rail = page.locator('.filter-rail');
-    await expect(rail).toBeVisible();
-    for (const title of ['收款公司', '付款状态', '水单状态', '发票状态']) {
-      await expect(rail.locator('.filter-rail-section-head', { hasText: title })).toBeVisible();
-    }
+    await expect(page.getByRole('button', { name: '展开筛选' })).toHaveCount(0);
+    await expect(page.locator('.filter-rail')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '列设置' })).toBeVisible();
 
     const financeButtons = page.getByRole('button', { name: '查看财务' });
     if (await financeButtons.count() > 0) {

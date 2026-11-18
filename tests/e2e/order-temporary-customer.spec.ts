@@ -91,7 +91,7 @@ test.describe('订单临时客户', () => {
     }
   });
 
-  test('转正：行内展开入口预览挂接订单，确认后建客户并挂接', async ({ page }) => {
+  test('转正：订单详情预览挂接订单，确认后建客户并挂接', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const stamp = Date.now();
     const tempName = `E2E转正客户${stamp}`;
@@ -116,10 +116,10 @@ test.describe('订单临时客户', () => {
       await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
       await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(orderNo);
       const row = page.locator('.orders-table-desktop tbody tr', { hasText: orderNo }).first();
-      await row.getByRole('button', { name: `展开订单 ${orderNo}` }).click();
-      const panel = page.locator('.order-expand-row .order-expand-panel');
-      await expect(panel.getByText(/临时客户/)).toBeVisible();
-      await panel.getByRole('button', { name: '转正为客户' }).click();
+      await row.getByRole('button', { name: '详情' }).click();
+      const detailDialog = page.getByRole('dialog', { name: /订单详情/ });
+      await expect(detailDialog.getByText(/临时/)).toBeVisible();
+      await detailDialog.getByRole('button', { name: '转正为客户' }).click();
 
       const promoteDialog = page.getByRole('dialog', { name: '临时客户转正' });
       await expect(promoteDialog).toBeVisible();

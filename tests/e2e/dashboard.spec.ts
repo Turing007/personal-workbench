@@ -37,7 +37,11 @@ test('工作台：默认落地、待办、快捷新建和跳到待审核水单',
   await page.locator('.sidebar-nav').getByRole('button', { name: '工作台', exact: true }).click();
   await page.locator('.dashboard-task', { hasText: '待审核水单' }).click();
   await expect(page.getByText('水单收款', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('水单状态')).toHaveValue('pending');
+  await expect(page.getByRole('button', { name: '展开筛选' })).toHaveCount(0);
+  const activeFilter = page.locator('.water-slip-active-filter');
+  await expect(activeFilter).toContainText('当前只看：待确认');
+  await activeFilter.click();
+  await expect(activeFilter).toHaveCount(0);
 });
 
 test('工作台手机端不横向溢出', async ({ page }) => {

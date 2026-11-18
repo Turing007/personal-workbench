@@ -6,6 +6,7 @@ import type { OrderDraft } from './OrderForm';
 
 export interface OrderItemsTableProps {
   order: OrderDraft;
+  showPackaging?: boolean;
 }
 
 function packagingSize(item: { outerSize?: string; length?: string; width?: string; height?: string }) {
@@ -14,7 +15,7 @@ function packagingSize(item: { outerSize?: string; length?: string; width?: stri
   return dimensions.length ? dimensions.join(' × ') : '未填写';
 }
 
-export default function OrderItemsTable({ order }: OrderItemsTableProps) {
+export default function OrderItemsTable({ order, showPackaging = true }: OrderItemsTableProps) {
   const [itemImages, setItemImages] = useState<Record<number, Array<{ url: string; name: string; mimeType: string }>>>({});
 
   useEffect(() => {
@@ -48,7 +49,7 @@ export default function OrderItemsTable({ order }: OrderItemsTableProps) {
               <td style={{ padding: '8px 9px' }}>{`¥ ${((item.freightPerBoxCents ?? 0) / 100).toFixed(2)}`}</td>
               <td style={{ padding: '8px 9px' }}>{`¥ ${(((item.freightPerBoxCents ?? 0) * item.boxes) / 100).toFixed(2)}`}</td>
               <td style={{ padding: '8px 9px', whiteSpace: 'pre-wrap' }}>{item.remark || '—'}</td>
-            </tr>{packaging.length > 0 && <tr style={{ borderTop: '1px dashed var(--tone-border-soft)' }}><td colSpan={11} style={{ padding: '0 9px 8px', color: 'var(--tone-text-soft)', fontSize: 11 }}>包装快照：{packaging.map((pack) => `${pack.name || '未命名包装'} · ${packagingSize(pack)} · ${pack.outerWeight || '未填写'} · ${pack.packSize} 件/箱`).join('；')}</td></tr>}</Fragment>;
+            </tr>{showPackaging && packaging.length > 0 && <tr style={{ borderTop: '1px dashed var(--tone-border-soft)' }}><td colSpan={11} style={{ padding: '0 9px 8px', color: 'var(--tone-text-soft)', fontSize: 11 }}>包装快照：{packaging.map((pack) => `${pack.name || '未命名包装'} · ${packagingSize(pack)} · ${pack.outerWeight || '未填写'} · ${pack.packSize} 件/箱`).join('；')}</td></tr>}</Fragment>;
           }) : <tr><td colSpan={11} style={{ padding: 14, textAlign: 'center', color: 'var(--tone-text-faint)' }}>暂无产品明细</td></tr>}
         </tbody>
       </table>

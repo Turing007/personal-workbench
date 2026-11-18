@@ -10,7 +10,7 @@ import {
   uploadFinanceProof,
   voidFinanceProof,
 } from '../api';
-import type { Company, CompanyStatsRow } from '../../shared/companies';
+import type { CompanyStatsRow } from '../../shared/companies';
 import {
   currentMonth,
   type FinanceOrderLookupRow,
@@ -18,20 +18,16 @@ import {
   type PaymentProofStatus,
 } from '../../shared/finance';
 import { badgeClass, errorText, money } from '../components/finance/finance-format';
-import FilterRail, { FilterCheckList } from '../components/FilterRail';
-import { useFilterRailOpen, useSavedFilterViews } from '../filter-views';
 import { thumbUrl } from '../image-urls';
 import { useFileDrop } from '../use-file-drop';
 import { useIsNarrow } from '../use-is-narrow';
 
 export interface WaterSlipPageProps {
-  companies: Company[];
   onNotify?: (message: string, tone?: 'success' | 'error' | 'info') => void;
   onOpenOrder?: (orderId: number) => void;
   onOpenFinance?: (orderId: number) => void;
-  /** 工作台跳转：进入页面后直接带出待确认/公司筛选。 */
+  /** 工作台跳转：进入页面后直接带出待确认状态。 */
   initialStatus?: PaymentProofStatus;
-  initialCompanyId?: number;
   onInitialFiltersConsumed?: () => void;
 }
 
@@ -42,14 +38,6 @@ const proofStatusLabels: Record<PaymentProofStatus, string> = {
   rejected: '已驳回',
   void: '已作废',
 };
-const proofStatusOptions: Array<{ value: '' | PaymentProofStatus; label: string }> = [
-  { value: '', label: '全部状态' },
-  { value: 'pending', label: '待确认' },
-  { value: 'approved', label: '已入账' },
-  { value: 'rejected', label: '已驳回' },
-  { value: 'void', label: '已作废' },
-];
-
 function shiftMonth(month: string, offset: number): string {
   const [year, mon] = month.split('-').map(Number);
   const date = new Date(year, (mon ?? 1) - 1 + offset, 1);
@@ -60,16 +48,14 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function WaterSlipPage({ companies, onNotify, onOpenOrder, onOpenFinance, initialStatus, initialCompanyId, onInitialFiltersConsumed }: WaterSlipPageProps) {
+export default function WaterSlipPage({ onNotify, onOpenOrder, onOpenFinance, initialStatus, onInitialFiltersConsumed }: WaterSlipPageProps) {
   const [month, setMonth] = useState(() => currentMonth());
-  const [companyFilters, setCompanyFilters] = useState<string[]>([]);
   const [statusFilters, setStatusFilters] = useState<PaymentProofStatus[]>([]);
   useEffect(() => {
-    if (!initialStatus && initialCompanyId == null) return;
+    if (!initialStatus) return;
     if (initialStatus) setStatusFilters([initialStatus]);
-    if (initialCompanyId != null) setCompanyFilters([String(initialCompanyId)]);
     onInitialFiltersConsumed?.();
-  }, [initialStatus, initialCompanyId, onInitialFiltersConsumed]);
+  }, [initialStatus, onInitialFiltersConsumed]);
   const [query, setQuery] = useState('');
   const [stats, setStats] = useState<CompanyStatsRow[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -112,8 +98,6 @@ export default function WaterSlipPage({ companies, onNotify, onOpenOrder, onOpen
     try {
       setProofs((await listFinanceProofs({
         month: month || undefined,
-        companyIds: companyFilters.filter((value) => value !== 'unassigned').map(Number),
-        includeUnassignedCompany: companyFilters.includes('unassigned'),
         statuses: statusFilters,
         query: query.trim() || undefined,
       })).items);
@@ -122,7 +106,7 @@ export default function WaterSlipPage({ companies, onNotify, onOpenOrder, onOpen
     } finally {
       setProofsLoading(false);
     }
-  }, [companyFilters, month, onNotify, query, statusFilters]);
+  }, [month, onNotify, query, statusFilters]);
 
   useEffect(() => { void loadStats(); }, [loadStats]);
   useEffect(() => {
@@ -335,7 +319,6 @@ export default function WaterSlipPage({ companies, onNotify, onOpenOrder, onOpen
     pendingInvoiceCount: sum.pendingInvoiceCount + row.pendingInvoiceCount,
   }), { receivedCents: 0, receivedCount: 0, pendingCents: 0, pendingCount: 0, pendingInvoiceCents: 0, pendingInvoiceCount: 0 }), [stats]);
   const activeStats = useMemo(() => stats.filter((row) => row.receivedCents || row.receivedCount || row.pendingCents || row.pendingCount || row.pendingInvoiceCents || row.pendingInvoiceCount), [stats]);
-  const companyOptions = companies;
   const selectedCompanyWarning = selectedOrder && !selectedOrder.companyName && selectedOrder.settlementType !== 'personal';
   const thumbToggle = (proof: FinanceProofListRow) => {
     const expanded = expandedProofIds.includes(proof.id);
@@ -352,47 +335,7 @@ export default function WaterSlipPage({ companies, onNotify, onOpenOrder, onOpen
     </button>;
   };
 
-  const waterFilters = useMemo(() => ({ companies: companyFilters, statuses: statusFilters, month }), [companyFilters, statusFilters, month]);
-  const applyWaterFilters = (next: typeof waterFilters) => {
-    setCompanyFilters(next.companies);
-    setStatusFilters(next.statuses);
-    setMonth(next.month);
-  };
-  const savedFilters = useSavedFilterViews('water-slips', waterFilters, applyWaterFilters);
-  const filterRail = useFilterRailOpen('water-slips');
-  const companyFilterOptions = [
-    ...companies.map((company) => ({ value: String(company.id), label: `${company.shortName}${company.isActive ? '' : '（已停用）'}` })),
-    { value: 'unassigned', label: '未分配公司' },
-  ];
-  const statusFilterOptions = (Object.entries(proofStatusLabels) as [PaymentProofStatus, string][]).map(([value, label]) => ({ value, label }));
-  const toggleCompanyFilter = (value: string) => {
-    setCompanyFilters((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
-  };
-  const resetWaterFilters = () => {
-    applyWaterFilters({ companies: [], statuses: [], month: currentMonth() });
-    savedFilters.clearActive();
-  };
-
   return <div className="page-shell water-slip-page">
-    <div className="filter-rail-layout">
-      <FilterRail
-        open={filterRail.open}
-        onToggle={filterRail.toggle}
-        views={savedFilters.views}
-        activeViewId={savedFilters.activeViewId}
-        modified={savedFilters.modified}
-        onApplyView={savedFilters.applyView}
-        onClearActive={savedFilters.clearActive}
-        onSaveView={savedFilters.saveView}
-        onUpdateView={savedFilters.updateView}
-        onRenameView={savedFilters.renameView}
-        onDeleteView={savedFilters.deleteView}
-        onReset={resetWaterFilters}
-      >
-        <FilterCheckList title="公司" options={companyFilterOptions} selected={companyFilters} onChange={setCompanyFilters} searchable={companyFilterOptions.length > 7} />
-        <FilterCheckList title="水单状态" options={statusFilterOptions} selected={statusFilters} onChange={setStatusFilters} searchable={false} />
-      </FilterRail>
-      <div className="filter-rail-main">
     <div className="page-toolbar water-slip-head">
       <div>
         <span className="page-breadcrumb">履约 / 财务 / 水单</span>
@@ -485,7 +428,7 @@ export default function WaterSlipPage({ companies, onNotify, onOpenOrder, onOpen
     <section className="water-slip-company-stats">
       <div className="water-slip-section-head"><div><strong>按公司统计</strong><span>按水单付款日期统计；未分配公司的水单单独显示</span></div>{statsLoading && <span className="water-slip-search-hint">加载中…</span>}</div>
       {activeStats.length ? <div className="water-slip-company-grid">
-        {activeStats.map((row) => <button type="button" key={row.companyId ?? 'unassigned'} className={`water-slip-company-card${companyFilters.includes(String(row.companyId ?? 'unassigned')) ? ' is-active' : ''}`} onClick={() => toggleCompanyFilter(String(row.companyId ?? 'unassigned'))}>
+        {activeStats.map((row) => <div key={row.companyId ?? 'unassigned'} className="water-slip-company-card">
           <div className="water-slip-company-card-head"><Building2 size={15} /><strong>{row.companyName}</strong></div>
           <div className="water-slip-company-card-metrics">
             <div><span>已入账</span><strong className="finance-positive">{money(row.receivedCents)}</strong></div>
@@ -493,22 +436,21 @@ export default function WaterSlipPage({ companies, onNotify, onOpenOrder, onOpen
             <div><span>待开票</span><strong>{money(row.pendingInvoiceCents)}</strong></div>
           </div>
           <small>{row.receivedCount} 笔已入账 · {row.pendingCount} 笔待确认 · {row.pendingInvoiceCount} 个待开票订单</small>
-        </button>)}
+        </div>)}
       </div> : <div className="table-state">本月还没有水单记录。输入订单号开始收集。</div>}
     </section>
 
     <section className="table-panel water-slip-list-panel">
       <div className="water-slip-list-toolbar">
-        <div className="water-slip-section-head"><div><strong>最近水单</strong><span>{month ? `${month} · 按付款日期` : '全部月份'}</span></div></div>
+        <div className="water-slip-section-head">
+          <div><strong>最近水单</strong><span>{month ? `${month} · 按付款日期` : '全部月份'}</span></div>
+          {statusFilters.length > 0 && <button type="button" className="water-slip-active-filter" onClick={() => setStatusFilters([])} title="清除工作台带入的水单状态">
+            <span>当前只看：{statusFilters.map((status) => proofStatusLabels[status]).join('、')}</span>
+            <b>查看全部</b>
+            <X size={12} />
+          </button>}
+        </div>
         <div className="water-slip-filters">
-          <select className="toolbar-select" aria-label="公司筛选" value={companyFilters.length === 1 ? companyFilters[0] : ''} onChange={(event) => setCompanyFilters(event.target.value ? [event.target.value] : [])}>
-            <option value="">全部公司</option>
-            {companyOptions.map((company) => <option value={company.id} key={company.id}>{company.shortName}{company.isActive ? '' : '（已停用）'}</option>)}
-            <option value="unassigned">未分配公司</option>
-          </select>
-          <select className="toolbar-select" aria-label="水单状态" value={statusFilters.length === 1 ? statusFilters[0] : ''} onChange={(event) => setStatusFilters(event.target.value ? [event.target.value as PaymentProofStatus] : [])}>
-            {proofStatusOptions.map((option) => <option value={option.value} key={option.value || 'all'}>{option.label}</option>)}
-          </select>
           <div className="water-slip-search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索订单号/客户/付款人" aria-label="搜索水单" /></div>
         </div>
       </div>
@@ -556,8 +498,6 @@ export default function WaterSlipPage({ companies, onNotify, onOpenOrder, onOpen
         </div>}
       </> : <div className="table-state">没有符合条件的水单。收到客户水单后，在上方输入订单号保存。</div>}
     </section>
-      </div>
-    </div>
   </div>;
 }
 
