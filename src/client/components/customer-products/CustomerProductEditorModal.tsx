@@ -112,6 +112,12 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
   const [pasteText, setPasteText] = useState('');
   const [finalPrice, setFinalPrice] = useState('');
   const [costPrice, setCostPrice] = useState('');
+  const [batteryCost, setBatteryCost] = useState('');
+  const [chargerCost, setChargerCost] = useState('');
+  const [packagingCost, setPackagingCost] = useState('');
+  const [accessoryCost, setAccessoryCost] = useState('');
+  const [otherCost, setOtherCost] = useState('');
+  const [costConfirmed, setCostConfirmed] = useState(false);
   const [freightPerBox, setFreightPerBox] = useState('');
   const [remark, setRemark] = useState('');
   const [labelRequirement, setLabelRequirement] = useState('');
@@ -156,6 +162,12 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
     setPasteText('');
     setFinalPrice(product?.finalPriceCents == null ? '' : (product.finalPriceCents / 100).toFixed(2));
     setCostPrice(product?.costPriceCents == null ? '' : (product.costPriceCents / 100).toFixed(2));
+    setBatteryCost(product?.batteryCostCents == null ? '' : (product.batteryCostCents / 100).toFixed(2));
+    setChargerCost(product?.chargerCostCents == null ? '' : (product.chargerCostCents / 100).toFixed(2));
+    setPackagingCost(product?.packagingCostCents == null ? '' : (product.packagingCostCents / 100).toFixed(2));
+    setAccessoryCost(product?.accessoryCostCents == null ? '' : (product.accessoryCostCents / 100).toFixed(2));
+    setOtherCost(product?.otherCostCents == null ? '' : (product.otherCostCents / 100).toFixed(2));
+    setCostConfirmed(Boolean(product?.costConfirmed));
     setFreightPerBox(product?.freightPerBoxCents == null ? '' : (product.freightPerBoxCents / 100).toFixed(2));
     setRemark(product?.remark ?? '');
     setLabelRequirement(product?.labelRequirement ?? '');
@@ -218,6 +230,12 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
     setSpecification(next.specification);
     setSku('');
     setCostPrice(next.purchasePrice ? String(next.purchasePrice) : '');
+    setBatteryCost('');
+    setChargerCost('');
+    setPackagingCost('');
+    setAccessoryCost('');
+    setOtherCost('');
+    setCostConfirmed(false);
     setFreightPerBox('');
     setRemark(next.remark ?? ''); setLabelRequirement('');
     setPackaging(systemPackaging(next.packaging));
@@ -282,6 +300,11 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
     const count = derivedPackCount;
     const price = yuanToCents(finalPrice);
     const cost = yuanToCents(costPrice);
+    const batteryCostCents = yuanToCents(batteryCost);
+    const chargerCostCents = yuanToCents(chargerCost);
+    const packagingCostCents = yuanToCents(packagingCost);
+    const accessoryCostCents = yuanToCents(accessoryCost);
+    const otherCostCents = yuanToCents(otherCost);
     const freight = yuanToCents(freightPerBox);
     const batch = batchMode ? buildBatchPayload() : undefined;
     if (batch) {
@@ -290,7 +313,9 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
       if (batch.items.length > CUSTOMER_PRODUCT_BATCH_LIMIT) return setError(`单个批次最多创建 ${CUSTOMER_PRODUCT_BATCH_LIMIT} 个客户产品`);
     } else if (!name.trim()) return setError('请填写品名');
     if (finalPrice.trim() && price === null) return setError('最终价格必须是大于等于 0 的数字');
-    if (costPrice.trim() && cost === null) return setError('成本价必须是大于等于 0 的数字');
+    if (costPrice.trim() && cost === null) return setError('机头/基础成本必须是大于等于 0 的数字');
+    const componentCosts = [batteryCost, chargerCost, packagingCost, accessoryCost, otherCost];
+    if (componentCosts.some((value) => value.trim() && yuanToCents(value) === null)) return setError('成本构成必须都是大于等于 0 的数字');
     const selectedImagePath = images.length
       ? (imagePathFromUrl(images[0]?.url) ?? (images[0]?.file ? product?.imageRelativePath ?? null : null))
       : null;
@@ -317,6 +342,12 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
           packCount: count,
           finalPriceCents: price,
           costPriceCents: cost,
+          batteryCostCents,
+          chargerCostCents,
+          packagingCostCents,
+          accessoryCostCents,
+          otherCostCents,
+          costConfirmed,
           freightPerBoxCents: freight,
           remark: remark.trim(),
           packaging: packagingPayloadInput(),
@@ -403,10 +434,24 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
         <input value={supplierProductName} onChange={(event) => setSupplierProductName(event.target.value)} style={inputStyle} placeholder="报给供应商的名称，留空则按系统产品名报供（备货表使用）" />
       </label>}
       <div className="cpe-form-grid is-price">
-        <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>成本价（元）<input type="number" min={0} step="0.01" value={costPrice} onChange={(event) => setCostPrice(event.target.value)} style={inputStyle} placeholder="待完善" /></label>
+        <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>机头/基础成本（元）<input type="number" min={0} step="0.01" value={costPrice} onChange={(event) => setCostPrice(event.target.value)} style={inputStyle} placeholder="待完善" /></label>
         <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>最终价格（元）<input type="number" min={0} step="0.01" value={finalPrice} onChange={(event) => setFinalPrice(event.target.value)} style={inputStyle} placeholder="待完善" /></label>
         <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>运费（元/箱）<input type="number" min={0} step="0.01" value={freightPerBox} onChange={(event) => setFreightPerBox(event.target.value)} style={inputStyle} placeholder="可选" /></label>
       </div>
+      {!batchMode && <details className="cpe-cost-breakdown" open={!costConfirmed}>
+        <summary><span>其他单件成本与利润口径</span><small>{costConfirmed ? '已核对' : '未核对'}</small></summary>
+        <div className="cpe-cost-grid">
+          <label>电池成本（元）<input type="number" min={0} step="0.01" value={batteryCost} onChange={(event) => setBatteryCost(event.target.value)} style={inputStyle} placeholder="0.00" /></label>
+          <label>充电器成本（元）<input type="number" min={0} step="0.01" value={chargerCost} onChange={(event) => setChargerCost(event.target.value)} style={inputStyle} placeholder="0.00" /></label>
+          <label>包装成本（元/件）<input type="number" min={0} step="0.01" value={packagingCost} onChange={(event) => setPackagingCost(event.target.value)} style={inputStyle} placeholder="0.00" /></label>
+          <label>配件成本（元）<input type="number" min={0} step="0.01" value={accessoryCost} onChange={(event) => setAccessoryCost(event.target.value)} style={inputStyle} placeholder="0.00" /></label>
+          <label>其他单件成本（元）<input type="number" min={0} step="0.01" value={otherCost} onChange={(event) => setOtherCost(event.target.value)} style={inputStyle} placeholder="0.00" /></label>
+        </div>
+        <div className="cpe-cost-summary">
+          <label><input type="checkbox" checked={costConfirmed} onChange={(event) => setCostConfirmed(event.target.checked)} />标准成本已核对，开单时默认计入利润</label>
+          <strong>单件合计 ¥ {(([costPrice, batteryCost, chargerCost, packagingCost, accessoryCost, otherCost].reduce((sum, value) => sum + (yuanToCents(value) ?? 0), 0)) / 100).toFixed(2)}</strong>
+        </div>
+      </details>}
       <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>箱唛要求（会印在箱面上）<textarea rows={2} value={labelRequirement} onChange={(event) => setLabelRequirement(event.target.value)} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} placeholder="只写要让仓库/工厂照做并印上箱子的话，如：外箱贴条码箱唛、机器套气泡袋" /></label>
       <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>备注（仅内部可见，不打印）<textarea rows={3} value={remark} onChange={(event) => setRemark(event.target.value)} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} placeholder="价格、税运、结算等内部信息写这里；要印到箱子上的请填上面的「箱唛要求」" /></label>
       {selectedSystemProduct && <div style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>已从系统产品库带入基础信息，可继续修改后保存。</div>}

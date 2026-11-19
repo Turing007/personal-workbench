@@ -97,6 +97,13 @@ export interface ApiOrderItemDetail {
   pack_count: number;
   unit_price_cents?: number;
   amount_cents?: number;
+  machine_cost_cents?: number | null;
+  battery_cost_cents?: number | null;
+  charger_cost_cents?: number | null;
+  packaging_cost_cents?: number | null;
+  accessory_cost_cents?: number | null;
+  other_cost_cents?: number | null;
+  cost_confirmed?: number;
   remark?: string;
   packaging?: ApiOrderPackaging[];
 }
@@ -127,6 +134,11 @@ export interface ApiOrderRow {
   amount: number;
   amount_cents?: number;
   shipping_cents?: number;
+  logistics_cost_cents?: number | null;
+  label_cost_cents?: number | null;
+  other_cost_cents?: number | null;
+  other_cost_note?: string;
+  cost_confirmed?: number;
   tracking_no: string;
   payment_note?: string;
   order_detail?: string;
@@ -460,6 +472,12 @@ function mapCustomerProduct(row: SharedCustomerProduct): SharedCustomerProduct {
     latestQuoteCents: row.latestQuoteCents == null ? null : Number(row.latestQuoteCents),
     finalPriceCents: row.finalPriceCents == null ? null : Number(row.finalPriceCents),
     costPriceCents: row.costPriceCents == null ? null : Number(row.costPriceCents),
+    batteryCostCents: row.batteryCostCents == null ? null : Number(row.batteryCostCents),
+    chargerCostCents: row.chargerCostCents == null ? null : Number(row.chargerCostCents),
+    packagingCostCents: row.packagingCostCents == null ? null : Number(row.packagingCostCents),
+    accessoryCostCents: row.accessoryCostCents == null ? null : Number(row.accessoryCostCents),
+    otherCostCents: row.otherCostCents == null ? null : Number(row.otherCostCents),
+    costConfirmed: Boolean(row.costConfirmed),
     freightPerBoxCents: row.freightPerBoxCents == null ? null : Number(row.freightPerBoxCents),
     remark: String(row.remark ?? ''),
     labelRequirement: String(row.labelRequirement ?? ''),
@@ -512,13 +530,18 @@ export function draftToInput(draft: OrderDraft) {
     amount: amountCents / 100,
     amountCents,
     shippingCents,
+    logisticsCostCents: draft.logisticsCostCents ?? null,
+    labelCostCents: draft.labelCostCents ?? null,
+    otherCostCents: draft.otherCostCents ?? null,
+    otherCostNote: draft.otherCostNote ?? '',
+    costConfirmed: Boolean(draft.costConfirmed),
     trackingNo: draft.trackingNo,
     paymentNote: draft.paymentNote,
     orderDetail: draft.orderDetail,
     remark: draft.remark,
     settlementType: draft.settlementType === 'personal' ? 'personal' : 'corporate',
     companyId: draft.companyId ?? null,
-    items: draft.items.map((item) => ({ customerProductId: item.customerProductId ?? null, productId: item.productId ? Number(item.productId) : null, name: item.name.trim(), sku: item.sku.trim(), specification: item.specification.trim(), packCount: Math.max(1, Math.trunc(item.packSize)), quantity: Math.max(1, Math.trunc(item.quantity)), unitPriceCents: Math.max(0, Math.trunc(item.unitPriceCents ?? 0)), freightPerBoxCents: Math.max(0, Math.trunc(item.freightPerBoxCents ?? 0)), packaging: item.packaging?.length ? item.packaging.map((pack) => ({ name: pack.name, innerSize: pack.innerSize, innerWeight: Number(pack.innerWeight) || 0, outerSize: pack.outerSize, outerWeight: Number(pack.outerWeight) || 0, packCount: Math.max(1, Math.trunc(pack.packSize)) })) : [{ name: '', packCount: Math.max(1, Math.trunc(item.packSize)) }], remark: item.remark, labelRequirement: (item.labelRequirement ?? '').trim() }))
+    items: draft.items.map((item) => ({ customerProductId: item.customerProductId ?? null, productId: item.productId ? Number(item.productId) : null, name: item.name.trim(), sku: item.sku.trim(), specification: item.specification.trim(), packCount: Math.max(1, Math.trunc(item.packSize)), quantity: Math.max(1, Math.trunc(item.quantity)), unitPriceCents: Math.max(0, Math.trunc(item.unitPriceCents ?? 0)), freightPerBoxCents: Math.max(0, Math.trunc(item.freightPerBoxCents ?? 0)), machineCostCents: item.machineCostCents ?? null, batteryCostCents: item.batteryCostCents ?? null, chargerCostCents: item.chargerCostCents ?? null, packagingCostCents: item.packagingCostCents ?? null, accessoryCostCents: item.accessoryCostCents ?? null, otherCostCents: item.otherCostCents ?? null, costConfirmed: Boolean(item.costConfirmed), packaging: item.packaging?.length ? item.packaging.map((pack) => ({ name: pack.name, innerSize: pack.innerSize, innerWeight: Number(pack.innerWeight) || 0, outerSize: pack.outerSize, outerWeight: Number(pack.outerWeight) || 0, packCount: Math.max(1, Math.trunc(pack.packSize)) })) : [{ name: '', packCount: Math.max(1, Math.trunc(item.packSize)) }], remark: item.remark, labelRequirement: (item.labelRequirement ?? '').trim() }))
     , orderAttachments: draft.items.flatMap((item) => (item.customerProductAttachments ?? []).map((attachment) => ({ category: attachment.category, sourceCustomerProductId: item.customerProductId ?? null, relativePath: attachment.relativePath, originalName: attachment.originalName, mimeType: attachment.mimeType, size: attachment.size })))
   };
 }
@@ -911,6 +934,12 @@ function customerProductInput(product: CustomerProductSaveInput) {
     packCount: product.packCount,
     finalPriceCents: product.finalPriceCents,
     costPriceCents: product.costPriceCents ?? null,
+    batteryCostCents: product.batteryCostCents ?? null,
+    chargerCostCents: product.chargerCostCents ?? null,
+    packagingCostCents: product.packagingCostCents ?? null,
+    accessoryCostCents: product.accessoryCostCents ?? null,
+    otherCostCents: product.otherCostCents ?? null,
+    costConfirmed: Boolean(product.costConfirmed),
     freightPerBoxCents: product.freightPerBoxCents ?? null,
     remark: product.remark ?? '',
     labelRequirement: product.labelRequirement ?? '',
@@ -1183,6 +1212,7 @@ export function deletePaymentProof(id: number | string) { return request(`/api/p
 export interface ApiFinanceDetail {
   order: Record<string, unknown>;
   finance: OrderFinanceSummary;
+  profit: import('../shared/order-profit').OrderProfitSummary;
   proofs: Array<PaymentProofRecord & { url: string }>;
   receipts: FinanceReceipt[];
   invoices: Array<FinanceInvoice & { files: Array<FinanceInvoiceFile & { url: string }> }>;

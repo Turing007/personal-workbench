@@ -12,6 +12,7 @@ import type {
   PaymentProofStatus,
   PayeeBreakdownRow,
 } from '../../shared/finance.js';
+import type { OrderProfitSummary } from '../../shared/order-profit.js';
 
 function now(): string { return new Date().toISOString(); }
 
@@ -97,6 +98,7 @@ export interface FinanceServiceOptions {
 export interface FinanceDetail {
   order: Record<string, unknown>;
   finance: OrderFinanceSummary;
+  profit: OrderProfitSummary;
   proofs: Array<PaymentProofRecord & { url: string }>;
   receipts: ReturnType<FinanceRepository['listReceipts']>;
   invoices: Array<FinanceInvoice & { files: Array<FinanceInvoiceFile & { url: string }> }>;
@@ -145,6 +147,7 @@ export class FinanceService {
     return {
       order,
       finance,
+      profit: detail.profit,
       proofs: detail.proofs.map((proof) => ({ ...proof, url: `/files/${proof.relativePath}` })),
       receipts: detail.receipts,
       invoices: detail.invoices.map((invoice) => ({

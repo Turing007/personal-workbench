@@ -323,6 +323,11 @@ export class OrderService {
       amount: Number(detail.amount ?? 0),
       amountCents: Number(detail.amount_cents ?? Math.round(Number(detail.amount ?? 0) * 100)),
       shippingCents: Number(detail.shipping_cents ?? 0),
+      logisticsCostCents: detail.logistics_cost_cents == null ? null : Number(detail.logistics_cost_cents),
+      labelCostCents: detail.label_cost_cents == null ? null : Number(detail.label_cost_cents),
+      otherCostCents: detail.other_cost_cents == null ? null : Number(detail.other_cost_cents),
+      otherCostNote: String(detail.other_cost_note ?? ''),
+      costConfirmed: Boolean(detail.cost_confirmed),
       trackingNo: String(detail.tracking_no ?? ''),
       paymentNote: String(detail.payment_note ?? ''),
       orderDetail: String(detail.order_detail ?? ''),
@@ -340,6 +345,13 @@ export class OrderService {
         unitPriceCents: Number(item.unit_price_cents ?? 0),
         amountCents: Number(item.amount_cents ?? 0),
         freightPerBoxCents: Number(item.freight_per_box_cents ?? 0),
+        machineCostCents: item.machine_cost_cents == null ? null : Number(item.machine_cost_cents),
+        batteryCostCents: item.battery_cost_cents == null ? null : Number(item.battery_cost_cents),
+        chargerCostCents: item.charger_cost_cents == null ? null : Number(item.charger_cost_cents),
+        packagingCostCents: item.packaging_cost_cents == null ? null : Number(item.packaging_cost_cents),
+        accessoryCostCents: item.accessory_cost_cents == null ? null : Number(item.accessory_cost_cents),
+        otherCostCents: item.other_cost_cents == null ? null : Number(item.other_cost_cents),
+        costConfirmed: Boolean(item.cost_confirmed),
         remark: String(item.remark ?? ''),
       })),
     };
@@ -530,6 +542,13 @@ export class OrderService {
         unitPriceCents,
         amountCents: calculateLineAmountCents(item.quantity, unitPriceCents),
         freightPerBoxCents: item.freightPerBoxCents ?? product.freightPerBoxCents ?? 0,
+        machineCostCents: item.machineCostCents === undefined ? (isCreate ? product.costPriceCents : undefined) : item.machineCostCents,
+        batteryCostCents: item.batteryCostCents === undefined ? (isCreate ? product.batteryCostCents : undefined) : item.batteryCostCents,
+        chargerCostCents: item.chargerCostCents === undefined ? (isCreate ? product.chargerCostCents : undefined) : item.chargerCostCents,
+        packagingCostCents: item.packagingCostCents === undefined ? (isCreate ? product.packagingCostCents : undefined) : item.packagingCostCents,
+        accessoryCostCents: item.accessoryCostCents === undefined ? (isCreate ? product.accessoryCostCents : undefined) : item.accessoryCostCents,
+        otherCostCents: item.otherCostCents === undefined ? (isCreate ? product.otherCostCents : undefined) : item.otherCostCents,
+        costConfirmed: item.costConfirmed === undefined ? (isCreate ? product.costConfirmed : undefined) : item.costConfirmed,
         remark: item.remark?.trim() || product.remark,
       });
       }
@@ -622,6 +641,9 @@ export class OrderService {
     if (input.shippingCents != null && (!Number.isSafeInteger(input.shippingCents) || input.shippingCents < 0)) {
       throw new Error('运费必须是非负整数分');
     }
+    for (const value of [input.logisticsCostCents, input.labelCostCents, input.otherCostCents]) {
+      if (value != null && (!Number.isSafeInteger(value) || value < 0)) throw new Error('订单级成本必须是非负整数分');
+    }
     // 草稿允许收件人为空，发布时才强制。
     if (!options.draft && !input.recipientName?.trim()) throw new Error('收件人名称不能为空');
     if (this.companyRepository && input.companyId != null && !this.companyRepository.get(input.companyId)) {
@@ -639,6 +661,16 @@ export class OrderService {
       if (item.packCount != null && (!integer(item.packCount) || item.packCount <= 0)) throw new Error(`第 ${index + 1} 行装箱数必须是正整数`);
       if (item.unitPriceCents != null && (!integer(item.unitPriceCents) || item.unitPriceCents < 0)) throw new Error(`第 ${index + 1} 行单价必须是非负整数分`);
       if (item.freightPerBoxCents != null && (!integer(item.freightPerBoxCents) || item.freightPerBoxCents < 0)) throw new Error(`第 ${index + 1} 行运费/箱必须是非负整数分`);
+      for (const value of [
+        item.machineCostCents,
+        item.batteryCostCents,
+        item.chargerCostCents,
+        item.packagingCostCents,
+        item.accessoryCostCents,
+        item.otherCostCents,
+      ]) {
+        if (value != null && (!integer(value) || value < 0)) throw new Error(`第 ${index + 1} 行成本必须是非负整数分`);
+      }
       if (item.packaging != null) {
         if (!Array.isArray(item.packaging) || item.packaging.length === 0) throw new Error(`第 ${index + 1} 行包装方案不能为空`);
         item.packaging.forEach((packaging, packagingIndex) => {

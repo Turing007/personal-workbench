@@ -14,6 +14,7 @@ import StatusCards from '../components/StatusCards';
 import { ORDER_STATUS_LABELS_WITH_DRAFT } from '../../shared/domain';
 import { getOrderNextAction, getOrderRollbackAction, isDraftOrder, isUnshippedOrder, type BatchAdvanceAction, type OrderNextAction } from '../order-workflow';
 import { FINANCE_PAYMENT_STATUS_LABELS, type FinancePaymentStatus } from '../../shared/finance';
+import { calculateOrderProfit } from '../../shared/order-profit';
 import { formatDateTime } from '../../shared/formatters';
 import type { Company } from '../../shared/companies';
 import type { Customer, CustomerSaveInput } from '../../shared/customers';
@@ -302,30 +303,31 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
             ['总箱数', 'order-box-cell'],
             ['金额', 'order-amount-cell is-right'],
             ['状态', 'order-status-cell'],
-            ['附件 / 备注', 'order-extra-cell'],
+            ['附件', 'order-attachment-cell'],
+            ['备注', 'order-remark-cell'],
             ['操作', 'order-ops-cell'],
           ].map(([title, className]) => <th key={title} className={className}>{title}</th>)}</tr></thead>
           <tbody>{visibleOrders.map((order) => {
             const id = orderKey(order); const boxCount = orderBoxCount(order); const paymentStatus = orderPaymentStatus(order);
             const attachmentCount = order.contracts?.length ?? 0;
+            const profit = calculateOrderProfit({
+              amountCents: Math.round(Number(order.amount || 0) * 100),
+              items: order.items,
+              logisticsCostCents: order.logisticsCostCents,
+              labelCostCents: order.labelCostCents,
+              otherCostCents: order.otherCostCents,
+              costConfirmed: order.costConfirmed,
+            });
             return <tr key={id}>
                 <td className="order-check-cell"><input type="checkbox" disabled={!isUnshippedOrder(order) || isDraftOrder(order)} checked={isUnshippedOrder(order) && !isDraftOrder(order) && selectedIds.includes(id)} onChange={() => setSelectedIds((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id])} aria-label={`选择订单${order.orderNo}`} /></td>
                 <td className="strong-cell order-no-cell"><div className="order-no-stack"><span title={order.orderNo}>{order.orderNo}</span><span className="order-no-date">{order.orderedAt.replace('T', ' ')}</span></div></td>
                 <td className="order-customer-cell"><div className="order-party"><strong className="order-party-customer" title={order.customerName || undefined}>{order.customerName || '未填客户'}{order.customerId == null && order.customerName?.trim() && <span className="badge badge-neutral" style={{ marginLeft: 5 }}>临时</span>}</strong><span className="order-party-recipient" title={order.recipientName || undefined}>收件人：{order.recipientName || '—'}</span></div></td>
                 <td className="order-product-cell"><OrderProductQuickList order={order} onOpen={() => setProductsOrder(order)} /></td>
                 <td className="order-box-cell">{boxCount}</td>
-                <td className="amount order-amount-cell"><div>¥ {order.amount || '0.00'}</div><div className="payment-sub" style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</div></td>
+                <td className="amount order-amount-cell"><div>¥ {order.amount || '0.00'}</div><div className="payment-sub" style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</div><div className={`order-profit-sub ${profit.costComplete ? (profit.profitCents ?? 0) < 0 ? 'is-loss' : 'is-profit' : 'is-pending'}`} title={profit.costComplete ? `毛利 ${(profit.profitCents ?? 0) / 100} · 毛利率 ${profit.marginPercent ?? '—'}%` : `成本待补：${profit.missingItemCount} 行产品未确认`}>{profit.costComplete ? `毛利 ¥${((profit.profitCents ?? 0) / 100).toFixed(2)}` : '成本待补'}</div></td>
                 <td className="order-status-cell"><span className={statusBadgeClass(order.status)}>{order.status ? statusLabels[order.status] : '-'}</span><div className={`status-sub ${order.labelPrintedAt ? 'is-printed' : 'is-pending'}`} title={order.labelPrintedAt ? `箱唛打印时间：${formatDateTime(order.labelPrintedAt)}` : undefined}>{order.status === 'draft' ? '草稿订单，发布后进入流程' : order.labelPrintedAt ? '已打印箱唛' : '箱唛待打印'}</div></td>
-                <td className="order-extra-cell"><div className="order-extra-stack">
-                  <div className="order-extra-section">
-                    <span className="order-extra-label"><Paperclip size={11} />附件</span>
-                    {attachmentCount > 0 ? <div className="order-extra-files">{(order.contracts ?? []).map((contract) => <a key={contract.id} href={contract.url} target="_blank" rel="noreferrer" title={`打开附件并打印：${contract.name}`}><span>{contract.name}</span><Printer size={10} /></a>)}</div> : <span className="order-extra-empty">暂无</span>}
-                  </div>
-                  <div className="order-extra-section">
-                    <span className="order-extra-label">备注</span>
-                    <span className="order-remark-full">{order.remark || '暂无'}</span>
-                  </div>
-                </div></td>
+                <td className="order-attachment-cell">{attachmentCount > 0 ? <div className="order-extra-files">{(order.contracts ?? []).map((contract) => <a key={contract.id} href={contract.url} target="_blank" rel="noreferrer" title={`打开附件并打印：${contract.name}`}><span>{contract.name}</span><Printer size={10} /></a>)}</div> : <span className="order-extra-empty">暂无</span>}</td>
+                <td className="order-remark-cell"><span className="order-remark-full">{order.remark || '暂无'}</span></td>
                 <td className="order-ops-cell">{renderOrderActions(order)}</td>
               </tr>;
           })}</tbody>
@@ -335,6 +337,14 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
       <div className="orders-card-list" aria-label="订单卡片列表">{visibleOrders.map((order) => {
         const boxCount = orderBoxCount(order); const paymentStatus = orderPaymentStatus(order);
         const attachmentCount = order.contracts?.length ?? 0;
+        const profit = calculateOrderProfit({
+          amountCents: Math.round(Number(order.amount || 0) * 100),
+          items: order.items,
+          logisticsCostCents: order.logisticsCostCents,
+          labelCostCents: order.labelCostCents,
+          otherCostCents: order.otherCostCents,
+          costConfirmed: order.costConfirmed,
+        });
         return <article key={orderKey(order)} className="order-card">
           <div className="order-card-head">
             <div className="order-card-title"><strong>{order.orderNo}</strong><span>{order.customerId == null && order.customerName?.trim() ? '临时 · ' : ''}{order.customerName || '未填客户'} · {order.orderedAt.replace('T', ' ')} · {order.recipientName || '未填收件人'}</span></div>
@@ -348,6 +358,7 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
             <span>{boxCount} 箱</span>
             <span style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</span>
             <span>{order.status === 'draft' ? '草稿未发布' : order.labelPrintedAt ? '箱唛已打印' : '箱唛待打印'}</span>
+            <span className={profit.costComplete ? (profit.profitCents ?? 0) < 0 ? 'finance-warning' : 'finance-positive' : 'finance-warning'}>{profit.costComplete ? `毛利 ¥${((profit.profitCents ?? 0) / 100).toFixed(2)}` : '成本待补'}</span>
           </div>
           <div className="order-card-extra">
             <div className="order-extra-section">

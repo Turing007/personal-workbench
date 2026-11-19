@@ -186,7 +186,17 @@ test('订单列表显示附件备注、隐藏物流单号，并可回退误点�
     await expect(page.locator('.orders-data-table thead')).not.toContainText('物流单号');
     expect(await row.locator('.order-customer-cell').evaluate((element) => element.getBoundingClientRect().width)).toBeLessThanOrEqual(130);
     await expect(row.locator('.order-product-quick-spec')).toHaveText('标准规格 * 2');
-    await expect(row.locator('.order-extra-cell')).toContainText('附件');
+    await expect(page.locator('.orders-data-table thead .order-attachment-cell')).toHaveText('附件');
+    await expect(page.locator('.orders-data-table thead .order-remark-cell')).toHaveText('备注');
+    await expect(row.locator('.order-attachment-cell')).toContainText(attachmentName);
+    await expect(row.locator('.order-attachment-cell')).not.toContainText(remark);
+    await expect(row.locator('.order-remark-cell')).toHaveText(remark);
+    await expect(row.locator('.order-remark-cell')).not.toContainText(attachmentName);
+    const tableWidth = await page.locator('.orders-table-desktop').evaluate((element) => ({
+      scrollWidth: element.scrollWidth,
+      clientWidth: element.clientWidth,
+    }));
+    expect(tableWidth.scrollWidth).toBeLessThanOrEqual(tableWidth.clientWidth + 1);
     await expect(row.locator('.order-extra-files')).toContainText(attachmentName);
     await expect(row.locator('.order-remark-full')).toHaveText(remark);
     await expect(row.locator('.order-status-cell')).toContainText('待发货');

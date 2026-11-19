@@ -22,7 +22,21 @@ async function seedCustomerProduct(page: Page, stamp: number) {
     data: { name: customerName, contactName: '张三', contactPhone: '13900000001', shippingInfo: '杭州市西湖区' },
   })).json();
   const created = await page.request.post(`/api/customers/${customer.data.id}/products`, {
-    data: { name: `E2E吸尘器电机${stamp}`, specification: '120W', sku: `CP-${stamp}`, packCount: 10, finalPriceCents: 8800, costPriceCents: 5123, freightPerBoxCents: 500 },
+    data: {
+      name: `E2E吸尘器电机${stamp}`,
+      specification: '120W',
+      sku: `CP-${stamp}`,
+      packCount: 10,
+      finalPriceCents: 8800,
+      costPriceCents: 5123,
+      batteryCostCents: 0,
+      chargerCostCents: 0,
+      packagingCostCents: 0,
+      accessoryCostCents: 0,
+      otherCostCents: 0,
+      costConfirmed: true,
+      freightPerBoxCents: 500,
+    },
   });
   expect(created.ok()).toBeTruthy();
   return { customerId: Number(customer.data.id), customerName };
@@ -59,6 +73,24 @@ test.describe('客户产品库成本价显隐', () => {
     }
   });
 
+  test('客户产品编辑器可维护其他单件成本并显示合计', async ({ page }) => {
+    const stamp = Date.now();
+    const { customerId, customerName } = await seedCustomerProduct(page, stamp);
+    try {
+      await openCustomerProducts(page, customerName);
+      const row = page.locator('.customer-products-table-desktop tbody tr', { hasText: `E2E吸尘器电机${stamp}` }).first();
+      await row.getByRole('button', { name: '编辑客户产品' }).click();
+      const editor = page.getByRole('dialog', { name: '编辑客户产品' });
+      await editor.getByText('其他单件成本与利润口径').click();
+      await expect(editor.getByText('其他单件成本与利润口径')).toBeVisible();
+      await expect(editor.getByLabel('电池成本（元）')).toHaveValue('0.00');
+      await expect(editor.getByLabel('包装成本（元/件）')).toHaveValue('0.00');
+      await expect(editor).toContainText('单件合计 ¥ 51.23');
+    } finally {
+      await page.request.delete(`/api/customers/${customerId}`);
+    }
+  });
+
   test.describe('手机端卡片', () => {
     test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
@@ -75,11 +107,11 @@ test.describe('客户产品库成本价显隐', () => {
         await page.locator('.customer-list-item:visible').filter({ hasText: customerName }).first().click();
         const card = page.locator('.customer-product-card:visible').first();
         await expect(card).toBeVisible();
-        await expect(card.locator('.customer-product-card-field', { hasText: '成本价' })).toHaveCount(0);
+        await expect(card.locator('.customer-product-card-field', { hasText: '标准成本' })).toHaveCount(0);
         await expect(card.getByText(FINAL_TEXT)).toBeVisible();
 
         await page.getByRole('button', { name: '显示成本价' }).click();
-        await expect(card.locator('.customer-product-card-field', { hasText: '成本价' })).toContainText(COST_TEXT);
+        await expect(card.locator('.customer-product-card-field', { hasText: '标准成本' })).toContainText(COST_TEXT);
       } finally {
         await page.request.delete(`/api/customers/${customerId}`);
       }

@@ -21,6 +21,12 @@ interface CustomerProductRow extends Record<string, unknown> {
   latest_quote_cents: number | null;
   final_price_cents: number | null;
   cost_price_cents: number | null;
+  battery_cost_cents: number | null;
+  charger_cost_cents: number | null;
+  packaging_cost_cents: number | null;
+  accessory_cost_cents: number | null;
+  other_cost_cents: number | null;
+  cost_confirmed: number;
   freight_per_box_cents: number | null;
   packaging_json: string | null;
   remark: string;
@@ -56,6 +62,12 @@ const customerProductSelect = `
     cp.latest_quote_cents,
     cp.final_price_cents,
     cp.cost_price_cents,
+    cp.battery_cost_cents,
+    cp.charger_cost_cents,
+    cp.packaging_cost_cents,
+    cp.accessory_cost_cents,
+    cp.other_cost_cents,
+    cp.cost_confirmed,
     cp.freight_per_box_cents,
     cp.packaging_json,
     cp.remark,
@@ -103,6 +115,12 @@ function mapCustomerProduct(row: CustomerProductRow | undefined): CustomerProduc
     latestQuoteCents: row.latest_quote_cents === null ? null : Number(row.latest_quote_cents),
     finalPriceCents: row.final_price_cents === null ? null : Number(row.final_price_cents),
     costPriceCents: row.cost_price_cents == null ? null : Number(row.cost_price_cents),
+    batteryCostCents: row.battery_cost_cents == null ? null : Number(row.battery_cost_cents),
+    chargerCostCents: row.charger_cost_cents == null ? null : Number(row.charger_cost_cents),
+    packagingCostCents: row.packaging_cost_cents == null ? null : Number(row.packaging_cost_cents),
+    accessoryCostCents: row.accessory_cost_cents == null ? null : Number(row.accessory_cost_cents),
+    otherCostCents: row.other_cost_cents == null ? null : Number(row.other_cost_cents),
+    costConfirmed: Number(row.cost_confirmed) === 1,
     freightPerBoxCents: row.freight_per_box_cents == null ? null : Number(row.freight_per_box_cents),
     remark: String(row.remark ?? ''),
     labelRequirement: String(row.label_requirement ?? ''),
@@ -198,8 +216,10 @@ export class CustomerProductRepository {
     const result = this.database.prepare(`
       INSERT INTO customer_products
         (customer_id, system_product_id, name, supplier_product_name, specification, sku, pack_count,
-         final_price_cents, cost_price_cents, freight_per_box_cents, packaging_json, image_relative_path, remark, label_requirement, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         final_price_cents, cost_price_cents, battery_cost_cents, charger_cost_cents, packaging_cost_cents,
+         accessory_cost_cents, other_cost_cents, cost_confirmed,
+         freight_per_box_cents, packaging_json, image_relative_path, remark, label_requirement, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       customerId,
       input.systemProductId ?? null,
@@ -210,6 +230,12 @@ export class CustomerProductRepository {
       input.packCount,
       input.finalPriceCents,
       input.costPriceCents ?? null,
+      input.batteryCostCents ?? null,
+      input.chargerCostCents ?? null,
+      input.packagingCostCents ?? null,
+      input.accessoryCostCents ?? null,
+      input.otherCostCents ?? null,
+      input.costConfirmed ? 1 : 0,
       input.freightPerBoxCents ?? null,
       JSON.stringify(input.packaging ?? []),
       input.imageRelativePath ?? null,
@@ -227,8 +253,10 @@ export class CustomerProductRepository {
       const insert = database.prepare(`
         INSERT INTO customer_products
           (customer_id, system_product_id, name, supplier_product_name, specification, sku, pack_count,
-           final_price_cents, cost_price_cents, freight_per_box_cents, packaging_json, image_relative_path, remark, label_requirement, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           final_price_cents, cost_price_cents, battery_cost_cents, charger_cost_cents, packaging_cost_cents,
+           accessory_cost_cents, other_cost_cents, cost_confirmed,
+           freight_per_box_cents, packaging_json, image_relative_path, remark, label_requirement, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       const created: CustomerProduct[] = [];
       for (const input of inputs) {
@@ -243,6 +271,12 @@ export class CustomerProductRepository {
           input.packCount,
           input.finalPriceCents,
           input.costPriceCents ?? null,
+          input.batteryCostCents ?? null,
+          input.chargerCostCents ?? null,
+          input.packagingCostCents ?? null,
+          input.accessoryCostCents ?? null,
+          input.otherCostCents ?? null,
+          input.costConfirmed ? 1 : 0,
           input.freightPerBoxCents ?? null,
           JSON.stringify(input.packaging ?? []),
           input.imageRelativePath ?? null,
@@ -275,7 +309,9 @@ export class CustomerProductRepository {
     const result = this.database.prepare(`
       UPDATE customer_products
       SET name = ?, supplier_product_name = ?, specification = ?, sku = ?, pack_count = ?, final_price_cents = ?,
-          cost_price_cents = ?, freight_per_box_cents = ?, packaging_json = ?, image_relative_path = ?, image_cleared = ?, remark = ?, label_requirement = ?, updated_at = ?
+          cost_price_cents = ?, battery_cost_cents = ?, charger_cost_cents = ?, packaging_cost_cents = ?,
+          accessory_cost_cents = ?, other_cost_cents = ?, cost_confirmed = ?,
+          freight_per_box_cents = ?, packaging_json = ?, image_relative_path = ?, image_cleared = ?, remark = ?, label_requirement = ?, updated_at = ?
       WHERE id = ?
     `).run(
       input.name,
@@ -285,6 +321,12 @@ export class CustomerProductRepository {
       input.packCount,
       input.finalPriceCents,
       input.costPriceCents ?? null,
+      input.batteryCostCents === undefined ? existing?.batteryCostCents ?? null : input.batteryCostCents,
+      input.chargerCostCents === undefined ? existing?.chargerCostCents ?? null : input.chargerCostCents,
+      input.packagingCostCents === undefined ? existing?.packagingCostCents ?? null : input.packagingCostCents,
+      input.accessoryCostCents === undefined ? existing?.accessoryCostCents ?? null : input.accessoryCostCents,
+      input.otherCostCents === undefined ? existing?.otherCostCents ?? null : input.otherCostCents,
+      input.costConfirmed === undefined ? (existing?.costConfirmed ? 1 : 0) : input.costConfirmed ? 1 : 0,
       input.freightPerBoxCents ?? existing?.freightPerBoxCents ?? null,
       JSON.stringify(input.packaging ?? existing?.packaging ?? []),
       nextImagePath,
@@ -321,8 +363,10 @@ export class CustomerProductRepository {
     const result = this.database.prepare(`
       INSERT INTO customer_products
         (customer_id, system_product_id, name, supplier_product_name, specification, sku, pack_count,
-         final_price_cents, cost_price_cents, freight_per_box_cents, packaging_json, image_relative_path, remark, label_requirement, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         final_price_cents, cost_price_cents, battery_cost_cents, charger_cost_cents, packaging_cost_cents,
+         accessory_cost_cents, other_cost_cents, cost_confirmed,
+         freight_per_box_cents, packaging_json, image_relative_path, remark, label_requirement, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       customerId,
       product.id,
@@ -334,6 +378,12 @@ export class CustomerProductRepository {
       overrides?.packCount ?? fallbackPackCount ?? null,
       overrides?.finalPriceCents ?? null,
       overrides?.costPriceCents ?? (product.purchase_price == null ? null : Math.round(product.purchase_price * 100)),
+      overrides?.batteryCostCents ?? null,
+      overrides?.chargerCostCents ?? null,
+      overrides?.packagingCostCents ?? null,
+      overrides?.accessoryCostCents ?? null,
+      overrides?.otherCostCents ?? null,
+      overrides?.costConfirmed ? 1 : 0,
       overrides?.freightPerBoxCents ?? null,
       JSON.stringify(packaging),
       overrides?.imageRelativePath ?? product.image_relative_path,
@@ -357,9 +407,11 @@ export class CustomerProductRepository {
     const result = this.database.prepare(`
       INSERT INTO customer_products
         (customer_id, system_product_id, name, specification, sku, pack_count,
-         latest_quote_cents, final_price_cents, cost_price_cents, freight_per_box_cents, packaging_json, source_quotation_id, image_relative_path, remark,
+         latest_quote_cents, final_price_cents, cost_price_cents, battery_cost_cents, charger_cost_cents,
+         packaging_cost_cents, accessory_cost_cents, other_cost_cents, cost_confirmed,
+         freight_per_box_cents, packaging_json, source_quotation_id, image_relative_path, remark,
          last_synced_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       customerId,
       input.systemProductId ?? null,
@@ -369,6 +421,12 @@ export class CustomerProductRepository {
       input.packCount,
       input.latestQuoteCents,
       input.costPriceCents ?? null,
+      input.batteryCostCents ?? null,
+      input.chargerCostCents ?? null,
+      input.packagingCostCents ?? null,
+      input.accessoryCostCents ?? null,
+      input.otherCostCents ?? null,
+      input.costConfirmed ? 1 : 0,
       input.freightPerBoxCents ?? null,
       JSON.stringify(input.packaging ?? []),
       input.sourceQuotationId,

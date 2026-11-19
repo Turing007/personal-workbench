@@ -165,6 +165,10 @@ export interface FinanceListRow {
   companyId: number | null;
   companyName: string;
   updatedAt: string;
+  /** 订单成本完整时给出成本与毛利；否则为 null，UI 显示成本待补。 */
+  costCents: number | null;
+  profitCents: number | null;
+  costComplete: boolean;
 }
 
 export interface FinanceListStats {
@@ -173,6 +177,9 @@ export interface FinanceListStats {
   outstandingCents: number;
   pendingProofCount: number;
   pendingInvoiceCount: number;
+  profitCents: number;
+  profitOrderCount: number;
+  costPendingOrderCount: number;
 }
 
 export interface FinanceListResult {

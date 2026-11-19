@@ -1,4 +1,4 @@
-import { BookmarkPlus, Download, ExternalLink, FileText, Library, Plus, Trash2, UserRound } from 'lucide-react';
+import { BookmarkPlus, Calculator, Download, ExternalLink, FileText, Library, Plus, Trash2, UserRound } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { ClipboardEvent as ReactClipboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { getNextOrderNumber, deleteOrderDetailImage, getOrderItemImages, getProductsByIds, importCustomerProductWithInput } from '../api';
@@ -21,6 +21,7 @@ import LibraryProductPicker, { type LibraryProductSelection } from './documents/
 import CustomerSelector from './customers/CustomerSelector';
 import PackagingTable from './PackagingTable';
 import Modal from './Modal';
+import { OrderCostEditor, OrderItemCostEditor, OrderProfitSummaryCard } from './orders/OrderProfitEditor';
 
 export type ToastKind = 'success' | 'info' | 'error';
 export type OrderStatus = 'draft' | 'label_pending' | 'pending_stock' | 'stock_reported' | 'pending_packing' | 'ship_pending' | 'shipped';
@@ -64,6 +65,13 @@ export interface OrderItemDraft {
   unitPriceCents?: number;
   amountCents?: number;
   freightPerBoxCents?: number;
+  machineCostCents?: number | null;
+  batteryCostCents?: number | null;
+  chargerCostCents?: number | null;
+  packagingCostCents?: number | null;
+  accessoryCostCents?: number | null;
+  otherCostCents?: number | null;
+  costConfirmed?: boolean;
   /** 备注：只给自己看的内部信息，不会印到箱唛。 */
   remark: string;
   /** 箱唛要求：会随订单带到箱面上打印的作业指令。 */
@@ -117,6 +125,11 @@ export interface OrderDraft {
   recipientInfo: string;
   amount: string;
   shippingCents?: number;
+  logisticsCostCents?: number | null;
+  labelCostCents?: number | null;
+  otherCostCents?: number | null;
+  otherCostNote?: string;
+  costConfirmed?: boolean;
   trackingNo: string;
   paymentNote: string;
   paymentProofs: PaymentProofDraft[];
@@ -151,15 +164,21 @@ const labelStyle = { display: 'grid', gap: 'var(--space-2)', color: 'var(--color
 const contractAccept = '.pdf,.doc,.docx,.xls,.xlsx,image/png,image/jpeg,image/webp';
 const CONTRACT_MAX_PICK = 9;
 
+function directCostCents(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 100) : null;
+}
+
 function makeItem(product?: CustomerProductRecord): OrderItemDraft {
   const packSize = Math.max(1, Math.trunc(product?.packCount ?? 1));
   const unitPriceCents = product?.finalPriceCents ?? 0;
-  return { id: `item-${Date.now()}-${Math.random().toString(16).slice(2)}`, customerProductId: product?.id ?? null, productId: product?.systemProductId == null ? undefined : String(product.systemProductId), name: product?.name ?? '', sku: product?.sku ?? '', specification: product?.specification ?? '', quantity: 1, packSize, boxes: 1, unitPriceCents, amountCents: unitPriceCents, freightPerBoxCents: product?.freightPerBoxCents ?? 0, remark: product?.remark ?? '', labelRequirement: product?.labelRequirement ?? '', imageRelativePath: product?.imageRelativePath ?? null, customerProductAttachments: product?.attachments ?? [] };
+  return { id: `item-${Date.now()}-${Math.random().toString(16).slice(2)}`, customerProductId: product?.id ?? null, productId: product?.systemProductId == null ? undefined : String(product.systemProductId), name: product?.name ?? '', sku: product?.sku ?? '', specification: product?.specification ?? '', quantity: 1, packSize, boxes: 1, unitPriceCents, amountCents: unitPriceCents, freightPerBoxCents: product?.freightPerBoxCents ?? 0, machineCostCents: product?.costPriceCents ?? null, batteryCostCents: product?.batteryCostCents ?? null, chargerCostCents: product?.chargerCostCents ?? null, packagingCostCents: product?.packagingCostCents ?? null, accessoryCostCents: product?.accessoryCostCents ?? null, otherCostCents: product?.otherCostCents ?? null, costConfirmed: Boolean(product?.costConfirmed), remark: product?.remark ?? '', labelRequirement: product?.labelRequirement ?? '', imageRelativePath: product?.imageRelativePath ?? null, customerProductAttachments: product?.attachments ?? [] };
 }
 
 function defaultDraft(value: Partial<OrderDraft> | undefined): OrderDraft {
   return {
-    orderNo: value?.orderNo ?? '', orderNoAuto: value?.orderNoAuto ?? (!value?.id && !value?.orderNo), orderedAt: dateOnlyValue(value?.orderedAt ?? dateInputValue()), customerId: value?.customerId ?? null, customerName: value?.customerName ?? '', customerContactName: value?.customerContactName ?? '', customerContactPhone: value?.customerContactPhone ?? '', customerShippingInfo: value?.customerShippingInfo ?? '', settlementType: isSettlementType(value?.settlementType) ? value.settlementType : 'personal', companyId: value?.companyId ?? null, companyName: value?.companyName ?? '', orderDetail: value?.orderDetail ?? '', orderDetailImages: value?.orderDetailImages ?? [], recipientName: value?.recipientName ?? '', recipientInfo: value?.recipientInfo ?? '', amount: value?.amount ?? '', shippingCents: value?.shippingCents ?? 0, trackingNo: value?.trackingNo ?? '', paymentNote: value?.paymentNote ?? '', paymentProofs: value?.paymentProofs ?? [], remark: value?.remark ?? '', items: value?.items ?? [], contracts: value?.contracts ?? [], deletedContractIds: value?.deletedContractIds ?? [], status: value?.status ?? 'pending_stock', id: value?.id,
+    orderNo: value?.orderNo ?? '', orderNoAuto: value?.orderNoAuto ?? (!value?.id && !value?.orderNo), orderedAt: dateOnlyValue(value?.orderedAt ?? dateInputValue()), customerId: value?.customerId ?? null, customerName: value?.customerName ?? '', customerContactName: value?.customerContactName ?? '', customerContactPhone: value?.customerContactPhone ?? '', customerShippingInfo: value?.customerShippingInfo ?? '', settlementType: isSettlementType(value?.settlementType) ? value.settlementType : 'personal', companyId: value?.companyId ?? null, companyName: value?.companyName ?? '', orderDetail: value?.orderDetail ?? '', orderDetailImages: value?.orderDetailImages ?? [], recipientName: value?.recipientName ?? '', recipientInfo: value?.recipientInfo ?? '', amount: value?.amount ?? '', shippingCents: value?.shippingCents ?? 0, logisticsCostCents: value?.logisticsCostCents ?? null, labelCostCents: value?.labelCostCents ?? null, otherCostCents: value?.otherCostCents ?? null, otherCostNote: value?.otherCostNote ?? '', costConfirmed: value?.costConfirmed ?? false, trackingNo: value?.trackingNo ?? '', paymentNote: value?.paymentNote ?? '', paymentProofs: value?.paymentProofs ?? [], remark: value?.remark ?? '', items: value?.items ?? [], contracts: value?.contracts ?? [], deletedContractIds: value?.deletedContractIds ?? [], status: value?.status ?? 'pending_stock', id: value?.id,
   };
 }
 
@@ -194,6 +213,7 @@ export default function OrderForm({ value, customers, companies = [], onSubmit, 
   }, [companies, draft.companyId, draft.settlementType]);
   const [newProductOpen, setNewProductOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [profitOpen, setProfitOpen] = useState(false);
   const [systemPickerOpen, setSystemPickerOpen] = useState(false);
   const [zoomImage, setZoomImage] = useState<string | null>(null);
   const [savingItemIds, setSavingItemIds] = useState<Set<string>>(() => new Set());
@@ -335,6 +355,9 @@ export default function OrderForm({ value, customers, companies = [], onSubmit, 
     let detail: Awaited<ReturnType<typeof getProductsByIds>>[number] | undefined;
     try { [detail] = await getProductsByIds([product.id]); } catch { /* 包装拉取失败不阻断选品，装箱数回退 1 */ }
     const packSize = Math.max(1, Math.trunc(detail?.packaging?.[0]?.packSize ?? 1));
+    const packagingCostCents = detail?.packaging?.[0]?.purchasePrice
+      ? Math.round((directCostCents(detail.packaging[0].purchasePrice) ?? 0) / packSize)
+      : null;
     const imageRelativePath = image?.relativePath ?? (image?.url ? image.url.replace(/^\/files\//, '') : null);
     const newItem: OrderItemDraft = {
       id: `item-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -350,6 +373,9 @@ export default function OrderForm({ value, customers, companies = [], onSubmit, 
       unitPriceCents: 0,
       amountCents: 0,
       freightPerBoxCents: 0,
+      machineCostCents: directCostCents(product.purchasePrice),
+      packagingCostCents,
+      costConfirmed: false,
       remark: '',
       labelRequirement: '',
       packaging: detail?.packaging?.length ? detail.packaging : undefined,
@@ -534,7 +560,10 @@ export default function OrderForm({ value, customers, companies = [], onSubmit, 
             <span style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>{draft.items.length} 行产品 · {detailImages.length} 张图片 · {customerProductAttachments.length + (draft.contracts ?? []).length} 个订单附件 · {draft.orderDetail.trim() ? '已填写文字详情' : '未填写文字详情'}</span>
             <span style={{ color: 'var(--color-accent)', fontWeight: 700, fontSize: 14, marginLeft: 'auto' }}>合计 ¥ {calculatedAmount}{shippingCents > 0 ? <small style={{ color: 'var(--color-text-secondary)', fontWeight: 500, fontSize: 11 }}>（产品 ¥ {productAmount} + 运费 ¥ {shippingAmount}）</small> : null}</span>
           </div>
-          <button type="button" onClick={() => setDetailOpen(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--color-accent)', borderRadius: 'var(--radius-ui)', background: 'var(--color-accent-soft)', color: 'var(--color-accent)', padding: '7px 11px', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}><FileText size={14} />填写订单详情</button>
+          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => setDetailOpen(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--color-accent)', borderRadius: 'var(--radius-ui)', background: 'var(--color-accent-soft)', color: 'var(--color-accent)', padding: '7px 11px', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}><FileText size={14} />填写订单详情</button>
+            <button type="button" onClick={() => setProfitOpen(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', padding: '7px 11px', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}><Calculator size={14} />成本与利润</button>
+          </div>
         </div>
         {!draft.items.length && <span style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>尚未添加产品，点击“填写订单详情”选择客户产品并填写数量与单价。</span>}
       </section>
@@ -562,6 +591,28 @@ export default function OrderForm({ value, customers, companies = [], onSubmit, 
             <div style={{ display: 'grid', gap: 7 }}>{draft.items.length > 0 && <div className="order-items-head"><span>品名</span><span>SKU</span><span>规格</span><span>数量</span><span>装箱数</span><span>箱数</span><span>单价（元）</span><span>金额</span><span /></div>}{draft.items.map((item) => <div key={item.id} className="order-item-card"><div className="order-item-row"><label className="order-item-cell is-name"><small>品名</small><span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>{item.imageRelativePath && <button type="button" title="查看产品大图" onClick={() => setZoomImage(`/files/${item.imageRelativePath}`)} style={{ flexShrink: 0, width: 34, height: 34, padding: 0, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface-subtle)', cursor: 'zoom-in', overflow: 'hidden' }}><img src={thumbUrl(`/files/${item.imageRelativePath}`, 240)} alt={item.name} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></button>}<input aria-label="订单产品品名" value={item.name} onChange={(event) => updateItem(item.id, { name: event.target.value })} style={{ ...controlStyle, flex: 1, minWidth: 0 }} /></span></label><label className="order-item-cell is-sku"><small>SKU</small><input aria-label="订单产品SKU" value={item.sku} onChange={(event) => updateItem(item.id, { sku: event.target.value })} style={controlStyle} /></label><label className="order-item-cell is-spec"><small>规格</small><input aria-label="订单产品规格" value={item.specification} onChange={(event) => updateItem(item.id, { specification: event.target.value })} style={controlStyle} /></label><label className="order-item-cell is-qty"><small>数量</small><input type="number" min="1" aria-label="订购数量" value={item.quantity} onChange={(event) => updateItem(item.id, { quantity: Math.max(1, Number(event.target.value) || 1) })} style={controlStyle} /></label><label className="order-item-cell is-pack"><small>装箱数</small><input type="number" min="1" aria-label="订单装箱数" value={item.packSize} onChange={(event) => updateItem(item.id, { packSize: Math.max(1, Number(event.target.value) || 1) })} style={controlStyle} /></label><span className="order-item-cell is-boxes"><small>箱数</small><strong>{item.boxes}</strong></span><label className="order-item-cell is-price"><small>单价（元）</small><input type="number" min="0" step="0.01" inputMode="decimal" aria-label="订单产品单价" value={priceInputValue(item)} onChange={(event) => changePriceInput(item.id, event.target.value)} onBlur={() => commitPriceInput(item)} style={controlStyle} /></label><span className="order-item-cell is-amount"><small>金额</small><strong>¥ {((item.amountCents ?? calculateOrderLineAmountCents({ quantity: item.quantity, unitPriceCents: item.unitPriceCents ?? 0 })) / 100).toFixed(2)}</strong></span><button type="button" className="order-item-cell is-remove" title="删除产品" onClick={() => update('items', draft.items.filter((entry) => entry.id !== item.id))} style={{ border: 0, background: 'transparent', color: 'var(--color-danger)', cursor: 'pointer' }}><Trash2 size={14} /></button></div>{item.productId && !item.customerProductId && <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6 }}>{draft.customerId ? <button type="button" disabled={savingItemIds.has(item.id)} onClick={() => { void saveItemToCustomerLibrary(item); }} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: '1px solid var(--color-accent-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-accent-soft)', color: 'var(--color-accent)', padding: '4px 9px', cursor: savingItemIds.has(item.id) ? 'wait' : 'pointer', fontSize: 11 }}><BookmarkPlus size={13} />{savingItemIds.has(item.id) ? '存入中…' : '存入客户产品库'}</button> : <span style={{ color: 'var(--color-text-muted)', fontSize: 11 }}>转正后可存入客户产品库</span>}</div>}{(item.remark.trim() || (item.labelRequirement ?? '').trim() || item.customerProductAttachments?.length) ? <div style={{ display: 'grid', gap: 4, padding: '6px 8px', borderLeft: '3px solid var(--color-accent)', background: 'var(--color-accent-soft)', color: 'var(--color-text-secondary)', fontSize: 11 }}><label style={{ display: 'grid', gap: 3 }}><strong style={{ color: 'var(--color-accent)' }}>箱唛要求（印在箱面上）</strong><input aria-label="箱唛要求" value={item.labelRequirement ?? ''} onChange={(event) => updateItem(item.id, { labelRequirement: event.target.value })} placeholder="如：外箱贴条码箱唛" style={{ ...controlStyle, fontSize: 11, padding: '5px 8px' }} /></label>{item.remark.trim() && <div style={{ display: 'grid', gap: 2 }}><strong style={{ color: 'var(--color-text-muted)' }}>内部备注（不打印）</strong><span style={{ whiteSpace: 'pre-wrap' }}>{item.remark}</span></div>}{item.customerProductAttachments?.length ? <span>附件已带入订单：{item.customerProductAttachments.map((attachment) => `${attachment.originalName}`).join('；')}</span> : null}</div> : null}</div>)}{!draft.items.length && <div style={{ padding: 25, textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 12 }}>从上方客户产品库或系统产品库选择产品</div>}<div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '9px 10px', borderTop: '1px solid var(--color-border)', background: 'var(--color-surface-subtle)', color: 'var(--color-text-secondary)', fontSize: 12 }}><span>产品合计</span><strong style={{ color: 'var(--color-accent)', fontSize: 13 }}>¥ {productAmount}</strong><label style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>运费（元）{!shippingOverridden && <small style={{ color: 'var(--color-accent)' }}>自动</small>}<input type="text" inputMode="decimal" aria-label="订单运费" value={shippingInput} onChange={(event) => updateShippingInput(event.target.value)} onBlur={commitShippingInput} style={{ ...controlStyle, width: 92 }} /></label><span>订单金额</span><strong style={{ color: 'var(--color-accent)', fontSize: 14 }}>¥ {calculatedAmount}</strong></div></div>
           </section>
           <div className="order-form-actions"><button type="button" className="button button-primary" onClick={() => setDetailOpen(false)}>完成</button></div>
+        </div>
+      </Modal>
+      <Modal open={profitOpen} title="订单成本与利润" onClose={() => setProfitOpen(false)} width={860}>
+        <div className="order-profit-editor-modal">
+          <p className="order-cost-hint">成本会随订单一起保存；只有勾选“已核对”的行和整单费用才会计入当月毛利。</p>
+          <OrderProfitSummaryCard order={draft} />
+          <OrderCostEditor order={draft} onChange={(patch) => setDraft((current) => ({ ...current, ...patch }))} />
+          <section className="order-item-cost-list">
+            <div className="order-item-cost-list-head">
+              <div><strong>产品单件成本</strong><span>逐行核对机头、电池、充电器、包装、配件和标贴</span></div>
+              <span>{draft.items.length} 行</span>
+            </div>
+            {draft.items.map((item) => <div className="order-item-cost-row" key={item.id}>
+              <div className="order-item-cost-row-head">
+                <strong>{item.name || '未填产品'}</strong>
+                <span>{item.specification || '未填规格'} · {item.quantity} 件</span>
+              </div>
+              <OrderItemCostEditor item={item} onChange={(patch) => updateItem(item.id, patch)} />
+            </div>)}
+            {!draft.items.length && <div className="table-state">先添加产品，再填写成本。</div>}
+          </section>
+          <div className="order-form-actions"><button type="button" className="button button-primary" onClick={() => setProfitOpen(false)}>完成</button></div>
         </div>
       </Modal>
       {zoomImage && <div role="dialog" aria-label="产品大图" onClick={() => setZoomImage(null)} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,.82)', display: 'grid', placeItems: 'center', padding: 24, cursor: 'zoom-out' }}><img src={zoomImage} alt="产品大图" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 'var(--radius-ui)' }} /><button type="button" onClick={() => setZoomImage(null)} style={{ position: 'absolute', top: 16, right: 16, border: '1px solid rgba(255,255,255,.4)', borderRadius: 'var(--radius-ui)', background: 'rgba(0,0,0,.4)', color: '#fff', padding: '6px 12px', cursor: 'pointer', fontSize: 12 }}>关闭</button></div>}

@@ -265,9 +265,15 @@ function normalizeInput(input: CustomerProductSaveInput): CustomerProductSaveInp
     costPriceCents: normalizeNullableInteger(
       input.costPriceCents,
       'costPriceCents',
-      '成本价',
+      '机头/基础成本',
       false,
     ),
+    batteryCostCents: normalizeNullableInteger(input.batteryCostCents, 'batteryCostCents', '电池成本', false),
+    chargerCostCents: normalizeNullableInteger(input.chargerCostCents, 'chargerCostCents', '充电器成本', false),
+    packagingCostCents: normalizeNullableInteger(input.packagingCostCents, 'packagingCostCents', '包装成本', false),
+    accessoryCostCents: normalizeNullableInteger(input.accessoryCostCents, 'accessoryCostCents', '配件成本', false),
+    otherCostCents: normalizeNullableInteger(input.otherCostCents, 'otherCostCents', '其他单件成本', false),
+    costConfirmed: input.costConfirmed === undefined ? undefined : Boolean(input.costConfirmed),
     freightPerBoxCents: normalizeNullableInteger(
       input.freightPerBoxCents,
       'freightPerBoxCents',

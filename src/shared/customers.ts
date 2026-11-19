@@ -37,7 +37,14 @@ export interface CustomerProduct {
   packCount: number | null;
   latestQuoteCents: number | null;
   finalPriceCents: number | null;
+  /** 机头/基础成本；历史数据沿用 cost_price_cents。 */
   costPriceCents: number | null;
+  batteryCostCents: number | null;
+  chargerCostCents: number | null;
+  packagingCostCents: number | null;
+  accessoryCostCents: number | null;
+  otherCostCents: number | null;
+  costConfirmed: boolean;
   freightPerBoxCents: number | null;
   /** 备注：只给自己看的内部信息（含税运、单价话术等），永远不会印到箱唛上。 */
   remark: string;
@@ -65,6 +72,12 @@ export interface CustomerProductSaveInput {
   packCount: number | null;
   finalPriceCents: number | null;
   costPriceCents?: number | null;
+  batteryCostCents?: number | null;
+  chargerCostCents?: number | null;
+  packagingCostCents?: number | null;
+  accessoryCostCents?: number | null;
+  otherCostCents?: number | null;
+  costConfirmed?: boolean;
   freightPerBoxCents?: number | null;
   remark?: string;
   labelRequirement?: string;
@@ -178,6 +191,22 @@ export function getCustomerProductCompletionStatus(
     && Number(input.finalPriceCents) >= 0
     ? 'complete'
     : 'incomplete';
+}
+
+/** 客户产品标准单件成本合计；未核对返回 null，空成本按 0。 */
+export function customerProductStandardCostCents(product: Pick<CustomerProduct,
+  'costPriceCents' | 'batteryCostCents' | 'chargerCostCents' | 'packagingCostCents' |
+  'accessoryCostCents' | 'otherCostCents' | 'costConfirmed'
+>): number | null {
+  if (!product.costConfirmed) return null;
+  return [
+    product.costPriceCents,
+    product.batteryCostCents,
+    product.chargerCostCents,
+    product.packagingCostCents,
+    product.accessoryCostCents,
+    product.otherCostCents,
+  ].reduce<number>((sum, value) => sum + (value ?? 0), 0);
 }
 
 /**

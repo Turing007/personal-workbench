@@ -23,8 +23,27 @@ import {
 } from '../../shared/finance.js';
 import type { CompanyReceiptBreakdownRow, CompanyStatsRow } from '../../shared/companies.js';
 import { UNASSIGNED_COMPANY_NAME } from '../../shared/companies.js';
+import type { OrderProfitSummary } from '../../shared/order-profit.js';
+import { calculateOrderProfit } from '../../shared/order-profit.js';
 
 interface SqlRow { [key: string]: unknown }
+
+const ORDER_ITEM_COST_SQL = `(
+  SELECT COALESCE(SUM(oi.quantity * (
+    COALESCE(oi.machine_cost_cents, 0) + COALESCE(oi.battery_cost_cents, 0) +
+    COALESCE(oi.charger_cost_cents, 0) + COALESCE(oi.packaging_cost_cents, 0) +
+    COALESCE(oi.accessory_cost_cents, 0) + COALESCE(oi.other_cost_cents, 0)
+  )), 0) FROM order_items oi WHERE oi.order_id = o.id
+)`;
+const ORDER_TOTAL_COST_SQL = `(
+  COALESCE(o.logistics_cost_cents, 0) + COALESCE(o.label_cost_cents, 0) +
+  COALESCE(o.other_cost_cents, 0) + ${ORDER_ITEM_COST_SQL}
+)`;
+const ORDER_COST_COMPLETE_SQL = `(
+  COALESCE(o.cost_confirmed, 0) = 1 AND NOT EXISTS (
+    SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND COALESCE(oi.cost_confirmed, 0) = 0
+  )
+)`;
 
 export interface PaymentProofPersistenceInput {
   paymentDate: string | null;
@@ -80,6 +99,7 @@ export interface FinanceReceiptPersistenceInput {
 export interface FinanceOrderDetail {
   order: SqlRow;
   finance: OrderFinanceSummary;
+  profit: OrderProfitSummary;
   proofs: PaymentProofRecord[];
   receipts: FinanceReceipt[];
   invoices: FinanceInvoice[];
@@ -315,7 +335,10 @@ export class FinanceRepository {
       SELECT o.id AS order_id, o.order_no, o.customer_name, o.ordered_at AS order_date,
         f.receivable_cents, f.received_cents, f.outstanding_cents, f.payment_status,
         f.proof_status, f.invoice_status, o.status AS order_status, o.settlement_type,
-        o.company_id, COALESCE(NULLIF(c.full_name, ''), c.short_name, '') AS company_name, f.updated_at
+        o.company_id, COALESCE(NULLIF(c.full_name, ''), c.short_name, '') AS company_name, f.updated_at,
+        CASE WHEN ${ORDER_COST_COMPLETE_SQL} THEN ${ORDER_TOTAL_COST_SQL} END AS cost_cents,
+        CASE WHEN ${ORDER_COST_COMPLETE_SQL} THEN o.amount_cents - ${ORDER_TOTAL_COST_SQL} END AS profit_cents,
+        CASE WHEN ${ORDER_COST_COMPLETE_SQL} THEN 1 ELSE 0 END AS cost_complete
       FROM order_finance f
       JOIN orders o ON o.id = f.order_id
       LEFT JOIN companies c ON c.id = o.company_id
@@ -326,6 +349,9 @@ export class FinanceRepository {
       SELECT COALESCE(SUM(f.receivable_cents), 0) AS receivable_cents,
         COALESCE(SUM(f.received_cents), 0) AS received_cents,
         COALESCE(SUM(f.outstanding_cents), 0) AS outstanding_cents,
+        COALESCE(SUM(CASE WHEN ${ORDER_COST_COMPLETE_SQL} THEN o.amount_cents - ${ORDER_TOTAL_COST_SQL} ELSE 0 END), 0) AS profit_cents,
+        COALESCE(SUM(CASE WHEN ${ORDER_COST_COMPLETE_SQL} THEN 1 ELSE 0 END), 0) AS profit_order_count,
+        COALESCE(SUM(CASE WHEN ${ORDER_COST_COMPLETE_SQL} THEN 0 ELSE 1 END), 0) AS cost_pending_order_count,
         COALESCE(SUM((SELECT COUNT(*) FROM payment_proofs p WHERE p.order_id = f.order_id AND p.status = 'pending')), 0) AS pending_proof_count,
         COALESCE(SUM(CASE WHEN f.invoice_status IN ('incomplete', 'pending_issue', 'issued')
           AND COALESCE(o.settlement_type, 'corporate') <> 'personal' THEN 1 ELSE 0 END), 0) AS pending_invoice_count
@@ -340,12 +366,18 @@ export class FinanceRepository {
       outstandingCents: numberValue(statsRows, 'outstanding_cents'),
       pendingProofCount: numberValue(statsRows, 'pending_proof_count'),
       pendingInvoiceCount: numberValue(statsRows, 'pending_invoice_count'),
+      profitCents: numberValue(statsRows, 'profit_cents'),
+      profitOrderCount: numberValue(statsRows, 'profit_order_count'),
+      costPendingOrderCount: numberValue(statsRows, 'cost_pending_order_count'),
     };
     return {
       rows: rows.map((row): FinanceListRow => ({
         orderId: numberValue(row, 'order_id'), orderNo: stringValue(row, 'order_no'), customerName: stringValue(row, 'customer_name'), orderDate: stringValue(row, 'order_date'),
         receivableCents: numberValue(row, 'receivable_cents'), receivedCents: numberValue(row, 'received_cents'), outstandingCents: numberValue(row, 'outstanding_cents'),
         paymentStatus: stringValue(row, 'payment_status') as FinanceListRow['paymentStatus'], proofStatus: stringValue(row, 'proof_status') as FinanceListRow['proofStatus'], invoiceStatus: stringValue(row, 'invoice_status') as FinanceListRow['invoiceStatus'], orderStatus: stringValue(row, 'order_status'), settlementType: stringValue(row, 'settlement_type', 'corporate'), companyId: row.company_id == null ? null : numberValue(row, 'company_id'), companyName: stringValue(row, 'company_name'), updatedAt: stringValue(row, 'updated_at'),
+        costCents: row.cost_cents == null ? null : numberValue(row, 'cost_cents'),
+        profitCents: row.profit_cents == null ? null : numberValue(row, 'profit_cents'),
+        costComplete: numberValue(row, 'cost_complete') === 1,
       })), total, page, pageSize, stats,
     };
   }
@@ -720,6 +752,24 @@ export class FinanceRepository {
     const order = this.getOrder(orderId);
     const finance = this.getOrderFinance(orderId);
     if (!order || !finance) return undefined;
-    return { order, finance, proofs: this.listProofs(orderId), receipts: this.listReceipts(orderId), invoices: this.listInvoices(orderId) };
+    const items = this.database.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort_order, id').all(orderId) as SqlRow[];
+    const profit = calculateOrderProfit({
+      amountCents: numberValue(order, 'amount_cents'),
+      items: items.map((item) => ({
+        quantity: numberValue(item, 'quantity', 1),
+        machineCostCents: item.machine_cost_cents == null ? null : numberValue(item, 'machine_cost_cents'),
+        batteryCostCents: item.battery_cost_cents == null ? null : numberValue(item, 'battery_cost_cents'),
+        chargerCostCents: item.charger_cost_cents == null ? null : numberValue(item, 'charger_cost_cents'),
+        packagingCostCents: item.packaging_cost_cents == null ? null : numberValue(item, 'packaging_cost_cents'),
+        accessoryCostCents: item.accessory_cost_cents == null ? null : numberValue(item, 'accessory_cost_cents'),
+        otherCostCents: item.other_cost_cents == null ? null : numberValue(item, 'other_cost_cents'),
+        costConfirmed: numberValue(item, 'cost_confirmed') === 1,
+      })),
+      logisticsCostCents: order.logistics_cost_cents == null ? null : numberValue(order, 'logistics_cost_cents'),
+      labelCostCents: order.label_cost_cents == null ? null : numberValue(order, 'label_cost_cents'),
+      otherCostCents: order.other_cost_cents == null ? null : numberValue(order, 'other_cost_cents'),
+      costConfirmed: numberValue(order, 'cost_confirmed') === 1,
+    });
+    return { order, finance, profit, proofs: this.listProofs(orderId), receipts: this.listReceipts(orderId), invoices: this.listInvoices(orderId) };
   }
 }

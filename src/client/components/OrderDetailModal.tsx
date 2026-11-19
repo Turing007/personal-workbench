@@ -8,6 +8,7 @@ import Modal from './Modal';
 import OrderItemsTable from './OrderItemsTable';
 import type { OrderContractDraft, OrderDraft, OrderStatus } from './OrderForm';
 import { getOrderNextAction, getOrderRollbackAction } from '../order-workflow';
+import { OrderProfitSummaryCard } from './orders/OrderProfitEditor';
 
 export interface OrderDetailModalProps {
   open: boolean;
@@ -143,6 +144,8 @@ export default function OrderDetailModal({
             <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--color-neutral-pill)', color: 'var(--color-text-secondary)', fontSize: 11 }}>发票：{invoiceDisplayLabel(order.settlementType, financeInvoiceStatus)}</span>
           </div>
         </section>}
+
+        <OrderProfitSummaryCard order={order} onEdit={onEditOrder ? () => onEditOrder(order) : undefined} />
 
         <section style={{ display: 'grid', gap: 9, padding: 12, background: 'var(--tone-surface-frost)', borderRadius: 'var(--radius-ui)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><UserRound size={15} /><strong style={{ fontSize: 13 }}>客户与收件信息</strong></div>

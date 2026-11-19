@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 43;
+const CURRENT_SCHEMA_VERSION = 44;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -1506,6 +1506,52 @@ function migrateVersionFortyThree(database: DatabaseSync, now: string): void {
 }
 
 /**
+ * 订单利润成本：订单级物流/其他成本，以及订单行级成本快照。
+ * 历史数据不回填，金额未知保持 NULL；成本确认标记默认未确认。
+ */
+function migrateVersionFortyFour(database: DatabaseSync, now: string): void {
+  const orderColumns: Array<[string, string]> = [
+    ['logistics_cost_cents', 'INTEGER CHECK (logistics_cost_cents IS NULL OR logistics_cost_cents >= 0)'],
+    ['label_cost_cents', 'INTEGER CHECK (label_cost_cents IS NULL OR label_cost_cents >= 0)'],
+    ['other_cost_cents', 'INTEGER CHECK (other_cost_cents IS NULL OR other_cost_cents >= 0)'],
+    ['other_cost_note', "TEXT NOT NULL DEFAULT ''"],
+    ['cost_confirmed', 'INTEGER NOT NULL DEFAULT 0'],
+  ];
+  for (const [name, definition] of orderColumns) {
+    addColumnIfMissing(database, 'orders', name, definition);
+  }
+
+  const orderItemColumns: Array<[string, string]> = [
+    ['machine_cost_cents', 'INTEGER CHECK (machine_cost_cents IS NULL OR machine_cost_cents >= 0)'],
+    ['battery_cost_cents', 'INTEGER CHECK (battery_cost_cents IS NULL OR battery_cost_cents >= 0)'],
+    ['charger_cost_cents', 'INTEGER CHECK (charger_cost_cents IS NULL OR charger_cost_cents >= 0)'],
+    ['packaging_cost_cents', 'INTEGER CHECK (packaging_cost_cents IS NULL OR packaging_cost_cents >= 0)'],
+    ['accessory_cost_cents', 'INTEGER CHECK (accessory_cost_cents IS NULL OR accessory_cost_cents >= 0)'],
+    ['label_cost_cents', 'INTEGER CHECK (label_cost_cents IS NULL OR label_cost_cents >= 0)'],
+    ['other_cost_cents', 'INTEGER CHECK (other_cost_cents IS NULL OR other_cost_cents >= 0)'],
+    ['cost_confirmed', 'INTEGER NOT NULL DEFAULT 0'],
+  ];
+  for (const [name, definition] of orderItemColumns) {
+    addColumnIfMissing(database, 'order_items', name, definition);
+  }
+
+  const customerProductColumns: Array<[string, string]> = [
+    ['battery_cost_cents', 'INTEGER CHECK (battery_cost_cents IS NULL OR battery_cost_cents >= 0)'],
+    ['charger_cost_cents', 'INTEGER CHECK (charger_cost_cents IS NULL OR charger_cost_cents >= 0)'],
+    ['packaging_cost_cents', 'INTEGER CHECK (packaging_cost_cents IS NULL OR packaging_cost_cents >= 0)'],
+    ['accessory_cost_cents', 'INTEGER CHECK (accessory_cost_cents IS NULL OR accessory_cost_cents >= 0)'],
+    ['label_cost_cents', 'INTEGER CHECK (label_cost_cents IS NULL OR label_cost_cents >= 0)'],
+    ['other_cost_cents', 'INTEGER CHECK (other_cost_cents IS NULL OR other_cost_cents >= 0)'],
+    ['cost_confirmed', 'INTEGER NOT NULL DEFAULT 0'],
+  ];
+  for (const [name, definition] of customerProductColumns) {
+    addColumnIfMissing(database, 'customer_products', name, definition);
+  }
+
+  upsertSetting(database, 'schema_version', '44', now);
+}
+
+/**
  * 资料库：合同表格、客户标贴、产品资料等常用文件的统一存放。
  * 删除先写 deleted_at 进回收站，30 天后由服务端清理；文件本身仍在 data/files/library。
  */
@@ -1604,6 +1650,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionFortyOne(transactionDatabase, now);
     migrateVersionFortyTwo(transactionDatabase, now);
     migrateVersionFortyThree(transactionDatabase, now);
+    migrateVersionFortyFour(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

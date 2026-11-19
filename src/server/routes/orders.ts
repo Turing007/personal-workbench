@@ -80,6 +80,20 @@ function optionalCents(value: unknown, field: string, label: string): number | u
   return value;
 }
 
+function nullableCents(value: unknown, field: string, label: string): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new ApiError(400, 'VALIDATION_ERROR', `${label}必须是非负整数分`, field);
+  }
+  return value;
+}
+
+function optionalBoolean(value: unknown): boolean | undefined {
+  if (value === undefined) return undefined;
+  return value === true || value === 'true';
+}
+
 function parseRequirementAttachments(value: unknown, field: string) {
   if (value === undefined || value === null) return undefined;
   if (!Array.isArray(value)) throw new ApiError(400, 'VALIDATION_ERROR', '客户资料附件必须是数组', field);
@@ -137,6 +151,11 @@ function parseOrderInput(value: unknown, options: { allowEmptyOrderNo?: boolean 
     amount: finiteNumber(body.amount, 'amount', '订单金额'),
     amountCents: optionalCents(body.amountCents, 'amountCents', '订单金额'),
     shippingCents: optionalCents(body.shippingCents, 'shippingCents', '运费'),
+    logisticsCostCents: nullableCents(body.logisticsCostCents, 'logisticsCostCents', '实际物流费'),
+    labelCostCents: nullableCents(body.labelCostCents, 'labelCostCents', '标贴成本'),
+    otherCostCents: nullableCents(body.otherCostCents, 'otherCostCents', '其他订单费用'),
+    otherCostNote: optionalText(body.otherCostNote, 'otherCostNote', '其他订单费用说明'),
+    costConfirmed: optionalBoolean(body.costConfirmed),
     trackingNo: optionalText(body.trackingNo, 'trackingNo', '物流单号'),
     paymentNote: optionalText(body.paymentNote, 'paymentNote', '付款备注'),
     orderDetail: optionalText(body.orderDetail, 'orderDetail', '订单详情'),
@@ -158,6 +177,13 @@ function parseOrderInput(value: unknown, options: { allowEmptyOrderNo?: boolean 
         quantity: positiveInteger(item.quantity, `${prefix}.quantity`, '产品数量'),
         unitPriceCents: optionalCents(item.unitPriceCents, `${prefix}.unitPriceCents`, '单价'),
         freightPerBoxCents: optionalCents(item.freightPerBoxCents, `${prefix}.freightPerBoxCents`, '运费/箱'),
+        machineCostCents: nullableCents(item.machineCostCents, `${prefix}.machineCostCents`, '机头成本'),
+        batteryCostCents: nullableCents(item.batteryCostCents, `${prefix}.batteryCostCents`, '电池成本'),
+        chargerCostCents: nullableCents(item.chargerCostCents, `${prefix}.chargerCostCents`, '充电器成本'),
+        packagingCostCents: nullableCents(item.packagingCostCents, `${prefix}.packagingCostCents`, '包装成本'),
+        accessoryCostCents: nullableCents(item.accessoryCostCents, `${prefix}.accessoryCostCents`, '配件成本'),
+        otherCostCents: nullableCents(item.otherCostCents, `${prefix}.otherCostCents`, '其他单件成本'),
+        costConfirmed: optionalBoolean(item.costConfirmed),
         packaging: parsePackaging(item.packaging, `${prefix}.packaging`),
         remark: optionalText(item.remark, `${prefix}.remark`, '产品备注'),
         labelRequirement: optionalText(item.labelRequirement, `${prefix}.labelRequirement`, '箱唛要求'),

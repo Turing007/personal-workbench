@@ -5790,6 +5790,132 @@ select {
   .order-item-cell.is-amount strong { text-align: left; }
 }
 
+/* ===== 订单成本与利润 ===== */
+.order-profit-editor-modal { display: grid; gap: 12px; }
+.order-profit-card,
+.order-cost-editor {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-accent-border);
+  border-radius: var(--radius-ui);
+  background: linear-gradient(135deg, var(--color-accent-soft), var(--color-surface) 60%);
+}
+.order-profit-card.is-pending { border-color: var(--color-warning-border); background: var(--color-warning-soft); }
+.order-profit-head,
+.order-cost-editor-head,
+.order-item-cost-list-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.order-profit-head > div,
+.order-cost-editor-head > div,
+.order-item-cost-list-head > div { display: grid; gap: 2px; }
+.order-profit-head strong,
+.order-cost-editor-head strong,
+.order-item-cost-list-head strong { display: inline-flex; align-items: center; gap: 5px; color: var(--color-text); font-size: 13px; }
+.order-profit-head span,
+.order-cost-editor-head span,
+.order-item-cost-list-head span { color: var(--color-text-muted); font-size: 10.5px; }
+.order-profit-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--color-accent-border);
+  border-radius: var(--radius-ui);
+  background: var(--color-surface);
+  color: var(--color-accent);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.order-profit-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.order-profit-metrics > div { display: grid; gap: 2px; min-width: 0; }
+.order-profit-metrics span { color: var(--color-text-muted); font-size: 10.5px; }
+.order-profit-metrics strong { color: var(--color-text); font-size: 15px; font-variant-numeric: tabular-nums; }
+.order-profit-pending {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--color-warning-border);
+  color: var(--color-warning-text);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.order-cost-editor { border-color: var(--color-border); background: var(--color-surface-subtle); }
+.order-level-cost-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.order-level-cost-grid label { display: grid; gap: 4px; min-width: 0; color: var(--color-text-secondary); font-size: 11px; }
+.order-level-cost-grid label.is-wide { grid-column: 1 / -1; }
+.order-level-cost-grid input,
+.order-item-cost-grid input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  padding: 7px 8px;
+  background: var(--control-bg);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 12px;
+}
+.order-cost-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+.order-cost-confirm input { width: 14px; height: 14px; margin: 0; accent-color: var(--color-accent); }
+.order-item-cost-list { display: grid; gap: 8px; }
+.order-item-cost-row { display: grid; gap: 7px; padding: 9px; border: 1px solid var(--color-border); border-radius: var(--radius-ui); background: var(--color-surface); }
+.order-item-cost-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.order-item-cost-row-head strong { color: var(--color-text); font-size: 12px; }
+.order-item-cost-row-head span { color: var(--color-text-muted); font-size: 10.5px; }
+.order-item-cost-editor { border: 1px solid var(--tone-border-soft); border-radius: var(--radius-ui); background: var(--color-surface-subtle); }
+.order-item-cost-editor > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  list-style: none;
+}
+.order-item-cost-editor > summary::-webkit-details-marker { display: none; }
+.order-cost-summary-title { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; }
+.order-cost-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--color-warning-soft);
+  color: var(--color-warning-text);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+.order-cost-state.is-confirmed { background: var(--color-success-soft); color: var(--color-success); }
+.order-item-cost-body { display: grid; gap: 8px; padding: 0 9px 9px; }
+.order-cost-hint { margin: 0; color: var(--color-text-muted); font-size: 10.5px; line-height: 1.5; }
+.order-item-cost-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+.order-item-cost-grid label { display: grid; gap: 3px; min-width: 0; color: var(--color-text-secondary); font-size: 10.5px; }
+.order-item-cost-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; color: var(--color-text-secondary); font-size: 10.5px; }
+.order-item-cost-footer b { color: var(--color-text); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 900px) {
+  .order-profit-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .order-level-cost-grid,
+  .order-item-cost-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 /* ===== 财务列表：手机端卡片视图 ===== */
 .finance-card-list { display: none; }
 

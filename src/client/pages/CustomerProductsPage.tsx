@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Customer, CustomerProduct, CustomerProductBatchSaveInput, CustomerProductSaveInput } from '../../shared/customers';
+import { customerProductStandardCostCents } from '../../shared/customers';
 import type { ProductRecord } from '../components/ProductEditor';
 import SearchInput from '../components/SearchInput';
 import {
@@ -363,7 +364,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
             <div className="customer-product-card-grid">
               <div className="customer-product-card-field"><span>客户 SKU</span><strong style={!product.sku ? { color: 'var(--color-warning-text)' } : undefined}>{product.sku || '待完善'}</strong></div>
               <div className="customer-product-card-field"><span>包装 / 装箱数</span><strong>{product.packaging.length ? product.packaging[0].name || `${product.packaging.length} 种` : '-'}{product.packCount == null ? <em style={{ color: 'var(--color-warning-text)' }}>待完善</em> : ` · ${product.packCount} 个/箱`}</strong></div>
-              {showCostPrice && <div className="customer-product-card-field"><span>成本价</span><strong>{money(product.costPriceCents)}</strong></div>}
+              {showCostPrice && <div className="customer-product-card-field"><span>标准成本</span><strong>{money(customerProductStandardCostCents(product))}</strong></div>}
               <div className="customer-product-card-field"><span>最近报价</span><strong>{money(product.latestQuoteCents)}</strong></div>
               <div className="customer-product-card-field"><span>最终价格</span><strong>{money(product.finalPriceCents)}</strong></div>
               <div className="customer-product-card-field"><span>运费/箱</span><strong style={product.freightPerBoxCents == null ? { color: 'var(--color-warning-text)' } : undefined}>{product.freightPerBoxCents == null ? '未设置' : `¥${(product.freightPerBoxCents / 100).toFixed(2)}`}</strong></div>

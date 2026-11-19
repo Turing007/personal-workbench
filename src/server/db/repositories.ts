@@ -79,6 +79,15 @@ export interface OrderItemInput {
   unitPriceCents?: number;
   amountCents?: number;
   freightPerBoxCents?: number;
+  /** 单件成本快照（分）；null 表示已确认无此成本，undefined 表示沿用旧值/未填写。 */
+  machineCostCents?: number | null;
+  batteryCostCents?: number | null;
+  chargerCostCents?: number | null;
+  packagingCostCents?: number | null;
+  accessoryCostCents?: number | null;
+  otherCostCents?: number | null;
+  /** 本行成本是否已核对；未核对时利润显示“成本待补”。 */
+  costConfirmed?: boolean;
   packaging?: PackagingInput[];
   /** 备注：内部信息，不会印到箱唛上。 */
   remark?: string;
@@ -108,6 +117,15 @@ export interface CreateOrderInput {
   amount?: number;
   amountCents?: number;
   shippingCents?: number;
+  /** 实际物流支出，不是向客户收取的运费。 */
+  logisticsCostCents?: number | null;
+  /** 标贴按整单核算。 */
+  labelCostCents?: number | null;
+  /** 其他整单费用（打样、报关、佣金等）。 */
+  otherCostCents?: number | null;
+  otherCostNote?: string;
+  /** 订单级成本是否已核对。 */
+  costConfirmed?: boolean;
   trackingNo?: string;
   paymentNote?: string;
   orderDetail?: string;
@@ -825,9 +843,10 @@ export class DatabaseRepositories {
         `INSERT INTO orders
           (customer_id, customer_name, customer_contact_name, customer_contact_phone, customer_shipping_info,
            order_no, ordered_at, recipient_name, recipient_info, amount, amount_cents, shipping_cents,
+           logistics_cost_cents, label_cost_cents, other_cost_cents, other_cost_note, cost_confirmed,
            tracking_no, payment_note, order_detail, remark, status, source_sales_document_id, settlement_type,
            company_id, created_at, updated_at, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
           .run(
             input.customerId ?? null,
@@ -842,6 +861,11 @@ export class DatabaseRepositories {
             input.amount ?? amountCents / 100,
             amountCents,
             input.shippingCents ?? 0,
+            input.logisticsCostCents ?? null,
+            input.labelCostCents ?? null,
+            input.otherCostCents ?? null,
+            input.otherCostNote ?? '',
+            input.costConfirmed ? 1 : 0,
             input.trackingNo ?? '',
             input.paymentNote ?? '',
             input.orderDetail ?? '',
@@ -866,8 +890,10 @@ export class DatabaseRepositories {
         `INSERT INTO order_items
           (order_id, customer_product_id, product_id, name, sku, specification, packaging_name, pack_count, quantity,
            unit_price_cents, amount_cents, freight_per_box_cents, remark, label_requirement,
+           machine_cost_cents, battery_cost_cents, charger_cost_cents, packaging_cost_cents,
+           accessory_cost_cents, other_cost_cents, cost_confirmed,
            sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const insertBoxSize = database.prepare(
         `INSERT INTO order_item_box_sizes
@@ -904,6 +930,13 @@ export class DatabaseRepositories {
             item.freightPerBoxCents ?? 0,
             item.remark ?? '',
             item.labelRequirement ?? '',
+            item.machineCostCents ?? null,
+            item.batteryCostCents ?? null,
+            item.chargerCostCents ?? null,
+            item.packagingCostCents ?? null,
+            item.accessoryCostCents ?? null,
+            item.otherCostCents ?? null,
+            item.costConfirmed ? 1 : 0,
             itemIndex,
             timestamp,
             timestamp,
@@ -933,8 +966,21 @@ export class DatabaseRepositories {
     const timestamp = now();
     const settlementType = input.settlementType === 'personal' ? 'personal' : 'corporate';
     return withTransaction(this.database, (database) => {
-      const existing = database.prepare('SELECT id FROM orders WHERE id = ?').get(orderId);
+      const existing = database.prepare(`SELECT id, logistics_cost_cents, label_cost_cents, other_cost_cents, other_cost_note, cost_confirmed
+        FROM orders WHERE id = ?`).get(orderId) as Record<string, unknown> | undefined;
       if (!existing) return undefined;
+      const previousItems = database.prepare(`SELECT machine_cost_cents, battery_cost_cents, charger_cost_cents,
+        packaging_cost_cents, accessory_cost_cents, other_cost_cents, cost_confirmed
+        FROM order_items WHERE order_id = ? ORDER BY sort_order, id`).all(orderId) as Array<Record<string, unknown>>;
+      const preserveNullableCost = (value: number | null | undefined, previous: unknown): number | null => {
+        if (value !== undefined) return value;
+        return previous == null ? null : Number(previous);
+      };
+      const logisticsCostCents = preserveNullableCost(input.logisticsCostCents, existing.logistics_cost_cents);
+      const labelCostCents = preserveNullableCost(input.labelCostCents, existing.label_cost_cents);
+      const otherCostCents = preserveNullableCost(input.otherCostCents, existing.other_cost_cents);
+      const otherCostNote = input.otherCostNote === undefined ? String(existing.other_cost_note ?? '') : input.otherCostNote;
+      const orderCostConfirmed = input.costConfirmed === undefined ? Boolean(existing.cost_confirmed) : input.costConfirmed;
 
       const amountCents = input.amountCents ?? Math.round((input.amount ?? 0) * 100);
 
@@ -943,6 +989,7 @@ export class DatabaseRepositories {
           `UPDATE orders SET customer_id = ?, customer_name = ?, customer_contact_name = ?, customer_contact_phone = ?,
             customer_shipping_info = ?, order_no = ?, ordered_at = ?,
             recipient_name = ?, recipient_info = ?, amount = ?, amount_cents = ?, shipping_cents = ?,
+            logistics_cost_cents = ?, label_cost_cents = ?, other_cost_cents = ?, other_cost_note = ?, cost_confirmed = ?,
             tracking_no = ?, payment_note = ?, order_detail = ?, remark = ?, settlement_type = ?, company_id = ?, updated_at = ? WHERE id = ?`,
         )
         .run(
@@ -958,6 +1005,11 @@ export class DatabaseRepositories {
           input.amount ?? amountCents / 100,
           amountCents,
           input.shippingCents ?? 0,
+          logisticsCostCents,
+          labelCostCents,
+          otherCostCents,
+          otherCostNote,
+          orderCostConfirmed ? 1 : 0,
           input.trackingNo ?? '',
           input.paymentNote ?? '',
           input.orderDetail ?? '',
@@ -986,8 +1038,10 @@ export class DatabaseRepositories {
         `INSERT INTO order_items
           (order_id, customer_product_id, product_id, name, sku, specification, packaging_name, pack_count, quantity,
            unit_price_cents, amount_cents, freight_per_box_cents, remark, label_requirement,
+           machine_cost_cents, battery_cost_cents, charger_cost_cents, packaging_cost_cents,
+           accessory_cost_cents, other_cost_cents, cost_confirmed,
            sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const insertBoxSize = database.prepare(
         `INSERT INTO order_item_box_sizes
@@ -1004,6 +1058,8 @@ export class DatabaseRepositories {
       }
 
       input.items.forEach((item, itemIndex) => {
+        const previousItem = previousItems[itemIndex] ?? {};
+        const itemCostConfirmed = item.costConfirmed === undefined ? Boolean(previousItem.cost_confirmed) : item.costConfirmed;
         const packaging = normalizePackaging(item.packaging, {
           name: item.packagingName,
           packCount: item.packCount ?? 1,
@@ -1024,6 +1080,13 @@ export class DatabaseRepositories {
             item.freightPerBoxCents ?? 0,
             item.remark ?? '',
             item.labelRequirement ?? '',
+            preserveNullableCost(item.machineCostCents, previousItem.machine_cost_cents),
+            preserveNullableCost(item.batteryCostCents, previousItem.battery_cost_cents),
+            preserveNullableCost(item.chargerCostCents, previousItem.charger_cost_cents),
+            preserveNullableCost(item.packagingCostCents, previousItem.packaging_cost_cents),
+            preserveNullableCost(item.accessoryCostCents, previousItem.accessory_cost_cents),
+            preserveNullableCost(item.otherCostCents, previousItem.other_cost_cents),
+            itemCostConfirmed ? 1 : 0,
             itemIndex,
             timestamp,
             timestamp,
