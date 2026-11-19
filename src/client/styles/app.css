@@ -6023,6 +6023,37 @@ select {
 .auth-submit:hover:not(:disabled) { background: var(--color-accent-hover); }
 .auth-submit:active:not(:disabled) { transform: scale(.99); }
 .auth-submit:disabled { opacity: .55; cursor: not-allowed; }
+.auth-workspace-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-divider);
+  color: var(--color-text-muted);
+  font-size: 11.5px;
+}
+.auth-workspace-switch > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.auth-workspace-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-ui);
+  background: var(--color-surface);
+  color: var(--color-accent);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
 
 @media (max-width: 640px) {
   .auth-screen { padding: var(--space-7); align-items: flex-start; padding-top: 12vh; }
@@ -7175,6 +7206,43 @@ select {
 .app-network-remove:hover {
   color: var(--color-danger);
   background: var(--color-danger-soft);
+}
+
+.settings-workspace-current {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-accent-border);
+  border-radius: var(--radius-ui);
+  background: var(--color-accent-soft);
+}
+.settings-workspace-current span { color: var(--color-text-muted); font-size: 10.5px; }
+.settings-workspace-current strong { color: var(--color-text); font-size: 13px; }
+.settings-workspace-current small { color: var(--color-text-secondary); font-size: 10.5px; overflow-wrap: anywhere; }
+.settings-workspace-list { display: grid; gap: 7px; }
+.settings-workspace-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-ui);
+  background: var(--color-surface);
+}
+.settings-workspace-item.is-active { border-color: var(--color-accent-border); background: var(--color-accent-soft); }
+.settings-workspace-main { display: grid; gap: 2px; min-width: 0; }
+.settings-workspace-main > div { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.settings-workspace-main strong { color: var(--color-text); font-size: 12px; }
+.settings-workspace-main span { color: var(--color-text-secondary); font-size: 10.5px; }
+.settings-workspace-main small { color: var(--color-text-muted); font-size: 10.5px; overflow-wrap: anywhere; }
+.settings-workspace-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.settings-workspace-form { display: grid; gap: 8px; padding: 10px; border: 1px dashed var(--color-border-control); border-radius: var(--radius-ui); background: var(--color-surface-subtle); }
+.settings-workspace-form > strong { color: var(--color-text); font-size: 12px; }
+.settings-workspace-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 900px) {
+  .settings-workspace-item { align-items: flex-start; flex-direction: column; }
+  .settings-workspace-form-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ===== 表单折叠分区（手机端）与弹窗移动端适配 ===== */

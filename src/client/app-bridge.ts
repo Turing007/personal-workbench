@@ -2,6 +2,8 @@
 export interface WorkbenchAppNetwork {
   label: string;
   url: string;
+  /** 上次登录的账号提示，只存用户名，不保存密码。 */
+  account?: string;
   active: boolean;
 }
 
@@ -10,8 +12,16 @@ export interface WorkbenchAppBridge {
   getNetworks(): string;
   switchNetwork(url: string): void;
   openAddressEditor(): void;
+  /** 打开原生工作空间切换页（1.20+）。 */
+  openNetworkSwitcher?(): void;
   /** 删除一条已保存的网络（1.13 之前的 App 没有该方法）。 */
   removeNetwork?(url: string): void;
+  /** 新增工作空间（1.20+）。返回 false 表示地址格式无效或壳不支持。 */
+  saveNetwork?(label: string, url: string, account?: string): boolean;
+  /** 修改工作空间名称和账号提示（1.20+）。 */
+  updateNetwork?(url: string, label: string, account?: string): boolean;
+  /** 登录成功后记录账号提示（1.20+）。 */
+  setNetworkAccount?(url: string, account: string): void;
   /** 弹窗等覆盖层打开时暂停下拉刷新（1.6 之前的 App 没有该方法）。 */
   setOverlayOpen?(open: boolean): void;
   /** 由原生把图片写进系统相册（1.8 之前的 App 没有该方法）。 */
@@ -55,6 +65,17 @@ export type ImageSavedHandler = (ok: boolean) => void;
 export function getAppBridge(): WorkbenchAppBridge | undefined {
   if (typeof window === 'undefined') return undefined;
   return (window as unknown as { workbenchApp?: WorkbenchAppBridge }).workbenchApp;
+}
+
+/** 记录当前服务器地址上次登录的账号，只保存用户名，不保存密码。 */
+export function rememberWorkspaceAccount(username: string): void {
+  try {
+    const bridge = getAppBridge();
+    if (typeof bridge?.setNetworkAccount !== 'function') return;
+    bridge.setNetworkAccount(window.location.origin, username.trim());
+  } catch {
+    /* 旧版 App 或 WebView 桥接异常时忽略，不影响登录。 */
+  }
 }
 
 /**

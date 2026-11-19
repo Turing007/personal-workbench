@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { LogIn, ShieldCheck } from 'lucide-react';
+import { LogIn, ShieldCheck, Smartphone } from 'lucide-react';
 import {
   AUTH_REQUIRED_EVENT,
   fetchCurrentUser,
@@ -10,6 +10,7 @@ import {
   type AuthUser,
 } from '../../api';
 import { SITE_FILINGS, beianFooterItems } from '../../../shared/site-filings';
+import { getAppBridge, rememberWorkspaceAccount } from '../../app-bridge';
 
 type AuthGateState = 'loading' | 'setup' | 'login' | 'ready';
 
@@ -50,6 +51,7 @@ export default function AuthGate({ children }: AuthGateProps) {
         const { user: current } = await fetchCurrentUser();
         if (!cancelled) {
           setUser(current);
+          rememberWorkspaceAccount(current.username);
           setState('ready');
         }
       } catch {
@@ -72,6 +74,7 @@ export default function AuthGate({ children }: AuthGateProps) {
     setFormError('');
     try {
       const result = mode === 'setup' ? await setupFirstAdmin(values) : await loginRequest(values);
+      rememberWorkspaceAccount(result.user.username);
       setUser(result.user);
       setState('ready');
     } catch (error) {
@@ -125,6 +128,18 @@ function AuthForm({ mode, error, submitting, onSubmit }: AuthFormProps) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const isSetup = mode === 'setup';
+  const appBridge = getAppBridge();
+  const activeWorkspace = (() => {
+    try {
+      const parsed = JSON.parse(appBridge?.getNetworks() ?? '[]');
+      if (!Array.isArray(parsed)) return undefined;
+      return parsed.find((item): item is { label: string; url: string; account?: string; active: boolean } => (
+        item != null && typeof item === 'object' && (item as { active?: unknown }).active === true
+      ));
+    } catch {
+      return undefined;
+    }
+  })();
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -224,6 +239,17 @@ function AuthForm({ mode, error, submitting, onSubmit }: AuthFormProps) {
           <LogIn size={17} />
           {submitting ? '请稍候…' : isSetup ? '创建管理员并进入' : '登录'}
         </button>
+        {appBridge && <div className="auth-workspace-switch">
+          <span title={activeWorkspace?.url}>
+            {activeWorkspace
+              ? `当前工作空间：${activeWorkspace.label}${activeWorkspace.account ? ` · 上次账号 ${activeWorkspace.account}` : ''}`
+              : '当前工作空间'}
+          </span>
+          <button type="button" onClick={() => {
+            if (typeof appBridge.openNetworkSwitcher === 'function') appBridge.openNetworkSwitcher();
+            else appBridge.openAddressEditor();
+          }}><Smartphone size={14} />切换工作空间</button>
+        </div>}
       </form>
       {beianItems.length > 0 && (
         <footer className="auth-filings">

@@ -769,7 +769,7 @@ public class MainActivity extends Activity {
      * 页面只在 App 内渲染「App 网络」区块，用于查看与切换已保存的网络。
      */
     public class AppBridge {
-        /** 已保存网络列表：JSON 数组 [{label, url, active}]。 */
+        /** 已保存工作空间列表：JSON 数组 [{label, url, account, active}]。 */
         @JavascriptInterface
         public String getNetworks() {
             List<SavedNetwork> networks = loadNetworks();
@@ -780,6 +780,7 @@ public class MainActivity extends Activity {
                 try {
                     item.put("label", network.label);
                     item.put("url", network.url);
+                    item.put("account", network.account);
                     item.put("active", network.url.equals(active));
                 } catch (JSONException ignored) {
                 }
@@ -805,6 +806,12 @@ public class MainActivity extends Activity {
             runOnUiThread(MainActivity.this::openSetupView);
         }
 
+        /** 打开原生「切换工作空间」页面。 */
+        @JavascriptInterface
+        public void openNetworkSwitcher() {
+            runOnUiThread(MainActivity.this::showNetworkPage);
+        }
+
         /**
          * 删除一条已保存的网络（网页「设置 → 手机连接 → App 网络」里的删除按钮）。
          * 这里必须写成 MainActivity.this.removeNetwork，否则会递归调用桥方法自己。
@@ -814,6 +821,43 @@ public class MainActivity extends Activity {
             String normalized = normalizeUrl(url);
             if (normalized == null) return;
             runOnUiThread(() -> MainActivity.this.removeNetwork(normalized));
+        }
+
+        /**
+         * 新增工作空间（网页「设置 → 手机连接 → 工作空间」）。
+         * 返回值只表示地址格式是否有效；持久化在 UI 线程完成，网页随后重新读取列表即可。
+         */
+        @JavascriptInterface
+        public boolean saveNetwork(String label, String url, String account) {
+            String normalized = normalizeUrl(url);
+            if (normalized == null) return false;
+            String safeLabel = normalizeWorkspaceLabel(label, normalized);
+            String safeAccount = normalizeAccountHint(account);
+            runOnUiThread(() -> upsertNetwork(safeLabel, normalized, safeAccount, false));
+            return true;
+        }
+
+        /** 更新工作空间名称与账号提示；地址不变。 */
+        @JavascriptInterface
+        public boolean updateNetwork(String url, String label, String account) {
+            String normalized = normalizeUrl(url);
+            if (normalized == null) return false;
+            String safeLabel = normalizeWorkspaceLabel(label, normalized);
+            String safeAccount = normalizeAccountHint(account);
+            runOnUiThread(() -> updateNetworkMetadata(normalized, safeLabel, safeAccount));
+            return true;
+        }
+
+        /** 登录成功后记录当前地址上的账号提示，不保存密码。 */
+        @JavascriptInterface
+        public void setNetworkAccount(String url, String account) {
+            String normalized = normalizeUrl(url);
+            if (normalized == null) return;
+            String safeAccount = normalizeAccountHint(account);
+            runOnUiThread(() -> updateNetworkMetadata(
+                    normalized,
+                    "",
+                    safeAccount));
         }
 
         /**
@@ -992,10 +1036,16 @@ public class MainActivity extends Activity {
     private static final class SavedNetwork {
         final String label;
         final String url;
+        final String account;
 
         SavedNetwork(String label, String url) {
+            this(label, url, "");
+        }
+
+        SavedNetwork(String label, String url, String account) {
             this.label = label;
             this.url = url;
+            this.account = account;
         }
     }
 
@@ -1010,7 +1060,10 @@ public class MainActivity extends Activity {
                     if (item == null) continue;
                     String url = item.optString("url", "");
                     if (!TextUtils.isEmpty(url)) {
-                        networks.add(new SavedNetwork(item.optString("label", labelFor(url)), url));
+                        networks.add(new SavedNetwork(
+                                item.optString("label", labelFor(url)),
+                                url,
+                                item.optString("account", "")));
                     }
                 }
             } catch (JSONException ignored) {
@@ -1038,6 +1091,7 @@ public class MainActivity extends Activity {
             try {
                 item.put("label", network.label);
                 item.put("url", network.url);
+                item.put("account", network.account);
             } catch (JSONException ignored) {
             }
             array.put(item);
@@ -1048,10 +1102,51 @@ public class MainActivity extends Activity {
     /** 记住一条地址并设为当前使用（同地址去重后置顶）。 */
     private void rememberNetwork(String label, String url) {
         List<SavedNetwork> networks = loadNetworks();
+        String account = "";
+        for (SavedNetwork network : networks) {
+            if (network.url.equals(url)) {
+                account = network.account;
+                break;
+            }
+        }
         networks.removeIf((network) -> network.url.equals(url));
-        networks.add(0, new SavedNetwork(label, url));
+        networks.add(0, new SavedNetwork(label, url, account));
         persistNetworks(networks);
         preferences().edit().putString(KEY_SERVER_URL, url).apply();
+    }
+
+    /** 新增/更新一条工作空间；makeActive=false 时只保存，不打断当前正在使用的地址。 */
+    private void upsertNetwork(String label, String url, String account, boolean makeActive) {
+        List<SavedNetwork> networks = loadNetworks();
+        networks.removeIf((network) -> network.url.equals(url));
+        networks.add(0, new SavedNetwork(normalizeWorkspaceLabel(label, url), url, normalizeAccountHint(account)));
+        persistNetworks(networks);
+        if (makeActive) preferences().edit().putString(KEY_SERVER_URL, url).apply();
+    }
+
+    /** 只改名称/账号提示；label 为空时保留原名称，不会把自定义工作空间名冲掉。 */
+    private void updateNetworkMetadata(String url, String label, String account) {
+        List<SavedNetwork> networks = loadNetworks();
+        for (int index = 0; index < networks.size(); index += 1) {
+            SavedNetwork current = networks.get(index);
+            if (!current.url.equals(url)) continue;
+            String nextLabel = TextUtils.isEmpty(label) ? current.label : normalizeWorkspaceLabel(label, url);
+            networks.set(index, new SavedNetwork(nextLabel, url, normalizeAccountHint(account)));
+            persistNetworks(networks);
+            return;
+        }
+        upsertNetwork(normalizeWorkspaceLabel(label, url), url, account, false);
+    }
+
+    private String normalizeWorkspaceLabel(String raw, String url) {
+        String value = raw == null ? "" : raw.trim().replace('\n', ' ').replace('\r', ' ');
+        if (value.length() > 40) value = value.substring(0, 40);
+        return TextUtils.isEmpty(value) ? labelFor(url) : value;
+    }
+
+    private String normalizeAccountHint(String raw) {
+        String value = raw == null ? "" : raw.trim().replace('\n', ' ').replace('\r', ' ');
+        return value.length() > 64 ? value.substring(0, 64) : value;
     }
 
     /** 按地址推断网络类型，用于列表展示。 */
@@ -1116,6 +1211,14 @@ public class MainActivity extends Activity {
             address.setTextColor(getColor(R.color.text_muted));
             address.setTextSize(12);
 
+            TextView account = new TextView(this);
+            account.setText(TextUtils.isEmpty(network.account)
+                    ? getString(R.string.network_page_account_empty)
+                    : getString(R.string.network_page_account, network.account));
+            account.setTextColor(getColor(R.color.text_secondary));
+            account.setTextSize(12);
+            account.setPadding(0, dp(3), 0, 0);
+
             TextView status = new TextView(this);
             status.setText(R.string.network_page_checking);
             status.setTextColor(getColor(R.color.text_secondary));
@@ -1124,6 +1227,7 @@ public class MainActivity extends Activity {
 
             content.addView(title);
             content.addView(address);
+            content.addView(account);
             content.addView(status);
             content.setOnClickListener(v -> switchNetwork(network));
 

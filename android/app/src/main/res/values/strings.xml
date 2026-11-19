@@ -2,16 +2,16 @@
 <resources>
     <string name="app_name">个人工作台</string>
     <string name="setup_title">连接工作台</string>
-    <string name="setup_subtitle">填入电脑或服务器上运行的工作台地址，只需设置一次</string>
+    <string name="setup_subtitle">填入电脑或服务器上运行的工作台地址；可保存多个工作空间，随时切换服务器和账号</string>
     <string name="setup_url_hint">例如 https://1-2-3-4.sslip.io 或 http://192.168.1.10:52341</string>
     <string name="setup_test">测试连接</string>
     <string name="setup_scan">扫描二维码</string>
     <string name="scan_prompt">对准电脑「设置 → 手机连接」页面的二维码</string>
     <string name="scan_invalid">二维码不是有效的工作台地址（仅支持 http/https，且不能指向手机本机）</string>
-    <string name="network_title">选择访问网络</string>
+    <string name="network_title">切换工作空间</string>
     <string name="network_switched">已切换到「%1$s」</string>
     <string name="network_page_title">无法连接工作台</string>
-    <string name="network_page_hint">已保存的网络（点击即可连接并测试）：</string>
+    <string name="network_page_hint">已保存的工作空间（点击即可连接并测试）：</string>
     <string name="network_page_rescan">重新检测可用性</string>
     <string name="network_page_checking">检测中…</string>
     <string name="network_page_ok">可连接</string>
@@ -28,6 +28,8 @@
     <string name="dialog_cancel">取消</string>
     <string name="dialog_delete">删除</string>
     <string name="network_page_current">当前使用</string>
+    <string name="network_page_account">账号提示：%1$s</string>
+    <string name="network_page_account_empty">尚未记录登录账号</string>
     <string name="network_row_current">%1$s（当前使用）</string>
     <string name="network_page_switching">正在连接…</string>
     <string name="network_page_empty">还没有保存任何地址，请先新增。</string>

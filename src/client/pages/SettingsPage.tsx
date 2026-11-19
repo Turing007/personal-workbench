@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BatteryCharging, Building2, CalendarClock, Copy, Database, Download, Ellipsis, ImageOff, KeyRound, LayoutGrid, Minus, Package, Palette, Plus, RotateCcw, Save, ScrollText, Smartphone, Trash2, Upload, UserPlus, Users, Wifi } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BatteryCharging, Building2, CalendarClock, Copy, Database, Download, Ellipsis, ImageOff, KeyRound, LayoutGrid, Minus, Package, Palette, Pencil, Plus, RotateCcw, Save, ScrollText, Smartphone, Trash2, Upload, UserPlus, Users, Wifi } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
@@ -425,6 +425,10 @@ function MobileConnectCard() {
   // 仅 App 内存在该桥接：网页版不显示「App 网络」区块。
   const appBridge = getAppBridge();
   const [appNetworks, setAppNetworks] = useState<WorkbenchAppNetwork[]>([]);
+  const [workspaceLabel, setWorkspaceLabel] = useState('');
+  const [workspaceUrl, setWorkspaceUrl] = useState('');
+  const [workspaceAccount, setWorkspaceAccount] = useState('');
+  const [workspaceMessage, setWorkspaceMessage] = useState('');
 
   // 读取一次已保存网络；删除后需要重新读，所以抽成函数而不是只放在 effect 里。
   const loadAppNetworks = useCallback(() => {
@@ -436,6 +440,45 @@ function MobileConnectCard() {
   }, [appBridge]);
 
   useEffect(() => { loadAppNetworks(); }, [loadAppNetworks]);
+  const activeAppNetwork = appNetworks.find((network) => network.active);
+
+  const addWorkspace = () => {
+    if (typeof appBridge?.saveNetwork !== 'function') {
+      setWorkspaceMessage('当前 App 版本不支持新增工作空间，请安装 1.20 或更新版本');
+      return;
+    }
+    if (!workspaceLabel.trim() || !workspaceUrl.trim()) {
+      setWorkspaceMessage('请填写工作空间名称和服务器地址');
+      return;
+    }
+    const saved = appBridge.saveNetwork(workspaceLabel, workspaceUrl, workspaceAccount);
+    if (!saved) {
+      setWorkspaceMessage('地址格式无效：仅支持 http/https，不能使用 localhost 或 127.0.0.1');
+      return;
+    }
+    setWorkspaceMessage('工作空间已保存');
+    setWorkspaceLabel('');
+    setWorkspaceUrl('');
+    setWorkspaceAccount('');
+    window.setTimeout(loadAppNetworks, 120);
+  };
+
+  const editWorkspace = (network: WorkbenchAppNetwork) => {
+    if (typeof appBridge?.updateNetwork !== 'function') {
+      setWorkspaceMessage('当前 App 版本不支持修改工作空间，请安装 1.20 或更新版本');
+      return;
+    }
+    const label = window.prompt('工作空间名称（例如：公司 A · 线上）', network.label);
+    if (label === null) return;
+    const account = window.prompt('登录账号提示（只存用户名，不保存密码）', network.account ?? '');
+    if (account === null) return;
+    if (!appBridge.updateNetwork(network.url, label, account)) {
+      setWorkspaceMessage('工作空间更新失败，请检查名称或地址');
+      return;
+    }
+    setWorkspaceMessage('工作空间信息已更新');
+    window.setTimeout(loadAppNetworks, 120);
+  };
   // 优先展示局域网地址：手机扫本机 127.0.0.1 的二维码是连不上的。
   const serverUrl = lanAddresses[0] ?? browserUrl;
 
@@ -542,38 +585,55 @@ function MobileConnectCard() {
         </ol>
       </div>
     </div>
-    {appBridge && appNetworks.length > 0 && <div className="settings-app-network">
-      <div className="settings-heading"><Wifi size={16} /><strong>App 网络</strong></div>
-      <p>App 里点选下方网络即可切换访问线路，切换后页面自动重新加载；当前网络连不上时 App 也会自动换到另一条。</p>
-      <div className="settings-app-network-list">
+    {appBridge && <div className="settings-app-network">
+      <div className="settings-heading"><Wifi size={16} /><strong>工作空间</strong></div>
+      <p>每个工作空间对应一个服务器地址和独立登录状态。自定义名称和账号提示只保存用户名，不保存密码。</p>
+      {activeAppNetwork && <div className="settings-workspace-current">
+        <span>当前工作空间</span>
+        <strong>{activeAppNetwork.label}</strong>
+        <small>{activeAppNetwork.account ? `上次账号：${activeAppNetwork.account} · ` : ''}{activeAppNetwork.url}</small>
+      </div>}
+      <div className="settings-workspace-list">
         {appNetworks.map((network) => (
-          <span key={network.url} className="app-network-item">
-            <button
-              type="button"
-              className={network.active ? 'chip is-selected' : 'chip'}
-              title={network.url}
-              onClick={() => { if (!network.active) appBridge.switchNetwork(network.url); }}
-            >{network.active ? '✓ ' : ''}{network.label}<em>{network.url.replace(/^https?:\/\//, '')}</em></button>
-            <button
-              type="button"
-              className="app-network-remove"
-              title={`删除「${network.label}」`}
-              aria-label={`删除「${network.label}」`}
-              onClick={() => {
-                if (typeof appBridge.removeNetwork !== 'function') {
-                  window.alert('当前 App 版本不支持删除网络，请更新手机端 App');
-                  return;
-                }
-                if (!window.confirm(`确定从 App 里删除「${network.label}」（${network.url}）吗？`)) return;
-                appBridge.removeNetwork(network.url);
-                loadAppNetworks();
-              }}
-            ><Trash2 size={13} /></button>
-          </span>
+          <article key={network.url} className={`settings-workspace-item${network.active ? ' is-active' : ''}`}>
+            <div className="settings-workspace-main">
+              <div><strong>{network.active ? '✓ ' : ''}{network.label}</strong><span>{network.account ? `账号：${network.account}` : '尚未记录登录账号'}</span></div>
+              <small>{network.url}</small>
+            </div>
+            <div className="settings-workspace-actions">
+              <button className="button button-secondary button-sm" type="button" disabled={network.active} onClick={() => appBridge.switchNetwork(network.url)}>{network.active ? '当前使用' : '切换'}</button>
+              <button className="icon-button" type="button" title="修改工作空间名称和账号" onClick={() => editWorkspace(network)}><Pencil size={13} /></button>
+              <button
+                className="icon-button danger"
+                type="button"
+                title={`删除「${network.label}」`}
+                onClick={() => {
+                  if (typeof appBridge.removeNetwork !== 'function') {
+                    setWorkspaceMessage('当前 App 版本不支持删除工作空间，请安装 1.20 或更新版本');
+                    return;
+                  }
+                  if (!window.confirm(`确定删除工作空间「${network.label}」（${network.url}）吗？`)) return;
+                  appBridge.removeNetwork(network.url);
+                  window.setTimeout(loadAppNetworks, 120);
+                }}
+              ><Trash2 size={13} /></button>
+            </div>
+          </article>
         ))}
+        {!appNetworks.length && <div className="table-state">还没有保存工作空间，可在下方手动添加，或扫描另一台服务器的二维码。</div>}
       </div>
-      <div className="settings-actions">
-        <button className="button button-secondary" type="button" onClick={() => appBridge.openAddressEditor()}><Plus size={14} />新增/编辑地址</button>
+      <div className="settings-workspace-form">
+        <strong>添加工作空间</strong>
+        <div className="settings-workspace-form-grid">
+          <label className="label">名称<input className="input" value={workspaceLabel} onChange={(event) => setWorkspaceLabel(event.target.value)} placeholder="例如：公司 A · 线上" /></label>
+          <label className="label">服务器地址<input className="input" value={workspaceUrl} onChange={(event) => setWorkspaceUrl(event.target.value)} placeholder="https://workbench.example.com" autoComplete="off" spellCheck={false} /></label>
+          <label className="label">账号提示<input className="input" value={workspaceAccount} onChange={(event) => setWorkspaceAccount(event.target.value)} placeholder="例如：admin 或小王" autoComplete="off" /></label>
+        </div>
+        <div className="settings-actions">
+          <button className="button button-primary" type="button" onClick={addWorkspace}><Plus size={14} />保存工作空间</button>
+          <button className="button button-secondary" type="button" onClick={() => appBridge.openAddressEditor()}><Smartphone size={14} />扫码添加地址</button>
+          {workspaceMessage && <span role="status" style={{ color: 'var(--color-text-secondary)', fontSize: 12 }}>{workspaceMessage}</span>}
+        </div>
       </div>
     </div>}
   </div>;
