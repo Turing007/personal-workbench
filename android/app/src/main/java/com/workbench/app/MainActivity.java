@@ -117,6 +117,9 @@ public class MainActivity extends Activity {
     private View browserView;
     private View setupView;
     private View networkView;
+    private View workspaceSwitchFallback;
+    /** 新版网页已经自带上角切换入口时，隐藏原生兜底按钮。 */
+    private boolean workspaceSwitchSuppressed;
     private LinearLayout networkList;
     private EditText urlInput;
     private TextView testResult;
@@ -151,10 +154,12 @@ public class MainActivity extends Activity {
         browserView = findViewById(R.id.browser_view);
         setupView = findViewById(R.id.setup_view);
         networkView = findViewById(R.id.network_view);
+        workspaceSwitchFallback = findViewById(R.id.workspace_switch_fallback);
         networkList = findViewById(R.id.network_list);
         urlInput = findViewById(R.id.url_input);
         testResult = findViewById(R.id.test_result);
         testButton = findViewById(R.id.test_button);
+        workspaceSwitchFallback.setOnClickListener(v -> showNetworkPage());
 
         configureWebView();
         bindSetupButtons();
@@ -759,6 +764,8 @@ public class MainActivity extends Activity {
     }
 
     private void loadServer(String url) {
+        // 每次换服务器都先显示兜底入口；新版网页加载完会主动把它隐藏。
+        workspaceSwitchSuppressed = false;
         showView(browserView);
         lastLoadedUrl = url;
         webView.loadUrl(url);
@@ -812,6 +819,16 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void openNetworkSwitcher() {
             runOnUiThread(MainActivity.this::showNetworkPage);
+        }
+
+        /** 新版网页自带上角工作空间入口后调用，避免原生兜底按钮重复遮挡页面。 */
+        @JavascriptInterface
+        public void setWorkspaceSwitchAvailable(boolean available) {
+            runOnUiThread(() -> {
+                workspaceSwitchSuppressed = available;
+                workspaceSwitchFallback.setVisibility(
+                        available || browserView.getVisibility() != View.VISIBLE ? View.GONE : View.VISIBLE);
+            });
         }
 
         /**
@@ -1353,6 +1370,8 @@ public class MainActivity extends Activity {
         browserView.setVisibility(target == browserView ? View.VISIBLE : View.GONE);
         setupView.setVisibility(target == setupView ? View.VISIBLE : View.GONE);
         networkView.setVisibility(target == networkView ? View.VISIBLE : View.GONE);
+        workspaceSwitchFallback.setVisibility(
+                target == browserView && !workspaceSwitchSuppressed ? View.VISIBLE : View.GONE);
     }
 
     private void showTestResult(int textRes, int colorRes) {

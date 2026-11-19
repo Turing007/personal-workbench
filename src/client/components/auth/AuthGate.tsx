@@ -39,6 +39,11 @@ export default function AuthGate({ children }: AuthGateProps) {
 
   useEffect(() => {
     let cancelled = false;
+    try {
+      getAppBridge()?.setWorkspaceSwitchAvailable?.(true);
+    } catch {
+      /* 旧版 App 没有该方法时保留原生兜底入口。 */
+    }
     // 任意接口返回 401/AUTH_REQUIRED 时广播该事件；仅在已就绪时响应，
     // 避免启动阶段的首个 401（探测 /api/auth/me）抢先覆盖 setup 状态。
     const onAuthRequired = () => {

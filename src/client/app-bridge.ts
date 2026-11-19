@@ -14,6 +14,8 @@ export interface WorkbenchAppBridge {
   openAddressEditor(): void;
   /** 打开原生工作空间切换页（1.20+）。 */
   openNetworkSwitcher?(): void;
+  /** 新版网页已提供工作空间入口时，隐藏原生兜底按钮（1.20+）。 */
+  setWorkspaceSwitchAvailable?(available: boolean): void;
   /** 删除一条已保存的网络（1.13 之前的 App 没有该方法）。 */
   removeNetwork?(url: string): void;
   /** 新增工作空间（1.20+）。返回 false 表示地址格式无效或壳不支持。 */
