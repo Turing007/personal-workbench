@@ -1,6 +1,6 @@
-import { ChevronRight, Menu, X, LogOut } from 'lucide-react';
+import { ChevronDown, ChevronRight, Menu, X, LogOut } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { holdOverlayOpen } from '../app-bridge';
+import { getAppBridge, holdOverlayOpen } from '../app-bridge';
 import { navigationItems, type NavigationItem, type NavigationKey } from '../navigation';
 
 export type { NavigationKey };
@@ -37,6 +37,24 @@ export default function Sidebar({ activeKey, onNavigate, collapsed = false, comp
     onMobileOpenChange?.(open);
   };
   const showLogo = Boolean(logoUrl && !logoFailed);
+  const appBridge = getAppBridge();
+  const activeWorkspace = (() => {
+    try {
+      const parsed = JSON.parse(appBridge?.getNetworks() ?? '[]');
+      if (!Array.isArray(parsed)) return undefined;
+      return parsed.find((item): item is { label: string; account?: string; active: boolean } => (
+        item != null && typeof item === 'object' && (item as { active?: unknown }).active === true
+      ));
+    } catch {
+      return undefined;
+    }
+  })();
+  const openWorkspaceSwitcher = () => {
+    if (!appBridge) return;
+    setMobileOpen(false);
+    if (typeof appBridge.openNetworkSwitcher === 'function') appBridge.openNetworkSwitcher();
+    else appBridge.openAddressEditor();
+  };
   // 抽屉打开时锁住背景滚动：抽屉本身是 position: fixed，若不同时锁 body，
   // 手指在抽屉或遮罩上滑动会连带滚动底下的页面，关掉抽屉后位置已经跑偏。
   // 同时通知 App 暂停下拉刷新，否则抽屉里的下滑会被当成「刷新页面」抢走。
@@ -62,10 +80,18 @@ export default function Sidebar({ activeKey, onNavigate, collapsed = false, comp
       {mobileOpen && <button className="sidebar-backdrop" type="button" aria-label="关闭主导航" onClick={() => setMobileOpen(false)} />}
       <aside aria-label="主导航" className={`sidebar${collapsed ? ' is-collapsed' : ''}${mobileOpen ? ' is-mobile-open' : ''}`}>
         <div className="sidebar-brand">
-          <div className="sidebar-logo" title={companyName || '个人工作台'}>
-            {showLogo ? <img src={logoUrl} alt={companyName || '公司 Logo'} onError={() => setLogoFailed(true)} /> : 'V'}
-          </div>
-          {!collapsed && <strong className="sidebar-name" title={companyName || '个人工作台'}>{companyName || '个人工作台'}</strong>}
+          {appBridge ? <button className="sidebar-workspace-switch" type="button" title="切换工作空间" aria-label="切换工作空间" onClick={openWorkspaceSwitcher}>
+            <span className="sidebar-logo" title={companyName || '个人工作台'}>
+              {showLogo ? <img src={logoUrl} alt={companyName || '公司 Logo'} onError={() => setLogoFailed(true)} /> : 'V'}
+            </span>
+            {!collapsed && <span className="sidebar-workspace-copy"><strong className="sidebar-name" title={companyName || '个人工作台'}>{companyName || '个人工作台'}</strong><small>{activeWorkspace ? `${activeWorkspace.label}${activeWorkspace.account ? ` · ${activeWorkspace.account}` : ''}` : '切换工作空间'}</small></span>}
+            {!collapsed && <ChevronDown size={13} aria-hidden="true" />}
+          </button> : <>
+            <div className="sidebar-logo" title={companyName || '个人工作台'}>
+              {showLogo ? <img src={logoUrl} alt={companyName || '公司 Logo'} onError={() => setLogoFailed(true)} /> : 'V'}
+            </div>
+            {!collapsed && <strong className="sidebar-name" title={companyName || '个人工作台'}>{companyName || '个人工作台'}</strong>}
+          </>}
           <button className="sidebar-mobile-close" type="button" aria-label="关闭主导航" onClick={() => setMobileOpen(false)}><X size={18} /></button>
         </div>
         <nav className="sidebar-nav">

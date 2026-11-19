@@ -234,6 +234,8 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 swipeRefresh.setRefreshing(false);
                 loadProgress.setProgress(0);
+                // 不同服务器地址各自保留会话；主动落盘，避免 App 被杀后 WebView Cookie 还没写完。
+                CookieManager.getInstance().flush();
                 if (networkView.getVisibility() != View.VISIBLE) {
                     showView(browserView);
                 }
