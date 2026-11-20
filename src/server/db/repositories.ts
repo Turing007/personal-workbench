@@ -174,6 +174,27 @@ function normalizePackaging(packaging: PackagingInput[] | undefined, fallback: P
   }));
 }
 
+interface LabelSignatureItem {
+  name: string;
+  sku: string;
+  specification: string;
+  quantity: number;
+  packSizes: number[];
+  requirement: string;
+}
+
+function effectivePackSizes(packaging: PackagingInput[] | undefined, packCount: number | undefined): number[] {
+  const sizes = normalizePackaging(packaging, { name: '', packCount: packCount ?? 1 })
+    .map((item) => Math.trunc(item.packCount))
+    .filter((count) => count > 0);
+  return sizes.length ? sizes : [Math.max(1, Math.trunc(packCount ?? 1))];
+}
+
+/** 只包含会影响箱唛内容的字段；价格、客户、附件等变化不触发重排。 */
+function labelSignature(orderDetail: string, items: LabelSignatureItem[]): string {
+  return JSON.stringify({ orderDetail, items });
+}
+
 function lastInsertId(result: { lastInsertRowid: number | bigint }): number {
   return Number(result.lastInsertRowid);
 }
@@ -966,10 +987,11 @@ export class DatabaseRepositories {
     const timestamp = now();
     const settlementType = input.settlementType === 'personal' ? 'personal' : 'corporate';
     return withTransaction(this.database, (database) => {
-      const existing = database.prepare(`SELECT id, logistics_cost_cents, label_cost_cents, other_cost_cents, other_cost_note, cost_confirmed
+      const existing = database.prepare(`SELECT id, order_detail, logistics_cost_cents, label_cost_cents, other_cost_cents, other_cost_note, cost_confirmed
         FROM orders WHERE id = ?`).get(orderId) as Record<string, unknown> | undefined;
       if (!existing) return undefined;
-      const previousItems = database.prepare(`SELECT machine_cost_cents, battery_cost_cents, charger_cost_cents,
+      const previousItems = database.prepare(`SELECT id, name, sku, specification, pack_count, quantity, remark, label_requirement,
+        machine_cost_cents, battery_cost_cents, charger_cost_cents,
         packaging_cost_cents, accessory_cost_cents, other_cost_cents, cost_confirmed
         FROM order_items WHERE order_id = ? ORDER BY sort_order, id`).all(orderId) as Array<Record<string, unknown>>;
       const preserveNullableCost = (value: number | null | undefined, previous: unknown): number | null => {
@@ -1030,7 +1052,49 @@ export class DatabaseRepositories {
         `).run(amountCents, calculateOutstandingCents(amountCents, receivedCents), deriveFinancePaymentStatus(amountCents, receivedCents), timestamp, orderId);
       }
 
-      database.prepare('DELETE FROM carton_labels WHERE order_id = ?').run(orderId);
+      // 明细、数量、装箱数、箱唛要求没变时保留现有箱唛，避免只改备注/附件/价格就丢手工合箱。
+      const previousItemIds = previousItems.map((item) => Number(item.id));
+      const previousBoxRows = database.prepare(
+        `SELECT order_item_id, pack_count FROM order_item_box_sizes
+         WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id = ?)
+         ORDER BY sort_order, id`,
+      ).all(orderId) as Array<Record<string, unknown>>;
+      const previousPackSizes = new Map<number, number[]>();
+      previousBoxRows.forEach((row) => {
+        const itemId = Number(row.order_item_id);
+        const sizes = previousPackSizes.get(itemId) ?? [];
+        sizes.push(Math.trunc(Number(row.pack_count)));
+        previousPackSizes.set(itemId, sizes);
+      });
+      const previousLabelSignature = labelSignature(String(existing.order_detail ?? ''), previousItems.map((item) => {
+        const sizes = previousPackSizes.get(Number(item.id)) ?? [];
+        return {
+          name: String(item.name ?? ''),
+          sku: String(item.sku ?? ''),
+          specification: String(item.specification ?? ''),
+          quantity: Math.trunc(Number(item.quantity ?? 1)),
+          packSizes: sizes.length ? sizes : [Math.max(1, Math.trunc(Number(item.pack_count ?? 1)))],
+          requirement: cartonLabelRequirement({ labelRequirement: String(item.label_requirement ?? ''), remark: String(item.remark ?? '') }),
+        };
+      }));
+      const nextLabelSignature = labelSignature(String(input.orderDetail ?? ''), input.items.map((item) => ({
+        name: item.name,
+        sku: item.sku ?? '',
+        specification: item.specification ?? '',
+        quantity: Math.trunc(item.quantity),
+        packSizes: effectivePackSizes(item.packaging, item.packCount),
+        requirement: cartonLabelRequirement({ labelRequirement: item.labelRequirement, remark: item.remark }),
+      })));
+      const labelCount = Number((database.prepare('SELECT COUNT(*) AS count FROM carton_labels WHERE order_id = ?').get(orderId) as { count?: unknown } | undefined)?.count ?? 0);
+      const keepLabels = labelCount > 0 && previousLabelSignature === nextLabelSignature;
+      const savedLabelLinks = keepLabels
+        ? database.prepare(
+          `SELECT cli.id, cli.order_item_id FROM carton_label_items cli
+           JOIN carton_labels cl ON cl.id = cli.carton_label_id
+           WHERE cl.order_id = ? AND cli.order_item_id IS NOT NULL`,
+        ).all(orderId) as Array<Record<string, unknown>>
+        : [];
+      if (!keepLabels) database.prepare('DELETE FROM carton_labels WHERE order_id = ?').run(orderId);
       database.prepare('DELETE FROM order_items WHERE order_id = ?').run(orderId);
 
       const itemIds: number[] = [];
@@ -1107,7 +1171,16 @@ export class DatabaseRepositories {
         });
       });
 
-      this.createAutomaticLabels(database, orderId, input.items, itemIds, timestamp);
+      if (keepLabels) {
+        const updateLabelItemSource = database.prepare('UPDATE carton_label_items SET order_item_id = ? WHERE id = ?');
+        savedLabelLinks.forEach((link) => {
+          const index = previousItemIds.indexOf(Number(link.order_item_id));
+          const nextItemId = index >= 0 ? itemIds[index] : undefined;
+          if (nextItemId != null) updateLabelItemSource.run(nextItemId, Number(link.id));
+        });
+      } else {
+        this.createAutomaticLabels(database, orderId, input.items, itemIds, timestamp);
+      }
       return this.getOrderDetail(orderId);
     });
   }
@@ -1141,13 +1214,18 @@ export class DatabaseRepositories {
   }
 
   /** 订单详情用的轻量财务摘要，避免详情页加载全部水单/发票附件。 */
-  getOrderFinanceLocks(orderId: number): { hasReceipt: boolean; hasValidInvoice: boolean } {
+  getOrderFinanceLocks(orderId: number): { hasReceipt: boolean; hasValidInvoice: boolean; validInvoiceCents: number } {
     const row = this.database.prepare(`
       SELECT
         EXISTS(SELECT 1 FROM finance_receipts WHERE order_id = ?) AS has_receipt,
-        EXISTS(SELECT 1 FROM finance_invoices WHERE order_id = ? AND status <> 'void') AS has_valid_invoice
-    `).get(orderId, orderId);
-    return { hasReceipt: Number(row?.has_receipt ?? 0) === 1, hasValidInvoice: Number(row?.has_valid_invoice ?? 0) === 1 };
+        EXISTS(SELECT 1 FROM finance_invoices WHERE order_id = ? AND status <> 'void') AS has_valid_invoice,
+        COALESCE((SELECT SUM(amount_cents) FROM finance_invoices WHERE order_id = ? AND status <> 'void'), 0) AS valid_invoice_cents
+    `).get(orderId, orderId, orderId);
+    return {
+      hasReceipt: Number(row?.has_receipt ?? 0) === 1,
+      hasValidInvoice: Number(row?.has_valid_invoice ?? 0) === 1,
+      validInvoiceCents: Number(row?.valid_invoice_cents ?? 0),
+    };
   }
 
   getOrderFinanceSummary(orderId: number) {
@@ -1649,6 +1727,41 @@ export class DatabaseRepositories {
         database.prepare('UPDATE orders SET tracking_no = ?, status = \'shipped\', updated_at = ? WHERE id = ?').run(order.tracking_no, timestamp, order.order_id);
       });
       database.prepare('UPDATE shipment_batches SET status = \'confirmed\', confirmed_at = ? WHERE id = ?').run(timestamp, batchId);
+    });
+  }
+
+  /** 发货工作区一次提交：建批次、写物流单号、确认发货放在同一个事务里，避免中途失败留下草稿批次。 */
+  confirmShipmentDirect(entries: Array<{ orderId: number; trackingNo: string }>): number {
+    const timestamp = now();
+    const unique = [...new Map(entries.map((entry) => [entry.orderId, entry])).values()];
+    if (!unique.length) throw new Error('至少选择一个待发货订单');
+    return withTransaction(this.database, (database) => {
+      const batchId = lastInsertId(
+        database.prepare('INSERT INTO shipment_batches (batch_no, status, created_at) VALUES (?, \'draft\', ?)')
+          .run(`BATCH-${timestamp.replace(/[-:TZ.]/g, '').slice(0, 14)}-${randomUUID().slice(0, 8)}`, timestamp),
+      );
+      const selectOrder = database.prepare(
+        `SELECT o.id, o.order_no, o.status, o.recipient_info,
+          COALESCE((SELECT MAX(cl.total_boxes) FROM carton_labels cl WHERE cl.order_id = o.id), 0) AS total_boxes
+         FROM orders o WHERE o.id = ?`,
+      );
+      const insertBatchOrder = database.prepare('INSERT INTO shipment_batch_orders (batch_id, order_id, tracking_no, sort_order) VALUES (?, ?, ?, ?)');
+      const insertShipment = database.prepare(
+        `INSERT INTO shipments (order_id, tracking_no, shipped_at, total_boxes, recipient_info, remark) VALUES (?, ?, ?, ?, ?, '')`,
+      );
+      const updateOrder = database.prepare("UPDATE orders SET tracking_no = ?, status = 'shipped', updated_at = ? WHERE id = ?");
+      unique.forEach((entry, index) => {
+        const order = selectOrder.get(entry.orderId) as Record<string, unknown> | undefined;
+        if (!order) throw new Error(`订单不存在：${entry.orderId}`);
+        if (order.status !== 'ship_pending') throw new Error(`订单 ${order.order_no} 当前不可发货`);
+        const trackingNo = entry.trackingNo.trim();
+        if (!trackingNo) throw new Error(`订单 ${order.order_no} 缺少物流单号`);
+        insertBatchOrder.run(batchId, entry.orderId, trackingNo, index);
+        insertShipment.run(entry.orderId, trackingNo, timestamp, Math.max(1, Number(order.total_boxes)), String(order.recipient_info ?? ''));
+        updateOrder.run(trackingNo, timestamp, entry.orderId);
+      });
+      database.prepare("UPDATE shipment_batches SET status = 'confirmed', confirmed_at = ? WHERE id = ?").run(timestamp, batchId);
+      return batchId;
     });
   }
 

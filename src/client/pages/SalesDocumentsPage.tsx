@@ -224,7 +224,7 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
         <tbody>{visibleRows.map((row) => {
           const receivedCents = Math.max(0, row.totalCents - row.outstandingCents);
           return <tr key={row.id}>
-              <td className="strong-cell" style={{ color: 'var(--color-accent)' }}>{row.number}{row.generatedOrderNo && <small style={{ display: 'block', color: 'var(--color-text-secondary)', fontWeight: 400 }} title="该销售单已生成的订单">订单 {row.generatedOrderNo}</small>}</td>
+              <td className="strong-cell" style={{ color: 'var(--color-accent)' }}>{row.number}{row.documentStatus === 'issued' && !row.generatedOrderNo && row.totalCents > 0 && <span className="badge badge-warning" style={{ marginLeft: 6 }}>未转订单</span>}{row.generatedOrderNo && <small style={{ display: 'block', color: 'var(--color-text-secondary)', fontWeight: 400 }} title="该销售单已生成的订单">订单 {row.generatedOrderNo}</small>}</td>
             <td>{row.documentDate}</td>
             <td className="strong-cell">{row.customerName || '-'}</td>
             <td>{row.purchaseOrderNo || '-'}</td>
@@ -250,7 +250,7 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
           return <article key={row.id} className="sales-doc-card">
             <div className="sales-doc-card-head">
               <div className="sales-doc-card-title">
-                <strong>{row.number}</strong>
+                <strong>{row.number}{row.documentStatus === 'issued' && !row.generatedOrderNo && row.totalCents > 0 && <span className="badge badge-warning" style={{ marginLeft: 6 }}>未转订单</span>}</strong>
                 <span>{row.documentDate} · 更新 {row.updatedAt.replace('T', ' ').slice(0, 16)}</span>
               </div>
               <span className={`badge ${row.paymentStatus === 'paid' ? 'badge-success' : row.paymentStatus === 'partial' ? 'badge-warning' : 'badge-neutral'}`}>{paymentStatusLabels[row.paymentStatus]}</span>

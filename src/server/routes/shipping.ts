@@ -42,6 +42,18 @@ function parseOrderIds(value: unknown): number[] {
   });
 }
 
+function parseConfirmOrders(value: unknown): Array<{ orderId: number; trackingNo: string }> {
+  if (!Array.isArray(value) || value.length === 0) throw new ApiError(400, 'VALIDATION_ERROR', 'orders 必须至少包含一个订单', 'orders');
+  return value.map((raw, index) => {
+    const order = asRecord(raw);
+    const orderId = Number(order.orderId);
+    if (!Number.isSafeInteger(orderId) || orderId <= 0) throw new ApiError(400, 'VALIDATION_ERROR', '订单 ID 必须是正整数', `orders[${index}].orderId`);
+    const trackingNo = optionalText(order.trackingNo, `orders[${index}].trackingNo`, '物流单号');
+    if (!trackingNo) throw new ApiError(400, 'VALIDATION_ERROR', '物流单号不能为空', `orders[${index}].trackingNo`);
+    return { orderId, trackingNo };
+  });
+}
+
 function mapBatch(batch: ReturnType<ShippingService['getBatch']>) {
   if (!batch) return undefined;
   const rawBatch = batch as unknown as {
@@ -120,6 +132,14 @@ export async function registerShippingRoutes(app: FastifyInstance, options: Ship
       const batch = service.confirm(parseId(request.params.id));
       if (!batch) throw new ApiError(404, 'NOT_FOUND', '发货批次不存在');
       return sendSuccess(reply, mapBatch(batch));
+    }, reply),
+  );
+
+  // 发货工作区直接确认：建批次、写单号、确认发货在一个事务里完成。
+  app.post('/api/shipping/confirm', async (request, reply) =>
+    safeRoute(() => {
+      const batch = service.confirmDirect(parseConfirmOrders(asRecord(request.body).orders));
+      return sendSuccess(reply, mapBatch(batch), 201);
     }, reply),
   );
 }

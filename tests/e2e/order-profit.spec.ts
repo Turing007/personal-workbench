@@ -96,6 +96,16 @@ test('订单详情显示成本快照和毛利，成本编辑器可补录整单�
     await machineCostInput.blur();
     await expect(machineCostInput).toHaveValue('123.45');
 
+    await costDialog.getByLabel('其他单件成本').fill('');
+    const lineConfirm = costDialog.locator('.order-item-cost-editor .order-cost-confirm input[type="checkbox"]');
+    await lineConfirm.uncheck();
+    page.once('dialog', (dialog) => { expect(dialog.message()).toContain('其他'); void dialog.dismiss(); });
+    await lineConfirm.click();
+    await expect(lineConfirm).not.toBeChecked();
+    page.once('dialog', (dialog) => { void dialog.accept(); });
+    await lineConfirm.click();
+    await expect(lineConfirm).toBeChecked();
+
     await costDialog.getByRole('button', { name: '完成' }).click();
     await editDialog.getByRole('button', { name: '取消' }).click();
 

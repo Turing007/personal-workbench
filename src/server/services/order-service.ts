@@ -232,7 +232,7 @@ export class OrderService {
 
   async create(input: CreateOrderInput) {
     const isDraft = Boolean(input.isDraft);
-    const normalized = this.normalizeInput(input);
+    const normalized = this.defaultCompany(this.normalizeInput(input));
     let withCustomerProducts: CreateOrderInput | undefined;
     try {
       withCustomerProducts = await this.validateCustomerProductReferences(normalized, true, undefined, { draft: isDraft });
@@ -250,13 +250,12 @@ export class OrderService {
     const wasDraft = isDraftStatus(previous?.status);
     const isDraft = input.isDraft === undefined ? wasDraft : Boolean(input.isDraft);
     const previousCompanyId = previous?.company_id == null ? null : Number(previous.company_id);
+    const previousSettlementType = previous?.settlement_type === 'personal' ? 'personal' : 'corporate';
     // 旧手机端不传 companyId：沿用原公司，不能把它当成“清空公司”。
     const nextCompanyId = input.companyId === undefined ? previousCompanyId : input.companyId;
-    if (previousCompanyId !== nextCompanyId) {
-      const locks = this.repositories.getOrderFinanceLocks(orderId);
-      if (locks.hasReceipt || locks.hasValidInvoice) {
-        throw new Error('已有入账水单或有效发票，不能修改收款/开票公司；请先作废相关记录');
-      }
+    const locks = this.repositories.getOrderFinanceLocks(orderId);
+    if (previousCompanyId !== nextCompanyId && (locks.hasReceipt || locks.hasValidInvoice)) {
+      throw new Error('已有入账水单或有效发票，不能修改收款/开票公司；请先作废相关记录');
     }
     const normalized = this.normalizeInput({ ...input, companyId: nextCompanyId });
     const previousPaths = this.getOrderRequirementPaths(orderId);
@@ -265,6 +264,14 @@ export class OrderService {
     try {
       withCustomerProducts = await this.validateCustomerProductReferences(normalized, false, new Set(previousPaths), { draft: isDraft });
       this.validateInput(withCustomerProducts, { draft: isDraft });
+      const nextSettlementType = withCustomerProducts.settlementType === 'personal' ? 'personal' : 'corporate';
+      if (locks.hasValidInvoice && nextSettlementType !== previousSettlementType) {
+        throw new Error('已有有效发票，不能修改结算方式；请先作废相关发票');
+      }
+      const nextAmountCents = withCustomerProducts.amountCents ?? Math.round((withCustomerProducts.amount ?? 0) * 100);
+      if (locks.hasValidInvoice && nextAmountCents < locks.validInvoiceCents) {
+        throw new Error(`订单金额不能低于已开发票合计 ¥${(locks.validInvoiceCents / 100).toFixed(2)}；请先作废相关发票`);
+      }
       updated = this.repositories.updateOrder(orderId, withCustomerProducts);
     } catch (error) {
       if (withCustomerProducts) await this.deleteCopiedRequirementFiles(withCustomerProducts, new Set(previousPaths));
@@ -278,12 +285,26 @@ export class OrderService {
   }
 
   async delete(orderId: number): Promise<boolean> {
+    const order = this.repositories.getOrderDetail(orderId) as Record<string, unknown> | undefined;
+    if (!order) return false;
+    if (order.status === 'shipped') throw new Error('已发货订单不能删除；请先撤销发货');
+    const locks = this.repositories.getOrderFinanceLocks(orderId);
+    if (locks.hasReceipt || locks.hasValidInvoice) {
+      throw new Error('订单已有收款或有效发票，不能删除；请先作废相关记录');
+    }
     const result = this.repositories.deleteOrder(orderId);
     if (!result.deleted) return false;
     if (this.fileStore) {
       await Promise.all(result.filePaths.map((path) => this.fileStore!.deleteFile(path).catch(() => undefined)));
     }
     return true;
+  }
+
+  /** 对公订单未指定公司时，若系统只有一家启用公司则自动归属，避免新订单落入“未分配公司”。 */
+  private defaultCompany(input: CreateOrderInput): CreateOrderInput {
+    if (input.companyId != null || input.settlementType === 'personal' || !this.companyRepository) return input;
+    const active = this.companyRepository.list().filter((company) => company.isActive);
+    return active.length === 1 ? { ...input, companyId: active[0].id } : input;
   }
 
   /**

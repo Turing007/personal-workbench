@@ -54,9 +54,10 @@ describe('订单状态流转', () => {
     expect(getTransitionError('ship_pending', 'pending_packing', { reason: 'rollback' })).toBeNull();
 
     expect(canRollback('ship_pending', 'stock_reported')).toBe(false);
-    expect(canRollback('shipped', 'ship_pending')).toBe(false);
+    expect(canRollback('shipped', 'ship_pending')).toBe(true);
+    expect(canRollback('shipped', 'pending_packing')).toBe(false);
     expect(canRollback('pending_stock', 'label_pending')).toBe(false);
-    expect(getTransitionError('shipped', 'ship_pending', { reason: 'rollback' })).toContain('不支持回退');
+    expect(getTransitionError('shipped', 'ship_pending', { reason: 'rollback' })).toBeNull();
   });
 
   it('发货工作区收所有未发货状态，草稿与已发货排除在外', () => {

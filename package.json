@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "clear:test-orders": "node scripts/clear-test-orders.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

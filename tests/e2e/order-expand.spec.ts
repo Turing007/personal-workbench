@@ -223,6 +223,64 @@ test('订单列表显示附件备注、隐藏物流单号，并可回退误点�
   }
 });
 
+test('已发货订单可在列表撤销发货，退回待发货并保留物流单号', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const stamp = Date.now();
+  const orderNo = `E2E-UNSHIP-${stamp}`;
+  const orderId = await seedOrder(page, orderNo);
+  try {
+    for (const to of ['stock_reported', 'pending_packing', 'ship_pending']) {
+      const advanced = await page.request.post(`/api/orders/${orderId}/status`, { data: { to } });
+      expect(advanced.ok()).toBeTruthy();
+    }
+    const shipped = await page.request.post(`/api/orders/${orderId}/status`, { data: { to: 'shipped', trackingNo: `SF-UNDO-${stamp}` } });
+    expect(shipped.ok()).toBeTruthy();
+
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
+    await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(orderNo);
+    const row = page.locator('.orders-table-desktop tbody tr', { hasText: orderNo }).first();
+    await expect(row.locator('.order-status-cell')).toContainText('已发货');
+    await expect(row.locator('.order-status-cell')).not.toContainText('箱唛待打印');
+
+    page.once('dialog', (dialog) => void dialog.accept());
+    await row.locator('.order-ops-cell').getByRole('button', { name: '撤销发货', exact: true }).click();
+    await expect(row.locator('.order-status-cell')).toContainText('待发货');
+
+    const detail = await page.request.get(`/api/orders/${orderId}`);
+    const saved = (await detail.json()).data as { status: string; tracking_no: string };
+    expect(saved.status).toBe('ship_pending');
+    expect(saved.tracking_no).toBe(`SF-UNDO-${stamp}`);
+  } finally {
+    await page.request.delete(`/api/orders/${orderId}`);
+  }
+});
+
+test('订单没有附件和备注时列表收起对应列与卡片区块', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const orderNo = `E2E-EMPTY-EXTRA-${Date.now()}`;
+  const orderId = await seedOrder(page, orderNo);
+  try {
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
+    await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(orderNo);
+    const row = page.locator('.orders-table-desktop tbody tr', { hasText: orderNo }).first();
+    await expect(row).toBeVisible();
+    const head = page.locator('.orders-data-table thead');
+    await expect(head).not.toContainText('附件');
+    await expect(head).not.toContainText('备注');
+    await expect(row.locator('.order-attachment-cell')).toHaveCount(0);
+    await expect(row.locator('.order-remark-cell')).toHaveCount(0);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const card = page.locator('.orders-card-list .order-card', { hasText: orderNo }).first();
+    await expect(card).toBeVisible();
+    await expect(card.locator('.order-card-extra')).toHaveCount(0);
+  } finally {
+    await page.request.delete(`/api/orders/${orderId}`);
+  }
+});
+
 test('订单手机卡片不显示展开箭头且不横向溢出', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const orderNo = `E2E-EXPAND-M-${Date.now()}`;

@@ -71,10 +71,8 @@ import {
   deleteProductAttachment,
   updateProduct,
   importProducts,
-  createShippingBatch,
-  updateShippingTracking,
   updateOrderTracking,
-  confirmShippingBatch,
+  confirmShippingDirect,
 } from './api';
 import type { ApiOrderDetail, ApiOrderRow, AuthUser } from './api';
 import { isUnshippedStatus } from '../shared/domain';
@@ -713,7 +711,11 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     if (!order.id) return;
     const action = getOrderRollbackAction(order.status);
     if (!action || action.target !== status) return;
-    if (!window.confirm(`确定把订单“${order.orderNo}”${action.label}吗？\n物流单号、箱唛打印记录、订单附件和收款数据都会保留。`)) return;
+    const undoShipping = order.status === 'shipped' && action.target === 'ship_pending';
+    const message = undoShipping
+      ? `确定撤销发货，把订单“${order.orderNo}”退回待发货吗？\n已确认的发货批次、物流单号和箱唛打印记录都会保留。`
+      : `确定把订单“${order.orderNo}”${action.label}吗？\n物流单号、箱唛打印记录、订单附件和收款数据都会保留。`;
+    if (!window.confirm(message)) return;
     try {
       await rollbackOrderStatus(Number(order.id), action.target);
       await loadOrders();
@@ -845,9 +847,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
       return;
     }
     try {
-      const created = await createShippingBatch(ready.map((order) => Number(order.id)));
-      for (const order of ready) { if (created.id) await updateShippingTracking(created.id, Number(order.id), order.trackingNo); }
-      await confirmShippingBatch(created.id);
+      await confirmShippingDirect(ready.map((order) => ({ orderId: Number(order.id), trackingNo: String(order.trackingNo ?? '') })));
       await loadOrders();
       notify(ready.length === batch.length ? '发货批次已确认' : `已确认 ${ready.length} 单发货，另有 ${batch.length - ready.length} 单未到「待发货」，只保留了物流单号`, 'success');
     } catch (error) { notify((error as { message?: string }).message ?? '发货确认失败', 'error'); }

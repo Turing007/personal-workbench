@@ -415,8 +415,6 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
-.orders-page .order-extra-empty { color: var(--erp-muted); font-size: 10.5px; }
-
 @media (min-width: 901px) {
   .orders-page {
     display: flex;

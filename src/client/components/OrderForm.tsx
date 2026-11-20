@@ -576,6 +576,7 @@ export default function OrderForm({ value, customers, companies = [], onSubmit, 
         </section>
       </div>
       <label style={labelStyle}>订单备注<textarea rows={2} style={{ ...controlStyle, resize: 'vertical' }} value={draft.remark} onChange={(event) => update('remark', event.target.value)} placeholder="付款阶段、特殊要求等" /></label>
+      {draft.id && draft.status !== 'draft' && <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: 11, lineHeight: 1.5 }}>修改产品明细、数量、装箱数、箱唛要求或详情说明会按新明细重排箱唛；只改附件、金额不影响现有箱唛。</p>}
       <div className="order-form-actions">{onSaveDraft && <button type="button" className="button button-secondary" onClick={submitDraft} title="保存为草稿，信息可暂不完整，稍后继续编辑">存草稿</button>}<button type="button" className="button button-secondary" onClick={onCancel}>取消</button><button type="button" className="button button-primary" onClick={submit}>{submitLabel}</button></div>
       <CustomerProductEditorModal open={newProductOpen} product={null} layer={40} onClose={() => setNewProductOpen(false)} onSave={saveNewProduct} />
       <Modal open={detailOpen} title="填写订单详情" onClose={() => setDetailOpen(false)} width={980}>

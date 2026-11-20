@@ -212,6 +212,8 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
       return matchesStatus && (!needle || searchable.includes(needle));
     });
   }, [statusFilters, orders, query]);
+  const showAttachmentColumn = visibleOrders.some((order) => (order.contracts?.length ?? 0) > 0);
+  const showRemarkColumn = visibleOrders.some((order) => Boolean(order.remark?.trim()));
 
   const openLabels = (order: OrderDraft) => {
     setLabelOrder(order);
@@ -276,7 +278,7 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
     const showNextAction = !options?.hideNextAction;
     return <div className="row-actions"><button type="button" className="link-button" onClick={() => setDetailOrder(order)}>详情</button><button type="button" className="link-button" onClick={() => openEdit(order)}>编辑</button>{order.status === 'draft'
       ? showNextAction && onPublishOrder && <button type="button" className="link-button muted" title="校验并发布草稿订单，进入正式流程" onClick={() => publishOrder(order)}>发布</button>
-      : <><button type="button" className="link-button" onClick={() => openLabels(order)}>箱唛</button>{showNextAction && nextAction?.kind === 'advance' && onAdvanceStatus && <button type="button" className="link-button muted" title={nextAction.label} onClick={() => onAdvanceStatus(order, nextAction.target)}>{nextAction.label}</button>}{showNextAction && nextAction?.kind === 'shipping' && onOpenShipping && <button type="button" className="link-button muted" title={nextAction.label} onClick={() => onOpenShipping(order)}>{nextAction.label}</button>}{rollbackAction && onRollbackStatus && <button type="button" className="link-button muted" title={`${rollbackAction.label}（保留物流、附件与收款数据）`} onClick={() => onRollbackStatus(order, rollbackAction.target)}>回退</button>}</>}{onDeleteOrder && <button type="button" className="icon-button danger" title="删除订单" onClick={() => confirmDeleteOrder(order)}><Trash2 size={14} /></button>}</div>;
+      : <><button type="button" className="link-button" onClick={() => openLabels(order)}>箱唛</button>{showNextAction && nextAction?.kind === 'advance' && onAdvanceStatus && <button type="button" className="link-button muted" title={nextAction.label} onClick={() => onAdvanceStatus(order, nextAction.target)}>{nextAction.label}</button>}{showNextAction && nextAction?.kind === 'shipping' && onOpenShipping && <button type="button" className="link-button muted" title={nextAction.label} onClick={() => onOpenShipping(order)}>{nextAction.label}</button>}{rollbackAction && onRollbackStatus && <button type="button" className="link-button muted" title={`${rollbackAction.label}（保留物流、附件与收款数据）`} onClick={() => onRollbackStatus(order, rollbackAction.target)}>{order.status === 'shipped' ? '撤销发货' : '回退'}</button>}</>}{onDeleteOrder && <button type="button" className="icon-button danger" title="删除订单" onClick={() => confirmDeleteOrder(order)}><Trash2 size={14} /></button>}</div>;
   };
 
   return <div className="page-shell orders-page">
@@ -303,8 +305,8 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
             ['总箱数', 'order-box-cell'],
             ['金额', 'order-amount-cell is-right'],
             ['状态', 'order-status-cell'],
-            ['附件', 'order-attachment-cell'],
-            ['备注', 'order-remark-cell'],
+            ...(showAttachmentColumn ? [['附件', 'order-attachment-cell']] : []),
+            ...(showRemarkColumn ? [['备注', 'order-remark-cell']] : []),
             ['操作', 'order-ops-cell'],
           ].map(([title, className]) => <th key={title} className={className}>{title}</th>)}</tr></thead>
           <tbody>{visibleOrders.map((order) => {
@@ -325,9 +327,9 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
                 <td className="order-product-cell"><OrderProductQuickList order={order} onOpen={() => setProductsOrder(order)} /></td>
                 <td className="order-box-cell">{boxCount}</td>
                 <td className="amount order-amount-cell"><div>¥ {order.amount || '0.00'}</div><div className="payment-sub" style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</div><div className={`order-profit-sub ${profit.costComplete ? (profit.profitCents ?? 0) < 0 ? 'is-loss' : 'is-profit' : 'is-pending'}`} title={profit.costComplete ? `毛利 ${(profit.profitCents ?? 0) / 100} · 毛利率 ${profit.marginPercent ?? '—'}%` : `成本待补：${profit.missingItemCount} 行产品未确认`}>{profit.costComplete ? `毛利 ¥${((profit.profitCents ?? 0) / 100).toFixed(2)}` : '成本待补'}</div></td>
-                <td className="order-status-cell"><span className={statusBadgeClass(order.status)}>{order.status ? statusLabels[order.status] : '-'}</span><div className={`status-sub ${order.labelPrintedAt ? 'is-printed' : 'is-pending'}`} title={order.labelPrintedAt ? `箱唛打印时间：${formatDateTime(order.labelPrintedAt)}` : undefined}>{order.status === 'draft' ? '草稿订单，发布后进入流程' : order.labelPrintedAt ? '已打印箱唛' : '箱唛待打印'}</div></td>
-                <td className="order-attachment-cell">{attachmentCount > 0 ? <div className="order-extra-files">{(order.contracts ?? []).map((contract) => <a key={contract.id} href={contract.url} target="_blank" rel="noreferrer" title={`打开附件并打印：${contract.name}`}><span>{contract.name}</span><Printer size={10} /></a>)}</div> : <span className="order-extra-empty">暂无</span>}</td>
-                <td className="order-remark-cell"><span className="order-remark-full">{order.remark || '暂无'}</span></td>
+                <td className="order-status-cell"><span className={statusBadgeClass(order.status)}>{order.status ? statusLabels[order.status] : '-'}</span>{order.status !== 'shipped' && <div className={`status-sub ${order.labelPrintedAt ? 'is-printed' : 'is-pending'}`} title={order.labelPrintedAt ? `箱唛打印时间：${formatDateTime(order.labelPrintedAt)}` : undefined}>{order.status === 'draft' ? '草稿订单，发布后进入流程' : order.labelPrintedAt ? '已打印箱唛' : '箱唛待打印'}</div>}</td>
+                {showAttachmentColumn && <td className="order-attachment-cell">{attachmentCount > 0 && <div className="order-extra-files">{(order.contracts ?? []).map((contract) => <a key={contract.id} href={contract.url} target="_blank" rel="noreferrer" title={`打开附件并打印：${contract.name}`}><span>{contract.name}</span><Printer size={10} /></a>)}</div>}</td>}
+                {showRemarkColumn && <td className="order-remark-cell">{order.remark?.trim() && <span className="order-remark-full">{order.remark}</span>}</td>}
                 <td className="order-ops-cell">{renderOrderActions(order)}</td>
               </tr>;
           })}</tbody>
@@ -357,19 +359,19 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
           <div className="order-card-meta">
             <span>{boxCount} 箱</span>
             <span style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</span>
-            <span>{order.status === 'draft' ? '草稿未发布' : order.labelPrintedAt ? '箱唛已打印' : '箱唛待打印'}</span>
+            {order.status !== 'shipped' && <span>{order.status === 'draft' ? '草稿未发布' : order.labelPrintedAt ? '箱唛已打印' : '箱唛待打印'}</span>}
             <span className={profit.costComplete ? (profit.profitCents ?? 0) < 0 ? 'finance-warning' : 'finance-positive' : 'finance-warning'}>{profit.costComplete ? `毛利 ¥${((profit.profitCents ?? 0) / 100).toFixed(2)}` : '成本待补'}</span>
           </div>
-          <div className="order-card-extra">
-            <div className="order-extra-section">
+          {(attachmentCount > 0 || Boolean(order.remark?.trim())) && <div className="order-card-extra">
+            {attachmentCount > 0 && <div className="order-extra-section">
               <span className="order-extra-label"><Paperclip size={11} />附件</span>
-              {attachmentCount > 0 ? <div className="order-extra-files">{(order.contracts ?? []).map((contract) => <a key={contract.id} href={contract.url} target="_blank" rel="noreferrer" title={`打开附件并打印：${contract.name}`}><span>{contract.name}</span><Printer size={10} /></a>)}</div> : <span className="order-extra-empty">暂无</span>}
-            </div>
-            <div className="order-extra-section">
+              <div className="order-extra-files">{(order.contracts ?? []).map((contract) => <a key={contract.id} href={contract.url} target="_blank" rel="noreferrer" title={`打开附件并打印：${contract.name}`}><span>{contract.name}</span><Printer size={10} /></a>)}</div>
+            </div>}
+            {order.remark?.trim() && <div className="order-extra-section">
               <span className="order-extra-label">备注</span>
-              <span className="order-remark-full">{order.remark || '暂无'}</span>
-            </div>
-          </div>
+              <span className="order-remark-full">{order.remark}</span>
+            </div>}
+          </div>}
           {renderOrderActions(order, { hideNextAction: true })}
         </article>;
       })}{!visibleOrders.length && <div className="table-state">暂无符合条件的订单</div>}</div>

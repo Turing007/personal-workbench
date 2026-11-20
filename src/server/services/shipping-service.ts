@@ -71,6 +71,11 @@ export class ShippingService {
     return this.getBatch(batchId);
   }
 
+  confirmDirect(entries: Array<{ orderId: number; trackingNo: string }>) {
+    const batchId = this.repositories.confirmShipmentDirect(entries);
+    return this.getBatch(batchId);
+  }
+
   formatRows(rows: Array<{ totalCartons: number; shippingInfo: string }>): string {
     return formatShippingText(rows);
   }

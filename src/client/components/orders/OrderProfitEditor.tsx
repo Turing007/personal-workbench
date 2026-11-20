@@ -80,7 +80,7 @@ export function OrderItemCostEditor({
       </span>
     </summary>
     <div className="order-item-cost-body">
-      <p className="order-cost-hint">以下都是每件成本。包装如果按箱采购，可先除以装箱数再填。</p>
+      <p className="order-cost-hint">以下都是每件成本。包装如果按箱采购，可先除以装箱数再填。未填项按 0 计入。</p>
       <div className="order-item-cost-grid">
         {ORDER_ITEM_COST_FIELDS.map((field) => <label key={field}>
           <span>{COST_LABELS[field]}</span>
@@ -93,7 +93,17 @@ export function OrderItemCostEditor({
       </div>
       <div className="order-item-cost-footer">
         <label className="order-cost-confirm">
-          <input type="checkbox" checked={Boolean(item.costConfirmed)} onChange={(event) => onChange({ costConfirmed: event.target.checked })} />
+          <input type="checkbox" checked={Boolean(item.costConfirmed)} onChange={(event) => {
+            const checked = event.target.checked;
+            if (checked) {
+              const missing = ORDER_ITEM_COST_FIELDS.filter((field) => item[field] == null).map((field) => COST_LABELS[field]);
+              if (missing.length && !window.confirm(`以下成本未填，将按 0 计入：${missing.join('、')}。\n确定把这行成本标记为已核对吗？`)) {
+                onChange({ costConfirmed: false });
+                return;
+              }
+            }
+            onChange({ costConfirmed: checked });
+          }} />
           <span>这行成本已核对</span>
         </label>
         {lineCostCents == null ? <span className="finance-warning">核对后才计入整单毛利</span> : <span>
@@ -134,7 +144,21 @@ export function OrderCostEditor({
       <label className="is-wide"><span>其他费用说明</span><input aria-label="其他费用说明" value={order.otherCostNote ?? ''} onChange={(event) => onChange({ otherCostNote: event.target.value })} placeholder="如：报关、样板、平台佣金、手续费" /></label>
     </div>
     <label className="order-cost-confirm">
-      <input type="checkbox" checked={Boolean(order.costConfirmed)} onChange={(event) => onChange({ costConfirmed: event.target.checked })} />
+      <input type="checkbox" checked={Boolean(order.costConfirmed)} onChange={(event) => {
+        const checked = event.target.checked;
+        if (checked) {
+          const missing = [
+            ['logisticsCostCents', '实际物流费'],
+            ['labelCostCents', '标贴成本'],
+            ['otherCostCents', '其他整单费用'],
+          ].filter(([field]) => order[field as keyof typeof order] == null).map(([, label]) => label);
+          if (missing.length && !window.confirm(`以下整单费用未填，将按 0 计入：${missing.join('、')}。\n确定把整单成本标记为已核对吗？`)) {
+            onChange({ costConfirmed: false });
+            return;
+          }
+        }
+        onChange({ costConfirmed: checked });
+      }} />
       <span>整单成本已核对，可以计入毛利</span>
     </label>
   </section>;

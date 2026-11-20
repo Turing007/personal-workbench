@@ -30,7 +30,7 @@ describe('订单状态回退动作', () => {
     expect(getOrderRollbackAction('stock_reported')).toEqual({ label: '回退到待备货', target: 'pending_stock' });
     expect(getOrderRollbackAction('pending_packing')).toEqual({ label: '回退到已备货', target: 'stock_reported' });
     expect(getOrderRollbackAction('ship_pending')).toEqual({ label: '回退到待打包', target: 'pending_packing' });
-    expect(getOrderRollbackAction('shipped')).toBeUndefined();
+    expect(getOrderRollbackAction('shipped')).toEqual({ label: '撤销发货', target: 'ship_pending' });
     expect(getOrderRollbackAction('pending_stock')).toBeUndefined();
     expect(getOrderRollbackAction('draft')).toBeUndefined();
   });

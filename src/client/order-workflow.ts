@@ -28,7 +28,8 @@ export interface OrderRollbackAction {
 export function getOrderRollbackAction(status?: OrderStatus): OrderRollbackAction | undefined {
   if (!status || status === 'draft') return undefined;
   const target = ORDER_ROLLBACK_TARGETS[status];
-  return target ? { label: `回退到${ORDER_STATUS_LABELS[target]}`, target } : undefined;
+  if (!target) return undefined;
+  return { label: status === 'shipped' ? '撤销发货' : `回退到${ORDER_STATUS_LABELS[target]}`, target };
 }
 
 export function isUnshippedOrder(order: OrderDraft): boolean {

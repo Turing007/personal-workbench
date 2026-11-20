@@ -104,15 +104,16 @@ describe('公司档案与水单收款', () => {
     database.close();
   });
 
-  it('服务端允许旧客户端不选公司，填了公司则必须存在；订单详情带公司名', async () => {
+  it('唯一启用公司自动归属对公订单；对私保持不分配；多家公司时不自动猜', async () => {
     const { app, database } = await setup();
     const company = await createCompany(app, '深圳公司');
 
-    // 兼容旧手机端/历史接口：公司必选只在网页端做，服务端允许空公司。
+    // 旧手机端/历史接口不传公司：对公自动归到唯一启用公司。
     const legacy = await createOrder(app, null, 'corporate');
     expect(legacy.statusCode).toBe(201);
-    expect(legacy.json().data.company_id ?? null).toBeNull();
+    expect(legacy.json().data.company_id).toBe(company.id);
 
+    // 对私订单不强制归属公司。
     const personal = await createOrder(app, null, 'personal');
     expect(personal.statusCode).toBe(201);
     expect(personal.json().data.company_id ?? null).toBeNull();
@@ -120,6 +121,12 @@ describe('公司档案与水单收款', () => {
     const invalid = await createOrder(app, 999999, 'corporate');
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json().error.message).toContain('收款/开票公司不存在');
+
+    // 多家启用公司时不自动归属，保留未分配状态。
+    await createCompany(app, '杭州公司');
+    const ambiguous = await createOrder(app, null, 'corporate');
+    expect(ambiguous.statusCode).toBe(201);
+    expect(ambiguous.json().data.company_id ?? null).toBeNull();
 
     const corporate = await createOrder(app, company.id, 'corporate');
     expect(corporate.statusCode).toBe(201);

@@ -6,7 +6,6 @@ import {
   HandCoins,
   PackageCheck,
   PackageOpen,
-  PackageSearch,
   Plus,
   ReceiptText,
   RefreshCw,
@@ -115,7 +114,7 @@ export default function DashboardPage({
     [companyStats],
   );
   const unassignedCompanyCount = useMemo(
-    () => nonDraftOrders.filter((order) => order.companyId == null).length,
+    () => nonDraftOrders.filter((order) => (order.settlementType ?? 'corporate') !== 'personal' && order.companyId == null).length,
     [nonDraftOrders],
   );
   const counts = useMemo<Partial<Record<OrderStatus, number>>>(() => {
@@ -135,9 +134,9 @@ export default function DashboardPage({
     tone?: 'warning' | 'danger';
     onClick: () => void;
   }> = [
-    { label: '待打印箱唛', hint: '打印后进入备货', count: counts.label_pending ?? 0, icon: PackageSearch, onClick: () => onOpenOrders('label_pending') },
     { label: '待备货', hint: '等待供应商备货', count: counts.pending_stock ?? 0, icon: PackageOpen, onClick: () => onOpenOrders('pending_stock') },
-    { label: '待打包', hint: '备货完成等待打包', count: counts.pending_packing ?? 0, icon: PackageCheck, onClick: () => onOpenOrders('pending_packing') },
+    { label: '已备货', hint: '备货完成，等待开始打包', count: counts.stock_reported ?? 0, icon: PackageCheck, onClick: () => onOpenOrders('stock_reported') },
+    { label: '待打包', hint: '打包中，完成后进入待发货', count: counts.pending_packing ?? 0, icon: PackageCheck, onClick: () => onOpenOrders('pending_packing') },
     { label: '待发货', hint: '打包完成等待发出', count: counts.ship_pending ?? 0, icon: Truck, onClick: () => onOpenOrders('ship_pending') },
     { label: '待审核水单', hint: '确认后计入已收', count: financeStats?.pendingProofCount ?? 0, icon: HandCoins, tone: 'warning', onClick: () => onOpenWaterSlips('pending') },
     { label: '待开票', hint: '对公订单待开票', count: financeStats?.pendingInvoiceCount ?? 0, icon: ReceiptText, tone: 'warning', onClick: onOpenFinance },
@@ -177,7 +176,7 @@ export default function DashboardPage({
     <div className="dashboard-metrics">
       <div><span>今日订单</span><strong>{todayOrders.length}<small> 单</small></strong><em>今天新下的订单</em></div>
       <div><span>今日销售额</span><strong className="finance-positive">{money(todaySalesCents)}</strong><em>按订单金额统计</em></div>
-      <div><span>本月已收</span><strong className="finance-positive">{money(receivedThisMonthCents)}</strong><em>{currentMonth()} 水单入账</em></div>
+      <div><span>本月已收</span><strong className="finance-positive">{money(receivedThisMonthCents)}</strong><em>{currentMonth()} 按收款日期</em></div>
       <div><span>未收款</span><strong className={outstandingCents > 0 ? 'finance-warning' : 'finance-positive'}>{money(outstandingCents)}</strong><em>全部订单未收合计</em></div>
     </div>
 

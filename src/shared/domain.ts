@@ -44,13 +44,14 @@ export function isDraftStatus(status: unknown): status is typeof ORDER_DRAFT_STA
   return status === ORDER_DRAFT_STATUS;
 }
 
-export type TransitionReason = 'manual' | 'first-print' | 'rollback';
+export type TransitionReason = 'manual' | 'rollback';
 
-/** 只开放可撤销的上一步业务动作，不按序号盲目回退；已发货必须走正式撤销流程。 */
+/** 只开放可撤销的上一步业务动作，不按序号盲目回退；已发货可撤销回待发货，批次与打印记录保留。 */
 export const ORDER_ROLLBACK_TARGETS: Partial<Record<OrderStatus, OrderStatus>> = {
   stock_reported: 'pending_stock',
   pending_packing: 'stock_reported',
   ship_pending: 'pending_packing',
+  shipped: 'ship_pending',
 };
 
 export function canRollback(from: OrderStatus, to: OrderStatus): boolean {

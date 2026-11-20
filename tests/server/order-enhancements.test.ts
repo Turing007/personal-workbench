@@ -198,7 +198,7 @@ describe('订单号基础设施', () => {
     database.close();
   });
 
-  it('可回退误点的备货/打包状态，但已发货和跳级回退必须拒绝', async () => {
+  it('可回退误点的备货/打包状态，已发货可撤销回待发货，跳级回退必须拒绝', async () => {
     const { app, database } = await makeContext();
     const created = await app.inject({
       method: 'POST',
@@ -238,7 +238,11 @@ describe('订单号基础设施', () => {
       url: `/api/orders/${orderId}/status`,
       payload: { to: 'ship_pending', reason: 'rollback' },
     });
-    expect(shippedRollback.statusCode).toBe(400);
+    expect(shippedRollback.statusCode).toBe(200);
+    expect(database.prepare('SELECT status, tracking_no FROM orders WHERE id = ?').get(orderId)).toEqual({
+      status: 'ship_pending',
+      tracking_no: 'SF-ROLLBACK',
+    });
     database.close();
   });
 
@@ -723,16 +727,51 @@ describe('订单号基础设施', () => {
 });
 
 describe('删除订单', () => {
-  it('已发货或已加入发货批次的订单可正常删除，发货相关子表一并清理', async () => {
+  it('已发货订单不能删除，需先撤销发货', async () => {
+    const { app, database } = await makeContext();
+    const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput() });
+    expect(created.statusCode).toBe(201);
+    const orderId = created.json().data.id as number;
+    database.prepare("UPDATE orders SET status = 'shipped' WHERE id = ?").run(orderId);
+
+    const removed = await app.inject({ method: 'DELETE', url: `/api/orders/${orderId}` });
+    expect(removed.statusCode).toBe(400);
+    expect(removed.json().error.message).toContain('已发货');
+    expect(database.prepare('SELECT COUNT(*) AS n FROM orders WHERE id = ?').get(orderId)).toEqual({ n: 1 });
+
+    await app.close();
+    database.close();
+  });
+
+  it('有收款或有效发票的订单不能删除', async () => {
+    const { app, database } = await makeContext();
+    const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput() });
+    expect(created.statusCode).toBe(201);
+    const orderId = created.json().data.id as number;
+    const now = new Date().toISOString();
+    database.prepare(
+      `INSERT INTO finance_receipts (order_id, received_at, amount_cents, created_at, updated_at)
+       VALUES (?, '2026-08-10', 100, ?, ?)`,
+    ).run(orderId, now, now);
+
+    const removed = await app.inject({ method: 'DELETE', url: `/api/orders/${orderId}` });
+    expect(removed.statusCode).toBe(400);
+    expect(removed.json().error.message).toContain('收款');
+    expect(database.prepare('SELECT COUNT(*) AS n FROM orders WHERE id = ?').get(orderId)).toEqual({ n: 1 });
+
+    await app.close();
+    database.close();
+  });
+
+  it('未发货订单删除时清理发货子表', async () => {
     const { app, database } = await makeContext();
     const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput() });
     expect(created.statusCode).toBe(201);
     const orderId = created.json().data.id as number;
 
-    // 模拟订单已进入发货流程：加入批次并确认发货
     const now = new Date().toISOString();
     const batchId = Number(database.prepare(
-      `INSERT INTO shipment_batches (batch_no, status, created_at) VALUES ('BH20260824001', 'confirmed', ?)`,
+      `INSERT INTO shipment_batches (batch_no, status, created_at) VALUES ('BH20260824001', 'draft', ?)`,
     ).run(now).lastInsertRowid);
     database.prepare(
       `INSERT INTO shipment_batch_orders (batch_id, order_id, tracking_no, sort_order) VALUES (?, ?, 'SF123456', 0)`,
@@ -741,7 +780,6 @@ describe('删除订单', () => {
       `INSERT INTO shipments (order_id, tracking_no, shipped_at, total_boxes, recipient_info, remark) VALUES (?, 'SF123456', ?, 1, '', '')`,
     ).run(orderId, now);
 
-    // 修复前：shipments / shipment_batch_orders 为 RESTRICT 外键，删除报 FOREIGN KEY constraint failed
     const removed = await app.inject({ method: 'DELETE', url: `/api/orders/${orderId}` });
     expect(removed.statusCode).toBe(200);
 
@@ -757,6 +795,83 @@ describe('删除订单', () => {
     const { app, database } = await makeContext();
     const removed = await app.inject({ method: 'DELETE', url: '/api/orders/999999' });
     expect(removed.statusCode).toBe(404);
+    await app.close();
+    database.close();
+  });
+});
+
+describe('订单编辑护栏', () => {
+  it('有有效发票时，金额不能低于发票合计，结算方式不能改', async () => {
+    const { app, database } = await makeContext();
+    const items = [{ name: '测试产品', sku: 'VT-0001', specification: '标准规格', packagingName: '彩盒包装', packCount: 10, quantity: 10, unitPriceCents: 1000 }];
+    const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput({ items }) });
+    expect(created.statusCode).toBe(201);
+    const order = created.json().data as { id: number; order_no: string };
+    const now = new Date().toISOString();
+    database.prepare(
+      `INSERT INTO finance_invoices (order_id, status, amount_cents, created_at, updated_at)
+       VALUES (?, 'issued', 8000, ?, ?)`,
+    ).run(order.id, now, now);
+
+    const tooLow = await app.inject({
+      method: 'PUT',
+      url: `/api/orders/${order.id}`,
+      payload: orderInput({ orderNo: order.order_no, items: [{ ...items[0], unitPriceCents: 500 }] }),
+    });
+    expect(tooLow.statusCode).toBe(400);
+    expect(tooLow.json().error.message).toContain('已开发票合计');
+
+    const settlementChanged = await app.inject({
+      method: 'PUT',
+      url: `/api/orders/${order.id}`,
+      payload: orderInput({ orderNo: order.order_no, items, settlementType: 'personal' }),
+    });
+    expect(settlementChanged.statusCode).toBe(400);
+    expect(settlementChanged.json().error.message).toContain('结算方式');
+
+    const allowed = await app.inject({
+      method: 'PUT',
+      url: `/api/orders/${order.id}`,
+      payload: orderInput({ orderNo: order.order_no, items }),
+    });
+    expect(allowed.statusCode).toBe(200);
+    expect(allowed.json().data.amount).toBe(100);
+
+    await app.close();
+    database.close();
+  });
+
+  it('只改备注保留手工箱唛；明细数量变化才重排箱唛', async () => {
+    const { app, database } = await makeContext();
+    const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput() });
+    expect(created.statusCode).toBe(201);
+    const order = created.json().data as { id: number; order_no: string };
+    database.prepare('UPDATE carton_labels SET manual_edited = 1 WHERE order_id = ?').run(order.id);
+    const labelsBefore = database.prepare('SELECT COUNT(*) AS n FROM carton_labels WHERE order_id = ?').get(order.id);
+
+    const remarkOnly = await app.inject({
+      method: 'PUT',
+      url: `/api/orders/${order.id}`,
+      payload: orderInput({ orderNo: order.order_no, amount: 100, remark: '只改备注' }),
+    });
+    expect(remarkOnly.statusCode).toBe(200);
+    expect(database.prepare('SELECT COUNT(*) AS n FROM carton_labels WHERE order_id = ?').get(order.id)).toEqual(labelsBefore);
+    expect(database.prepare('SELECT COUNT(*) AS n FROM carton_labels WHERE order_id = ? AND manual_edited = 1').get(order.id)).toEqual(labelsBefore);
+    expect(database.prepare('SELECT COUNT(*) AS n FROM carton_label_items WHERE order_item_id IS NULL').get()).toEqual({ n: 0 });
+
+    const quantityChanged = await app.inject({
+      method: 'PUT',
+      url: `/api/orders/${order.id}`,
+      payload: orderInput({
+        orderNo: order.order_no,
+        amount: 100,
+        items: [{ name: '测试产品', sku: 'VT-0001', specification: '标准规格', packagingName: '彩盒包装', packCount: 10, quantity: 20 }],
+      }),
+    });
+    expect(quantityChanged.statusCode).toBe(200);
+    expect(database.prepare('SELECT COUNT(*) AS n FROM carton_labels WHERE order_id = ?').get(order.id)).toEqual({ n: 2 });
+    expect(database.prepare('SELECT COUNT(*) AS n FROM carton_labels WHERE order_id = ? AND manual_edited = 1').get(order.id)).toEqual({ n: 0 });
+
     await app.close();
     database.close();
   });

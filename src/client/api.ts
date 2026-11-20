@@ -618,7 +618,7 @@ export function generateOrderContractPdf(orderId: number | string) {
   return requestBlob(`/api/orders/${orderId}/contracts/generate`, { method: 'POST' });
 }
 
-export function advanceOrderStatus(id: number | string, to: OrderStatus, reason: 'manual' | 'first-print' | 'rollback' = 'manual') { return request(`/api/orders/${id}/status`, { method: 'POST', body: JSON.stringify({ to, reason }) }); }
+export function advanceOrderStatus(id: number | string, to: OrderStatus, reason: 'manual' | 'rollback' = 'manual') { return request(`/api/orders/${id}/status`, { method: 'POST', body: JSON.stringify({ to, reason }) }); }
 export function rollbackOrderStatus(id: number | string, to: OrderStatus) { return advanceOrderStatus(id, to, 'rollback'); }
 
 // 服务端单次最多返回 200 条，产品库列表要全量（页面自己做显示分页），按页循环取回直到 total。
@@ -1200,6 +1200,9 @@ export function updateOrderTracking(id: number | string, trackingNo: string) { r
 export function updateShippingTracking(batchId: number, orderId: number, trackingNo: string) { return request(`/api/shipping/batches/${batchId}/orders/${orderId}`, { method: 'PUT', body: JSON.stringify({ trackingNo }) }); }
 export function getShippingBatchText(batchId: number) { return request<{ text: string }>(`/api/shipping/batches/${batchId}/text`); }
 export function confirmShippingBatch(batchId: number) { return request(`/api/shipping/batches/${batchId}/confirm`, { method: 'POST' }); }
+export function confirmShippingDirect(orders: Array<{ orderId: number; trackingNo: string }>) {
+  return request<{ id: number; batchNo: string; status: string }>('/api/shipping/confirm', { method: 'POST', body: JSON.stringify({ orders }) });
+}
 
 export async function uploadPaymentProof(orderId: number | string, file: File, note = '') {
   const form = new FormData();
