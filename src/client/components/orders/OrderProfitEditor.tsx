@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Calculator, CircleAlert, PencilLine } from 'lucide-react';
 import {
   ORDER_ITEM_COST_FIELDS,
@@ -33,8 +34,27 @@ function parseCostInput(value: string): number | null {
   return Math.round(parsed * 100);
 }
 
-function costPatch(field: OrderItemCostField, value: string): Partial<OrderItemDraft> {
-  return { [field]: parseCostInput(value) } as Partial<OrderItemDraft>;
+/** 金额输入中间态：编辑时保留用户原始输入，失焦后再规范成两位小数，避免每次按键重排光标。 */
+function CostInput({ label, value, onChange }: {
+  label: string;
+  value: number | null | undefined;
+  onChange: (cents: number | null) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return <input
+    type="text"
+    inputMode="decimal"
+    aria-label={label}
+    value={draft ?? costInputValue(value)}
+    onChange={(event) => {
+      const next = event.target.value;
+      if (next !== '' && !/^\d*(?:\.\d{0,2})?$/.test(next)) return;
+      setDraft(next);
+      onChange(parseCostInput(next));
+    }}
+    onBlur={() => setDraft(null)}
+    placeholder="0.00"
+  />;
 }
 
 export function OrderItemCostEditor({
@@ -64,15 +84,10 @@ export function OrderItemCostEditor({
       <div className="order-item-cost-grid">
         {ORDER_ITEM_COST_FIELDS.map((field) => <label key={field}>
           <span>{COST_LABELS[field]}</span>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            inputMode="decimal"
-            aria-label={`${COST_LABELS[field]}单件成本`}
-            value={costInputValue(item[field])}
-            onChange={(event) => onChange(costPatch(field, event.target.value))}
-            placeholder="0.00"
+          <CostInput
+            label={`${COST_LABELS[field]}单件成本`}
+            value={item[field]}
+            onChange={(cents) => onChange({ [field]: cents } as Partial<OrderItemDraft>)}
           />
         </label>)}
       </div>
@@ -113,9 +128,9 @@ export function OrderCostEditor({
       </span>
     </div>
     <div className="order-level-cost-grid">
-      <label><span>实际物流费（元）</span><input type="number" min="0" step="0.01" inputMode="decimal" aria-label="实际物流费" value={costInputValue(order.logisticsCostCents)} onChange={(event) => onChange({ logisticsCostCents: parseCostInput(event.target.value) })} placeholder="0.00" /></label>
-      <label><span>标贴成本（整单，元）</span><input type="number" min="0" step="0.01" inputMode="decimal" aria-label="标贴成本" value={costInputValue(order.labelCostCents)} onChange={(event) => onChange({ labelCostCents: parseCostInput(event.target.value) })} placeholder="0.00" /></label>
-      <label><span>其他整单费用（元）</span><input type="number" min="0" step="0.01" inputMode="decimal" aria-label="其他整单费用" value={costInputValue(order.otherCostCents)} onChange={(event) => onChange({ otherCostCents: parseCostInput(event.target.value) })} placeholder="0.00" /></label>
+      <label><span>实际物流费（元）</span><CostInput label="实际物流费" value={order.logisticsCostCents} onChange={(cents) => onChange({ logisticsCostCents: cents })} /></label>
+      <label><span>标贴成本（整单，元）</span><CostInput label="标贴成本" value={order.labelCostCents} onChange={(cents) => onChange({ labelCostCents: cents })} /></label>
+      <label><span>其他整单费用（元）</span><CostInput label="其他整单费用" value={order.otherCostCents} onChange={(cents) => onChange({ otherCostCents: cents })} /></label>
       <label className="is-wide"><span>其他费用说明</span><input aria-label="其他费用说明" value={order.otherCostNote ?? ''} onChange={(event) => onChange({ otherCostNote: event.target.value })} placeholder="如：报关、样板、平台佣金、手续费" /></label>
     </div>
     <label className="order-cost-confirm">

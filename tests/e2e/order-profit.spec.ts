@@ -87,6 +87,15 @@ test('订单详情显示成本快照和毛利，成本编辑器可补录整单�
     await expect(costDialog.getByLabel('其他整单费用')).toHaveValue('5.00');
     await expect(costDialog.getByLabel('机头单件成本')).toHaveValue('30.00');
     await expect(costDialog).toContainText('44.00');
+
+    await costDialog.locator('details.order-item-cost-editor').first().locator('summary').click();
+    const machineCostInput = costDialog.getByLabel('机头单件成本');
+    await machineCostInput.fill('');
+    await machineCostInput.pressSequentially('123.45');
+    await expect(machineCostInput).toHaveValue('123.45');
+    await machineCostInput.blur();
+    await expect(machineCostInput).toHaveValue('123.45');
+
     await costDialog.getByRole('button', { name: '完成' }).click();
     await editDialog.getByRole('button', { name: '取消' }).click();
 
