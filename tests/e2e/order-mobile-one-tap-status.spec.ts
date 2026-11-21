@@ -23,6 +23,27 @@ async function openOrdersModule(page: import('@playwright/test').Page) {
   await navigateToOrders(page);
 }
 
+/** 发货前必须确认全额到账：上传并审核一笔水单，让接口推进到 shipped 能通过业务护栏。 */
+async function payOrder(page: import('@playwright/test').Page, orderId: number, amountCents: number) {
+  const upload = await page.request.post(`/api/finance/orders/${orderId}/proofs`, {
+    multipart: {
+      file: {
+        name: `proof-${orderId}.png`,
+        mimeType: 'image/png',
+        buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64'),
+      },
+      amountCents: String(amountCents),
+      paymentDate: new Date().toISOString().slice(0, 10),
+      paymentMethod: '银行转账',
+      transactionNo: `TX-${orderId}-${Date.now()}`,
+    },
+  });
+  expect(upload.ok()).toBeTruthy();
+  const proofId = Number((await upload.json()).data.id);
+  const approved = await page.request.post(`/api/finance/proofs/${proofId}/approve`, { data: {} });
+  expect(approved.ok()).toBeTruthy();
+}
+
 /**
  * 手机端订单卡片的状态胶囊就是一个按钮：点一下即完成当前流程节点。
  * 断言分三层：胶囊上写的是不是状态机里的下一步、点完有没有推进、刷新后是否仍然保持
@@ -131,10 +152,13 @@ test('手机端订单卡片：无后续动作的订单仍是只读状态，不�
   try {
     // 走到「已发货」为止：状态机在终点没有下一步，胶囊必须退回只读徽章。
     // 服务端只允许按顺序逐步推进，所以这里逐级调接口而不是一步跳到底。
-    for (const step of [{ to: 'stock_reported' }, { to: 'pending_packing' }, { to: 'ship_pending' }, { to: 'shipped', trackingNo: `E2E-TRACK-${stamp}` }]) {
+    for (const step of [{ to: 'stock_reported' }, { to: 'pending_packing' }, { to: 'ship_pending' }]) {
       const advance = await page.request.post(`/api/orders/${orderId}/status`, { data: step });
       expect(advance.ok()).toBeTruthy();
     }
+    await payOrder(page, orderId, 10000);
+    const shipped = await page.request.post(`/api/orders/${orderId}/status`, { data: { to: 'shipped', trackingNo: `E2E-TRACK-${stamp}` } });
+    expect(shipped.ok()).toBeTruthy();
 
     await openOrdersModule(page);
     const card = page.locator('.order-card', { hasText: orderNo });

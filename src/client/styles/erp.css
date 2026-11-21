@@ -412,6 +412,162 @@
   font-size: 10.5px;
 }
 
+/* 订单产品明细卡片：桌面两列、手机一列；图片左、信息右，图片完整显示不裁切。 */
+.order-detail-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.order-detail-card {
+  display: grid;
+  grid-template-columns: minmax(0, clamp(120px, 38%, 180px)) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--erp-border);
+  border-radius: var(--radius-ui);
+  background: var(--erp-surface);
+}
+
+.order-detail-card-media {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-height: 128px;
+  place-items: center;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-ui);
+  background: transparent;
+  color: var(--erp-muted);
+  cursor: zoom-in;
+}
+
+.order-detail-card-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: 240px;
+  object-fit: contain;
+}
+
+.order-detail-card-media.is-empty { background: var(--erp-surface-muted); cursor: default; }
+
+.order-detail-card-media-zoom {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(16, 32, 51, .66);
+  color: #fff;
+  font-size: 9.5px;
+  line-height: 1.3;
+}
+
+.order-detail-card-info {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-width: 0;
+}
+
+.order-detail-card-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.order-detail-card-title strong {
+  flex: 1;
+  min-width: 0;
+  color: var(--erp-text);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.order-detail-card-quantity {
+  flex: none;
+  color: var(--erp-text);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.order-detail-card-facts {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  color: var(--erp-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.order-detail-card-facts > div { display: flex; gap: 6px; min-width: 0; }
+.order-detail-card-facts dt { flex: none; color: var(--erp-muted); }
+.order-detail-card-facts dd { margin: 0; min-width: 0; color: var(--erp-text-2); overflow-wrap: anywhere; }
+
+.order-detail-card-money {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+  color: var(--erp-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.order-detail-card-money b { color: var(--color-accent); font-weight: 650; }
+
+.order-detail-card-remark {
+  margin: 0;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: var(--erp-surface-muted);
+  color: var(--erp-text-2);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.order-detail-card-packaging {
+  margin: 0;
+  color: var(--erp-muted);
+  font-size: 10.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.order-detail-cards-empty { grid-column: 1 / -1; }
+
+.order-item-image-modal .modal-panel { height: min(86vh, 880px); }
+.order-item-image-modal .modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 12px;
+  overflow: hidden;
+  background: var(--erp-surface-muted);
+}
+
+.order-item-image-viewer { display: flex; flex: 1; flex-direction: column; gap: 10px; min-height: 0; }
+.order-item-image-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.order-item-image-stage img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: contain; }
+.order-item-image-bar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.order-item-image-counter { flex: none; color: var(--erp-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.order-item-image-name { flex: 1; min-width: 0; overflow: hidden; color: var(--erp-text-2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.order-item-image-bar .button { flex: none; }
+
 .orders-page .order-extra-stack { display: grid; gap: 6px; min-width: 0; }
 .orders-page .order-extra-section { display: grid; gap: 3px; min-width: 0; }
 .orders-page .order-extra-section + .order-extra-section {
@@ -835,6 +991,13 @@
 /* 订单手机端：一个列表容器 + 紧凑三行 */
 @media (max-width: 900px) {
   .orders-page .orders-page-heading { display: none; }
+
+  /* 搜索框下滑收起后同步收回顶部预留空白，把高度还给订单列表。 */
+  .page-shell.orders-page { gap: 0; transition: padding-top 160ms var(--ease-standard); }
+  .page-shell.orders-page.is-search-hidden { padding-top: calc(8px + env(safe-area-inset-top, 0px)); }
+  /* 渠道页签与状态胶囊之间不再留空白，直接衔接。 */
+  .orders-page .orders-channel-tabs { margin-bottom: 0; }
+
   .orders-page .orders-panel {
     border: 0;
     border-radius: 0;
@@ -846,7 +1009,7 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 6px 8px;
-    padding: 4px 0 8px;
+    padding: 0 0 8px;
     border-bottom: 0;
   }
 
@@ -931,12 +1094,20 @@
   .orders-page .orders-create-button {
     order: 3;
     justify-self: end;
-    height: 34px;
-    min-height: 34px;
+    height: 30px;
+    min-height: 30px;
     margin: 0;
     padding: 0 11px;
+    border-radius: 999px;
     font-size: 12.5px;
   }
+
+  .order-detail-cards { grid-template-columns: 1fr; gap: 8px; }
+  .order-detail-card { grid-template-columns: minmax(0, clamp(112px, 36vw, 152px)) minmax(0, 1fr); gap: 10px; padding: 9px; }
+  .order-detail-card-media { min-height: 116px; }
+  .order-detail-card-media img { max-height: 220px; }
+  .order-item-image-modal .modal-panel { height: 100%; }
+  .order-item-image-modal .modal-body { padding: 10px; }
 
   .orders-page .orders-bulk-bar {
     position: sticky;

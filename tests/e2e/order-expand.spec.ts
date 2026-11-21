@@ -101,6 +101,11 @@ test('订单展开的产品明细带产品图', async ({ page }) => {
     const productDialog = page.getByRole('dialog', { name: /产品明细/ });
     await expect(productDialog).toContainText(`E2E展开带图${stamp}`);
     await expect(productDialog).not.toContainText('包装快照');
+    expect(await productDialog.locator('.order-detail-cards').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2);
+    await productDialog.locator('.order-detail-card-media').click();
+    const desktopImageDialog = page.getByRole('dialog', { name: /产品图片/ });
+    await expect(desktopImageDialog.getByRole('button', { name: '关闭' })).toBeVisible();
+    await desktopImageDialog.getByRole('button', { name: '关闭' }).click();
     await productDialog.getByRole('button', { name: '关闭' }).click();
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -112,6 +117,15 @@ test('订单展开的产品明细带产品图', async ({ page }) => {
     await expect(cardProducts.locator('.order-product-quick-thumb img')).toBeVisible();
     expect(await cardProducts.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2);
     await expect(card.locator('.order-expand-toggle')).toHaveCount(0);
+
+    await cardProducts.click();
+    const mobileProductDialog = page.getByRole('dialog', { name: /产品明细/ });
+    expect(await mobileProductDialog.locator('.order-detail-cards').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1);
+    await mobileProductDialog.locator('.order-detail-card-media').click();
+    const mobileImageDialog = page.getByRole('dialog', { name: /产品图片/ });
+    await expect(mobileImageDialog.getByRole('button', { name: '关闭' })).toBeVisible();
+    await mobileImageDialog.getByRole('button', { name: '关闭' }).click();
+    await mobileProductDialog.getByRole('button', { name: '关闭' }).click();
   } finally {
     await page.request.delete(`/api/orders/${orderId}`);
     await page.request.delete(`/api/customer-products/${customerProduct.id}`);

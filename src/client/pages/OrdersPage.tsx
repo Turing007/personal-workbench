@@ -5,7 +5,7 @@ import LabelEditorModal, { type CartonLabel } from '../components/LabelEditorMod
 import Modal from '../components/Modal';
 import SearchInput from '../components/SearchInput';
 import OrderDetailModal from '../components/OrderDetailModal';
-import OrderItemsTable from '../components/OrderItemsTable';
+import OrderItemCards from '../components/OrderItemCards';
 import OrderForm, { type CustomerProduct, type OrderDraft, type OrderStatus } from '../components/OrderForm';
 import OrderProductQuickList from '../components/orders/OrderProductQuickList';
 import PromoteCustomerModal from '../components/orders/PromoteCustomerModal';
@@ -384,7 +384,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
     return <div className="row-actions">{detailButton}{editButton}{order.status === 'draft' ? publishButton : <>{labelButton}{advanceButton}{rollbackButton}</>}{deleteButton}</div>;
   };
 
-  return <div className="page-shell orders-page">
+  return <div className={`page-shell orders-page${searchHidden ? ' is-search-hidden' : ''}`}>
     <div className="page-toolbar orders-page-heading">
       <div className="orders-heading-copy">
         <span className="page-breadcrumb">业务 / 订单</span>
@@ -553,7 +553,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
         <div style={{ display: 'grid', gap: 4, minWidth: 0 }}><span style={{ color: 'var(--tone-text-faint)', fontSize: 11 }}>订单金额</span><strong style={{ fontSize: 13, color: 'var(--tone-accent-text)' }}>{`¥ ${productsOrder.amount || '0.00'}`}</strong></div>
         <div style={{ display: 'grid', gap: 4, minWidth: 0, alignItems: 'start' }}><span style={{ color: 'var(--tone-text-faint)', fontSize: 11 }}>付款状态</span><span className={paymentBadgeClass[orderPaymentStatus(productsOrder)]} style={{ justifySelf: 'start' }}>{FINANCE_PAYMENT_STATUS_LABELS[orderPaymentStatus(productsOrder)]}{orderPaymentStatus(productsOrder) === 'partial' && productsOrder.financeSummary ? ` · 已收 ¥${(productsOrder.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</span></div>
       </div>
-      <OrderItemsTable order={productsOrder} showPackaging={false} />
+      <OrderItemCards order={productsOrder} showPackaging={false} />
     </div>}</Modal>
     <LabelEditorModal open={Boolean(labelOrder)} order={labelOrder} labels={labels} onClose={() => setLabelOrder(undefined)} onSave={saveLabels} onMerge={onMergeLabels && labelOrder ? (ids) => { void Promise.resolve(onMergeLabels(labelOrder, ids)).then((next) => { if (next) setLabels(next); }); } : undefined} onRestoreAuto={onRestoreAutoLabels && labelOrder ? () => { void Promise.resolve(onRestoreAutoLabels(labelOrder)).then((next) => { if (next) setLabels(next); }); } : undefined} onPrint={(next) => setPrintLabels(next)} />
     <PrintWorkspace open={printLabels.length > 0} labels={printLabels} onClose={() => setPrintLabels([])} onPrinted={onPrintHistory} />

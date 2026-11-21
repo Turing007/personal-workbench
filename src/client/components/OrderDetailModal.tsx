@@ -5,7 +5,7 @@ import { ORDER_SETTLEMENT_LABELS, invoiceDisplayLabel } from '../../shared/settl
 import { formatDateTime } from '../../shared/formatters';
 import { thumbUrl } from '../image-urls';
 import Modal from './Modal';
-import OrderItemsTable from './OrderItemsTable';
+import OrderItemCards from './OrderItemCards';
 import type { OrderContractDraft, OrderDraft, OrderStatus } from './OrderForm';
 import { getOrderNextAction, getOrderRollbackAction } from '../order-workflow';
 import { OrderProfitSummaryCard } from './orders/OrderProfitEditor';
@@ -172,7 +172,7 @@ export default function OrderDetailModal({
 
         <section style={{ display: 'grid', gap: 7 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Package size={15} /><strong style={{ fontSize: 13 }}>产品明细</strong><span style={{ color: 'var(--tone-text-faint)', fontSize: 11 }}>（金额按数量 × 单价自动计算）</span></div>
-          <OrderItemsTable order={order} />
+          <OrderItemCards order={order} />
         </section>
 
         {order.items.some((item) => item.customerProductAttachments?.length) && <section style={{ display: 'none' }} />}
