@@ -71,4 +71,30 @@ test.describe('发货工作区收未发货订单', () => {
       await page.request.delete(`/api/customers/${customerId}`);
     }
   });
+
+  test('待发货订单点“发货”只进入发货工作区，不自动加入批次', async ({ page }) => {
+    const stamp = Date.now();
+    const { customerId, orderId, orderNo } = await seedOrder(page, stamp);
+    try {
+      for (const to of ['stock_reported', 'pending_packing', 'ship_pending']) {
+        const advanced = await page.request.post(`/api/orders/${orderId}/status`, { data: { to } });
+        expect(advanced.ok()).toBeTruthy();
+      }
+
+      await page.goto('/');
+      await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
+      await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(orderNo);
+      const row = page.locator('.orders-table-desktop tbody tr', { hasText: orderNo }).first();
+      await expect(row.getByRole('button', { name: '发货', exact: true })).toBeVisible();
+      await row.getByRole('button', { name: '发货', exact: true }).click();
+
+      await expect(page.getByText('发货工作区', { exact: true })).toBeVisible();
+      // 不再按单跳转：没有自动塞入批次（无物流单号输入框），订单仍留在可加入列表里
+      await expect(page.getByRole('textbox', { name: `${orderNo}物流单号` })).toHaveCount(0);
+      await expect(page.locator('.shipping-available-order', { hasText: orderNo }).getByRole('button', { name: '加入批次' })).toBeVisible();
+    } finally {
+      await page.request.delete(`/api/orders/${orderId}`);
+      await page.request.delete(`/api/customers/${customerId}`);
+    }
+  });
 });
