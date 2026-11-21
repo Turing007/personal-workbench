@@ -26,6 +26,7 @@ import { invoiceDisplayLabel, isPersonalSettlement } from '../../shared/settleme
 import { useIsNarrow } from '../use-is-narrow';
 import { useHideOnScroll } from '../use-hide-on-scroll';
 import { copyText } from '../copy-text';
+import type { OrderChannel } from '../../shared/domain';
 
 /** 按月偏移量平移 YYYY-MM，offset 为负表示往前翻 */
 function shiftMonth(month: string, offset: number): string {
@@ -37,6 +38,8 @@ function shiftMonth(month: string, offset: number): string {
 interface FinancePageProps {
   onNotify?: (message: string, tone?: 'success' | 'error' | 'info') => void;
   initialOrderId?: number;
+  /** 跨模块跳转时带入渠道筛选。 */
+  initialChannel?: OrderChannel;
   /** 从订单详情进入时传入来源订单；财务详情里显示「返回订单」。 */
   returnOrderId?: number;
   onReturnToOrder?: (orderId: number) => void;
@@ -88,10 +91,11 @@ function loadHiddenFinanceColumns(): FinanceColumnKey[] {
   }
 }
 
-export default function FinancePage({ onNotify, initialOrderId, returnOrderId, onReturnToOrder, customers = [], companies = [], onCompaniesChanged }: FinancePageProps) {
+export default function FinancePage({ onNotify, initialOrderId, initialChannel, returnOrderId, onReturnToOrder, customers = [], companies = [], onCompaniesChanged }: FinancePageProps) {
   const [result, setResult] = useState<FinanceListResult>();
   const [query, setQuery] = useState('');
   const [month, setMonth] = useState(() => currentMonth());
+  const [channel, setChannel] = useState<'all' | OrderChannel>(initialChannel ?? 'all');
   const [selectedOrderId, setSelectedOrderId] = useState<number>();
   const [detail, setDetail] = useState<ApiFinanceDetail>();
   const [loading, setLoading] = useState(false);
@@ -116,6 +120,7 @@ export default function FinancePage({ onNotify, initialOrderId, returnOrderId, o
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+  useEffect(() => { if (initialChannel) setChannel(initialChannel); }, [initialChannel]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -123,12 +128,13 @@ export default function FinancePage({ onNotify, initialOrderId, returnOrderId, o
       setResult(await listFinanceOrders({
         q: query,
         month: month || undefined,
+        channel: channel === 'all' ? undefined : channel,
         page: 1,
         pageSize: 100,
       }));
     } catch (error) { onNotify?.(errorText(error, '财务列表加载失败'), 'error'); }
     finally { setLoading(false); }
-  }, [month, onNotify, query]);
+  }, [channel, month, onNotify, query]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (initialOrderId) setSelectedOrderId(initialOrderId); }, [initialOrderId]);
   const openDetail = async (orderId: number) => { setSelectedOrderId(orderId); try { setDetail(await getOrderFinance(orderId)); } catch (error) { onNotify?.(errorText(error, '财务详情加载失败'), 'error'); } };
@@ -137,7 +143,7 @@ export default function FinancePage({ onNotify, initialOrderId, returnOrderId, o
   const openCompanyBreakdown = async () => {
     setCompanyOpen(true);
     setCompanyLoading(true);
-    try { setCompanyRows((await listCompanyBreakdown(month || undefined)).items); }
+    try { setCompanyRows((await listCompanyBreakdown(month || undefined, channel === 'all' ? undefined : channel)).items); }
     catch (error) { onNotify?.(errorText(error, '收款明细加载失败'), 'error'); setCompanyOpen(false); }
     finally { setCompanyLoading(false); }
   };
@@ -199,7 +205,7 @@ export default function FinancePage({ onNotify, initialOrderId, returnOrderId, o
     </div>
     <section className="table-panel finance-panel">
       <div className="finance-stat-grid"><div><span>本期应收</span><strong>{money(stats?.receivableCents ?? 0)}</strong></div><button type="button" className="finance-stat-clickable" title="点击查看按公司收款明细" onClick={() => void openCompanyBreakdown()}><span>已收金额</span><strong className="finance-positive">{money(stats?.receivedCents ?? 0)}</strong></button><div><span>未收金额</span><strong className="finance-warning">{money(stats?.outstandingCents ?? 0)}</strong></div><div><span>本期毛利</span><strong className={!stats || stats.profitOrderCount === 0 ? '' : stats.profitCents < 0 ? 'finance-warning' : 'finance-positive'}>{stats && stats.profitOrderCount > 0 ? money(stats.profitCents) : '—'}</strong><small>{stats ? `已核算 ${stats.profitOrderCount} 单 · 待补 ${stats.costPendingOrderCount} 单` : '成本待补'}</small></div><div><span>待审核水单</span><strong>{stats?.pendingProofCount ?? 0}<small> 张</small></strong></div><div><span>待处理发票</span><strong>{stats?.pendingInvoiceCount ?? 0}<small> 笔</small></strong></div></div>
-      <div className="page-toolbar finance-toolbar"><SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索订单号或客户" /><div className="month-control" role="group" aria-label="按下单月份筛选">{month ? <button className="icon-button" type="button" title="上一月" onClick={() => setMonth(shiftMonth(month, -1))}><ChevronLeft size={15} /></button> : null}<input type="month" className="toolbar-select month-input" aria-label="按下单月份筛选" value={month} onChange={(event) => setMonth(event.target.value)} />{month ? <button className="icon-button" type="button" title="下一月" onClick={() => setMonth(shiftMonth(month, 1))}><ChevronRight size={15} /></button> : null}<button className="button button-secondary month-scope-button" type="button" title={month ? '显示全部月份' : '回到当前月'} onClick={() => setMonth((value) => (value ? '' : currentMonth()))}>{month ? <X size={14} /> : <CalendarDays size={14} />}{month ? '全部' : '本月'}</button></div><span style={{ color: 'var(--tone-text-faint)', fontSize: 11, whiteSpace: 'nowrap' }}>按下单月份</span><button className="button button-secondary finance-company-mobile-button" type="button" onClick={() => setCompanyManagerOpen(true)}><Building2 size={14} />公司档案</button><button ref={columnsButtonRef} className="button button-secondary finance-columns-button" type="button" title="显示列设置" aria-haspopup="dialog" aria-expanded={columnsOpen} onClick={() => setColumnsOpen((open) => !open)}><Columns3 size={14} />列设置</button>{columnsOpen && columnsButtonRef.current && <AnchoredPopover anchor={columnsButtonRef.current} width={250} maxHeight={420} onClose={() => setColumnsOpen(false)}><div className="finance-column-panel" role="dialog" aria-label="列设置"><div className="finance-column-panel-head"><strong>显示列</strong><button type="button" onClick={() => setHiddenColumns([])}><RotateCcw size={12} />恢复默认</button></div>{FINANCE_COLUMN_OPTIONS.map(([key, label]) => <label key={key} className="finance-column-option"><input type="checkbox" checked={!hiddenColumns.includes(key)} onChange={(event) => toggleFinanceColumn(key, event.target.checked)} /><span>{label}</span></label>)}<p>订单号和操作列固定显示，不能隐藏。</p></div></AnchoredPopover>}<button className="icon-button" type="button" title="刷新财务列表" disabled={loading} onClick={() => void load()}><RefreshCw size={15} /></button></div>
+      <div className="page-toolbar finance-toolbar"><SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索订单号或客户" /><div className="month-control" role="group" aria-label="按下单月份筛选">{month ? <button className="icon-button" type="button" title="上一月" onClick={() => setMonth(shiftMonth(month, -1))}><ChevronLeft size={15} /></button> : null}<input type="month" className="toolbar-select month-input" aria-label="按下单月份筛选" value={month} onChange={(event) => setMonth(event.target.value)} />{month ? <button className="icon-button" type="button" title="下一月" onClick={() => setMonth(shiftMonth(month, 1))}><ChevronRight size={15} /></button> : null}<button className="button button-secondary month-scope-button" type="button" title={month ? '显示全部月份' : '回到当前月'} onClick={() => setMonth((value) => (value ? '' : currentMonth()))}>{month ? <X size={14} /> : <CalendarDays size={14} />}{month ? '全部' : '本月'}</button></div><span style={{ color: 'var(--tone-text-faint)', fontSize: 11, whiteSpace: 'nowrap' }}>按下单月份</span><select className="toolbar-select" aria-label="订单渠道筛选" value={channel} onChange={(event) => setChannel(event.target.value as 'all' | OrderChannel)}><option value="all">全部渠道</option><option value="online">线上订单</option><option value="offline">线下订单</option></select><button className="button button-secondary finance-company-mobile-button" type="button" onClick={() => setCompanyManagerOpen(true)}><Building2 size={14} />公司档案</button><button ref={columnsButtonRef} className="button button-secondary finance-columns-button" type="button" title="显示列设置" aria-haspopup="dialog" aria-expanded={columnsOpen} onClick={() => setColumnsOpen((open) => !open)}><Columns3 size={14} />列设置</button>{columnsOpen && columnsButtonRef.current && <AnchoredPopover anchor={columnsButtonRef.current} width={250} maxHeight={420} onClose={() => setColumnsOpen(false)}><div className="finance-column-panel" role="dialog" aria-label="列设置"><div className="finance-column-panel-head"><strong>显示列</strong><button type="button" onClick={() => setHiddenColumns([])}><RotateCcw size={12} />恢复默认</button></div>{FINANCE_COLUMN_OPTIONS.map(([key, label]) => <label key={key} className="finance-column-option"><input type="checkbox" checked={!hiddenColumns.includes(key)} onChange={(event) => toggleFinanceColumn(key, event.target.checked)} /><span>{label}</span></label>)}<p>订单号和操作列固定显示，不能隐藏。</p></div></AnchoredPopover>}<button className="icon-button" type="button" title="刷新财务列表" disabled={loading} onClick={() => void load()}><RefreshCw size={15} /></button></div>
       <div className="table-scroll finance-table-desktop"><table className={financeTableClass}><thead><tr className="finance-table-groups">{FINANCE_GROUPS.map((group) => { const count = group.indexes.filter((index) => !hiddenColumnIndexes.has(index)).length; return count ? <th key={group.key} colSpan={count} className={`finance-group-th finance-group-${group.key}`}>{group.label}</th> : null; })}</tr><tr className="finance-column-head">{['订单号', '客户', '公司', '日期', '应收', '已收', '未收', '付款', '水单', '发票', '物流', '操作'].map((title) => <th key={title} className={['应收', '已收', '未收'].includes(title) ? 'is-right' : undefined}>{title}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.orderId}><td className="strong-cell finance-order-number">{row.orderNo}</td><td>{row.customerName || '—'}</td><td className={row.companyName ? undefined : 'finance-warning'}>{row.companyName || '未分配'}</td><td>{row.orderDate}</td><td className="is-right">{money(row.receivableCents)}</td><td className="is-right">{money(row.receivedCents)}</td><td className={`is-right ${row.outstandingCents > 0 ? 'finance-warning' : 'finance-positive'}`}>{money(row.outstandingCents)}</td><td><span className={badgeClass(row.paymentStatus)}>{FINANCE_PAYMENT_STATUS_LABELS[row.paymentStatus]}</span></td><td><span className={badgeClass(row.proofStatus)}>{PAYMENT_PROOF_STATUS_LABELS[row.proofStatus]}</span></td><td><span className={isPersonalSettlement(row.settlementType) ? 'badge badge-neutral' : badgeClass(row.invoiceStatus)}>{invoiceDisplayLabel(row.settlementType, row.invoiceStatus)}</span></td><td>{orderStatusLabels[row.orderStatus] ?? row.orderStatus}</td><td className="finance-ops-cell"><button className="button button-ghost" type="button" onClick={() => void openDetail(row.orderId)}>查看财务</button></td></tr>)}</tbody></table></div><div className="finance-card-list" aria-label="财务卡片列表">{rows.map((row) => <article key={row.orderId} className="finance-card"><div className="order-card-head"><div className="order-card-title"><strong className="finance-order-number">{row.orderNo}</strong><span>{row.customerName || '未填客户'} · {row.orderDate}</span></div><span className={badgeClass(row.paymentStatus)}>{FINANCE_PAYMENT_STATUS_LABELS[row.paymentStatus]}</span></div><div className="finance-card-amounts"><div><span>应收</span><strong>{money(row.receivableCents)}</strong></div><div><span>未收</span><strong className={row.outstandingCents > 0 ? 'finance-warning' : 'finance-positive'}>{money(row.outstandingCents)}</strong></div><div><span>物流</span><strong>{orderStatusLabels[row.orderStatus] ?? row.orderStatus}</strong></div></div><div className="order-card-meta">公司 {row.companyName || '未分配'} · 水单 {PAYMENT_PROOF_STATUS_LABELS[row.proofStatus]} · 发票 {invoiceDisplayLabel(row.settlementType, row.invoiceStatus)}</div><div className="row-actions">{row.companyId != null && <button className="button button-ghost" type="button" onClick={() => void copyCompanyInvoiceInfo(row.companyId)}><Copy size={13} />复制开票</button>}<button className="button button-ghost" type="button" onClick={() => void openDetail(row.orderId)}>查看财务</button></div></article>)}</div>{loading && <div className="table-state">正在加载财务数据...</div>}{!loading && !rows.length && <div className="table-state">暂无符合条件的财务记录。订单创建后会自动生成应收记录。</div>}
     </section>
     <Modal

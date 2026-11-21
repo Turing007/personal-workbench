@@ -150,6 +150,7 @@ describe('备货表接口', () => {
   async function createOrder(app: FastifyInstance, options: {
     customerId?: number;
     orderedAt: string;
+    channel?: string;
     items: Array<Record<string, unknown>>;
   }): Promise<number> {
     const created = await authInject(app, {
@@ -159,6 +160,7 @@ describe('备货表接口', () => {
         orderNo: '',
         customerId: options.customerId,
         orderedAt: options.orderedAt,
+        channel: options.channel,
         recipientName: '张三',
         recipientInfo: '',
         amount: 0,
@@ -225,6 +227,29 @@ describe('备货表接口', () => {
     const afterMark = await authInject(app, { method: 'GET', url: '/api/stock/preparation?date=2026-09-08' });
     expect(afterMark.json().data.orderCount).toBe(1);
     expect(afterMark.json().data.groups[0].items[0].quantity).toBe(5);
+  });
+
+  it('备货表按订单渠道筛选', async () => {
+    const { app } = await testApp();
+    await createOrder(app, {
+      orderedAt: '2026-09-08T08:00:00.000Z',
+      channel: 'online',
+      items: [{ name: '线上产品', sku: '', specification: '标准', quantity: 4, unitPriceCents: 500 }],
+    });
+    await createOrder(app, {
+      orderedAt: '2026-09-08T09:00:00.000Z',
+      channel: 'offline',
+      items: [{ name: '线下产品', sku: '', specification: '标准', quantity: 6, unitPriceCents: 500 }],
+    });
+
+    const online = await authInject(app, { method: 'GET', url: '/api/stock/preparation?date=2026-09-08&channel=online' });
+    expect(online.json().data.orderCount).toBe(1);
+    expect(online.json().data.totalQuantity).toBe(4);
+    const offline = await authInject(app, { method: 'GET', url: '/api/stock/preparation?date=2026-09-08&channel=offline' });
+    expect(offline.json().data.orderCount).toBe(1);
+    expect(offline.json().data.totalQuantity).toBe(6);
+    const all = await authInject(app, { method: 'GET', url: '/api/stock/preparation?date=2026-09-08' });
+    expect(all.json().data.orderCount).toBe(2);
   });
 
   it('未关联客户产品的订单明细进入未关联警示组', async () => {

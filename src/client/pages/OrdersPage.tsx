@@ -11,7 +11,7 @@ import OrderProductQuickList from '../components/orders/OrderProductQuickList';
 import PromoteCustomerModal from '../components/orders/PromoteCustomerModal';
 import PrintWorkspace from '../components/PrintWorkspace';
 import StatusCards from '../components/StatusCards';
-import { ORDER_STATUS_LABELS_WITH_DRAFT } from '../../shared/domain';
+import { ORDER_CHANNELS, ORDER_CHANNEL_LABELS, ORDER_STATUS_LABELS_WITH_DRAFT, type OrderChannel } from '../../shared/domain';
 import { getOrderNextAction, getOrderRollbackAction, isDraftOrder, isUnshippedOrder, type BatchAdvanceAction, type OrderNextAction } from '../order-workflow';
 import { FINANCE_PAYMENT_STATUS_LABELS, isOrderPaymentCleared, type FinancePaymentStatus } from '../../shared/finance';
 import { getOrderFinance, type ApiFinanceDetail } from '../api';
@@ -36,6 +36,9 @@ export interface OrdersPageProps {
   /** 工作台跳转：直接设置状态筛选并打开新建订单。 */
   initialStatus?: OrderStatus;
   onInitialStatusConsumed?: () => void;
+  /** 跨模块跳转时指定订单页签。 */
+  initialChannel?: OrderChannel;
+  onInitialChannelConsumed?: () => void;
   startCreate?: boolean;
   onStartCreateConsumed?: () => void;
   onSaveOrder: (order: OrderDraft) => void;
@@ -159,7 +162,20 @@ export function fallbackLabels(order: OrderDraft): CartonLabel[] {
   });
 }
 
-export default function OrdersPage({ orders, customers, companies = [], statusCounts, labelsByOrderId, initialOrderId, initialStatus, onInitialStatusConsumed, startCreate, onStartCreateConsumed, onSaveOrder, onSaveDraft, onDeleteOrder, onSaveCustomerProduct, onCreateCustomer, onGetNextOrderNumber, onDeleteContract, onGenerateContract, onAdvanceStatus, onRollbackStatus, onBatchAdvance, onPublishOrder, onOpenShipping, onOpenFinance, onSaveLabels, onMergeLabels, onRestoreAutoLabels, onPrintHistory, onRefreshOrders, onNotify }: OrdersPageProps) {
+const ORDERS_CHANNEL_STORAGE_KEY = 'workbench:orders-channel';
+
+export default function OrdersPage({ orders, customers, companies = [], labelsByOrderId, initialOrderId, initialStatus, onInitialStatusConsumed, initialChannel, onInitialChannelConsumed, startCreate, onStartCreateConsumed, onSaveOrder, onSaveDraft, onDeleteOrder, onSaveCustomerProduct, onCreateCustomer, onGetNextOrderNumber, onDeleteContract, onGenerateContract, onAdvanceStatus, onRollbackStatus, onBatchAdvance, onPublishOrder, onOpenShipping, onOpenFinance, onSaveLabels, onMergeLabels, onRestoreAutoLabels, onPrintHistory, onRefreshOrders, onNotify }: OrdersPageProps) {
+  const [activeChannel, setActiveChannel] = useState<OrderChannel>(() => {
+    try {
+      const saved = localStorage.getItem(ORDERS_CHANNEL_STORAGE_KEY);
+      return saved === 'online' || saved === 'offline' ? saved : 'online';
+    } catch { return 'online'; }
+  });
+  const selectChannel = (channel: OrderChannel) => {
+    setActiveChannel(channel);
+    setSelectedIds([]);
+    try { localStorage.setItem(ORDERS_CHANNEL_STORAGE_KEY, channel); } catch { /* localStorage 不可用时仅当前页生效 */ }
+  };
   const [statusFilters, setStatusFilters] = useState<OrderStatus[]>([]);
   const [query, setQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -175,6 +191,8 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
   const [financeDetail, setFinanceDetail] = useState<ApiFinanceDetail>();
   const [financeLoading, setFinanceLoading] = useState(false);
   const [costOrder, setCostOrder] = useState<OrderDraft>();
+  const [remarkOrder, setRemarkOrder] = useState<OrderDraft>();
+  const [remarkDraft, setRemarkDraft] = useState('');
   const consumedInitialOrderId = useRef<number | null>(null);
   useEffect(() => {
     if (!initialStatus) return;
@@ -198,30 +216,43 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
   }, [detailOrder, orders]);
 
   useEffect(() => {
+    if (!initialChannel) return;
+    setActiveChannel(initialChannel);
+    setSelectedIds([]);
+    try { localStorage.setItem(ORDERS_CHANNEL_STORAGE_KEY, initialChannel); } catch { /* ignore */ }
+    onInitialChannelConsumed?.();
+  }, [initialChannel, onInitialChannelConsumed]);
+
+  useEffect(() => {
     if (initialOrderId == null || consumedInitialOrderId.current === initialOrderId) return;
     const order = orders.find((item) => String(item.id) === String(initialOrderId));
     if (order) {
       consumedInitialOrderId.current = initialOrderId;
+      selectChannel(order.channel ?? 'offline');
       setDetailOrder(order);
     }
   }, [initialOrderId, orders]);
 
+  const channelOrders = useMemo(() => orders.filter((order) => (order.channel ?? 'offline') === activeChannel), [orders, activeChannel]);
+  const channelCounts = useMemo(() => ({
+    online: orders.filter((order) => (order.channel ?? 'offline') === 'online').length,
+    offline: orders.filter((order) => (order.channel ?? 'offline') === 'offline').length,
+  }), [orders]);
   const counts = useMemo(() => {
-    const next: Partial<Record<'all' | OrderStatus, number>> = { all: orders.length };
-    orders.forEach((order) => { if (order.status) next[order.status] = (next[order.status] ?? 0) + 1; });
-    return { ...next, ...statusCounts };
-  }, [orders, statusCounts]);
+    const next: Partial<Record<'all' | OrderStatus, number>> = { all: channelOrders.length };
+    channelOrders.forEach((order) => { if (order.status) next[order.status] = (next[order.status] ?? 0) + 1; });
+    return next;
+  }, [channelOrders]);
 
   const visibleOrders = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return orders.filter((order) => {
+    return channelOrders.filter((order) => {
       const matchesStatus = !statusFilters.length || (order.status != null && statusFilters.includes(order.status));
       const searchable = [order.orderNo, order.customerName, order.recipientName, ...order.items.flatMap((item) => [item.name, item.sku, item.specification])].join(' ').toLowerCase();
       return matchesStatus && (!needle || searchable.includes(needle));
     });
-  }, [statusFilters, orders, query]);
+  }, [statusFilters, channelOrders, query]);
   const showAttachmentColumn = visibleOrders.some((order) => (order.contracts?.length ?? 0) > 0);
-  const showRemarkColumn = visibleOrders.some((order) => Boolean(order.remark?.trim()));
 
   const openLabels = (order: OrderDraft) => {
     setLabelOrder(order);
@@ -271,6 +302,15 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
     if (!costOrder) return;
     onSaveOrder(costOrder);
     setCostOrder(undefined);
+  };
+  const openRemarkModal = (order: OrderDraft) => {
+    setRemarkOrder(order);
+    setRemarkDraft(order.remark ?? '');
+  };
+  const saveRemark = () => {
+    if (!remarkOrder) return;
+    onSaveOrder({ ...remarkOrder, remark: remarkDraft });
+    setRemarkOrder(undefined);
   };
   const deleteOrder = (order: OrderDraft) => { if (!onDeleteOrder) return; onDeleteOrder(order); setDetailOrder(undefined); setEditingOrder(undefined); setLabelOrder(undefined); };
   const confirmDeleteOrder = (order: OrderDraft) => { if (!window.confirm(`确定删除订单“${order.orderNo}”吗？订单及其附件、箱唛数据将一并删除。`)) return; deleteOrder(order); };
@@ -333,8 +373,12 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
       : null;
     if (options?.twoLine) {
       return <div className="row-actions is-two-line">
-        <div className="row-actions-line">{detailButton}{editButton}{order.status !== 'draft' && labelButton}</div>
-        <div className="row-actions-line">{publishButton}{advanceButton}{rollbackButton}{deleteButton}</div>
+        <div className="row-actions-cell is-top">{detailButton}</div>
+        <div className="row-actions-cell is-top">{editButton}</div>
+        <div className="row-actions-cell is-top">{order.status !== 'draft' ? labelButton : null}</div>
+        <div className="row-actions-cell is-bottom">{publishButton ?? advanceButton}</div>
+        <div className="row-actions-cell is-bottom">{rollbackButton}</div>
+        <div className="row-actions-cell is-bottom">{deleteButton}</div>
       </div>;
     }
     return <div className="row-actions">{detailButton}{editButton}{order.status === 'draft' ? publishButton : <>{labelButton}{advanceButton}{rollbackButton}</>}{deleteButton}</div>;
@@ -347,6 +391,9 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
         <strong className="page-title">订单工作台</strong>
         <span className="page-subtitle">跟进备货、打包、发货与箱唛打印进度</span>
       </div>
+    </div>
+    <div className="orders-channel-tabs" role="tablist" aria-label="订单渠道">
+      {ORDER_CHANNELS.map((channel) => <button key={channel} type="button" role="tab" aria-selected={activeChannel === channel} className={activeChannel === channel ? 'is-active' : undefined} onClick={() => selectChannel(channel)}>{ORDER_CHANNEL_LABELS[channel]}订单<b>{channelCounts[channel]}</b></button>)}
     </div>
     <section className="table-panel orders-panel">
       <div className="page-toolbar table-toolbar orders-table-toolbar">
@@ -365,7 +412,7 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
             ['金额', 'order-amount-cell is-right'],
             ['状态', 'order-status-cell'],
             ...(showAttachmentColumn ? [['附件', 'order-attachment-cell']] : []),
-            ...(showRemarkColumn ? [['备注', 'order-remark-cell']] : []),
+            ['备注', 'order-remark-cell'],
             ['操作', 'order-ops-cell'],
           ].map(([title, className]) => <th key={title} className={className}>{title}</th>)}</tr></thead>
           <tbody>{visibleOrders.map((order) => {
@@ -384,11 +431,11 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
                 <td className="strong-cell order-no-cell"><div className="order-no-stack"><span title={order.orderNo}>{order.orderNo}</span><span className="order-no-date">{order.orderedAt.replace('T', ' ')}</span></div></td>
                 <td className="order-customer-cell"><div className="order-party"><strong className="order-party-customer" title={order.customerName || undefined}>{order.customerName || '未填客户'}{order.customerId == null && order.customerName?.trim() && <span className="badge badge-neutral" style={{ marginLeft: 5 }}>临时</span>}</strong><span className="order-party-recipient" title={order.recipientName || undefined}>收件人：{order.recipientName || '—'}</span></div></td>
                 <td className="order-product-cell"><OrderProductQuickList order={order} onOpen={() => setProductsOrder(order)} /></td>
-                <td className="order-box-cell">{boxCount}</td>
+                <td className="order-box-cell"><button type="button" className="order-box-link" title="编辑/打印箱唛" aria-label={`编辑或打印订单${order.orderNo}箱唛`} onClick={() => openLabels(order)}>{boxCount}</button></td>
                 <td className="amount order-amount-cell"><button type="button" className="order-amount-link" title="查看/编辑财务与水单" aria-label={`查看订单${order.orderNo}财务与水单`} onClick={() => void openFinanceModal(order)}>¥ {order.amount || '0.00'}</button><div className="payment-sub" style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</div><button type="button" className={`order-profit-sub ${profit.costComplete ? (profit.profitCents ?? 0) < 0 ? 'is-loss' : 'is-profit' : 'is-pending'}`} title={profit.costComplete ? `毛利 ${(profit.profitCents ?? 0) / 100} · 毛利率 ${profit.marginPercent ?? '—'}%（点击调整成本）` : `成本待补：${profit.missingItemCount} 行产品未确认（点击补录成本）`} aria-label={`补录或调整订单${order.orderNo}成本`} onClick={() => openCostModal(order)}>{profit.costComplete ? `毛利 ¥${((profit.profitCents ?? 0) / 100).toFixed(2)}` : '成本待补'}</button></td>
                 <td className="order-status-cell"><span className={statusBadgeClass(order.status)}>{order.status ? statusLabels[order.status] : '-'}</span>{order.status !== 'shipped' && <div className={`status-sub ${order.labelPrintedAt ? 'is-printed' : 'is-pending'}`} title={order.labelPrintedAt ? `箱唛打印时间：${formatDateTime(order.labelPrintedAt)}` : undefined}>{order.status === 'draft' ? '草稿订单，发布后进入流程' : order.labelPrintedAt ? '已打印箱唛' : '箱唛待打印'}</div>}</td>
                 {showAttachmentColumn && <td className="order-attachment-cell">{attachmentCount > 0 && <div className="order-extra-files">{(order.contracts ?? []).map((contract) => <a key={contract.id} href={contract.url} target="_blank" rel="noreferrer" title={contract.name}><span>{contract.name}</span><Printer size={10} /></a>)}</div>}</td>}
-                {showRemarkColumn && <td className="order-remark-cell">{order.remark?.trim() && <span className="order-remark-full">{order.remark}</span>}</td>}
+                <td className="order-remark-cell"><button type="button" className={`order-remark-full order-remark-edit${order.remark?.trim() ? '' : ' is-empty'}`} title={order.remark?.trim() ? order.remark : '点击添加备注'} aria-label={`编辑订单${order.orderNo}备注`} onClick={() => openRemarkModal(order)}>{order.remark?.trim() || '点击添加'}</button></td>
                 <td className="order-ops-cell">{renderOrderActions(order, { twoLine: true })}</td>
               </tr>;
           })}</tbody>
@@ -416,21 +463,21 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
             <button type="button" className="order-card-amount" title="查看/编辑财务与水单" aria-label={`查看订单${order.orderNo}财务与水单`} onClick={() => void openFinanceModal(order)}>¥ {order.amount || '0.00'}</button>
           </div>
           <div className="order-card-meta">
-            <span>{boxCount} 箱</span>
+            <button type="button" className="order-box-link" title="编辑/打印箱唛" aria-label={`编辑或打印订单${order.orderNo}箱唛`} onClick={() => openLabels(order)}>{boxCount} 箱</button>
             <span style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</span>
             {order.status !== 'shipped' && <span>{order.status === 'draft' ? '草稿未发布' : order.labelPrintedAt ? '箱唛已打印' : '箱唛待打印'}</span>}
             <button type="button" className={`order-card-profit-link ${profit.costComplete ? (profit.profitCents ?? 0) < 0 ? 'finance-warning' : 'finance-positive' : 'finance-warning'}`} title={profit.costComplete ? '点击调整成本' : '点击补录成本'} aria-label={`补录或调整订单${order.orderNo}成本`} onClick={() => openCostModal(order)}>{profit.costComplete ? `毛利 ¥${((profit.profitCents ?? 0) / 100).toFixed(2)}` : '成本待补'}</button>
           </div>
-          {(attachmentCount > 0 || Boolean(order.remark?.trim())) && <div className="order-card-extra">
+          <div className="order-card-extra">
             {attachmentCount > 0 && <div className="order-extra-section">
               <span className="order-extra-label"><Paperclip size={11} />附件</span>
               <div className="order-extra-files">{(order.contracts ?? []).map((contract) => <a key={contract.id} href={contract.url} target="_blank" rel="noreferrer" title={contract.name}><span>{contract.name}</span><Printer size={10} /></a>)}</div>
             </div>}
-            {order.remark?.trim() && <div className="order-extra-section">
+            <div className="order-extra-section">
               <span className="order-extra-label">备注</span>
-              <span className="order-remark-full">{order.remark}</span>
-            </div>}
-          </div>}
+              <button type="button" className={`order-remark-full order-remark-edit${order.remark?.trim() ? '' : ' is-empty'}`} title={order.remark?.trim() ? order.remark : '点击添加备注'} aria-label={`编辑订单${order.orderNo}备注`} onClick={() => openRemarkModal(order)}>{order.remark?.trim() || '点击添加'}</button>
+            </div>
+          </div>
           {renderOrderActions(order, { hideNextAction: true })}
         </article>;
       })}{!visibleOrders.length && <div className="table-state">暂无符合条件的订单</div>}</div>
@@ -444,7 +491,19 @@ export default function OrdersPage({ orders, customers, companies = [], statusCo
       </div>}
     </section>
 
-    <Modal open={creating || Boolean(editingOrder)} title={editingOrder ? `编辑订单 · ${editingOrder.orderNo}` : '新建订单'} onClose={() => { setCreating(false); setEditingOrder(undefined); }} width={1040}><OrderForm key={editingOrder?.id ?? (creating ? 'new' : 'closed')} value={editingOrder} customers={customers} companies={companies} onSaveCustomerProduct={onSaveCustomerProduct} onCreateCustomer={onCreateCustomer} onGetNextOrderNumber={onGetNextOrderNumber} onSubmit={(order) => { onSaveOrder(order); setCreating(false); setEditingOrder(undefined); }} onSaveDraft={onSaveDraft ? (order) => { onSaveDraft(order); setCreating(false); setEditingOrder(undefined); } : undefined} onCancel={() => { setCreating(false); setEditingOrder(undefined); }} /></Modal>
+    <Modal open={creating || Boolean(editingOrder)} title={editingOrder ? `编辑订单 · ${editingOrder.orderNo}` : '新建订单'} onClose={() => { setCreating(false); setEditingOrder(undefined); }} width={1040}><OrderForm key={editingOrder?.id ?? (creating ? `new-${activeChannel}` : 'closed')} value={editingOrder} defaultChannel={activeChannel} customers={customers} companies={companies} onSaveCustomerProduct={onSaveCustomerProduct} onCreateCustomer={onCreateCustomer} onGetNextOrderNumber={onGetNextOrderNumber} onSubmit={(order) => { onSaveOrder(order); setCreating(false); setEditingOrder(undefined); }} onSaveDraft={onSaveDraft ? (order) => { onSaveDraft(order); setCreating(false); setEditingOrder(undefined); } : undefined} onCancel={() => { setCreating(false); setEditingOrder(undefined); }} /></Modal>
+    <Modal open={Boolean(remarkOrder)} title={remarkOrder ? `订单备注 · ${remarkOrder.orderNo}` : '订单备注'} onClose={() => setRemarkOrder(undefined)} width={520}>
+      <div style={{ display: 'grid', gap: 12 }}>
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={{ color: 'var(--color-text-secondary)', fontSize: 12 }}>备注内容</span>
+          <textarea aria-label="备注内容" rows={5} autoFocus value={remarkDraft} onChange={(event) => setRemarkDraft(event.target.value)} placeholder="填写付款阶段、特殊要求等" style={{ width: '100%', minHeight: 110, padding: 8, border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', font: 'inherit', resize: 'vertical' }} />
+        </label>
+        <div className="order-form-actions">
+          <button type="button" className="button button-secondary" onClick={() => setRemarkOrder(undefined)}>取消</button>
+          <button type="button" className="button button-primary" onClick={saveRemark}>保存备注</button>
+        </div>
+      </div>
+    </Modal>
     <Modal open={Boolean(costOrder)} title={costOrder ? `成本与利润 · ${costOrder.orderNo}` : '成本与利润'} onClose={() => setCostOrder(undefined)} width={860}>
       {costOrder && <div className="order-profit-editor-modal">
         <p className="order-cost-hint">成本会随订单一起保存；勾选“已核对”的行和整单费用才计入毛利。</p>

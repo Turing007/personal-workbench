@@ -124,6 +124,7 @@ export interface ApiOrderRow {
   id: number;
   order_no: string;
   ordered_at: string;
+  channel?: string;
   customer_id?: number | null;
   customer_name?: string;
   customer_contact_name?: string;
@@ -539,6 +540,7 @@ export function draftToInput(draft: OrderDraft) {
     paymentNote: draft.paymentNote,
     orderDetail: draft.orderDetail,
     remark: draft.remark,
+    channel: draft.channel ?? 'offline',
     settlementType: draft.settlementType === 'personal' ? 'personal' : 'corporate',
     companyId: draft.companyId ?? null,
     items: draft.items.map((item) => ({ customerProductId: item.customerProductId ?? null, productId: item.productId ? Number(item.productId) : null, name: item.name.trim(), sku: item.sku.trim(), specification: item.specification.trim(), packCount: Math.max(1, Math.trunc(item.packSize)), quantity: Math.max(1, Math.trunc(item.quantity)), unitPriceCents: Math.max(0, Math.trunc(item.unitPriceCents ?? 0)), freightPerBoxCents: Math.max(0, Math.trunc(item.freightPerBoxCents ?? 0)), machineCostCents: item.machineCostCents ?? null, batteryCostCents: item.batteryCostCents ?? null, chargerCostCents: item.chargerCostCents ?? null, packagingCostCents: item.packagingCostCents ?? null, accessoryCostCents: item.accessoryCostCents ?? null, otherCostCents: item.otherCostCents ?? null, costConfirmed: Boolean(item.costConfirmed), packaging: item.packaging?.length ? item.packaging.map((pack) => ({ name: pack.name, innerSize: pack.innerSize, innerWeight: Number(pack.innerWeight) || 0, outerSize: pack.outerSize, outerWeight: Number(pack.outerWeight) || 0, packCount: Math.max(1, Math.trunc(pack.packSize)) })) : [{ name: '', packCount: Math.max(1, Math.trunc(item.packSize)) }], remark: item.remark, labelRequirement: (item.labelRequirement ?? '').trim() }))
@@ -1027,12 +1029,16 @@ export function linkCustomerProductToSystem(id: number | string, systemProductId
     .then(mapCustomerProduct);
 }
 
-export function getStockPreparation(date: string | 'all') {
-  return request<StockPreparation>(`/api/stock/preparation?date=${encodeURIComponent(date)}`);
+export function getStockPreparation(date: string | 'all', channel?: string) {
+  const query = new URLSearchParams({ date });
+  if (channel) query.set('channel', channel);
+  return request<StockPreparation>(`/api/stock/preparation?${query.toString()}`);
 }
 
-export function exportStockPreparation(date: string | 'all') {
-  return requestBlob(`/api/stock/preparation/export?date=${encodeURIComponent(date)}`);
+export function exportStockPreparation(date: string | 'all', channel?: string) {
+  const query = new URLSearchParams({ date });
+  if (channel) query.set('channel', channel);
+  return requestBlob(`/api/stock/preparation/export?${query.toString()}`);
 }
 
 function parseDimensionTriplet(value: string) {
@@ -1237,18 +1243,29 @@ export function updateCompany(id: number, input: CompanySaveInput) {
 export function deleteCompany(id: number) {
   return request<{ id: number }>(`/api/finance/companies/${id}`, { method: 'DELETE' });
 }
-export function listCompanyStats(month?: string) {
-  return request<{ items: CompanyStatsRow[] }>(`/api/finance/companies/stats${month ? `?month=${encodeURIComponent(month)}` : ''}`);
+export function listCompanyStats(month?: string, channel?: string) {
+  const query = new URLSearchParams();
+  if (month) query.set('month', month);
+  if (channel) query.set('channel', channel);
+  const qs = query.toString();
+  return request<{ items: CompanyStatsRow[] }>(`/api/finance/companies/stats${qs ? `?${qs}` : ''}`);
 }
-export function listCompanyBreakdown(month?: string) {
-  return request<{ items: CompanyReceiptBreakdownRow[] }>(`/api/finance/receipts/by-company${month ? `?month=${encodeURIComponent(month)}` : ''}`);
+export function listCompanyBreakdown(month?: string, channel?: string) {
+  const query = new URLSearchParams();
+  if (month) query.set('month', month);
+  if (channel) query.set('channel', channel);
+  const qs = query.toString();
+  return request<{ items: CompanyReceiptBreakdownRow[] }>(`/api/finance/receipts/by-company${qs ? `?${qs}` : ''}`);
 }
-export function lookupFinanceOrders(orderNo: string) {
-  return request<{ items: FinanceOrderLookupRow[] }>(`/api/finance/orders/lookup?orderNo=${encodeURIComponent(orderNo)}`);
+export function lookupFinanceOrders(orderNo: string, channel?: string) {
+  const query = new URLSearchParams({ orderNo });
+  if (channel) query.set('channel', channel);
+  return request<{ items: FinanceOrderLookupRow[] }>(`/api/finance/orders/lookup?${query.toString()}`);
 }
 export function listFinanceProofs(filters: FinanceProofListFilters = {}) {
   const query = new URLSearchParams();
   if (filters.month) query.set('month', filters.month);
+  if (filters.channel) query.set('channel', filters.channel);
   if (filters.companyId != null) query.set('companyId', String(filters.companyId));
   if (filters.companyIds?.length) query.set('companyIds', filters.companyIds.join(','));
   if (filters.includeUnassignedCompany) query.set('includeUnassignedCompany', '1');

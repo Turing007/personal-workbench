@@ -21,13 +21,16 @@ import { badgeClass, errorText, money } from '../components/finance/finance-form
 import { thumbUrl } from '../image-urls';
 import { useFileDrop } from '../use-file-drop';
 import { useIsNarrow } from '../use-is-narrow';
+import type { OrderChannel } from '../../shared/domain';
 
 export interface WaterSlipPageProps {
   onNotify?: (message: string, tone?: 'success' | 'error' | 'info') => void;
   onOpenOrder?: (orderId: number) => void;
-  onOpenFinance?: (orderId: number) => void;
+  onOpenFinance?: (orderId: number, channel?: OrderChannel) => void;
   /** 工作台跳转：进入页面后直接带出待确认状态。 */
   initialStatus?: PaymentProofStatus;
+  /** 跨模块跳转时带入渠道筛选。 */
+  initialChannel?: OrderChannel;
   onInitialFiltersConsumed?: () => void;
 }
 
@@ -48,8 +51,9 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function WaterSlipPage({ onNotify, onOpenOrder, onOpenFinance, initialStatus, onInitialFiltersConsumed }: WaterSlipPageProps) {
+export default function WaterSlipPage({ onNotify, onOpenOrder, onOpenFinance, initialStatus, initialChannel, onInitialFiltersConsumed }: WaterSlipPageProps) {
   const [month, setMonth] = useState(() => currentMonth());
+  const [channel, setChannel] = useState<'all' | OrderChannel>(initialChannel ?? 'all');
   const [statusFilters, setStatusFilters] = useState<PaymentProofStatus[]>([]);
   useEffect(() => {
     if (!initialStatus) return;
@@ -82,22 +86,25 @@ export default function WaterSlipPage({ onNotify, onOpenOrder, onOpenFinance, in
   const narrow = useIsNarrow();
   const amountRef = useRef<HTMLInputElement | null>(null);
 
+  useEffect(() => { if (initialChannel) setChannel(initialChannel); }, [initialChannel]);
+
   const loadStats = useCallback(async () => {
     setStatsLoading(true);
     try {
-      setStats((await listCompanyStats(month || undefined)).items);
+      setStats((await listCompanyStats(month || undefined, channel === 'all' ? undefined : channel)).items);
     } catch (error) {
       onNotify?.(errorText(error, '公司收款统计加载失败'), 'error');
     } finally {
       setStatsLoading(false);
     }
-  }, [month, onNotify]);
+  }, [channel, month, onNotify]);
 
   const loadProofs = useCallback(async () => {
     setProofsLoading(true);
     try {
       setProofs((await listFinanceProofs({
         month: month || undefined,
+        channel: channel === 'all' ? undefined : channel,
         statuses: statusFilters,
         query: query.trim() || undefined,
       })).items);
@@ -106,7 +113,7 @@ export default function WaterSlipPage({ onNotify, onOpenOrder, onOpenFinance, in
     } finally {
       setProofsLoading(false);
     }
-  }, [month, onNotify, query, statusFilters]);
+  }, [channel, month, onNotify, query, statusFilters]);
 
   useEffect(() => { void loadStats(); }, [loadStats]);
   useEffect(() => {
@@ -125,7 +132,7 @@ export default function WaterSlipPage({ onNotify, onOpenOrder, onOpenFinance, in
     let cancelled = false;
     setLookupLoading(true);
     const timer = window.setTimeout(() => {
-      void lookupFinanceOrders(trimmed).then((result) => {
+      void lookupFinanceOrders(trimmed, channel === 'all' ? undefined : channel).then((result) => {
         if (cancelled) return;
         setLookupRows(result.items);
         const exact = result.items.find((row) => row.orderNo === trimmed);
@@ -137,7 +144,7 @@ export default function WaterSlipPage({ onNotify, onOpenOrder, onOpenFinance, in
       });
     }, 220);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [lookupQuery, onNotify]);
+  }, [lookupQuery, onNotify, channel]);
 
   const setProofFile = (next: File | undefined) => {
     if (fileUrlRef.current) {
@@ -335,6 +342,7 @@ export default function WaterSlipPage({ onNotify, onOpenOrder, onOpenFinance, in
     </button>;
   };
 
+  const openProofFinance = onOpenFinance ? (orderId: number) => onOpenFinance(orderId, channel === 'all' ? undefined : channel) : undefined;
   return <div className="page-shell water-slip-page">
     <div className="page-toolbar water-slip-head">
       <div>
@@ -349,6 +357,7 @@ export default function WaterSlipPage({ onNotify, onOpenOrder, onOpenFinance, in
           <button className="icon-button" type="button" title="下一月" onClick={() => setMonth(shiftMonth(month, 1))}><ChevronRight size={15} /></button>
           <button className="button button-secondary month-scope-button" type="button" onClick={() => setMonth((value) => value ? '' : currentMonth())}>{month ? <X size={14} /> : <CalendarDays size={14} />}{month ? '全部' : '本月'}</button>
         </div>
+        <select className="toolbar-select" aria-label="订单渠道筛选" value={channel} onChange={(event) => setChannel(event.target.value as 'all' | OrderChannel)}><option value="all">全部渠道</option><option value="online">线上订单</option><option value="offline">线下订单</option></select>
         <button className="icon-button" type="button" title="刷新水单和统计" disabled={statsLoading || proofsLoading} onClick={() => void Promise.all([loadStats(), loadProofs()])}><RefreshCw size={15} /></button>
       </div>
     </div>
@@ -470,9 +479,9 @@ export default function WaterSlipPage({ onNotify, onOpenOrder, onOpenFinance, in
                 <td>{proof.paymentDate || '未填日期'}</td>
                 <td className="is-right">{proof.amountCents == null ? '待补金额' : money(proof.amountCents)}</td>
                 <td><span className={badgeClass(proof.status)}>{proofStatusLabels[proof.status]}</span></td>
-                <td><ProofActions proof={proof} busy={busyProofId === proof.id} onAct={act} onOpenFinance={onOpenFinance} compact /></td>
+                <td><ProofActions proof={proof} busy={busyProofId === proof.id} onAct={act} onOpenFinance={openProofFinance} compact /></td>
               </tr>
-              {expanded && <tr className="water-proof-expand-row"><td colSpan={9}><WaterProofExpandPanel proof={proof} busy={busyProofId === proof.id} onAct={act} onOpenFinance={onOpenFinance} /></td></tr>}
+              {expanded && <tr className="water-proof-expand-row"><td colSpan={9}><WaterProofExpandPanel proof={proof} busy={busyProofId === proof.id} onAct={act} onOpenFinance={openProofFinance} /></td></tr>}
             </Fragment>;
           })}</tbody>
         </table></div>}
@@ -486,8 +495,8 @@ export default function WaterSlipPage({ onNotify, onOpenOrder, onOpenFinance, in
               <div><strong>{proof.orderNo}</strong><span>{proof.customerName || '未填客户'} · {proof.companyName || '未分配公司'}</span><small>{proof.paymentDate || '未填日期'} · {proof.amountCents == null ? '待补金额' : money(proof.amountCents)}</small></div>
               <span className={badgeClass(proof.status)}>{proofStatusLabels[proof.status]}</span>
             </div>
-            {expanded && <WaterProofExpandPanel proof={proof} busy={busyProofId === proof.id} onAct={act} onOpenFinance={onOpenFinance} />}
-            <div className="water-slip-card-actions"><ProofActions proof={proof} busy={busyProofId === proof.id} onAct={act} onOpenFinance={onOpenFinance} compact /></div>
+            {expanded && <WaterProofExpandPanel proof={proof} busy={busyProofId === proof.id} onAct={act} onOpenFinance={openProofFinance} />}
+            <div className="water-slip-card-actions"><ProofActions proof={proof} busy={busyProofId === proof.id} onAct={act} onOpenFinance={openProofFinance} compact /></div>
           </article>;
         })}</div>}
         {selectedProofs.length > 0 && <div className="water-slip-bulk-bar" role="region" aria-label="水单批量操作">

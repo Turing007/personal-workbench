@@ -21,12 +21,16 @@ export class StockRepository {
   constructor(private readonly database: DatabaseSync) {}
 
   /** 待备货订单的全部明细行（含未关联客户产品的行），date 为 YYYY-MM-DD 时按下单日期过滤。 */
-  listPendingStockItems(date?: string): StockPreparationRow[] {
+  listPendingStockItems(date?: string, channel?: string): StockPreparationRow[] {
     const clauses = ["o.status = 'pending_stock'"];
     const parameters: Array<string | number> = [];
     if (date) {
       clauses.push('substr(o.ordered_at, 1, 10) = ?');
       parameters.push(date);
+    }
+    if (channel) {
+      clauses.push('o.channel = ?');
+      parameters.push(channel);
     }
     return this.database.prepare(`
       SELECT

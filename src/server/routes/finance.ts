@@ -25,6 +25,14 @@ function listIds(value?: string): number[] {
     .filter((item) => Number.isSafeInteger(item) && item > 0);
 }
 
+function parseChannel(value?: string): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (value !== 'online' && value !== 'offline') {
+    throw new ApiError(400, 'VALIDATION_ERROR', '订单渠道必须是线上或线下', 'channel');
+  }
+  return value;
+}
+
 function parseOptionalNumber(value: unknown): unknown {
   if (value === undefined || value === null || value === '') return undefined;
   const parsed = Number(value);
@@ -169,6 +177,7 @@ export async function registerFinanceRoutes(app: FastifyInstance, options: Finan
       orderNo: query.orderNo,
       customerName: query.customerName,
       month: query.month,
+      channel: parseChannel(query.channel) as FinanceListFilters['channel'],
       paymentStatus: query.paymentStatus as FinanceListFilters['paymentStatus'],
       proofStatus: query.proofStatus as FinanceListFilters['proofStatus'],
       invoiceStatus: query.invoiceStatus as FinanceListFilters['invoiceStatus'],
@@ -204,6 +213,7 @@ export async function registerFinanceRoutes(app: FastifyInstance, options: Finan
     return sendSuccess(reply, {
       items: service.listProofs({
         month: query.month,
+        channel: parseChannel(query.channel) as import('../../shared/finance.js').FinanceProofListFilters['channel'],
         status: query.status as import('../../shared/finance.js').PaymentProofStatus | undefined,
         companyId: query.companyId === 'unassigned'
           ? 'unassigned'
@@ -245,22 +255,22 @@ export async function registerFinanceRoutes(app: FastifyInstance, options: Finan
 
   app.get('/api/finance/receipts/by-payee', async (request, reply) => safeRoute(() => {
     const query = request.query as Record<string, string | undefined>;
-    return sendSuccess(reply, { items: service.listPayeeBreakdown(query.month) });
+    return sendSuccess(reply, { items: service.listPayeeBreakdown(query.month, parseChannel(query.channel)) });
   }, reply));
 
   app.get('/api/finance/receipts/by-company', async (request, reply) => safeRoute(() => {
     const query = request.query as Record<string, string | undefined>;
-    return sendSuccess(reply, { items: service.listCompanyBreakdown(query.month) });
+    return sendSuccess(reply, { items: service.listCompanyBreakdown(query.month, parseChannel(query.channel)) });
   }, reply));
 
   app.get('/api/finance/companies/stats', async (request, reply) => safeRoute(() => {
     const query = request.query as Record<string, string | undefined>;
-    return sendSuccess(reply, { items: service.listCompanyStats(query.month) });
+    return sendSuccess(reply, { items: service.listCompanyStats(query.month, parseChannel(query.channel)) });
   }, reply));
 
   app.get('/api/finance/orders/lookup', async (request, reply) => safeRoute(() => {
     const query = request.query as Record<string, string | undefined>;
-    return sendSuccess(reply, { items: service.lookupOrders(query.orderNo ?? '') });
+    return sendSuccess(reply, { items: service.lookupOrders(query.orderNo ?? '', parseChannel(query.channel)) });
   }, reply));
 
   app.post('/api/finance/proofs/:id/reject', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(() => {

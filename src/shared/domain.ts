@@ -1,3 +1,15 @@
+export const ORDER_CHANNELS = ['online', 'offline'] as const;
+export type OrderChannel = (typeof ORDER_CHANNELS)[number];
+
+export const ORDER_CHANNEL_LABELS: Record<OrderChannel, string> = {
+  online: '线上',
+  offline: '线下',
+};
+
+export function normalizeOrderChannel(value: unknown, fallback: OrderChannel = 'offline'): OrderChannel {
+  return value === 'online' || value === 'offline' ? value : fallback;
+}
+
 export const ORDER_STATUS_SEQUENCE = [
   'label_pending',
   'pending_stock',

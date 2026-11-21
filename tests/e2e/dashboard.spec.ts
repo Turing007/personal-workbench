@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { dateInputValue } from '../../src/shared/date-input';
 import { ensureAuthenticated, injectSession } from './helpers/auth';
 
 let sessionCookie: string;
@@ -42,6 +43,43 @@ test('工作台：默认落地、待办、快捷新建和跳到待审核水单',
   await expect(activeFilter).toContainText('当前只看：待确认');
   await activeFilter.click();
   await expect(activeFilter).toHaveCount(0);
+});
+
+test('工作台按渠道筛选并把渠道带入订单页签', async ({ page }) => {
+  const stamp = Date.now();
+  const onlineNo = `E2E-DASH-ONLINE-${stamp}`;
+  const offlineNo = `E2E-DASH-OFFLINE-${stamp}`;
+  const createOrder = async (orderNo: string, channel: 'online' | 'offline') => {
+    const response = await page.request.post('/api/orders', {
+      data: {
+        orderNo,
+        orderedAt: dateInputValue(),
+        channel,
+        recipientName: '工作台渠道收件人',
+        recipientInfo: '工作台渠道收件人 13800000000 深圳市南山区',
+        items: [{ name: `工作台渠道产品-${channel}`, sku: `DASH-${channel}-${stamp}`, specification: '标准', packagingName: '彩盒', packCount: 10, quantity: 1, unitPriceCents: 5000 }],
+      },
+    });
+    expect(response.ok()).toBeTruthy();
+    return Number((await response.json()).data.id);
+  };
+  const onlineId = await createOrder(onlineNo, 'online');
+  const offlineId = await createOrder(offlineNo, 'offline');
+  try {
+    await page.goto('/');
+    await page.getByRole('combobox', { name: '订单渠道筛选' }).selectOption('online');
+    await page.locator('.dashboard-task', { hasText: '待备货' }).click();
+    await expect(page.getByRole('tab', { name: /线上订单/ })).toHaveAttribute('aria-selected', 'true');
+
+    const search = page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格');
+    await search.fill(onlineNo);
+    await expect(page.locator('.orders-table-desktop tbody tr', { hasText: onlineNo })).toHaveCount(1);
+    await search.fill(offlineNo);
+    await expect(page.locator('.orders-table-desktop tbody tr', { hasText: offlineNo })).toHaveCount(0);
+  } finally {
+    await page.request.delete(`/api/orders/${onlineId}`);
+    await page.request.delete(`/api/orders/${offlineId}`);
+  }
 });
 
 test('工作台手机端不横向溢出', async ({ page }) => {

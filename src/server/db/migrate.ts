@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 44;
+const CURRENT_SCHEMA_VERSION = 45;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -168,6 +168,7 @@ CREATE TABLE IF NOT EXISTS orders (
   order_detail TEXT NOT NULL DEFAULT '',
   remark TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending_stock',
+  channel TEXT NOT NULL DEFAULT 'offline' CHECK (channel IN ('online', 'offline')),
   label_printed_at TEXT,
   source_sales_document_id INTEGER REFERENCES sales_documents(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL,
@@ -1509,6 +1510,13 @@ function migrateVersionFortyThree(database: DatabaseSync, now: string): void {
  * 订单利润成本：订单级物流/其他成本，以及订单行级成本快照。
  * 历史数据不回填，金额未知保持 NULL；成本确认标记默认未确认。
  */
+/** 订单渠道：线上/线下。存量订单统一归线下；新接口未指定时由订单服务默认线上。 */
+function migrateVersionFortyFive(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'orders', 'channel', "TEXT NOT NULL DEFAULT 'offline' CHECK (channel IN ('online', 'offline'))");
+  database.exec('CREATE INDEX IF NOT EXISTS idx_orders_channel_ordered ON orders(channel, ordered_at DESC, id DESC);');
+  upsertSetting(database, 'schema_version', '45', now);
+}
+
 function migrateVersionFortyFour(database: DatabaseSync, now: string): void {
   const orderColumns: Array<[string, string]> = [
     ['logistics_cost_cents', 'INTEGER CHECK (logistics_cost_cents IS NULL OR logistics_cost_cents >= 0)'],
@@ -1651,6 +1659,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionFortyTwo(transactionDatabase, now);
     migrateVersionFortyThree(transactionDatabase, now);
     migrateVersionFortyFour(transactionDatabase, now);
+    migrateVersionFortyFive(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

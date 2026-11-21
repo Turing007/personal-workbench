@@ -110,6 +110,10 @@ test('水单收款：订单号定位、上传、确认入账并按公司统计',
     expect(copiedInvoiceInfo).toContain(`公司名称：${company.fullName}`);
     expect(copiedInvoiceInfo).toContain(`纳税人识别号：${company.taxNo}`);
   } finally {
+    // 已入账水单有收款记录，删单护栏会拦截；先作废水单冲销收款再删订单。
+    const proofs = await page.request.get(`/api/finance/orders/${order.id}/proofs`);
+    const proofId = Number((await proofs.json()).data.items?.[0]?.id ?? 0);
+    if (proofId > 0) await page.request.post(`/api/finance/proofs/${proofId}/void`, { data: { note: 'e2e 清理' } });
     await authenticatedDelete(request, `/api/orders/${order.id}`);
     await authenticatedDelete(request, `/api/finance/companies/${company.id}`);
   }

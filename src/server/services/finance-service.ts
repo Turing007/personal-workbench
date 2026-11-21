@@ -117,24 +117,24 @@ export class FinanceService {
     return this.repository.list(filters);
   }
 
-  listPayeeBreakdown(month?: string): PayeeBreakdownRow[] {
-    return this.repository.listPayeeBreakdown(month);
+  listPayeeBreakdown(month?: string, channel?: string): PayeeBreakdownRow[] {
+    return this.repository.listPayeeBreakdown(month, channel);
   }
 
   listProofs(filters: import('../../shared/finance.js').FinanceProofListFilters = {}) {
     return this.repository.listProofsAcrossOrders(filters);
   }
 
-  listCompanyBreakdown(month?: string) {
-    return this.repository.listCompanyBreakdown(month);
+  listCompanyBreakdown(month?: string, channel?: string) {
+    return this.repository.listCompanyBreakdown(month, channel);
   }
 
-  listCompanyStats(month?: string) {
-    return this.repository.listCompanyStats(month);
+  listCompanyStats(month?: string, channel?: string) {
+    return this.repository.listCompanyStats(month, channel);
   }
 
-  lookupOrders(query: string) {
-    return this.repository.lookupOrders(query);
+  lookupOrders(query: string, channel?: string) {
+    return this.repository.lookupOrders(query, channel);
   }
 
   get(orderId: number): FinanceDetail | undefined {

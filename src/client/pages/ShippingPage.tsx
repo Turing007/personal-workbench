@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import ShippingBatchPanel from '../components/ShippingBatchPanel';
 import type { OrderDraft } from '../components/OrderForm';
+import type { OrderChannel } from '../../shared/domain';
 
 export interface ShippingPageProps {
   orders: OrderDraft[];
@@ -14,7 +15,8 @@ export interface ShippingPageProps {
 
 export default function ShippingPage({ orders, initialOrder, initialOrders, onUpdateTracking, onSaveTracking, onConfirm }: ShippingPageProps) {
   const [batch, setBatch] = useState<OrderDraft[]>([]);
-  const eligible = useMemo(() => orders.filter((order) => order.status === 'ship_pending'), [orders]);
+  const [channel, setChannel] = useState<'all' | OrderChannel>('all');
+  const eligible = useMemo(() => orders.filter((order) => order.status === 'ship_pending' && (channel === 'all' || order.channel === channel)), [orders, channel]);
   useEffect(() => {
     if (initialOrder?.status === 'ship_pending') setBatch((current) => current.some((item) => item.id === initialOrder.id) ? current : [...current, initialOrder]);
   }, [initialOrder]);
@@ -40,7 +42,10 @@ export default function ShippingPage({ orders, initialOrder, initialOrders, onUp
         <strong className="page-title">发货工作区</strong>
         <span className="page-subtitle">把待发货订单加入批次，回填物流单号后确认发货</span>
       </div>
-      <span className="badge badge-warning">{eligible.length} 条待发货</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <select className="toolbar-select" aria-label="订单渠道筛选" value={channel} onChange={(event) => setChannel(event.target.value as 'all' | OrderChannel)}><option value="all">全部渠道</option><option value="online">线上订单</option><option value="offline">线下订单</option></select>
+        <span className="badge badge-warning">{eligible.length} 条待发货</span>
+      </div>
     </div>
     <section className="table-panel shipping-panel">
       <ShippingBatchPanel orders={batch} allOrders={eligible} onAdd={add} onRemove={remove} onTrackingChange={tracking} onSaveTracking={onSaveTracking} onClear={() => setBatch([])} onConfirm={() => { void onConfirm?.(batch); }} />

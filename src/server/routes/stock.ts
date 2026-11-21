@@ -20,11 +20,20 @@ async function safeRoute<T>(
 }
 
 /** 解析 scope 查询参数：缺省或 'all' 表示全部待备货，否则必须是 YYYY-MM-DD。 */
-function parseScopeDate(request: FastifyRequest<{ Querystring: { date?: string } }>): string | null {
+function parseScopeDate(request: FastifyRequest<{ Querystring: { date?: string; channel?: string } }>): string | null {
   const raw = request.query?.date?.trim() ?? '';
   if (!raw || raw === 'all') return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
     throw new ApiError(400, 'VALIDATION_ERROR', '日期格式应为 YYYY-MM-DD 或 all', 'date');
+  }
+  return raw;
+}
+
+function parseChannel(request: FastifyRequest<{ Querystring: { date?: string; channel?: string } }>): string | undefined {
+  const raw = request.query?.channel?.trim();
+  if (!raw) return undefined;
+  if (raw !== 'online' && raw !== 'offline') {
+    throw new ApiError(400, 'VALIDATION_ERROR', '订单渠道必须是线上或线下', 'channel');
   }
   return raw;
 }
@@ -54,18 +63,18 @@ function preparationWorkbookBuffer(preparation: ReturnType<StockPreparationServi
 
 export async function registerStockRoutes(app: FastifyInstance, options: StockRouteOptions): Promise<void> {
   app.get('/api/stock/preparation', async (
-    request: FastifyRequest<{ Querystring: { date?: string } }>,
+    request: FastifyRequest<{ Querystring: { date?: string; channel?: string } }>,
     reply,
   ) => safeRoute(() => {
-    const preparation = options.service.getPreparation(parseScopeDate(request));
+    const preparation = options.service.getPreparation(parseScopeDate(request), parseChannel(request));
     return sendSuccess(reply, preparation);
   }, reply));
 
   app.get('/api/stock/preparation/export', async (
-    request: FastifyRequest<{ Querystring: { date?: string } }>,
+    request: FastifyRequest<{ Querystring: { date?: string; channel?: string } }>,
     reply,
   ) => safeRoute(() => {
-    const preparation = options.service.getPreparation(parseScopeDate(request));
+    const preparation = options.service.getPreparation(parseScopeDate(request), parseChannel(request));
     const datePart = preparation.scope === 'all' ? '全部待备货' : preparation.scope;
     const fileName = `备货表-${datePart}.xlsx`;
     return reply

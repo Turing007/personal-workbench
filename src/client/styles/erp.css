@@ -171,6 +171,37 @@
 .orders-heading-copy .page-breadcrumb,
 .finance-heading-copy .page-breadcrumb { grid-column: 1 / -1; }
 
+.orders-channel-tabs {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-self: flex-start;
+  gap: 2px;
+  margin-bottom: 8px;
+  padding: 3px;
+  border: 1px solid var(--erp-divider);
+  border-radius: var(--radius-ui);
+  background: var(--erp-surface-muted);
+}
+.orders-channel-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  border-radius: var(--radius-ui);
+  background: transparent;
+  padding: 5px 10px;
+  color: var(--erp-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.orders-channel-tabs button b { color: inherit; font-weight: 600; }
+.orders-channel-tabs button.is-active {
+  background: var(--color-surface);
+  color: var(--erp-text);
+  box-shadow: 0 1px 2px rgba(16, 32, 51, .08);
+}
+
 .products-page-head-title {
   display: grid;
   gap: 1px;
@@ -412,9 +443,32 @@
   color: var(--erp-text-2);
   font-size: 10.5px;
   line-height: 1.45;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.orders-page .order-remark-edit {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-weight: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.orders-page .order-remark-edit:hover { text-decoration: underline; }
+.orders-page .order-remark-edit.is-empty { color: var(--erp-muted); }
+.orders-page .order-box-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.orders-page .order-box-link:hover { text-decoration: underline; }
 @media (min-width: 901px) {
   .orders-page {
     display: flex;
@@ -579,15 +633,19 @@
   }
   .orders-page .order-ops-cell .row-actions.is-two-line {
     display: grid;
+    grid-template-columns: repeat(3, max-content);
+    justify-content: end;
     justify-items: end;
-    gap: 3px;
-    flex-wrap: nowrap;
+    align-items: center;
+    column-gap: 6px;
+    row-gap: 3px;
+    min-width: 0;
+    max-width: 100%;
   }
-  .orders-page .order-ops-cell .row-actions-line {
+  .orders-page .order-ops-cell .row-actions-cell {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 5px;
     min-width: 0;
     white-space: nowrap;
   }

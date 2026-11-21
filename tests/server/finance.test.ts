@@ -33,11 +33,11 @@ async function setup() {
   return { database, app, fileStore, companyId };
 }
 
-function insertOrder(database: DatabaseSync, amountCents = 10000, companyId: number | null = null): number {
+function insertOrder(database: DatabaseSync, amountCents = 10000, companyId: number | null = null, channel = 'offline'): number {
   const result = database.prepare(`
-    INSERT INTO orders (order_no, ordered_at, recipient_name, amount, amount_cents, shipping_cents, company_id, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 0, ?, 'pending_stock', ?, ?)
-  `).run(`FIN-${Date.now()}-${Math.random()}`, '2026-08-20', '客户', amountCents / 100, amountCents, companyId, new Date().toISOString(), new Date().toISOString());
+    INSERT INTO orders (order_no, ordered_at, recipient_name, amount, amount_cents, shipping_cents, company_id, status, channel, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 0, ?, 'pending_stock', ?, ?, ?)
+  `).run(`FIN-${Date.now()}-${Math.random()}`, '2026-08-20', '客户', amountCents / 100, amountCents, companyId, channel, new Date().toISOString(), new Date().toISOString());
   const orderId = Number(result.lastInsertRowid);
   database.prepare(`INSERT INTO order_finance (order_id, receivable_cents, outstanding_cents, payment_status, proof_status, invoice_status, created_at, updated_at) VALUES (?, ?, ?, 'unpaid', 'none', 'not_requested', ?, ?)`).run(orderId, amountCents, amountCents, new Date().toISOString(), new Date().toISOString());
   return orderId;
@@ -258,6 +258,53 @@ describe('财务模块', () => {
     expect(personalRow).toMatchObject({ settlementType: 'personal', invoiceStatus: 'incomplete' });
     // 两笔发票都是 incomplete，但只有对公订单计入待处理发票。
     expect(list.json().data.stats).toMatchObject({ pendingInvoiceCount: 1 });
+
+    await app.close();
+    database.close();
+  });
+
+  it('财务列表、统计与水单按渠道过滤', async () => {
+    const { database, app } = await setup();
+    const onlineId = insertOrder(database, 10000, null, 'online');
+    const offlineId = insertOrder(database, 20000, null, 'offline');
+    const now = new Date().toISOString();
+    database.prepare(
+      `INSERT INTO finance_receipts (order_id, received_at, amount_cents, created_at, updated_at)
+       VALUES (?, '2026-08-20', 10000, ?, ?)`,
+    ).run(onlineId, now, now);
+    database.prepare(
+      `UPDATE order_finance SET received_cents = 10000, outstanding_cents = 0, payment_status = 'paid', updated_at = ? WHERE order_id = ?`,
+    ).run(now, onlineId);
+    database.prepare(
+      `INSERT INTO payment_proofs (order_id, relative_path, original_name, mime_type, size_bytes, created_at)
+       VALUES (?, 'payment-profiles/fin-online.png', '线上水单.png', 'image/png', 5, ?)`,
+    ).run(onlineId, now);
+    database.prepare(
+      `INSERT INTO payment_proofs (order_id, relative_path, original_name, mime_type, size_bytes, created_at)
+       VALUES (?, 'payment-profiles/fin-offline.png', '线下水单.png', 'image/png', 5, ?)`,
+    ).run(offlineId, now);
+
+    const online = await authInject(app, { method: 'GET', url: '/api/finance/orders?channel=online&pageSize=100' });
+    const onlineRows = online.json().data.rows as Array<{ orderId: number }>;
+    expect(onlineRows.map((row) => row.orderId)).toContain(onlineId);
+    expect(onlineRows.map((row) => row.orderId)).not.toContain(offlineId);
+    expect(online.json().data.stats).toMatchObject({ receivableCents: 10000, receivedCents: 10000 });
+
+    const offline = await authInject(app, { method: 'GET', url: '/api/finance/orders?channel=offline&pageSize=100' });
+    const offlineRows = offline.json().data.rows as Array<{ orderId: number }>;
+    expect(offlineRows.map((row) => row.orderId)).toContain(offlineId);
+    expect(offlineRows.map((row) => row.orderId)).not.toContain(onlineId);
+    expect(offline.json().data.stats).toMatchObject({ receivableCents: 20000, receivedCents: 0 });
+
+    const proofs = await authInject(app, { method: 'GET', url: '/api/finance/proofs?channel=online' });
+    expect((proofs.json().data.items as Array<{ orderId: number }>).map((row) => row.orderId)).toEqual([onlineId]);
+
+    const onlineStats = await authInject(app, { method: 'GET', url: '/api/finance/companies/stats?month=2026-08&channel=online' });
+    const onlineUnassigned = (onlineStats.json().data.items as Array<{ companyId: number | null; receivedCents: number }>).find((row) => row.companyId == null);
+    expect(onlineUnassigned?.receivedCents).toBe(10000);
+    const offlineStats = await authInject(app, { method: 'GET', url: '/api/finance/companies/stats?month=2026-08&channel=offline' });
+    const offlineUnassigned = (offlineStats.json().data.items as Array<{ companyId: number | null; receivedCents: number }>).find((row) => row.companyId == null);
+    expect(offlineUnassigned?.receivedCents).toBe(0);
 
     await app.close();
     database.close();

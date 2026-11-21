@@ -21,17 +21,16 @@ import {
   type FinanceProofListRow,
   type PaymentProofStatus,
 } from '../../shared/finance';
-import { ORDER_STATUS_LABELS_WITH_DRAFT } from '../../shared/domain';
+import { ORDER_CHANNEL_LABELS, ORDER_STATUS_LABELS_WITH_DRAFT, type OrderChannel } from '../../shared/domain';
 import { listCompanyStats, listFinanceOrders, listFinanceProofs } from '../api';
 import { money } from '../components/finance/finance-format';
 
 export interface DashboardPageProps {
   orders: OrderDraft[];
-  statusCounts?: Partial<Record<'all' | OrderStatus, number>>;
-  onOpenOrders: (status?: OrderStatus) => void;
-  onOpenFinance: () => void;
-  onOpenWaterSlips: (status?: PaymentProofStatus) => void;
-  onNewOrder: () => void;
+  onOpenOrders: (status?: OrderStatus, channel?: OrderChannel) => void;
+  onOpenFinance: (channel?: OrderChannel) => void;
+  onOpenWaterSlips: (status?: PaymentProofStatus, channel?: OrderChannel) => void;
+  onNewOrder: (channel?: OrderChannel) => void;
   onNewQuotation: () => void;
   onNewProduct: () => void;
   onRefresh?: () => Promise<void> | void;
@@ -64,7 +63,6 @@ function orderDateLabel(value: string): string {
 
 export default function DashboardPage({
   orders,
-  statusCounts,
   onOpenOrders,
   onOpenFinance,
   onOpenWaterSlips,
@@ -76,17 +74,19 @@ export default function DashboardPage({
   const [financeStats, setFinanceStats] = useState<FinanceListStats>();
   const [companyStats, setCompanyStats] = useState<CompanyStatsRow[]>([]);
   const [recentProofs, setRecentProofs] = useState<FinanceProofListRow[]>([]);
+  const [channel, setChannel] = useState<'all' | OrderChannel>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const channelFilter = channel === 'all' ? undefined : channel;
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const [finance, companies, proofs] = await Promise.all([
-        listFinanceOrders({ pageSize: 1 }),
-        listCompanyStats(currentMonth()),
-        listFinanceProofs({ limit: 6 }),
+        listFinanceOrders({ pageSize: 1, channel: channelFilter }),
+        listCompanyStats(currentMonth(), channelFilter),
+        listFinanceProofs({ limit: 6, channel: channelFilter }),
       ]);
       setFinanceStats(finance.stats);
       setCompanyStats(companies.items);
@@ -96,12 +96,13 @@ export default function DashboardPage({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [channelFilter]);
 
   useEffect(() => { void load(); }, [load]);
 
   const today = todayString();
-  const nonDraftOrders = useMemo(() => orders.filter((order) => order.status !== 'draft'), [orders]);
+  const scopedOrders = useMemo(() => orders.filter((order) => channel === 'all' || (order.channel ?? 'offline') === channel), [orders, channel]);
+  const nonDraftOrders = useMemo(() => scopedOrders.filter((order) => order.status !== 'draft'), [scopedOrders]);
   const todayOrders = useMemo(
     () => nonDraftOrders.filter((order) => order.orderedAt.slice(0, 10) === today),
     [nonDraftOrders, today],
@@ -123,8 +124,8 @@ export default function DashboardPage({
       if (!order.status) continue;
       computed[order.status] = (computed[order.status] ?? 0) + 1;
     }
-    return { ...computed, ...statusCounts } as Partial<Record<OrderStatus, number>>;
-  }, [nonDraftOrders, statusCounts]);
+    return computed;
+  }, [nonDraftOrders]);
 
   const tasks: Array<{
     label: string;
@@ -134,13 +135,13 @@ export default function DashboardPage({
     tone?: 'warning' | 'danger';
     onClick: () => void;
   }> = [
-    { label: '待备货', hint: '等待供应商备货', count: counts.pending_stock ?? 0, icon: PackageOpen, onClick: () => onOpenOrders('pending_stock') },
-    { label: '已备货', hint: '备货完成，等待开始打包', count: counts.stock_reported ?? 0, icon: PackageCheck, onClick: () => onOpenOrders('stock_reported') },
-    { label: '待打包', hint: '打包中，完成后进入待发货', count: counts.pending_packing ?? 0, icon: PackageCheck, onClick: () => onOpenOrders('pending_packing') },
-    { label: '待发货', hint: '打包完成等待发出', count: counts.ship_pending ?? 0, icon: Truck, onClick: () => onOpenOrders('ship_pending') },
-    { label: '待审核水单', hint: '确认后计入已收', count: financeStats?.pendingProofCount ?? 0, icon: HandCoins, tone: 'warning', onClick: () => onOpenWaterSlips('pending') },
-    { label: '待开票', hint: '对公订单待开票', count: financeStats?.pendingInvoiceCount ?? 0, icon: ReceiptText, tone: 'warning', onClick: onOpenFinance },
-    { label: '未分配公司', hint: '补公司后才能汇总', count: unassignedCompanyCount, icon: WalletCards, tone: unassignedCompanyCount > 0 ? 'danger' : undefined, onClick: () => onOpenOrders() },
+    { label: '待备货', hint: '等待供应商备货', count: counts.pending_stock ?? 0, icon: PackageOpen, onClick: () => onOpenOrders('pending_stock', channelFilter) },
+    { label: '已备货', hint: '备货完成，等待开始打包', count: counts.stock_reported ?? 0, icon: PackageCheck, onClick: () => onOpenOrders('stock_reported', channelFilter) },
+    { label: '待打包', hint: '打包中，完成后进入待发货', count: counts.pending_packing ?? 0, icon: PackageCheck, onClick: () => onOpenOrders('pending_packing', channelFilter) },
+    { label: '待发货', hint: '打包完成等待发出', count: counts.ship_pending ?? 0, icon: Truck, onClick: () => onOpenOrders('ship_pending', channelFilter) },
+    { label: '待审核水单', hint: '确认后计入已收', count: financeStats?.pendingProofCount ?? 0, icon: HandCoins, tone: 'warning', onClick: () => onOpenWaterSlips('pending', channelFilter) },
+    { label: '待开票', hint: '对公订单待开票', count: financeStats?.pendingInvoiceCount ?? 0, icon: ReceiptText, tone: 'warning', onClick: () => onOpenFinance(channelFilter) },
+    { label: '未分配公司', hint: '补公司后才能汇总', count: unassignedCompanyCount, icon: WalletCards, tone: unassignedCompanyCount > 0 ? 'danger' : undefined, onClick: () => onOpenOrders(undefined, channelFilter) },
   ];
 
   const companyRows = useMemo(
@@ -164,7 +165,8 @@ export default function DashboardPage({
         <span className="page-subtitle"><CalendarDays size={13} />{dateText} · 今天要处理的事都在这里</span>
       </div>
       <div className="dashboard-actions">
-        <button type="button" className="button button-primary" onClick={onNewOrder}><Plus size={14} />新建订单</button>
+        <select className="toolbar-select" aria-label="订单渠道筛选" value={channel} onChange={(event) => setChannel(event.target.value as 'all' | OrderChannel)}><option value="all">全部渠道</option><option value="online">{ORDER_CHANNEL_LABELS.online}订单</option><option value="offline">{ORDER_CHANNEL_LABELS.offline}订单</option></select>
+        <button type="button" className="button button-primary" onClick={() => onNewOrder(channelFilter)}><Plus size={14} />新建订单</button>
         <button type="button" className="button button-secondary" onClick={onNewQuotation}><FilePlus2 size={14} />新建报价</button>
         <button type="button" className="button button-secondary" onClick={onNewProduct}><PackageOpen size={14} />新建产品</button>
         <button type="button" className="icon-button" title="刷新工作台" disabled={loading} onClick={() => { void load(); void onRefresh?.(); }}><RefreshCw size={15} /></button>
@@ -181,7 +183,7 @@ export default function DashboardPage({
     </div>
 
     <section className="dashboard-section">
-      <div className="dashboard-section-head"><div><strong>待办</strong><span>数量为 0 时保留入口，方便确认已处理完</span></div><button type="button" className="button button-ghost" onClick={() => onOpenOrders()}>全部订单<ArrowRight size={13} /></button></div>
+      <div className="dashboard-section-head"><div><strong>待办</strong><span>数量为 0 时保留入口，方便确认已处理完</span></div><button type="button" className="button button-ghost" onClick={() => onOpenOrders(undefined, channelFilter)}>全部订单<ArrowRight size={13} /></button></div>
       <div className="dashboard-task-grid">
         {tasks.map((task) => {
           const Icon = task.icon;
@@ -196,7 +198,7 @@ export default function DashboardPage({
 
     <div className="dashboard-columns">
       <section className="dashboard-panel">
-        <div className="dashboard-section-head"><div><strong>按公司收款</strong><span>{currentMonth()} · 已入账与待确认</span></div><button type="button" className="button button-ghost" onClick={() => onOpenWaterSlips()}>水单收款<ArrowRight size={13} /></button></div>
+        <div className="dashboard-section-head"><div><strong>按公司收款</strong><span>{currentMonth()} · 已入账与待确认</span></div><button type="button" className="button button-ghost" onClick={() => onOpenWaterSlips(undefined, channelFilter)}>水单收款<ArrowRight size={13} /></button></div>
         {companyRows.length ? <div className="dashboard-company-list">
           {companyRows.map((row) => <button type="button" className="dashboard-company-row" key={row.companyId ?? 'unassigned'} onClick={() => onOpenWaterSlips()}>
             <div><strong>{row.companyName}</strong><span>{row.receivedCount} 笔已入账 · {row.pendingCount} 笔待确认</span></div>
@@ -217,7 +219,7 @@ export default function DashboardPage({
     </div>
 
     <section className="dashboard-panel dashboard-recent-orders">
-      <div className="dashboard-section-head"><div><strong>最近订单</strong><span>按订单状态继续处理</span></div><button type="button" className="button button-ghost" onClick={() => onOpenOrders()}>全部订单<ArrowRight size={13} /></button></div>
+      <div className="dashboard-section-head"><div><strong>最近订单</strong><span>按订单状态继续处理</span></div><button type="button" className="button button-ghost" onClick={() => onOpenOrders(undefined, channelFilter)}>全部订单<ArrowRight size={13} /></button></div>
       {recentOrders.length ? <div className="dashboard-order-list">
         {recentOrders.map((order) => <button type="button" className="dashboard-order-row" key={order.id ?? order.orderNo} onClick={() => onOpenOrders()}>
           <div><strong>{order.orderNo}</strong><span>{order.customerName || '未填客户'} · {orderDateLabel(order.orderedAt)}</span></div>

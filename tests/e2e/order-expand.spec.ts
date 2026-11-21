@@ -224,14 +224,16 @@ test('订单列表显示附件备注、隐藏物流单号，并可回退误点�
     await expect(row.locator('.order-extra-files')).toContainText(attachmentName);
     await expect(row.locator('.order-remark-full')).toHaveText(remark);
     await expect(row.locator('.order-status-cell')).toContainText('待发货');
-    const actionLines = row.locator('.order-ops-cell .row-actions-line');
-    await expect(actionLines).toHaveCount(2);
-    await expect(actionLines.nth(0)).toContainText('详情');
-    await expect(actionLines.nth(0)).toContainText('编辑');
-    await expect(actionLines.nth(0)).toContainText('箱唛');
-    await expect(actionLines.nth(1)).toContainText('发货');
-    await expect(actionLines.nth(1)).toContainText('回退');
-    await expect(actionLines.nth(1).getByRole('button', { name: '删除订单' })).toBeVisible();
+    const topActions = row.locator('.order-ops-cell .row-actions-cell.is-top');
+    const bottomActions = row.locator('.order-ops-cell .row-actions-cell.is-bottom');
+    await expect(topActions).toHaveCount(3);
+    await expect(bottomActions).toHaveCount(3);
+    await expect(topActions.nth(0)).toContainText('详情');
+    await expect(topActions.nth(1)).toContainText('编辑');
+    await expect(topActions.nth(2)).toContainText('箱唛');
+    await expect(bottomActions.nth(0)).toContainText('发货');
+    await expect(bottomActions.nth(1)).toContainText('回退');
+    await expect(bottomActions.nth(2).getByRole('button', { name: '删除订单' })).toBeVisible();
     await expect(page.locator('.orders-table-desktop')).not.toContainText(`SF-HIDDEN-${stamp}`);
     await expect(row.locator('.order-expand-toggle')).toHaveCount(0);
 
@@ -292,7 +294,7 @@ test('已发货订单可在列表撤销发货，退回待发货并保留物流�
   }
 });
 
-test('订单没有附件和备注时列表收起对应列与卡片区块', async ({ page }) => {
+test('订单没有附件时只收起附件列，备注常驻可点击添加', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const orderNo = `E2E-EMPTY-EXTRA-${Date.now()}`;
   const orderId = await seedOrder(page, orderNo);
@@ -304,14 +306,64 @@ test('订单没有附件和备注时列表收起对应列与卡片区块', async
     await expect(row).toBeVisible();
     const head = page.locator('.orders-data-table thead');
     await expect(head).not.toContainText('附件');
-    await expect(head).not.toContainText('备注');
+    await expect(head).toContainText('备注');
     await expect(row.locator('.order-attachment-cell')).toHaveCount(0);
-    await expect(row.locator('.order-remark-cell')).toHaveCount(0);
+    await expect(row.locator('.order-remark-cell')).toContainText('点击添加');
 
     await page.setViewportSize({ width: 390, height: 844 });
     const card = page.locator('.orders-card-list .order-card', { hasText: orderNo }).first();
     await expect(card).toBeVisible();
-    await expect(card.locator('.order-card-extra')).toHaveCount(0);
+    await expect(card.locator('.order-card-extra')).toContainText('点击添加');
+    await expect(card.locator('.order-extra-files')).toHaveCount(0);
+  } finally {
+    await page.request.delete(`/api/orders/${orderId}`);
+  }
+});
+
+test('点击备注用小弹窗直接编辑并保存', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const orderNo = `E2E-REMARK-${Date.now()}`;
+  const orderId = await seedOrder(page, orderNo);
+  try {
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
+    await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(orderNo);
+    const row = page.locator('.orders-table-desktop tbody tr', { hasText: orderNo }).first();
+    await expect(row.locator('.order-remark-cell')).toContainText('点击添加');
+    await row.getByRole('button', { name: `编辑订单${orderNo}备注` }).click();
+
+    const dialog = page.getByRole('dialog', { name: new RegExp(`订单备注.*${orderNo}`) });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel('备注内容').fill('加急单，周五前发出');
+    await dialog.getByRole('button', { name: '保存备注' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(row.locator('.order-remark-cell')).toContainText('加急单，周五前发出');
+
+    await row.getByRole('button', { name: `编辑订单${orderNo}备注` }).click();
+    const reopened = page.getByRole('dialog', { name: new RegExp(`订单备注.*${orderNo}`) });
+    await expect(reopened.getByLabel('备注内容')).toHaveValue('加急单，周五前发出');
+    await reopened.getByRole('button', { name: '取消' }).click();
+  } finally {
+    await page.request.delete(`/api/orders/${orderId}`);
+  }
+});
+
+test('点击总箱数打开箱唛编辑与打印', async ({ page }) => {
+  await page.setViewportSize({ width: 1680, height: 900 });
+  const orderNo = `E2E-BOX-${Date.now()}`;
+  const orderId = await seedOrder(page, orderNo);
+  try {
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
+    await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(orderNo);
+    const row = page.locator('.orders-table-desktop tbody tr', { hasText: orderNo }).first();
+    await row.getByRole('button', { name: `编辑或打印订单${orderNo}箱唛` }).click();
+
+    const dialog = page.getByRole('dialog', { name: new RegExp(`箱唛编辑.*${orderNo}`) });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('button', { name: '预览并打印' })).toBeVisible();
+    await dialog.getByRole('button', { name: '关闭' }).click();
+    await expect(dialog).toBeHidden();
   } finally {
     await page.request.delete(`/api/orders/${orderId}`);
   }

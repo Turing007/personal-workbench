@@ -128,6 +128,14 @@ function parseSettlementType(value: unknown): string | undefined {
   return value;
 }
 
+function parseOrderChannel(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (value !== 'online' && value !== 'offline') {
+    throw new ApiError(400, 'VALIDATION_ERROR', '订单渠道必须是线上或线下', 'channel');
+  }
+  return value;
+}
+
 function parseOrderInput(value: unknown, options: { allowEmptyOrderNo?: boolean } = {}): CreateOrderInput {
   const body = asRecord(value);
   if (!Array.isArray(body.items)) throw new ApiError(400, 'VALIDATION_ERROR', '订单至少需要一行产品', 'items');
@@ -160,6 +168,7 @@ function parseOrderInput(value: unknown, options: { allowEmptyOrderNo?: boolean 
     paymentNote: optionalText(body.paymentNote, 'paymentNote', '付款备注'),
     orderDetail: optionalText(body.orderDetail, 'orderDetail', '订单详情'),
     remark: optionalText(body.remark, 'remark', '订单备注'),
+    channel: parseOrderChannel(body.channel ?? body.order_channel),
     settlementType: parseSettlementType(body.settlementType ?? body.settlement_type),
     companyId: optionalId(body.companyId ?? body.company_id, 'companyId'),
     orderAttachments: parseRequirementAttachments(body.orderAttachments, 'orderAttachments'),
@@ -279,6 +288,7 @@ export async function registerOrderRoutes(app: FastifyInstance, options: OrderRo
       const query = request.query as Record<string, string | undefined>;
       return sendSuccess(reply, service.list({
         status: query.status,
+        channel: parseOrderChannel(query.channel),
         q: query.q,
         query: query.query,
         page: query.page ? Number(query.page) : undefined,

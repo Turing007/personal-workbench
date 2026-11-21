@@ -130,6 +130,8 @@ export interface CreateOrderInput {
   paymentNote?: string;
   orderDetail?: string;
   remark?: string;
+  /** 订单渠道：online 线上 / offline 线下；旧接口不传时由服务层默认 online。 */
+  channel?: string;
   /** 结算方式：corporate 对公（需开票）/ personal 对私（免开票），历史订单默认 corporate */
   settlementType?: string;
   /** 收款/开票公司；对公订单新建时必填，历史订单可为空 */
@@ -147,6 +149,7 @@ export type UpdateOrderInput = CreateOrderInput;
 
 export interface OrderListFilters {
   status?: string;
+  channel?: string;
   query?: string;
   q?: string;
   page?: number;
@@ -865,9 +868,9 @@ export class DatabaseRepositories {
           (customer_id, customer_name, customer_contact_name, customer_contact_phone, customer_shipping_info,
            order_no, ordered_at, recipient_name, recipient_info, amount, amount_cents, shipping_cents,
            logistics_cost_cents, label_cost_cents, other_cost_cents, other_cost_note, cost_confirmed,
-           tracking_no, payment_note, order_detail, remark, status, source_sales_document_id, settlement_type,
+           tracking_no, payment_note, order_detail, remark, status, channel, source_sales_document_id, settlement_type,
            company_id, created_at, updated_at, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
           .run(
             input.customerId ?? null,
@@ -892,6 +895,7 @@ export class DatabaseRepositories {
             input.orderDetail ?? '',
             input.remark ?? '',
             status,
+            input.channel ?? 'offline',
             input.sourceSalesDocumentId ?? null,
             settlementType,
             input.companyId ?? null,
@@ -987,7 +991,7 @@ export class DatabaseRepositories {
     const timestamp = now();
     const settlementType = input.settlementType === 'personal' ? 'personal' : 'corporate';
     return withTransaction(this.database, (database) => {
-      const existing = database.prepare(`SELECT id, order_detail, logistics_cost_cents, label_cost_cents, other_cost_cents, other_cost_note, cost_confirmed
+      const existing = database.prepare(`SELECT id, order_detail, channel, logistics_cost_cents, label_cost_cents, other_cost_cents, other_cost_note, cost_confirmed
         FROM orders WHERE id = ?`).get(orderId) as Record<string, unknown> | undefined;
       if (!existing) return undefined;
       const previousItems = database.prepare(`SELECT id, name, sku, specification, pack_count, quantity, remark, label_requirement,
@@ -1012,7 +1016,7 @@ export class DatabaseRepositories {
             customer_shipping_info = ?, order_no = ?, ordered_at = ?,
             recipient_name = ?, recipient_info = ?, amount = ?, amount_cents = ?, shipping_cents = ?,
             logistics_cost_cents = ?, label_cost_cents = ?, other_cost_cents = ?, other_cost_note = ?, cost_confirmed = ?,
-            tracking_no = ?, payment_note = ?, order_detail = ?, remark = ?, settlement_type = ?, company_id = ?, updated_at = ? WHERE id = ?`,
+            tracking_no = ?, payment_note = ?, order_detail = ?, remark = ?, channel = ?, settlement_type = ?, company_id = ?, updated_at = ? WHERE id = ?`,
         )
         .run(
           input.customerId ?? null,
@@ -1036,6 +1040,7 @@ export class DatabaseRepositories {
           input.paymentNote ?? '',
           input.orderDetail ?? '',
           input.remark ?? '',
+          input.channel ?? String(existing.channel ?? 'offline'),
           settlementType,
           input.companyId ?? null,
           timestamp,
@@ -1336,6 +1341,10 @@ export class DatabaseRepositories {
     if (filters.status) {
       conditions.push('o.status = ?');
       values.push(filters.status);
+    }
+    if (filters.channel) {
+      conditions.push('o.channel = ?');
+      values.push(filters.channel);
     }
     if (query) {
       conditions.push(`(

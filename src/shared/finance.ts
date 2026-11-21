@@ -1,3 +1,5 @@
+import type { OrderChannel } from './domain.js';
+
 export type FinancePaymentStatus = 'unpaid' | 'partial' | 'paid' | 'overpaid';
 export type FinanceProofStatus = 'none' | 'pending' | 'approved' | 'rejected';
 export type PaymentProofStatus = 'pending' | 'approved' | 'rejected' | 'void';
@@ -131,6 +133,8 @@ export interface FinanceListFilters {
   customerName?: string;
   /** 按订单月份筛选，格式 YYYY-MM；为空表示不限 */
   month?: string;
+  /** 订单渠道；为空表示不限 */
+  channel?: OrderChannel;
   paymentStatus?: FinancePaymentStatus;
   proofStatus?: FinanceProofStatus;
   invoiceStatus?: InvoiceStatus;
@@ -203,6 +207,8 @@ export interface FinanceProofListRow extends PaymentProofRecord {
 
 export interface FinanceProofListFilters {
   month?: string;
+  /** 订单渠道；为空表示不限 */
+  channel?: OrderChannel;
   companyId?: number | 'unassigned';
   status?: PaymentProofStatus;
   companyIds?: number[];

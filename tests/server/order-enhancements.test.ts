@@ -1148,3 +1148,38 @@ describe('临时客户开单与系统产品直选', () => {
     database.close();
   });
 });
+
+describe('订单渠道', () => {
+  it('新建默认线上，显式线下；列表按渠道过滤；编辑可改渠道', async () => {
+    const { app, database } = await makeContext();
+    const online = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput({ orderNo: 'SO-CH-ONLINE' }) });
+    expect(online.statusCode).toBe(201);
+    expect(online.json().data.channel).toBe('online');
+
+    const offline = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput({ orderNo: 'SO-CH-OFFLINE', channel: 'offline' }) });
+    expect(offline.statusCode).toBe(201);
+    expect(offline.json().data.channel).toBe('offline');
+    const offlineId = Number(offline.json().data.id);
+
+    const onlineList = await app.inject({ method: 'GET', url: '/api/orders?channel=online&pageSize=200' });
+    expect(onlineList.json().data.rows.map((row: { order_no: string }) => row.order_no)).toContain('SO-CH-ONLINE');
+    expect(onlineList.json().data.rows.map((row: { order_no: string }) => row.order_no)).not.toContain('SO-CH-OFFLINE');
+
+    const moved = await app.inject({
+      method: 'PUT',
+      url: `/api/orders/${offlineId}`,
+      payload: orderInput({ orderNo: 'SO-CH-OFFLINE', channel: 'online' }),
+    });
+    expect(moved.statusCode).toBe(200);
+    expect(moved.json().data.channel).toBe('online');
+
+    const offlineList = await app.inject({ method: 'GET', url: '/api/orders?channel=offline&pageSize=200' });
+    expect(offlineList.json().data.rows.map((row: { order_no: string }) => row.order_no)).not.toContain('SO-CH-OFFLINE');
+
+    const invalid = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput({ orderNo: 'SO-CH-INVALID', channel: 'unknown' }) });
+    expect(invalid.statusCode).toBe(400);
+
+    await app.close();
+    database.close();
+  });
+});

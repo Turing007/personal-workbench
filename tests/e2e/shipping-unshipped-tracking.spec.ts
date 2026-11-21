@@ -13,7 +13,7 @@ test.beforeEach(async ({ context }) => {
 });
 
 /** 建一单（新建后是待备货），需要发货时再推进到待发货。 */
-async function seedOrder(page: Page, stamp: number) {
+async function seedOrder(page: Page, stamp: number, channel?: 'online' | 'offline') {
   const customer = await (await page.request.post('/api/customers', {
     data: { name: `E2E发货${stamp}`, contactName: '发货联系人', contactPhone: '13900000002', shippingInfo: '杭州市西湖区' },
   })).json();
@@ -21,6 +21,7 @@ async function seedOrder(page: Page, stamp: number) {
     data: {
       orderNo: '',
       orderedAt: new Date().toISOString(),
+      channel,
       customerId: customer.data.id,
       recipientName: '发货联系人',
       recipientInfo: '杭州市西湖区',
@@ -72,6 +73,34 @@ test.describe('发货工作区收待发货订单', () => {
     } finally {
       await page.request.delete(`/api/orders/${orderId}`);
       await page.request.delete(`/api/customers/${customerId}`);
+    }
+  });
+
+  test('发货工作区按渠道筛选待发货订单', async ({ page }) => {
+    const stamp = Date.now();
+    const online = await seedOrder(page, stamp, 'online');
+    const offline = await seedOrder(page, stamp + 1, 'offline');
+    try {
+      await advanceToShipPending(page, online.orderId);
+      await advanceToShipPending(page, offline.orderId);
+      await openShipping(page);
+
+      const channelSelect = page.getByRole('combobox', { name: '订单渠道筛选' });
+      await expect(page.locator('.shipping-available-order', { hasText: online.orderNo })).toBeVisible();
+      await expect(page.locator('.shipping-available-order', { hasText: offline.orderNo })).toBeVisible();
+
+      await channelSelect.selectOption('online');
+      await expect(page.locator('.shipping-available-order', { hasText: online.orderNo })).toBeVisible();
+      await expect(page.locator('.shipping-available-order', { hasText: offline.orderNo })).toHaveCount(0);
+
+      await channelSelect.selectOption('offline');
+      await expect(page.locator('.shipping-available-order', { hasText: offline.orderNo })).toBeVisible();
+      await expect(page.locator('.shipping-available-order', { hasText: online.orderNo })).toHaveCount(0);
+    } finally {
+      await page.request.delete(`/api/orders/${online.orderId}`);
+      await page.request.delete(`/api/orders/${offline.orderId}`);
+      await page.request.delete(`/api/customers/${online.customerId}`);
+      await page.request.delete(`/api/customers/${offline.customerId}`);
     }
   });
 

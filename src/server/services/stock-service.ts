@@ -12,9 +12,9 @@ export const MISSING_SUPPLIER_GROUP_TITLE = '未填供应商';
 export class StockPreparationService {
   constructor(private readonly repository: StockRepository) {}
 
-  /** 生成备货表：date 为 null 时汇总全部待备货订单。 */
-  getPreparation(date: string | null): StockPreparation {
-    return buildPreparation(this.repository.listPendingStockItems(date ?? undefined), date);
+  /** 生成备货表：date 为 null 时汇总全部待备货订单；channel 为空表示全部渠道。 */
+  getPreparation(date: string | null, channel?: string): StockPreparation {
+    return buildPreparation(this.repository.listPendingStockItems(date ?? undefined, channel), date);
   }
 }
 

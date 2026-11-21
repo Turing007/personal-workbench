@@ -15,6 +15,7 @@ import {
   canTransition,
   getTransitionError,
   isDraftStatus,
+  normalizeOrderChannel,
   type OrderStatus,
   type TransitionReason,
 } from '../../shared/domain.js';
@@ -194,7 +195,7 @@ export class OrderService {
     this.fileStore = options.fileStore;
   }
 
-  list(filters: { status?: string; query?: string; q?: string; page?: number; pageSize?: number } = {}) {
+  list(filters: { status?: string; channel?: string; query?: string; q?: string; page?: number; pageSize?: number } = {}) {
     return this.repositories.listOrders({
       ...filters,
       status: filters.status ? normalizeAnyOrderStatus(filters.status) : undefined,
@@ -233,7 +234,7 @@ export class OrderService {
 
   async create(input: CreateOrderInput) {
     const isDraft = Boolean(input.isDraft);
-    const normalized = this.defaultCompany(this.normalizeInput(input));
+    const normalized = this.defaultCompany(this.normalizeInput({ ...input, channel: normalizeOrderChannel(input.channel, 'online') }));
     let withCustomerProducts: CreateOrderInput | undefined;
     try {
       withCustomerProducts = await this.validateCustomerProductReferences(normalized, true, undefined, { draft: isDraft });
@@ -252,13 +253,15 @@ export class OrderService {
     const isDraft = input.isDraft === undefined ? wasDraft : Boolean(input.isDraft);
     const previousCompanyId = previous?.company_id == null ? null : Number(previous.company_id);
     const previousSettlementType = previous?.settlement_type === 'personal' ? 'personal' : 'corporate';
+    const previousChannel = normalizeOrderChannel(previous?.channel, 'offline');
     // 旧手机端不传 companyId：沿用原公司，不能把它当成“清空公司”。
     const nextCompanyId = input.companyId === undefined ? previousCompanyId : input.companyId;
+    const nextChannel = input.channel === undefined ? previousChannel : normalizeOrderChannel(input.channel, previousChannel);
     const locks = this.repositories.getOrderFinanceLocks(orderId);
     if (previousCompanyId !== nextCompanyId && (locks.hasReceipt || locks.hasValidInvoice)) {
       throw new Error('已有入账水单或有效发票，不能修改收款/开票公司；请先作废相关记录');
     }
-    const normalized = this.normalizeInput({ ...input, companyId: nextCompanyId });
+    const normalized = this.normalizeInput({ ...input, companyId: nextCompanyId, channel: nextChannel });
     const previousPaths = this.getOrderRequirementPaths(orderId);
     // 编辑保存时把订单里已验证过的客户产品附件带回，命中后直接复用，避免每次保存都重新复制一份。
     const existingRequirementAttachments = this.repositories.listOrderContracts(orderId)
@@ -373,6 +376,7 @@ export class OrderService {
       paymentNote: String(detail.payment_note ?? ''),
       orderDetail: String(detail.order_detail ?? ''),
       remark: String(detail.remark ?? ''),
+      channel: String(detail.channel ?? 'offline'),
       settlementType: String(detail.settlement_type ?? 'corporate'),
       companyId: detail.company_id == null ? null : Number(detail.company_id),
       items: items.map((item) => ({

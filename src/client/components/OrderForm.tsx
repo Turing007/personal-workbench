@@ -12,6 +12,7 @@ import { calculateFreightCents, calculateOrderLineAmountCents, calculateOrderTot
 import { dateInputValue, dateOnlyValue } from '../../shared/date-input';
 import { extractRecipientName } from '../order-recipient';
 import { ORDER_SETTLEMENT_LABELS, isSettlementType, type OrderSettlementType } from '../../shared/settlement';
+import { ORDER_CHANNEL_LABELS, type OrderChannel } from '../../shared/domain';
 import type { Company } from '../../shared/companies';
 import type { Customer, CustomerProduct as CustomerProductRecord, CustomerProductAttachment, CustomerProductSaveInput, CustomerSaveInput } from '../../shared/customers';
 import ImagePasteUpload, { type ImageAttachment } from './ImagePasteUpload';
@@ -114,6 +115,8 @@ export interface OrderDraft {
   customerContactName?: string;
   customerContactPhone?: string;
   customerShippingInfo?: string;
+  /** 订单渠道：online 线上 / offline 线下；新建时由当前页签决定。 */
+  channel?: OrderChannel;
   /** 结算方式：corporate 对公（需开票）/ personal 对私（无需开票）。新建默认对私，历史订单按各自已存的值显示。 */
   settlementType?: OrderSettlementType;
   /** 收款/开票公司；对公订单必选，历史订单可能为空。 */
@@ -148,6 +151,8 @@ export interface OrderDraft {
 
 export interface OrderFormProps {
   value?: Partial<OrderDraft>;
+  /** 新建订单时由当前订单页签决定渠道。 */
+  defaultChannel?: OrderChannel;
   customers: Customer[];
   companies?: Company[];
   onSubmit: (value: OrderDraft) => void;
@@ -176,9 +181,9 @@ function makeItem(product?: CustomerProductRecord): OrderItemDraft {
   return { id: `item-${Date.now()}-${Math.random().toString(16).slice(2)}`, customerProductId: product?.id ?? null, productId: product?.systemProductId == null ? undefined : String(product.systemProductId), name: product?.name ?? '', sku: product?.sku ?? '', specification: product?.specification ?? '', quantity: 1, packSize, boxes: 1, unitPriceCents, amountCents: unitPriceCents, freightPerBoxCents: product?.freightPerBoxCents ?? 0, machineCostCents: product?.costPriceCents ?? null, batteryCostCents: product?.batteryCostCents ?? null, chargerCostCents: product?.chargerCostCents ?? null, packagingCostCents: product?.packagingCostCents ?? null, accessoryCostCents: product?.accessoryCostCents ?? null, otherCostCents: product?.otherCostCents ?? null, costConfirmed: Boolean(product?.costConfirmed), remark: product?.remark ?? '', labelRequirement: product?.labelRequirement ?? '', imageRelativePath: product?.imageRelativePath ?? null, customerProductAttachments: product?.attachments ?? [] };
 }
 
-function defaultDraft(value: Partial<OrderDraft> | undefined): OrderDraft {
+function defaultDraft(value: Partial<OrderDraft> | undefined, defaultChannel: OrderChannel): OrderDraft {
   return {
-    orderNo: value?.orderNo ?? '', orderNoAuto: value?.orderNoAuto ?? (!value?.id && !value?.orderNo), orderedAt: dateOnlyValue(value?.orderedAt ?? dateInputValue()), customerId: value?.customerId ?? null, customerName: value?.customerName ?? '', customerContactName: value?.customerContactName ?? '', customerContactPhone: value?.customerContactPhone ?? '', customerShippingInfo: value?.customerShippingInfo ?? '', settlementType: isSettlementType(value?.settlementType) ? value.settlementType : 'personal', companyId: value?.companyId ?? null, companyName: value?.companyName ?? '', orderDetail: value?.orderDetail ?? '', orderDetailImages: value?.orderDetailImages ?? [], recipientName: value?.recipientName ?? '', recipientInfo: value?.recipientInfo ?? '', amount: value?.amount ?? '', shippingCents: value?.shippingCents ?? 0, logisticsCostCents: value?.logisticsCostCents ?? null, labelCostCents: value?.labelCostCents ?? null, otherCostCents: value?.otherCostCents ?? null, otherCostNote: value?.otherCostNote ?? '', costConfirmed: value?.costConfirmed ?? false, trackingNo: value?.trackingNo ?? '', paymentNote: value?.paymentNote ?? '', paymentProofs: value?.paymentProofs ?? [], remark: value?.remark ?? '', items: value?.items ?? [], contracts: value?.contracts ?? [], deletedContractIds: value?.deletedContractIds ?? [], status: value?.status ?? 'pending_stock', id: value?.id,
+    orderNo: value?.orderNo ?? '', orderNoAuto: value?.orderNoAuto ?? (!value?.id && !value?.orderNo), orderedAt: dateOnlyValue(value?.orderedAt ?? dateInputValue()), customerId: value?.customerId ?? null, customerName: value?.customerName ?? '', customerContactName: value?.customerContactName ?? '', customerContactPhone: value?.customerContactPhone ?? '', customerShippingInfo: value?.customerShippingInfo ?? '', channel: value?.channel ?? defaultChannel, settlementType: isSettlementType(value?.settlementType) ? value.settlementType : 'personal', companyId: value?.companyId ?? null, companyName: value?.companyName ?? '', orderDetail: value?.orderDetail ?? '', orderDetailImages: value?.orderDetailImages ?? [], recipientName: value?.recipientName ?? '', recipientInfo: value?.recipientInfo ?? '', amount: value?.amount ?? '', shippingCents: value?.shippingCents ?? 0, logisticsCostCents: value?.logisticsCostCents ?? null, labelCostCents: value?.labelCostCents ?? null, otherCostCents: value?.otherCostCents ?? null, otherCostNote: value?.otherCostNote ?? '', costConfirmed: value?.costConfirmed ?? false, trackingNo: value?.trackingNo ?? '', paymentNote: value?.paymentNote ?? '', paymentProofs: value?.paymentProofs ?? [], remark: value?.remark ?? '', items: value?.items ?? [], contracts: value?.contracts ?? [], deletedContractIds: value?.deletedContractIds ?? [], status: value?.status ?? 'pending_stock', id: value?.id,
   };
 }
 
@@ -196,8 +201,8 @@ function customerAttachmentLabel(category: string): string {
   return category === 'label' ? '标贴文件' : category === 'instruction' ? '说明书文件' : category === 'packaging' ? '打包文件' : '客户产品附件';
 }
 
-export default function OrderForm({ value, customers, companies = [], onSubmit, onCancel, onSaveDraft, onSaveCustomerProduct, onCreateCustomer, submitLabel = '保存订单', onGetNextOrderNumber }: OrderFormProps) {
-  const [draft, setDraft] = useState<OrderDraft>(() => defaultDraft(value));
+export default function OrderForm({ value, defaultChannel = 'offline', customers, companies = [], onSubmit, onCancel, onSaveDraft, onSaveCustomerProduct, onCreateCustomer, submitLabel = '保存订单', onGetNextOrderNumber }: OrderFormProps) {
+  const [draft, setDraft] = useState<OrderDraft>(() => defaultDraft(value, defaultChannel));
   const companyAutoFilled = useRef(false);
   const [shippingInput, setShippingInput] = useState(() => ((value?.shippingCents ?? 0) / 100).toFixed(2));
   const [shippingOverridden, setShippingOverridden] = useState(Boolean(value?.id));
@@ -535,6 +540,18 @@ export default function OrderForm({ value, customers, companies = [], onSubmit, 
           }}>
             <option value="corporate">{ORDER_SETTLEMENT_LABELS.corporate}（需要开票）</option>
             <option value="personal">{ORDER_SETTLEMENT_LABELS.personal}（无需开票）</option>
+          </select></label>
+          <label style={labelStyle}>订单渠道<select aria-label="订单渠道" title={draft.id ? '改渠道只影响订单在线上/线下列表中的归类，不会改动财务数据' : '新建订单的渠道由当前页签决定'} style={controlStyle} value={draft.channel ?? defaultChannel} disabled={!draft.id} onChange={(event) => {
+            const current = draft.channel ?? 'offline';
+            const next: OrderChannel = event.target.value === 'online' ? 'online' : 'offline';
+            if (next !== current && !window.confirm('改渠道只影响订单在线上/线下列表中的归类，不会改动财务数据。确定继续吗？')) {
+              event.target.value = current;
+              return;
+            }
+            update('channel', next);
+          }}>
+            <option value="online">{ORDER_CHANNEL_LABELS.online}订单</option>
+            <option value="offline">{ORDER_CHANNEL_LABELS.offline}订单</option>
           </select></label>
           {(draft.settlementType ?? 'personal') !== 'personal' && <label style={labelStyle}>收款/开票公司<select aria-label="收款/开票公司" style={controlStyle} value={draft.companyId ?? ''} onChange={(event) => {
             const companyId = event.target.value ? Number(event.target.value) : null;

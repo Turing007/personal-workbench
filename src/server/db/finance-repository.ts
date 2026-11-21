@@ -323,6 +323,10 @@ export class FinanceRepository {
       conditions.push("substr(o.ordered_at, 1, 7) = ?");
       values.push(month);
     }
+    if (filters.channel) {
+      conditions.push('o.channel = ?');
+      values.push(filters.channel);
+    }
     const query = (filters.query ?? filters.orderNo ?? filters.customerName)?.trim();
     if (query) {
       const like = `%${query}%`;
@@ -416,6 +420,10 @@ export class FinanceRepository {
       conditions.push('substr(COALESCE(p.payment_date, p.created_at), 1, 7) = ?');
       values.push(month);
     }
+    if (filters.channel) {
+      conditions.push('o.channel = ?');
+      values.push(filters.channel);
+    }
     const query = filters.query?.trim();
     if (query) {
       conditions.push('(o.order_no LIKE ? OR o.customer_name LIKE ? OR p.payer_name LIKE ?)');
@@ -500,17 +508,23 @@ export class FinanceRepository {
     return (this.database.prepare('SELECT * FROM finance_receipts WHERE order_id = ? ORDER BY received_at DESC, id DESC').all(orderId) as SqlRow[]).map(mapReceipt);
   }
 
-  listPayeeBreakdown(month?: string): PayeeBreakdownRow[] {
+  listPayeeBreakdown(month?: string, channel?: string): PayeeBreakdownRow[] {
     const values: Array<string | number> = [];
     // 与统计卡片的“已收金额”口径一致：按订单下单月份过滤，而不是实际收款月份。
     let join = '';
-    let where = '';
+    const conditions: string[] = [];
     const trimmed = month?.trim();
     if (trimmed) {
       join = 'JOIN orders o ON o.id = finance_receipts.order_id';
-      where = 'WHERE substr(o.ordered_at, 1, 7) = ?';
+      conditions.push('substr(o.ordered_at, 1, 7) = ?');
       values.push(trimmed);
     }
+    if (channel) {
+      join = 'JOIN orders o ON o.id = finance_receipts.order_id';
+      conditions.push('o.channel = ?');
+      values.push(channel);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const rows = this.database.prepare(`
       SELECT COALESCE(NULLIF(finance_receipts.payee_name, ''), '未指定') AS payee_name,
         COUNT(*) AS receipt_count,
@@ -527,14 +541,19 @@ export class FinanceRepository {
   }
 
   /** 财务台账“已收金额 → 按公司”，月份口径与台账一致（下单月份）。 */
-  listCompanyBreakdown(month?: string): CompanyReceiptBreakdownRow[] {
+  listCompanyBreakdown(month?: string, channel?: string): CompanyReceiptBreakdownRow[] {
     const values: Array<string | number> = [UNASSIGNED_COMPANY_NAME];
-    let where = '';
+    const conditions: string[] = [];
     const trimmed = month?.trim();
     if (trimmed) {
-      where = 'WHERE substr(o.ordered_at, 1, 7) = ?';
+      conditions.push('substr(o.ordered_at, 1, 7) = ?');
       values.push(trimmed);
     }
+    if (channel) {
+      conditions.push('o.channel = ?');
+      values.push(channel);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const rows = this.database.prepare(`
       SELECT o.company_id,
         COALESCE(NULLIF(c.full_name, ''), NULLIF(c.short_name, ''), ?) AS company_name,
@@ -560,7 +579,7 @@ export class FinanceRepository {
    * - 已入账/待确认按水单付款日期月份；
    * - 待开票按订单下单月份，金额为应收减去有效发票金额。
    */
-  listCompanyStats(month?: string): CompanyStatsRow[] {
+  listCompanyStats(month?: string, channel?: string): CompanyStatsRow[] {
     const trimmed = month?.trim();
     const receivedValues: Array<string | number> = [];
     const pendingValues: Array<string | number> = [];
@@ -568,23 +587,29 @@ export class FinanceRepository {
     const receivedMonth = trimmed ? 'AND substr(r.received_at, 1, 7) = ?' : '';
     const pendingMonth = trimmed ? 'AND substr(COALESCE(p.payment_date, p.created_at), 1, 7) = ?' : '';
     const invoiceMonth = trimmed ? 'AND substr(o.ordered_at, 1, 7) = ?' : '';
+    const channelSql = channel ? 'AND o.channel = ?' : '';
     if (trimmed) {
       receivedValues.push(trimmed);
       pendingValues.push(trimmed);
       invoiceValues.push(trimmed);
     }
+    if (channel) {
+      receivedValues.push(channel);
+      pendingValues.push(channel);
+      invoiceValues.push(channel);
+    }
     const receivedRows = this.database.prepare(`
       SELECT o.company_id, COUNT(*) AS count, COALESCE(SUM(r.amount_cents), 0) AS amount_cents
       FROM finance_receipts r
       JOIN orders o ON o.id = r.order_id
-      WHERE 1 = 1 ${receivedMonth}
+      WHERE 1 = 1 ${receivedMonth} ${channelSql}
       GROUP BY o.company_id
     `).all(...receivedValues) as SqlRow[];
     const pendingRows = this.database.prepare(`
       SELECT o.company_id, COUNT(*) AS count, COALESCE(SUM(p.amount_cents), 0) AS amount_cents
       FROM payment_proofs p
       JOIN orders o ON o.id = p.order_id
-      WHERE p.status = 'pending' AND p.amount_cents IS NOT NULL ${pendingMonth}
+      WHERE p.status = 'pending' AND p.amount_cents IS NOT NULL ${pendingMonth} ${channelSql}
       GROUP BY o.company_id
     `).all(...pendingValues) as SqlRow[];
     const invoiceRows = this.database.prepare(`
@@ -598,7 +623,7 @@ export class FinanceRepository {
       JOIN orders o ON o.id = f.order_id
       WHERE COALESCE(o.settlement_type, 'corporate') <> 'personal'
         AND f.invoice_status IN ('not_requested', 'incomplete', 'pending_issue')
-        ${invoiceMonth}
+        ${invoiceMonth} ${channelSql}
       GROUP BY o.company_id
     `).all(...invoiceValues) as SqlRow[];
 
@@ -636,7 +661,7 @@ export class FinanceRepository {
   }
 
   /** 水单页快速收集：订单号、客户、收件人模糊匹配，金额按订单金额或未收金额精确匹配。 */
-  lookupOrders(query: string, limit = 10): FinanceOrderLookupRow[] {
+  lookupOrders(query: string, channel?: string, limit = 10): FinanceOrderLookupRow[] {
     const trimmed = query.trim();
     if (!trimmed) return [];
     const like = `%${trimmed}%`;
@@ -647,6 +672,9 @@ export class FinanceRepository {
       conditions.push('(o.amount_cents = ? OR COALESCE(f.outstanding_cents, o.amount_cents) = ?)');
       values.push(amountCents, amountCents);
     }
+    const searchWhere = conditions.join(' OR ');
+    const where = channel ? `(${searchWhere}) AND o.channel = ?` : searchWhere;
+    if (channel) values.push(channel);
     const rows = this.database.prepare(`
       SELECT o.id AS order_id, o.order_no, o.customer_name, o.recipient_name, o.ordered_at AS order_date,
         COALESCE(o.settlement_type, 'corporate') AS settlement_type,
@@ -661,7 +689,7 @@ export class FinanceRepository {
       FROM orders o
       LEFT JOIN order_finance f ON f.order_id = o.id
       LEFT JOIN companies c ON c.id = o.company_id
-      WHERE ${conditions.join(' OR ')}
+      WHERE ${where}
       ORDER BY
         CASE
           WHEN o.order_no = ? THEN 0

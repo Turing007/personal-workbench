@@ -49,6 +49,7 @@ function buildCopyText(preparation: StockPreparation, groups: StockPreparationGr
 export default function StockPage({ onNotify, systemProducts = [] }: StockPageProps) {
   const [scope, setScope] = useState<'date' | 'all'>('date');
   const [date, setDate] = useState(todayISO);
+  const [channel, setChannel] = useState<'all' | import('../../shared/domain').OrderChannel>('all');
   const [preparation, setPreparation] = useState<StockPreparation>();
   const [loading, setLoading] = useState(false);
   const [marking, setMarking] = useState(false);
@@ -60,14 +61,14 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setPreparation(await getStockPreparation(scopeParam));
+      setPreparation(await getStockPreparation(scopeParam, channel === 'all' ? undefined : channel));
       setExpandedKeys(new Set());
     } catch (error) {
       onNotify?.(errorText(error, '备货表加载失败'), 'error');
     } finally {
       setLoading(false);
     }
-  }, [scopeParam, onNotify]);
+  }, [scopeParam, channel, onNotify]);
   useEffect(() => { void load(); }, [load]);
 
   const groups = useMemo(() => preparation?.groups ?? [], [preparation]);
@@ -92,7 +93,7 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
 
   const exportExcel = async () => {
     try {
-      const blob = await exportStockPreparation(scopeParam);
+      const blob = await exportStockPreparation(scopeParam, channel === 'all' ? undefined : channel);
       // App 壳里由原生写进手机「下载」并弹分享；浏览器里回退 blob 链接下载。
       await saveFileOrDownload(blob, `备货表-${scopeParam === 'all' ? '全部待备货' : scopeParam}.xlsx`);
     } catch (error) {
@@ -156,6 +157,7 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
             {scope === 'date' ? '全部' : '按日期'}
           </button>
         </div>
+        <select className="toolbar-select" aria-label="订单渠道筛选" value={channel} onChange={(event) => setChannel(event.target.value as 'all' | import('../../shared/domain').OrderChannel)}><option value="all">全部渠道</option><option value="online">线上订单</option><option value="offline">线下订单</option></select>
         <button className="icon-button" type="button" title="刷新备货表" disabled={loading} onClick={() => void load()}><RefreshCw size={15} /></button>
         <div className="stock-action-row">
           <button className="button button-secondary" type="button" disabled={loading || !groups.length} onClick={() => void exportExcel()}><Download size={14} />导出 Excel</button>
