@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getBatchAdvancePlan, getOrderNextAction, getOrderRollbackAction, isDraftOrder, type BatchAdvanceAction } from '../../src/client/order-workflow';
+import { getBatchAdvancePlan, getOrderNextAction, getOrderRollbackAction, isDraftOrder, type BatchAdvanceAction, type BatchAdvanceOrder } from '../../src/client/order-workflow';
 import type { OrderStatus } from '../../src/client/components/OrderForm';
 
 describe('订单下一步动作', () => {
@@ -41,7 +41,7 @@ describe('订单批量操作分类', () => {
     return { orderNo, status, trackingNo };
   }
 
-  function run(action: BatchAdvanceAction, orders: Array<{ orderNo: string; status: OrderStatus; trackingNo?: string }>) {
+  function run(action: BatchAdvanceAction, orders: BatchAdvanceOrder[]) {
     return getBatchAdvancePlan(orders.map((item) => ({ ...item, trackingNo: item.trackingNo ?? '' })), action);
   }
 
@@ -78,5 +78,14 @@ describe('订单批量操作分类', () => {
       { orderNo: 'SO-2', reason: '缺少物流单号' },
       { orderNo: 'SO-3', reason: '当前状态不支持该操作' },
     ]);
+  });
+
+  it('一键发货要求货款已确认到账，部分付款也跳过', () => {
+    const plan = run('ship', [
+      { ...order('SO-1', 'ship_pending', 'SF123'), amount: '100', financeSummary: { receivableCents: 10000, receivedCents: 0 } },
+      { ...order('SO-2', 'ship_pending', 'SF456'), amount: '100', financeSummary: { receivableCents: 10000, receivedCents: 10000 } },
+    ]);
+    expect(plan.targets.map((target) => [target.order.orderNo, target.steps])).toEqual([['SO-2', ['shipped']]]);
+    expect(plan.skipped).toEqual([{ orderNo: 'SO-1', reason: '未确认收到货款' }]);
   });
 });

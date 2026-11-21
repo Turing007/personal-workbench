@@ -34,7 +34,19 @@ async function makeContext() {
   await registerOrderRoutes(app, orderOptions);
   await registerShippingRoutes(app, { repositories });
   apps.push(app);
-  return { database, app };
+  return { database, repositories, app };
+}
+
+function markPaid(database: ReturnType<typeof openDatabase>, orderId: number): void {
+  const amountCents = Number(database.prepare('SELECT amount_cents FROM orders WHERE id = ?').get(orderId)?.amount_cents ?? 0);
+  const now = new Date().toISOString();
+  database.prepare(
+    `INSERT INTO finance_receipts (order_id, received_at, amount_cents, created_at, updated_at)
+     VALUES (?, '2026-08-10', ?, ?, ?)`,
+  ).run(orderId, amountCents, now, now);
+  database.prepare(
+    `UPDATE order_finance SET received_cents = ?, outstanding_cents = 0, payment_status = 'paid', updated_at = ? WHERE order_id = ?`,
+  ).run(amountCents, now, orderId);
 }
 
 function orderPayload(orderNo: string) {
@@ -62,6 +74,7 @@ describe('发货确认事务', () => {
   it('建批次、写单号、确认发货一次完成', async () => {
     const { database, app } = await makeContext();
     const orderId = await createShipPendingOrder(app, 'SO-SHIP-1');
+    markPaid(database, orderId);
 
     const confirmed = await app.inject({
       method: 'POST',
@@ -80,6 +93,7 @@ describe('发货确认事务', () => {
   it('任一订单不满足发货条件时整批回滚，不留草稿批次', async () => {
     const { database, app } = await makeContext();
     const readyOrderId = await createShipPendingOrder(app, 'SO-SHIP-2');
+    markPaid(database, readyOrderId);
     const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderPayload('SO-SHIP-3') });
     const pendingOrderId = Number(created.json().data.id);
 
@@ -92,6 +106,38 @@ describe('发货确认事务', () => {
     expect(database.prepare('SELECT status FROM orders WHERE id = ?').get(readyOrderId)).toEqual({ status: 'ship_pending' });
     expect(database.prepare('SELECT COUNT(*) AS n FROM shipment_batches').get()).toEqual({ n: 0 });
     expect(database.prepare('SELECT COUNT(*) AS n FROM shipments').get()).toEqual({ n: 0 });
+    database.close();
+  });
+
+  it('未确认收到货款时不能确认发货，也不产生批次', async () => {
+    const { database, app } = await makeContext();
+    const orderId = await createShipPendingOrder(app, 'SO-SHIP-4');
+
+    const failed = await app.inject({
+      method: 'POST',
+      url: '/api/shipping/confirm',
+      payload: { orders: [{ orderId, trackingNo: 'SF10004' }] },
+    });
+    expect(failed.statusCode).toBe(400);
+    expect(failed.json().error.message).toContain('未确认收到货款');
+    expect(database.prepare('SELECT status FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'ship_pending' });
+    expect(database.prepare('SELECT COUNT(*) AS n FROM shipment_batches').get()).toEqual({ n: 0 });
+    expect(database.prepare('SELECT COUNT(*) AS n FROM shipments').get()).toEqual({ n: 0 });
+    database.close();
+  });
+
+  it('全部货款审核入账后才允许发货', async () => {
+    const { database, app } = await makeContext();
+    const orderId = await createShipPendingOrder(app, 'SO-SHIP-5');
+    markPaid(database, orderId);
+
+    const confirmed = await app.inject({
+      method: 'POST',
+      url: '/api/shipping/confirm',
+      payload: { orders: [{ orderId, trackingNo: 'SF10005' }] },
+    });
+    expect(confirmed.statusCode).toBe(201);
+    expect(database.prepare('SELECT status FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'shipped' });
     database.close();
   });
 });

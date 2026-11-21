@@ -398,7 +398,7 @@
 .orders-page .order-extra-files { display: grid; gap: 2px; min-width: 0; }
 .orders-page .order-extra-files a {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 3px;
   min-width: 0;
   color: var(--color-accent);
@@ -407,7 +407,7 @@
   text-decoration: none;
 }
 .orders-page .order-extra-files a:hover { text-decoration: underline; }
-.orders-page .order-extra-files a span { min-width: 0; overflow-wrap: anywhere; }
+.orders-page .order-extra-files a span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .orders-page .order-remark-full {
   color: var(--erp-text-2);
   font-size: 10.5px;
@@ -520,6 +520,17 @@
   .orders-page .orders-data-table .order-product-cell { width: 322px; overflow: hidden; }
   .orders-page .orders-data-table .order-box-cell { width: 52px; text-align: right; }
   .orders-page .orders-data-table .order-amount-cell { width: 88px; text-align: right; }
+  .orders-page .order-amount-link {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    font-weight: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .orders-page .order-amount-link:hover { text-decoration: underline; }
   .orders-page .orders-data-table .order-status-cell { width: 100px; }
   .orders-page .orders-data-table .order-attachment-cell { width: 115px; overflow: hidden; }
   .orders-page .orders-data-table .order-remark-cell { width: 145px; overflow: hidden; }
@@ -539,7 +550,22 @@
 
   .orders-page .status-sub.is-printed { color: var(--color-accent); cursor: help; }
   .orders-page .status-sub.is-pending { color: var(--color-warning); }
-  .orders-page .order-profit-sub { margin-top: 2px; font-size: 9.5px; line-height: 1.2; white-space: nowrap; }
+  .orders-page .order-profit-sub {
+    display: block;
+    width: 100%;
+    margin-top: 2px;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font-family: inherit;
+    font-weight: inherit;
+    font-size: 9.5px;
+    line-height: 1.2;
+    text-align: right;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .orders-page .order-profit-sub:hover { text-decoration: underline; }
   .orders-page .order-profit-sub.is-profit { color: var(--color-success); }
   .orders-page .order-profit-sub.is-loss,
   .orders-page .order-profit-sub.is-pending { color: var(--color-warning-text); }
@@ -550,6 +576,20 @@
     gap: 4px 6px;
     min-width: 0;
     max-width: 100%;
+  }
+  .orders-page .order-ops-cell .row-actions.is-two-line {
+    display: grid;
+    justify-items: end;
+    gap: 3px;
+    flex-wrap: nowrap;
+  }
+  .orders-page .order-ops-cell .row-actions-line {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 5px;
+    min-width: 0;
+    white-space: nowrap;
   }
 
   .orders-page .order-ops-cell .icon-button {
@@ -935,12 +975,18 @@
 
   .orders-page .order-card-amount {
     flex: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
     color: var(--erp-text);
+    font-family: inherit;
     font-size: 13px;
     font-weight: 650;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+    cursor: pointer;
   }
+  .orders-page .order-card-amount:hover { text-decoration: underline; }
 
   .orders-page .order-card-meta {
     display: flex;
@@ -950,6 +996,14 @@
     font-size: 10.5px;
     line-height: 1.3;
   }
+  .orders-page .order-card-profit-link {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+  }
+  .orders-page .order-card-profit-link:hover { text-decoration: underline; }
 
   .orders-page .order-card-extra {
     display: grid;

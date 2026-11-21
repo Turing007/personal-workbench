@@ -27,6 +27,28 @@ async function seedOrder(page: import('@playwright/test').Page, orderNo: string)
   return Number(order.id ?? order.order_id);
 }
 
+/** 上传并审核一笔水单，让订单满足发货前的全额收款条件；返回水单 ID 供清理。 */
+async function payOrder(page: import('@playwright/test').Page, orderId: number, amountCents: number): Promise<number> {
+  const upload = await page.request.post(`/api/finance/orders/${orderId}/proofs`, {
+    multipart: {
+      file: {
+        name: `proof-${orderId}.png`,
+        mimeType: 'image/png',
+        buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64'),
+      },
+      amountCents: String(amountCents),
+      paymentDate: dateInputValue(),
+      paymentMethod: '银行转账',
+      transactionNo: `TX-${orderId}-${Date.now()}`,
+    },
+  });
+  expect(upload.ok()).toBeTruthy();
+  const proofId = Number((await upload.json()).data.id);
+  const approved = await page.request.post(`/api/finance/proofs/${proofId}/approve`, { data: {} });
+  expect(approved.ok()).toBeTruthy();
+  return proofId;
+}
+
 test('订单展开的产品明细带产品图', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const stamp = Date.now();
@@ -190,6 +212,8 @@ test('订单列表显示附件备注、隐藏物流单号，并可回退误点�
     await expect(page.locator('.orders-data-table thead .order-remark-cell')).toHaveText('备注');
     await expect(row.locator('.order-attachment-cell')).toContainText(attachmentName);
     await expect(row.locator('.order-attachment-cell')).not.toContainText(remark);
+    await expect(row.locator('.order-extra-files a').first()).toHaveAttribute('title', attachmentName);
+    expect(await row.locator('.order-extra-files a span').first().evaluate((element) => getComputedStyle(element).whiteSpace)).toBe('nowrap');
     await expect(row.locator('.order-remark-cell')).toHaveText(remark);
     await expect(row.locator('.order-remark-cell')).not.toContainText(attachmentName);
     const tableWidth = await page.locator('.orders-table-desktop').evaluate((element) => ({
@@ -200,6 +224,14 @@ test('订单列表显示附件备注、隐藏物流单号，并可回退误点�
     await expect(row.locator('.order-extra-files')).toContainText(attachmentName);
     await expect(row.locator('.order-remark-full')).toHaveText(remark);
     await expect(row.locator('.order-status-cell')).toContainText('待发货');
+    const actionLines = row.locator('.order-ops-cell .row-actions-line');
+    await expect(actionLines).toHaveCount(2);
+    await expect(actionLines.nth(0)).toContainText('详情');
+    await expect(actionLines.nth(0)).toContainText('编辑');
+    await expect(actionLines.nth(0)).toContainText('箱唛');
+    await expect(actionLines.nth(1)).toContainText('发货');
+    await expect(actionLines.nth(1)).toContainText('回退');
+    await expect(actionLines.nth(1).getByRole('button', { name: '删除订单' })).toBeVisible();
     await expect(page.locator('.orders-table-desktop')).not.toContainText(`SF-HIDDEN-${stamp}`);
     await expect(row.locator('.order-expand-toggle')).toHaveCount(0);
 
@@ -215,6 +247,7 @@ test('订单列表显示附件备注、隐藏物流单号，并可回退误点�
     await page.setViewportSize({ width: 390, height: 844 });
     const card = page.locator('.orders-card-list .order-card', { hasText: orderNo }).first();
     await expect(card.locator('.order-card-extra')).toContainText(attachmentName);
+    await expect(card.locator('.order-extra-files a').first()).toHaveAttribute('title', attachmentName);
     await expect(card.locator('.order-remark-full')).toHaveText(remark);
     await expect(card).not.toContainText(`SF-HIDDEN-${stamp}`);
     await expect(card.locator('.order-expand-toggle')).toHaveCount(0);
@@ -228,11 +261,13 @@ test('已发货订单可在列表撤销发货，退回待发货并保留物流�
   const stamp = Date.now();
   const orderNo = `E2E-UNSHIP-${stamp}`;
   const orderId = await seedOrder(page, orderNo);
+  let proofId: number | undefined;
   try {
     for (const to of ['stock_reported', 'pending_packing', 'ship_pending']) {
       const advanced = await page.request.post(`/api/orders/${orderId}/status`, { data: { to } });
       expect(advanced.ok()).toBeTruthy();
     }
+    proofId = await payOrder(page, orderId, 10000);
     const shipped = await page.request.post(`/api/orders/${orderId}/status`, { data: { to: 'shipped', trackingNo: `SF-UNDO-${stamp}` } });
     expect(shipped.ok()).toBeTruthy();
 
@@ -252,6 +287,7 @@ test('已发货订单可在列表撤销发货，退回待发货并保留物流�
     expect(saved.status).toBe('ship_pending');
     expect(saved.tracking_no).toBe(`SF-UNDO-${stamp}`);
   } finally {
+    if (proofId != null) await page.request.post(`/api/finance/proofs/${proofId}/void`, { data: { note: 'e2e 清理' } });
     await page.request.delete(`/api/orders/${orderId}`);
   }
 });

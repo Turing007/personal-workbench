@@ -258,6 +258,11 @@ export function deriveFinancePaymentStatus(receivableCents: number, receivedCent
   return 'overpaid';
 }
 
+/** 发货前的收款校验：应收 ≤ 0 视为无需收款；已收达到应收取可发货，超付也算。 */
+export function isOrderPaymentCleared(receivableCents: number, receivedCents: number): boolean {
+  return receivableCents <= 0 || receivedCents >= receivableCents;
+}
+
 export function deriveProofStatus(proofs: Array<Pick<PaymentProofRecord, 'status'> | { status: PaymentProofStatus }>): FinanceProofStatus {
   if (proofs.length === 0) return 'none';
   if (proofs.some((proof) => proof.status === 'pending')) return 'pending';

@@ -1,5 +1,6 @@
 import type { OrderDraft, OrderStatus } from './components/OrderForm';
 import { ORDER_STATUS_LABELS, ORDER_ROLLBACK_TARGETS, type OrderStatus as DomainOrderStatus } from '../shared/domain';
+import { isOrderPaymentCleared } from '../shared/finance';
 
 export type OrderNextAction =
   | { kind: 'advance'; label: string; target: OrderStatus }
@@ -43,8 +44,11 @@ export function isDraftOrder(order: Pick<OrderDraft, 'status'>): boolean {
 
 export type BatchAdvanceAction = 'stock' | 'pack' | 'ship';
 
+export type BatchAdvanceOrder = Pick<OrderDraft, 'id' | 'orderNo' | 'status' | 'trackingNo' | 'labelPrintedAt'>
+  & Partial<Pick<OrderDraft, 'amount' | 'financeSummary'>>;
+
 export interface BatchAdvanceTarget {
-  order: Pick<OrderDraft, 'id' | 'orderNo' | 'status' | 'trackingNo' | 'labelPrintedAt'>;
+  order: BatchAdvanceOrder;
   /** 需要依次推进的状态序列（状态机每次只允许单步推进，不含草稿）。 */
   steps: Array<Exclude<OrderStatus, 'draft'>>;
 }
@@ -61,7 +65,7 @@ export interface BatchAdvancePlan {
  * - 发货：待发货且已填物流单号 → 已发货（缺物流单号的订单跳过）
  */
 export function getBatchAdvancePlan(
-  selected: Array<Pick<OrderDraft, 'id' | 'orderNo' | 'status' | 'trackingNo' | 'labelPrintedAt'>>,
+  selected: BatchAdvanceOrder[],
   action: BatchAdvanceAction,
 ): BatchAdvancePlan {
   const targets: BatchAdvanceTarget[] = [];
@@ -74,8 +78,11 @@ export function getBatchAdvancePlan(
     } else if (action === 'pack' && order.status === 'pending_packing') {
       targets.push({ order, steps: ['ship_pending'] });
     } else if (action === 'ship' && order.status === 'ship_pending') {
-      if (String(order.trackingNo ?? '').trim()) targets.push({ order, steps: ['shipped'] });
-      else skipped.push({ orderNo: order.orderNo, reason: '缺少物流单号' });
+      const receivableCents = order.financeSummary?.receivableCents ?? Math.round(Number(order.amount || 0) * 100);
+      const receivedCents = order.financeSummary?.receivedCents ?? 0;
+      if (!String(order.trackingNo ?? '').trim()) skipped.push({ orderNo: order.orderNo, reason: '缺少物流单号' });
+      else if (!isOrderPaymentCleared(receivableCents, receivedCents)) skipped.push({ orderNo: order.orderNo, reason: '未确认收到货款' });
+      else targets.push({ order, steps: ['shipped'] });
     } else {
       skipped.push({ orderNo: order.orderNo, reason: '当前状态不支持该操作' });
     }

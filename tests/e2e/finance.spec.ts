@@ -102,6 +102,47 @@ test.describe('财务管理工作台', () => {
     }
   });
 
+  test('订单列表点击金额在订单页内打开财务与水单', async ({ page }) => {
+    const stamp = Date.now();
+    const customerResponse = await page.request.post('/api/customers', {
+      data: { name: `E2E收款弹窗客户${stamp}`, contactName: '联系人', contactPhone: '13700000000', shippingInfo: '北京市朝阳区' },
+    });
+    expect(customerResponse.ok()).toBeTruthy();
+    const customer = (await customerResponse.json()).data;
+    const orderResponse = await page.request.post('/api/orders', {
+      data: {
+        orderNo: '',
+        orderedAt: dateInputValue(),
+        customerId: customer.id,
+        recipientName: '联系人',
+        recipientInfo: '北京市朝阳区',
+        amount: 100,
+        items: [{ name: 'E2E收款弹窗产品', sku: `E2E-PAY-${stamp}`, specification: '标准', packagingName: '', packCount: 10, quantity: 10, unitPriceCents: 1000 }],
+      },
+    });
+    expect(orderResponse.ok()).toBeTruthy();
+    const order = (await orderResponse.json()).data;
+    const orderId = Number(order.id ?? order.order_id);
+    try {
+      await page.goto('/');
+      await page.getByRole('button', { name: '订单', exact: true }).click();
+      const row = page.locator('.orders-table-desktop tbody tr', { hasText: String(order.order_no) }).first();
+      await row.getByRole('button', { name: new RegExp(`查看订单${order.order_no}财务与水单`) }).click();
+
+      const dialog = page.getByRole('dialog', { name: new RegExp(`财务与水单.*${order.order_no}`) });
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText('客户水单', { exact: true })).toBeVisible();
+      await expect(dialog.getByRole('button', { name: /上传水单/ })).toBeVisible();
+      // 仍停留在订单页，不跳财务模块
+      await expect(page.locator('.page-breadcrumb', { hasText: '业务 / 订单' })).toBeVisible();
+      await dialog.getByRole('button', { name: '关闭' }).click();
+      await expect(dialog).toBeHidden();
+    } finally {
+      await page.request.delete(`/api/orders/${orderId}`);
+      await page.request.delete(`/api/customers/${customer.id}`);
+    }
+  });
+
   test('客户开票信息自动带入，并可通过“调用客户开票信息”刷新', async ({ page }) => {
     const stamp = Date.now();
     const name = `E2E开票客户${stamp}`;

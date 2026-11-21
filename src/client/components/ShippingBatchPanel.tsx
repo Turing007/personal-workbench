@@ -1,7 +1,8 @@
 import { Clipboard, Send, Trash2, Truck } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { copyText } from '../copy-text';
-import { isUnshippedStatus, ORDER_STATUS_LABELS_WITH_DRAFT, type AnyOrderStatus } from '../../shared/domain';
+import { ORDER_STATUS_LABELS_WITH_DRAFT, type AnyOrderStatus } from '../../shared/domain';
+import { isOrderPaymentCleared } from '../../shared/finance';
 import type { OrderDraft, OrderStatus } from './OrderForm';
 import SearchInput from './SearchInput';
 
@@ -28,6 +29,12 @@ function orderBoxCount(order: OrderDraft): number {
     : order.items.reduce((total, item) => total + item.boxes, 0);
 }
 
+function isOrderPaid(order: OrderDraft): boolean {
+  const receivableCents = order.financeSummary?.receivableCents ?? Math.round(Number(order.amount || 0) * 100);
+  const receivedCents = order.financeSummary?.receivedCents ?? 0;
+  return isOrderPaymentCleared(receivableCents, receivedCents);
+}
+
 function orderKeyOf(order: OrderDraft) { return order.id ?? order.orderNo; }
 
 export default function ShippingBatchPanel({ orders, allOrders = [], onAdd, onRemove, onTrackingChange, onSaveTracking, onClear, onConfirm, onCopy }: ShippingBatchPanelProps) {
@@ -35,7 +42,7 @@ export default function ShippingBatchPanel({ orders, allOrders = [], onAdd, onRe
   const [savingKeys, setSavingKeys] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const [mobilePane, setMobilePane] = useState<'queue' | 'batch'>('queue');
-  const eligible = allOrders.filter((order) => isUnshippedStatus(order.status) && !orders.some((item) => item.id === order.id));
+  const eligible = allOrders.filter((order) => order.status === 'ship_pending' && !orders.some((item) => item.id === order.id));
   const visibleEligible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return eligible;
@@ -46,6 +53,7 @@ export default function ShippingBatchPanel({ orders, allOrders = [], onAdd, onRe
   const ready = orders.filter((order) => order.status === 'ship_pending');
   const waiting = orders.length - ready.length;
   const missingTracking = ready.filter((order) => !order.trackingNo.trim());
+  const unpaid = ready.filter((order) => !isOrderPaid(order));
   const totalBoxes = orders.reduce((total, order) => total + orderBoxCount(order), 0);
   const markDirty = (key: string, dirty: boolean) => setDirtyKeys((current) => (dirty ? [...new Set([...current, key])] : current.filter((item) => item !== key)));
 
@@ -77,14 +85,14 @@ export default function ShippingBatchPanel({ orders, allOrders = [], onAdd, onRe
 
   return <div className="shipping-workspace">
     <div className="shipping-mobile-tabs" role="tablist" aria-label="发货工作区切换">
-      <button type="button" role="tab" aria-selected={mobilePane === 'queue'} className={mobilePane === 'queue' ? 'is-active' : undefined} onClick={() => setMobilePane('queue')}>未发货 <b>{eligible.length}</b></button>
+      <button type="button" role="tab" aria-selected={mobilePane === 'queue'} className={mobilePane === 'queue' ? 'is-active' : undefined} onClick={() => setMobilePane('queue')}>待发货 <b>{eligible.length}</b></button>
       <button type="button" role="tab" aria-selected={mobilePane === 'batch'} className={mobilePane === 'batch' ? 'is-active' : undefined} onClick={() => setMobilePane('batch')}>当前批次 <b>{orders.length}</b></button>
     </div>
 
     <section className={`shipping-available${mobilePane === 'queue' ? ' is-mobile-active' : ''}`}>
       <div className="shipping-pane-head">
-        <strong>未发货订单</strong>
-        <span className="shipping-pane-count">{eligible.length} 条可加入</span>
+        <strong>待发货订单</strong>
+        <span className="shipping-pane-count">{eligible.length} 条待发货</span>
       </div>
       <div className="shipping-available-search">
         <SearchInput value={query} onChange={setQuery} placeholder="搜索订单号、客户、收件人" />
@@ -95,13 +103,14 @@ export default function ShippingBatchPanel({ orders, allOrders = [], onAdd, onRe
             <div className="shipping-available-line">
               <strong className="shipping-order-number">{order.orderNo}</strong>
               <span className={`badge ${order.status === 'ship_pending' ? 'badge-warning' : 'badge-neutral'}`}>{ORDER_STATUS_LABELS_WITH_DRAFT[order.status as AnyOrderStatus] ?? order.status}</span>
+              {order.status === 'ship_pending' && !isOrderPaid(order) && <span className="badge badge-danger">未收款</span>}
             </div>
             <div className="shipping-order-recipient">{order.recipientName || '未填收件人'}</div>
             <div className="shipping-order-address">{order.recipientInfo || '未填收件信息'}</div>
           </div>
           <button type="button" className="button button-secondary button-sm shipping-add-button" onClick={() => addOrder(order)}>加入批次</button>
         </div>)}
-        {!visibleEligible.length && <div className="empty-state">{query.trim() ? '没有匹配的未发货订单' : '暂无可加入的未发货订单'}</div>}
+        {!visibleEligible.length && <div className="empty-state">{query.trim() ? '没有匹配的待发货订单' : '暂无可加入的待发货订单'}</div>}
       </div>
     </section>
 
@@ -123,6 +132,7 @@ export default function ShippingBatchPanel({ orders, allOrders = [], onAdd, onRe
               <strong className="shipping-order-number">{order.orderNo} · {order.recipientName}</strong>
               <span className="shipping-order-address">{order.recipientInfo || '未填收件信息'}</span>
               <span className={`shipping-order-box-count${shippable ? '' : ' is-waiting'}`}>{orderBoxCount(order)} 箱 · {shippable ? '待发货' : `${ORDER_STATUS_LABELS_WITH_DRAFT[order.status as AnyOrderStatus] ?? order.status}，只能先存单号`}</span>
+              {shippable && !isOrderPaid(order) && <span className="badge badge-danger">未收款</span>}
             </div>
             <input className="input shipping-tracking-input" aria-label={`${order.orderNo}物流单号`} value={order.trackingNo} onChange={(event) => { onTrackingChange(key, event.target.value); markDirty(key, true); }} onBlur={() => { if (dirty) void saveTracking(order); }} placeholder="回填物流单号" />
             <div className="shipping-batch-actions">
@@ -131,7 +141,7 @@ export default function ShippingBatchPanel({ orders, allOrders = [], onAdd, onRe
             </div>
           </div>;
         })}
-        {!orders.length && <div className="shipping-batch-empty"><Truck size={18} />从左侧「未发货订单」加入批次</div>}
+        {!orders.length && <div className="shipping-batch-empty"><Truck size={18} />从左侧「待发货订单」加入批次</div>}
       </div>
       <div className="shipping-sheet">
         <div className="shipping-sheet-head"><strong>发货表</strong><button type="button" className="button button-secondary button-sm" onClick={() => { void copyText(text); onCopy?.(text); }} disabled={!orders.length}><Clipboard size={13} />复制</button></div>
@@ -139,8 +149,9 @@ export default function ShippingBatchPanel({ orders, allOrders = [], onAdd, onRe
       </div>
       <div className="shipping-confirm-actions">
         {missingTracking.length > 0 && <span className="notice notice-warning">还有 {missingTracking.length} 单未填写物流单号</span>}
+        {unpaid.length > 0 && <span className="notice notice-warning">{unpaid.length} 单未确认收到货款，需先在订单金额里上传并审核水单</span>}
         {waiting > 0 && <span className="notice notice-warning">{waiting} 单未到「待发货」，本次不确认发货</span>}
-        <button type="button" className="button button-primary" disabled={!ready.length || missingTracking.length > 0} onClick={onConfirm}><Send size={14} />确认批次发货</button>
+        <button type="button" className="button button-primary" disabled={!ready.length || missingTracking.length > 0 || unpaid.length > 0} onClick={onConfirm}><Send size={14} />确认批次发货</button>
       </div>
     </section>
   </div>;

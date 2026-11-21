@@ -6,7 +6,7 @@ import { normalizeAccessoryPrices } from '../../shared/accessory-prices.js';
 import type { PackagingSourceRow } from '../../shared/packaging-presets.js';
 import { OrderNumberService } from '../services/order-number-service.js';
 import { autoPack, type PackedBox } from '../../shared/packing.js';
-import { calculateOutstandingCents, deriveFinancePaymentStatus } from '../../shared/finance.js';
+import { calculateOutstandingCents, deriveFinancePaymentStatus, isOrderPaymentCleared } from '../../shared/finance.js';
 import { DEFAULT_PRODUCT_IMAGE_CATEGORY } from '../../shared/product-image-categories.js';
 import { normalizeProductStatus, type ProductStatus } from '../../shared/product-status.js';
 import { mapStoredPurchaseQuotes, normalizePurchaseQuotes, purchaseQuoteMirror } from '../../shared/product-purchase-quotes.js';
@@ -1703,6 +1703,14 @@ export class DatabaseRepositories {
     return { ...batch, orders };
   }
 
+  private assertShipmentPaymentCleared(order: Record<string, unknown>): void {
+    const receivableCents = Number(order.finance_receivable_cents ?? order.amount_cents ?? 0);
+    const receivedCents = Number(order.finance_received_cents ?? 0);
+    if (!isOrderPaymentCleared(receivableCents, receivedCents)) {
+      throw new Error(`订单 ${String(order.order_no ?? '')} 未确认收到货款，不能发货；请先上传并审核水单`);
+    }
+  }
+
   confirmShipment(batchId: number): void {
     const timestamp = now();
     withTransaction(this.database, (database) => {
@@ -1710,9 +1718,12 @@ export class DatabaseRepositories {
       if (!batch) throw new Error('发货批次不存在');
       const orders = database
         .prepare(
-          `SELECT sbo.*, o.order_no, o.status, o.recipient_info,
+          `SELECT sbo.*, o.order_no, o.status, o.recipient_info, o.amount_cents,
+            f.receivable_cents AS finance_receivable_cents, f.received_cents AS finance_received_cents,
             COALESCE((SELECT MAX(cl.total_boxes) FROM carton_labels cl WHERE cl.order_id = o.id), 0) AS total_boxes
-           FROM shipment_batch_orders sbo JOIN orders o ON o.id = sbo.order_id WHERE sbo.batch_id = ? ORDER BY sbo.sort_order`,
+           FROM shipment_batch_orders sbo JOIN orders o ON o.id = sbo.order_id
+           LEFT JOIN order_finance f ON f.order_id = o.id
+           WHERE sbo.batch_id = ? ORDER BY sbo.sort_order`,
         )
         .all(batchId);
       if (!orders.length) throw new Error('发货批次没有订单');
@@ -1723,6 +1734,7 @@ export class DatabaseRepositories {
       );
       orders.forEach((order) => {
         if (order.status !== 'ship_pending') throw new Error(`订单 ${order.order_no} 当前不可发货`);
+        this.assertShipmentPaymentCleared(order);
         insertShipment.run(order.order_id, String(order.tracking_no), timestamp, Math.max(1, Number(order.total_boxes)), String(order.recipient_info ?? ''));
         database.prepare('UPDATE orders SET tracking_no = ?, status = \'shipped\', updated_at = ? WHERE id = ?').run(order.tracking_no, timestamp, order.order_id);
       });
@@ -1741,9 +1753,10 @@ export class DatabaseRepositories {
           .run(`BATCH-${timestamp.replace(/[-:TZ.]/g, '').slice(0, 14)}-${randomUUID().slice(0, 8)}`, timestamp),
       );
       const selectOrder = database.prepare(
-        `SELECT o.id, o.order_no, o.status, o.recipient_info,
+        `SELECT o.id, o.order_no, o.status, o.recipient_info, o.amount_cents,
+          f.receivable_cents AS finance_receivable_cents, f.received_cents AS finance_received_cents,
           COALESCE((SELECT MAX(cl.total_boxes) FROM carton_labels cl WHERE cl.order_id = o.id), 0) AS total_boxes
-         FROM orders o WHERE o.id = ?`,
+         FROM orders o LEFT JOIN order_finance f ON f.order_id = o.id WHERE o.id = ?`,
       );
       const insertBatchOrder = database.prepare('INSERT INTO shipment_batch_orders (batch_id, order_id, tracking_no, sort_order) VALUES (?, ?, ?, ?)');
       const insertShipment = database.prepare(
@@ -1756,6 +1769,7 @@ export class DatabaseRepositories {
         if (order.status !== 'ship_pending') throw new Error(`订单 ${order.order_no} 当前不可发货`);
         const trackingNo = entry.trackingNo.trim();
         if (!trackingNo) throw new Error(`订单 ${order.order_no} 缺少物流单号`);
+        this.assertShipmentPaymentCleared(order);
         insertBatchOrder.run(batchId, entry.orderId, trackingNo, index);
         insertShipment.run(entry.orderId, trackingNo, timestamp, Math.max(1, Number(order.total_boxes)), String(order.recipient_info ?? ''));
         updateOrder.run(trackingNo, timestamp, entry.orderId);

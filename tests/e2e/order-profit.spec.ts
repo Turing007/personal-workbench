@@ -117,3 +117,43 @@ test('订单详情显示成本快照和毛利，成本编辑器可补录整单�
     await page.request.delete(`/api/customers/${customerId}`);
   }
 });
+
+test('订单列表点成本待补可直接补录并保存成本', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const stamp = Date.now();
+  const orderNo = `SO-COST-QUICK-${stamp}`;
+  const created = await page.request.post('/api/orders', {
+    data: {
+      orderNo,
+      orderedAt: dateInputValue(),
+      recipientName: '成本弹窗收件人',
+      recipientInfo: '成本弹窗收件人 13800000000 深圳市南山区',
+      items: [{ name: 'E2E快捷成本产品', sku: `COST-${stamp}`, specification: '标准', packagingName: '彩盒', packCount: 10, quantity: 10, unitPriceCents: 1000 }],
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+  const orderId = Number((await created.json()).data.id);
+  try {
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
+    await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(orderNo);
+    const row = page.locator('.orders-table-desktop tbody tr', { hasText: orderNo }).first();
+    const profitButton = row.getByRole('button', { name: `补录或调整订单${orderNo}成本` });
+    await expect(profitButton).toContainText('成本待补');
+    await profitButton.click();
+
+    const costDialog = page.getByRole('dialog', { name: new RegExp(`成本与利润.*${orderNo}`) });
+    await expect(costDialog).toBeVisible();
+    await expect(costDialog.getByText('产品单件成本', { exact: true })).toBeVisible();
+    await costDialog.getByLabel('机头单件成本').fill('1');
+    page.on('dialog', (dialog) => void dialog.accept());
+    await costDialog.locator('.order-item-cost-editor .order-cost-confirm input[type="checkbox"]').check();
+    await costDialog.locator('.order-cost-editor .order-cost-confirm input[type="checkbox"]').check();
+    await costDialog.getByRole('button', { name: '保存成本' }).click();
+    await expect(costDialog).toBeHidden();
+
+    await expect(page.locator('.orders-table-desktop tbody tr', { hasText: orderNo }).first().locator('.order-profit-sub')).toContainText('毛利 ¥90.00');
+  } finally {
+    await page.request.delete(`/api/orders/${orderId}`);
+  }
+});

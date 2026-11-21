@@ -12,7 +12,7 @@ test.beforeEach(async ({ context }) => {
   await injectSession(context, sessionCookie);
 });
 
-/** 建一单未发货订单（新建后状态是待备货，远早于「待发货」）。 */
+/** 建一单（新建后是待备货），需要发货时再推进到待发货。 */
 async function seedOrder(page: Page, stamp: number) {
   const customer = await (await page.request.post('/api/customers', {
     data: { name: `E2E发货${stamp}`, contactName: '发货联系人', contactPhone: '13900000002', shippingInfo: '杭州市西湖区' },
@@ -38,16 +38,23 @@ async function openShipping(page: Page) {
   await page.locator('.sidebar-nav').getByRole('button', { name: '发货', exact: true }).click();
 }
 
-test.describe('发货工作区收未发货订单', () => {
-  test('待备货订单能加入批次并单独保存物流单号，刷新后单号还在', async ({ page }) => {
+async function advanceToShipPending(page: Page, orderId: number) {
+  for (const to of ['stock_reported', 'pending_packing', 'ship_pending']) {
+    const advanced = await page.request.post(`/api/orders/${orderId}/status`, { data: { to } });
+    expect(advanced.ok()).toBeTruthy();
+  }
+}
+
+test.describe('发货工作区收待发货订单', () => {
+  test('待发货订单能加入批次并保存物流单号，刷新后单号还在', async ({ page }) => {
     const stamp = Date.now();
     const { customerId, orderId, orderNo } = await seedOrder(page, stamp);
     try {
+      await advanceToShipPending(page, orderId);
       await openShipping(page);
       const available = page.locator('.shipping-available-order', { hasText: orderNo });
       await expect(available).toBeVisible();
-      // 状态徽标显示真实阶段，不再假装它是待发货
-      await expect(available.getByText('待备货')).toBeVisible();
+      await expect(available.getByText('待发货')).toBeVisible();
       await available.getByRole('button', { name: '加入批次' }).click();
 
       const trackingInput = page.getByRole('textbox', { name: `${orderNo}物流单号` });
@@ -58,10 +65,6 @@ test.describe('发货工作区收未发货订单', () => {
       await trackingInput.fill(`SF${stamp}`);
       await trackingInput.blur();
       expect((await patchResponse).status()).toBe(200);
-
-      // 未到「待发货」的单不能确认发货，但单号已经存住
-      await expect(page.getByText('1 单未到「待发货」，本次不确认发货')).toBeVisible();
-      await expect(page.getByRole('button', { name: '确认批次发货' })).toBeDisabled();
 
       await openShipping(page);
       await page.locator('.shipping-available-order', { hasText: orderNo }).getByRole('button', { name: '加入批次' }).click();
@@ -76,10 +79,7 @@ test.describe('发货工作区收未发货订单', () => {
     const stamp = Date.now();
     const { customerId, orderId, orderNo } = await seedOrder(page, stamp);
     try {
-      for (const to of ['stock_reported', 'pending_packing', 'ship_pending']) {
-        const advanced = await page.request.post(`/api/orders/${orderId}/status`, { data: { to } });
-        expect(advanced.ok()).toBeTruthy();
-      }
+      await advanceToShipPending(page, orderId);
 
       await page.goto('/');
       await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
@@ -91,7 +91,14 @@ test.describe('发货工作区收未发货订单', () => {
       await expect(page.getByText('发货工作区', { exact: true })).toBeVisible();
       // 不再按单跳转：没有自动塞入批次（无物流单号输入框），订单仍留在可加入列表里
       await expect(page.getByRole('textbox', { name: `${orderNo}物流单号` })).toHaveCount(0);
-      await expect(page.locator('.shipping-available-order', { hasText: orderNo }).getByRole('button', { name: '加入批次' })).toBeVisible();
+      const available = page.locator('.shipping-available-order', { hasText: orderNo });
+      await expect(available.getByRole('button', { name: '加入批次' })).toBeVisible();
+
+      // 未确认收到货款：可以准备批次，但不能确认发货
+      await available.getByRole('button', { name: '加入批次' }).click();
+      await expect(page.locator('.shipping-batch-order', { hasText: orderNo })).toContainText('未收款');
+      await expect(page.getByText(/未确认收到货款/)).toBeVisible();
+      await expect(page.getByRole('button', { name: '确认批次发货' })).toBeDisabled();
     } finally {
       await page.request.delete(`/api/orders/${orderId}`);
       await page.request.delete(`/api/customers/${customerId}`);

@@ -246,6 +246,47 @@ describe('订单号基础设施', () => {
     database.close();
   });
 
+  it('确认收到全部货款后才能把订单推进到已发货', async () => {
+    const { app, database } = await makeContext();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      payload: orderInput({ items: [{ name: '收款校验产品', sku: 'VT-PAY', specification: '标准', packagingName: '彩盒包装', packCount: 10, quantity: 10, unitPriceCents: 1000 }] }),
+    });
+    const orderId = Number(created.json().data.id);
+    for (const to of ['stock_reported', 'pending_packing', 'ship_pending']) {
+      const advanced = await app.inject({ method: 'POST', url: `/api/orders/${orderId}/status`, payload: { to } });
+      expect(advanced.statusCode).toBe(200);
+    }
+
+    const blocked = await app.inject({
+      method: 'POST',
+      url: `/api/orders/${orderId}/status`,
+      payload: { to: 'shipped', trackingNo: 'SF-PAY-GUARD' },
+    });
+    expect(blocked.statusCode).toBe(400);
+    expect(blocked.json().error.message).toContain('未确认收到货款');
+
+    const amountCents = Number(database.prepare('SELECT amount_cents FROM orders WHERE id = ?').get(orderId)?.amount_cents ?? 0);
+    const now = new Date().toISOString();
+    database.prepare(
+      `INSERT INTO finance_receipts (order_id, received_at, amount_cents, created_at, updated_at)
+       VALUES (?, '2026-08-10', ?, ?, ?)`,
+    ).run(orderId, amountCents, now, now);
+    database.prepare(
+      `UPDATE order_finance SET received_cents = ?, outstanding_cents = 0, payment_status = 'paid', updated_at = ? WHERE order_id = ?`,
+    ).run(amountCents, now, orderId);
+
+    const shipped = await app.inject({
+      method: 'POST',
+      url: `/api/orders/${orderId}/status`,
+      payload: { to: 'shipped', trackingNo: 'SF-PAY-GUARD' },
+    });
+    expect(shipped.statusCode).toBe(200);
+    expect(database.prepare('SELECT status FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'shipped' });
+    database.close();
+  });
+
   it('新建订单直接进入待备货，打印箱唛只记录提醒不改变状态', async () => {
     const { app, database } = await makeContext();
     const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput() });
@@ -463,6 +504,28 @@ describe('订单号基础设施', () => {
     expect(changedProduct.statusCode).toBe(200);
     const unchangedOrder = await app.inject({ method: 'GET', url: `/api/orders/${orderId}/detail` });
     expect(unchangedOrder.json().data.items[0].remark).toBe('标贴：外箱右上角贴客户标贴；说明书：每箱放一份中文版说明书；打包：每 12 个装一箱，使用客户彩盒');
+
+    // 编辑保存不能把客户产品附件再复制一份；原文件和订单快照都要保留。
+    const updated = await app.inject({
+      method: 'PUT',
+      url: `/api/orders/${orderId}`,
+      payload: orderInput({
+        orderNo: created.json().data.order_no,
+        customerId,
+        items: [{
+          customerProductId,
+          name: '',
+          sku: '',
+          specification: '',
+          quantity: 12,
+          unitPriceCents: undefined,
+        }],
+      }),
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().data.contracts).toEqual([expect.objectContaining({ category: 'label', original_name: '客户标贴.pdf', relative_path: copiedPath })]);
+    expect(database.prepare('SELECT relative_path FROM order_contracts WHERE order_id = ?').all(orderId)).toEqual([{ relative_path: copiedPath }]);
+    await expect(fileStore.readFile(copiedPath)).resolves.toEqual(Buffer.from('customer label file'));
 
     const deleted = await app.inject({ method: 'DELETE', url: `/api/orders/${orderId}` });
     expect(deleted.statusCode).toBe(200);

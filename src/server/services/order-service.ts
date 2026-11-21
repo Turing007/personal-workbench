@@ -1,11 +1,12 @@
 import type { Readable } from 'node:stream';
-import type { DatabaseRepositories, CreateOrderInput, UpdateOrderInput } from '../db/repositories.js';
+import type { DatabaseRepositories, CreateOrderInput, UpdateOrderInput, OrderAttachmentInput } from '../db/repositories.js';
 import { CustomerProductRepository } from '../db/customer-product-repository.js';
 import { CustomerRepository } from '../db/customer-repository.js';
 import type { CompanyRepository } from '../db/company-repository.js';
 import { FileStore } from '../files/file-store.js';
 import { calculateLineAmountCents } from '../../shared/money.js';
 import { calculateOrderAmountCents } from '../../shared/order-prices.js';
+import { isOrderPaymentCleared } from '../../shared/finance.js';
 import type { CustomerProduct, CustomerSaveInput } from '../../shared/customers.js';
 
 import {
@@ -259,10 +260,29 @@ export class OrderService {
     }
     const normalized = this.normalizeInput({ ...input, companyId: nextCompanyId });
     const previousPaths = this.getOrderRequirementPaths(orderId);
+    // 编辑保存时把订单里已验证过的客户产品附件带回，命中后直接复用，避免每次保存都重新复制一份。
+    const existingRequirementAttachments = this.repositories.listOrderContracts(orderId)
+      .filter((attachment) => String(attachment.relative_path ?? '').startsWith('order-item-requirements/'))
+      .map((attachment): OrderAttachmentInput => ({
+        category: (REQUIREMENT_CATEGORIES.has(String(attachment.category)) ? String(attachment.category) : 'other') as OrderAttachmentInput['category'],
+        sourceCustomerProductId: attachment.source_customer_product_id == null ? null : Number(attachment.source_customer_product_id),
+        relativePath: String(attachment.relative_path ?? ''),
+        originalName: String(attachment.original_name ?? ''),
+        mimeType: String(attachment.mime_type ?? ''),
+        size: Number(attachment.size_bytes ?? 0),
+      }));
+    const existingAttachmentPaths = new Set(existingRequirementAttachments.map((attachment) => attachment.relativePath));
+    const normalizedWithAttachments: CreateOrderInput = {
+      ...normalized,
+      orderAttachments: [
+        ...existingRequirementAttachments,
+        ...(normalized.orderAttachments ?? []).filter((attachment) => !existingAttachmentPaths.has(attachment.relativePath)),
+      ],
+    };
     let withCustomerProducts: CreateOrderInput | undefined;
     let updated;
     try {
-      withCustomerProducts = await this.validateCustomerProductReferences(normalized, false, new Set(previousPaths), { draft: isDraft });
+      withCustomerProducts = await this.validateCustomerProductReferences(normalizedWithAttachments, false, new Set(previousPaths), { draft: isDraft });
       this.validateInput(withCustomerProducts, { draft: isDraft });
       const nextSettlementType = withCustomerProducts.settlementType === 'personal' ? 'personal' : 'corporate';
       if (locks.hasValidInvoice && nextSettlementType !== previousSettlementType) {
@@ -391,6 +411,14 @@ export class OrderService {
     const error = getTransitionError(from, to, { reason, trackingNo: nextTrackingNo });
     if (error || !canTransition(from, to, { reason, trackingNo: nextTrackingNo })) {
       throw new Error(error ?? '订单状态不能推进');
+    }
+    if (to === 'shipped') {
+      const finance = this.repositories.getOrderFinanceSummary(orderId);
+      const receivableCents = Number(finance?.receivable_cents ?? order.amount_cents ?? 0);
+      const receivedCents = Number(finance?.received_cents ?? 0);
+      if (!isOrderPaymentCleared(receivableCents, receivedCents)) {
+        throw new Error(`订单尚未确认收到货款（已收 ¥${(receivedCents / 100).toFixed(2)} / 应收 ¥${(receivableCents / 100).toFixed(2)}），不能发货`);
+      }
     }
 
     const changed = to === 'shipped'

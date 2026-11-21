@@ -75,8 +75,7 @@ import {
   confirmShippingDirect,
 } from './api';
 import type { ApiOrderDetail, ApiOrderRow, AuthUser } from './api';
-import { isUnshippedStatus } from '../shared/domain';
-import type { PaymentProofStatus } from '../shared/finance';
+import { isOrderPaymentCleared, type PaymentProofStatus } from '../shared/finance';
 
 function createId(prefix: string) { return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 
@@ -735,6 +734,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
         .map((item) => selected.find((order) => order.orderNo === item.orderNo))
         .filter((order): order is OrderDraft => Boolean(order))
       : [];
+    const unpaidSkipped = action === 'ship' ? plan.skipped.filter((item) => item.reason === '未确认收到货款') : [];
     if (!plan.targets.length && !untrackedOrders.length) {
       const reason = plan.skipped.length ? plan.skipped[0].reason : '当前状态不支持该操作';
       notify(`所选订单没有可批量${actionLabels[action]}的订单（${reason}）`, 'error');
@@ -746,6 +746,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     if (action === 'pack') lines.push(`确定对 ${plan.targets.length} 单执行“批量打包”吗？`, '打包：已备货/待打包 → 完成打包，推进到待发货');
     if (action === 'ship' && plan.targets.length) lines.push(`确定对 ${plan.targets.length} 单执行“批量发货”吗？`, '发货：待发货 → 已发货');
     if (untrackedOrders.length) lines.push(`另有 ${untrackedOrders.length} 单未填物流单号，${plan.targets.length ? '发货后将' : '将'}打开发货工作区补录。`);
+    if (unpaidSkipped.length) lines.push(`另有 ${unpaidSkipped.length} 单未确认收到货款，需先在订单金额里上传并审核水单。`);
     if (unprintedCount) lines.push(`注意：其中 ${unprintedCount} 单尚未打印箱唛（仅作提醒，不阻止流程）`);
     if (!window.confirm(lines.join('\n'))) return;
     let advanced = 0;
@@ -762,6 +763,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     if (plan.targets.length) {
       const parts = [`批量${actionLabels[action]}完成：成功 ${advanced} 单`];
       if (untrackedOrders.length) parts.push(`${untrackedOrders.length} 单转入发货工作区补录物流单号`);
+      if (unpaidSkipped.length) parts.push(`${unpaidSkipped.length} 单未确认收到货款`);
       if (failed.length) {
         notify(`${parts.join('，')}；失败 ${failed.length} 单：${failed.slice(0, 3).join('、')}${failed.length > 3 ? '等' : ''}`, 'error');
       } else {
@@ -827,8 +829,8 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     } catch (error) { notify((error as { message?: string }).message ?? '打印记录失败', 'error'); throw error; }
   };
 
-  // 发货工作区收所有未发货订单：还没推进到「待发货」的也能进来提前录物流单号。
-  const shippingOrders = useMemo(() => orders.filter((order) => isUnshippedStatus(order.status)), [orders]);
+  // 发货工作区只收待发货订单；订单列表点「发货」后会出现在这里。
+  const shippingOrders = useMemo(() => orders.filter((order) => order.status === 'ship_pending'), [orders]);
   const updateTracking = (id: string, value: string) => setOrders((current) => current.map((order) => orderKey(order) === id ? { ...order, trackingNo: value } : order));
   const saveShippingTracking = async (id: string, value: string) => {
     try {
@@ -844,6 +846,15 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     const ready = batch.filter((order) => order.status === 'ship_pending');
     if (!ready.length) {
       notify('批次里还没有可确认发货的订单：需先把状态推进到「待发货」，物流单号可以先保存', 'error');
+      return;
+    }
+    const unpaid = ready.filter((order) => {
+      const receivableCents = order.financeSummary?.receivableCents ?? Math.round(Number(order.amount || 0) * 100);
+      const receivedCents = order.financeSummary?.receivedCents ?? 0;
+      return !isOrderPaymentCleared(receivableCents, receivedCents);
+    });
+    if (unpaid.length) {
+      notify(`有 ${unpaid.length} 单未确认收到货款，请先在订单金额里上传并审核水单`, 'error');
       return;
     }
     try {
