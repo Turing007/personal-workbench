@@ -331,7 +331,7 @@
 /* 订单列表产品速览：桌面与手机卡片共用基础排版 */
 .orders-page .order-product-quick-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: stretch;
   gap: 6px;
   width: 100%;
@@ -348,11 +348,12 @@
 
 .orders-page .order-product-quick-card {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  align-items: start;
-  gap: 5px;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0;
   min-width: 0;
-  padding: 4px;
+  overflow: hidden;
+  padding: 0;
   border: 1px solid var(--erp-border);
   border-radius: var(--radius-ui);
   background: var(--erp-surface);
@@ -361,11 +362,9 @@
 .orders-page .order-product-quick-thumb {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 52px;
+  height: 52px;
   overflow: hidden;
-  border: 1px solid var(--erp-border);
-  border-radius: var(--radius-ui);
   background: var(--erp-surface-muted);
   color: var(--erp-muted);
 }
@@ -376,12 +375,16 @@
   object-fit: cover;
 }
 
+.orders-page .order-product-quick-thumb.is-empty { background: var(--erp-surface-muted); }
+
 .orders-page .order-product-quick-card:hover { border-color: var(--color-accent); }
 
 .orders-page .order-product-quick-copy {
   display: grid;
-  gap: 1px;
+  align-content: center;
+  gap: 2px;
   min-width: 0;
+  padding: 4px 6px 4px 7px;
   line-height: 1.25;
 }
 
@@ -389,7 +392,7 @@
   display: -webkit-box;
   overflow: hidden;
   color: var(--erp-text);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.25;
   -webkit-box-orient: vertical;
@@ -401,7 +404,7 @@
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--erp-muted);
-  font-size: 9.5px;
+  font-size: 10.5px;
   line-height: 1.35;
   white-space: normal;
 }

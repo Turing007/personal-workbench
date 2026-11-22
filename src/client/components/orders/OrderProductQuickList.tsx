@@ -29,10 +29,10 @@ export default function OrderProductQuickList({ order, onOpen, className }: Orde
     {order.items.length ? order.items.map((item) => {
       const imageUrl = productImageUrl(item);
       return <span className="order-product-quick-card" key={item.id}>
-        <span className="order-product-quick-thumb">
+        <span className={`order-product-quick-thumb${imageUrl ? '' : ' is-empty'}`}>
           {imageUrl
             ? <img src={thumbUrl(imageUrl, 240)} alt={`${item.name || '产品'}图片`} loading="lazy" decoding="async" />
-            : <Package size={16} aria-hidden="true" />}
+            : <Package size={20} aria-hidden="true" />}
         </span>
         <span className="order-product-quick-copy">
           <strong>{item.name || '未填产品'}</strong>

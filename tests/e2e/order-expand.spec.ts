@@ -96,7 +96,11 @@ test('订单展开的产品明细带产品图', async ({ page }) => {
     await expect(desktopSpec).toHaveText('12V 100Ah 高频纯正弦波 * 2');
     expect(await desktopSpec.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
     await expect(productCell.locator('.order-product-quick-thumb img')).toHaveAttribute('src', /\/api\/thumbs\/240\//);
-    expect(await productCell.locator('.order-product-quick-list').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(3);
+    expect(await productCell.locator('.order-product-quick-list').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2);
+    expect(await productCell.locator('.order-product-quick-thumb').first().evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.width >= 48 && Math.abs(rect.width - rect.height) < 0.5;
+    })).toBe(true);
     await productCell.locator('.order-product-quick-list').click();
     const productDialog = page.getByRole('dialog', { name: /产品明细/ });
     await expect(productDialog).toContainText(`E2E展开带图${stamp}`);
