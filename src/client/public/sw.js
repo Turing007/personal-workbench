@@ -4,7 +4,8 @@
  *  - 应用外壳（/、manifest、图标）：预缓存，导航请求网络优先、断网回退外壳；
  *  - /assets/ 带 hash 的静态资源、/icons/：缓存优先；
  *  - /api/ GET：网络优先并缓存成功响应，断网时回退最近一次数据（只读查看）；
- *  - /files/ 附件：缓存优先（凭证、图片基本不变），未命中走网络并回填。
+ *  - /files/ 附件：缓存优先（凭证、图片基本不变），未命中走网络并回填；
+ *    但顶层导航不接管，直接交给浏览器（PDF 由浏览器内置查看器或已安装扩展处理）。
  * 所有缓存只写 ok 响应，避免把 401（未登录）结果缓存成“永久打不开”。
  */
 const SHELL_CACHE = 'workbench-shell';
@@ -57,6 +58,9 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (url.pathname.startsWith('/files/') || url.pathname.startsWith('/assets/') || url.pathname.startsWith('/icons/')) {
+    // 顶层导航放给浏览器：SW 缓存优先会让附件导航绕开浏览器的网址重定向，
+    // 已安装的 PDF 扩展（如快照打印）就接管不到 PDF，只能落到内置查看器。
+    if (request.mode === 'navigate') return;
     event.respondWith((async () => {
       const cached = await caches.match(request);
       if (cached) return cached;
