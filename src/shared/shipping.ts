@@ -162,22 +162,20 @@ export function groupShippingOrders<T extends ShippingGroupableOrder>(
 
 export interface ShippingSheetEntry {
   boxes: number;
-  quantity: number;
 }
 
 /**
- * 发货表一行：箱数按订单拆解，不合并成总数。
- * 例：2箱 + 3箱 + 5箱 100件 张三 13800000000 广东省深圳市
+ * 发货表一行：箱数按订单拆解，不合并成总数；只带箱数和收件信息。
+ * 例：2箱 + 3箱 + 5箱 张三 13800000000 广东省深圳市
  */
 export function buildShippingSheetLine(input: {
   recipientName?: string;
   recipientInfo?: string;
   entries: ShippingSheetEntry[];
 }): string {
-  const active = input.entries.filter((entry) => entry.quantity > 0 && entry.boxes > 0);
+  const active = input.entries.filter((entry) => entry.boxes > 0);
   if (!active.length) return '';
   const boxText = active.map((entry) => `${Math.max(1, Math.trunc(entry.boxes))}箱`).join(' + ');
-  const pieces = active.reduce((sum, entry) => sum + Math.max(0, Math.trunc(entry.quantity)), 0);
   const recipient = String(input.recipientInfo ?? '').trim() || String(input.recipientName ?? '').trim();
-  return `${boxText} ${pieces}件${recipient ? ` ${recipient}` : ''}`;
+  return `${boxText}${recipient ? ` ${recipient}` : ''}`;
 }

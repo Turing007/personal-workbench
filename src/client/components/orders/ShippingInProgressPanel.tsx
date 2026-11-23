@@ -37,7 +37,6 @@ interface OrderSelection {
   order: OrderDraft;
   selectedItems: SelectedItem[];
   boxes: number;
-  pieces: number;
 }
 
 interface GroupView {
@@ -49,9 +48,7 @@ interface GroupView {
   activeSelections: OrderSelection[];
   entries: PartialShipmentEntryInput[];
   boxChain: string;
-  pieceChain: string;
   totalBoxes: number;
-  totalPieces: number;
   unpaidOrders: OrderDraft[];
   invalidReason: string;
   invalid: boolean;
@@ -123,17 +120,15 @@ export default function ShippingInProgressPanel({ orders, query, onSaveTracking,
       const selections = group.orders.map((order) => {
         const selected = quantities[orderKeyOf(order)] ?? {};
         let boxes = 0;
-        let pieces = 0;
         const selectedItems: SelectedItem[] = [];
         for (const item of order.items) {
           const quantity = Math.min(remainingQuantity(item), Math.max(0, Math.trunc(Number(selected[item.id] ?? 0))));
           if (quantity <= 0) continue;
           const itemBoxes = boxesForQuantity(quantity, item.packSize);
           boxes += itemBoxes;
-          pieces += quantity;
           selectedItems.push({ item, quantity, boxes: itemBoxes });
         }
-        return { order, selectedItems, boxes, pieces };
+        return { order, selectedItems, boxes };
       });
       const activeSelections = selections.filter((selection) => selection.selectedItems.length > 0);
       const entries: PartialShipmentEntryInput[] = activeSelections
@@ -144,9 +139,7 @@ export default function ShippingInProgressPanel({ orders, query, onSaveTracking,
           items: selection.selectedItems.map(({ item, quantity }) => ({ orderItemId: Number(item.id), quantity })),
         }));
       const totalBoxes = activeSelections.reduce((sum, selection) => sum + selection.boxes, 0);
-      const totalPieces = activeSelections.reduce((sum, selection) => sum + selection.pieces, 0);
       const boxChain = activeSelections.map((selection) => `${selection.boxes}箱`).join(' + ');
-      const pieceChain = activeSelections.map((selection) => `${selection.pieces}件`).join(' + ');
       const unpaidOrders = activeSelections.filter((selection) => !isOrderPaid(selection.order)).map((selection) => selection.order);
       const reasons: string[] = [];
       if (!activeSelections.length) reasons.push('本次未选数量');
@@ -161,16 +154,14 @@ export default function ShippingInProgressPanel({ orders, query, onSaveTracking,
         activeSelections,
         entries,
         boxChain,
-        pieceChain,
         totalBoxes,
-        totalPieces,
         unpaidOrders,
         invalidReason: reasons.join('；'),
         invalid: reasons.length > 0 || entries.length === 0,
         sheetLine: buildShippingSheetLine({
           recipientName: group.recipientName,
           recipientInfo: group.recipientInfo,
-          entries: selections.map((selection) => ({ boxes: selection.boxes, quantity: selection.pieces })),
+          entries: activeSelections.map((selection) => ({ boxes: selection.boxes })),
         }),
       };
     });
@@ -334,7 +325,7 @@ export default function ShippingInProgressPanel({ orders, query, onSaveTracking,
   const copyLine = async (text: string) => {
     if (!text) return;
     const ok = await copyText(text);
-    if (ok) onNotify?.('已复制收件信息与发货件数', 'success');
+    if (ok) onNotify?.('已复制收件信息与箱数', 'success');
     else onNotify?.('复制失败，请手动选择文本复制', 'error');
   };
 
@@ -380,9 +371,6 @@ export default function ShippingInProgressPanel({ orders, query, onSaveTracking,
         const boxSummary = view.activeSelections.length
           ? `${view.boxChain}${view.activeSelections.length > 1 ? ` = ${view.totalBoxes}箱` : ''}`
           : '0箱';
-        const pieceSummary = view.activeSelections.length
-          ? `${view.pieceChain}${view.activeSelections.length > 1 ? ` = ${view.totalPieces}件` : ''}`
-          : '0件';
         return <article className={`shipping-address-group${checked ? ' is-selected' : ''}`} key={group.key} data-address-key={group.addressKey || undefined}>
           <header className="shipping-address-head">
             <input type="checkbox" aria-label={`选择地址组 ${group.recipientInfo || group.recipientName || group.key}`} checked={checked} onChange={() => setSelectedGroupKeys((current) => {
@@ -397,8 +385,7 @@ export default function ShippingInProgressPanel({ orders, query, onSaveTracking,
             </div>
             <div className="shipping-address-totals">
               <span>箱数 <b>{boxSummary}</b></span>
-              <span>件数 <b>{pieceSummary}</b></span>
-              <button type="button" className="button button-ghost button-sm" disabled={!view.sheetLine} title="复制本地址组的箱数、件数和收件信息" onClick={() => { void copyLine(view.sheetLine); }}><Clipboard size={13} />复制</button>
+              <button type="button" className="button button-ghost button-sm" disabled={!view.sheetLine} title="复制本地址组的箱数和收件信息" onClick={() => { void copyLine(view.sheetLine); }}><Clipboard size={13} />复制</button>
             </div>
             {(multi || canMerge) && <div className="shipping-address-badges">
               {multi && <span className="badge badge-neutral">{group.orders.length} 单</span>}
@@ -475,7 +462,7 @@ export default function ShippingInProgressPanel({ orders, query, onSaveTracking,
         <span className="shipping-address-hint">{sheetLines.length} 个地址 · 箱数按每单拆解</span>
         <button type="button" className="button button-secondary button-sm" disabled={!sheetText} onClick={() => { void copySheet(); }}><Clipboard size={13} />复制发货表</button>
       </div>
-      <textarea className="textarea" readOnly rows={Math.max(3, Math.min(8, sheetLines.length + 1))} value={sheetText} aria-label="发货表" placeholder="本次有数量后，这里按地址组生成可复制的收件信息与发货件数" />
+      <textarea className="textarea" readOnly rows={Math.max(3, Math.min(8, sheetLines.length + 1))} value={sheetText} aria-label="发货表" placeholder="本次有数量后，这里按地址组生成可复制的收件信息与箱数" />
     </section>
 
     {selectedViews.length > 0 && <div className="shipping-progress-bulk" role="region" aria-label="发货中批量操作">

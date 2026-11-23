@@ -84,16 +84,16 @@ describe('发货中同地址合并', () => {
 });
 
 describe('发货表行', () => {
-  it('箱数保留每单拆解，件数取合计，不带订单号', () => {
+  it('箱数保留每单拆解，只带箱数和收件信息，不带订单号', () => {
     expect(buildShippingSheetLine({
       recipientName: '张三',
       recipientInfo: '深圳市宝安区 A 栋',
-      entries: [{ boxes: 2, quantity: 20 }, { boxes: 3, quantity: 30 }, { boxes: 5, quantity: 50 }],
-    })).toBe('2箱 + 3箱 + 5箱 100件 深圳市宝安区 A 栋');
+      entries: [{ boxes: 2 }, { boxes: 3 }, { boxes: 5 }],
+    })).toBe('2箱 + 3箱 + 5箱 深圳市宝安区 A 栋');
   });
 
-  it('单订单只显示自身箱数，数量为 0 不发一行', () => {
-    expect(buildShippingSheetLine({ recipientName: '张三', entries: [{ boxes: 2, quantity: 20 }] })).toBe('2箱 20件 张三');
-    expect(buildShippingSheetLine({ recipientName: '张三', entries: [{ boxes: 0, quantity: 0 }] })).toBe('');
+  it('单订单只显示自身箱数，0 箱不发一行', () => {
+    expect(buildShippingSheetLine({ recipientName: '张三', entries: [{ boxes: 2 }] })).toBe('2箱 张三');
+    expect(buildShippingSheetLine({ recipientName: '张三', entries: [{ boxes: 0 }] })).toBe('');
   });
 });

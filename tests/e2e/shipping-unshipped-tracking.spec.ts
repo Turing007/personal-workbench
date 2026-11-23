@@ -150,7 +150,6 @@ test.describe('发货中状态', () => {
       await expect(group).toBeVisible();
       for (const order of orders) await expect(group).toContainText(order.orderNo);
       await expect(group).toContainText('2箱 + 3箱 + 5箱 = 10箱');
-      await expect(group).toContainText('20件 + 30件 + 50件 = 100件');
 
       // 拆开后每单独立，再并回同一地址组，箱数拆解恢复。
       await group.getByRole('button', { name: '拆开' }).click();
@@ -162,7 +161,7 @@ test.describe('发货中状态', () => {
       const trackingNo = `SF-MERGE-${stamp}`;
       await group.getByRole('textbox', { name: '合并物流单号-合并收件人' }).fill(trackingNo);
       const sheet = page.getByRole('textbox', { name: '发货表' });
-      await expect.poll(async () => sheet.inputValue()).toContain(`2箱 + 3箱 + 5箱 100件 ${recipientInfo}`);
+      await expect.poll(async () => sheet.inputValue()).toContain(`2箱 + 3箱 + 5箱 ${recipientInfo}`);
 
       await group.getByRole('button', { name: '确认合并发货' }).click();
       await expect(page.getByText('已确认 3 单本次发货')).toBeVisible();
