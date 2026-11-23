@@ -96,7 +96,7 @@ test('订单展开的产品明细带产品图', async ({ page }) => {
     await expect(desktopSpec).toHaveText('12V 100Ah 高频纯正弦波 * 2');
     expect(await desktopSpec.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
     await expect(productCell.locator('.order-product-quick-thumb img')).toHaveAttribute('src', /\/api\/thumbs\/240\//);
-    expect(await productCell.locator('.order-product-quick-list').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2);
+    expect(await productCell.locator('.order-product-quick-list').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1);
     expect(await productCell.locator('.order-product-quick-thumb').first().evaluate((element) => {
       const rect = element.getBoundingClientRect();
       return rect.width >= 48 && Math.abs(rect.width - rect.height) < 0.5;
@@ -119,7 +119,7 @@ test('订单展开的产品明细带产品图', async ({ page }) => {
     await expect(mobileSpec).toHaveText('12V 100Ah 高频纯正弦波 * 2');
     expect(await mobileSpec.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
     await expect(cardProducts.locator('.order-product-quick-thumb img')).toBeVisible();
-    expect(await cardProducts.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2);
+    expect(await cardProducts.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1);
     await expect(card.locator('.order-expand-toggle')).toHaveCount(0);
 
     await cardProducts.click();
@@ -135,6 +135,54 @@ test('订单展开的产品明细带产品图', async ({ page }) => {
     await page.request.delete(`/api/customer-products/${customerProduct.id}`);
     await page.request.delete(`/api/customers/${customer.id}`);
     await page.request.delete(`/api/products/${product.id}`);
+  }
+});
+
+test('产品卡片按标题长度自适应列数，标题最多两行', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const stamp = Date.now();
+  const shortNo = `E2E-ADAPT-SHORT-${stamp}`;
+  const longNo = `E2E-ADAPT-LONG-${stamp}`;
+  const createOrder = async (orderNo: string, names: string[]) => {
+    const response = await page.request.post('/api/orders', {
+      data: {
+        orderNo,
+        orderedAt: dateInputValue(),
+        recipientName: '自适应测试',
+        recipientInfo: '自适应测试 13800000000 深圳市南山区',
+        items: names.map((name, index) => ({ name, sku: `ADP-${index}-${stamp}`, specification: '标准', quantity: 1, packCount: 1, unitPriceCents: 1000 })),
+      },
+    });
+    expect(response.ok()).toBeTruthy();
+    return Number((await response.json()).data.id);
+  };
+  const shortId = await createOrder(shortNo, ['老款圆砂高配+螺丝刀', '水枪']);
+  const longId = await createOrder(longNo, ['全自动无刷圆砂机高配版附赠螺丝刀套装', '水枪']);
+  try {
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
+    const productCell = async (orderNo: string) => {
+      await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(orderNo);
+      const row = page.locator('.orders-table-desktop tbody tr', { hasText: orderNo }).first();
+      await expect(row).toBeVisible();
+      return row.locator('.order-product-cell');
+    };
+
+    const shortCell = await productCell(shortNo);
+    expect(await shortCell.locator('.order-product-quick-list').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2);
+    const longCell = await productCell(longNo);
+    expect(await longCell.locator('.order-product-quick-list').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1);
+
+    for (const cell of [shortCell, longCell]) {
+      const titleMetrics = await cell.locator('.order-product-quick-copy strong').evaluateAll((elements) => elements.map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { height: rect.height, lineHeight: parseFloat(getComputedStyle(element).lineHeight) };
+      }));
+      expect(titleMetrics.every((item) => item.height <= item.lineHeight * 2 + 1)).toBe(true);
+    }
+  } finally {
+    await page.request.delete(`/api/orders/${shortId}`);
+    await page.request.delete(`/api/orders/${longId}`);
   }
 });
 

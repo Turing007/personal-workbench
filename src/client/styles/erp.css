@@ -346,6 +346,9 @@
   cursor: pointer;
 }
 
+/* 单产品订单占满整行，长品名不被压成多行。 */
+.orders-page .order-product-quick-list.is-single { grid-template-columns: minmax(0, 1fr); }
+
 .orders-page .order-product-quick-card {
   display: grid;
   grid-template-columns: 52px minmax(0, 1fr);
@@ -389,13 +392,15 @@
 }
 
 .orders-page .order-product-quick-copy strong {
-  display: block;
+  display: -webkit-box;
+  overflow: hidden;
   color: var(--erp-text);
   font-size: 11px;
   font-weight: 600;
   line-height: 1.35;
   overflow-wrap: anywhere;
-  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .orders-page .order-product-quick-spec {
