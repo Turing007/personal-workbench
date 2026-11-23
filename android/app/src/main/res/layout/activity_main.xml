@@ -225,21 +225,4 @@
         </LinearLayout>
     </ScrollView>
 
-    <!-- 旧版服务端没有“左上角公司名切换工作空间”入口时，由手机壳保留一个兜底入口。 -->
-    <Button
-        android:id="@+id/workspace_switch_fallback"
-        android:layout_width="wrap_content"
-        android:layout_height="40dp"
-        android:layout_gravity="top|end"
-        android:layout_marginTop="14dp"
-        android:layout_marginEnd="12dp"
-        android:background="@drawable/button_secondary"
-        android:elevation="8dp"
-        android:minWidth="0dp"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:text="@string/workspace_fallback_button"
-        android:textColor="@color/brand_teal"
-        android:textSize="12sp"
-        android:visibility="gone" />
 </FrameLayout>

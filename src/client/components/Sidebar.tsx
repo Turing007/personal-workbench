@@ -80,18 +80,19 @@ export default function Sidebar({ activeKey, onNavigate, collapsed = false, comp
       {mobileOpen && <button className="sidebar-backdrop" type="button" aria-label="关闭主导航" onClick={() => setMobileOpen(false)} />}
       <aside aria-label="主导航" className={`sidebar${collapsed ? ' is-collapsed' : ''}${mobileOpen ? ' is-mobile-open' : ''}`}>
         <div className="sidebar-brand">
-          {appBridge ? <button className="sidebar-workspace-switch" type="button" title="切换工作空间" aria-label="切换工作空间" onClick={openWorkspaceSwitcher}>
-            <span className="sidebar-logo" title={companyName || '个人工作台'}>
-              {showLogo ? <img src={logoUrl} alt={companyName || '公司 Logo'} onError={() => setLogoFailed(true)} /> : 'V'}
-            </span>
-            {!collapsed && <span className="sidebar-workspace-copy"><strong className="sidebar-name" title={companyName || '个人工作台'}>{companyName || '个人工作台'}</strong><small>{activeWorkspace ? `${activeWorkspace.label}${activeWorkspace.account ? ` · ${activeWorkspace.account}` : ''}` : '切换工作空间'}</small></span>}
-            {!collapsed && <ChevronDown size={13} aria-hidden="true" />}
-          </button> : <>
-            <div className="sidebar-logo" title={companyName || '个人工作台'}>
-              {showLogo ? <img src={logoUrl} alt={companyName || '公司 Logo'} onError={() => setLogoFailed(true)} /> : 'V'}
-            </div>
-            {!collapsed && <strong className="sidebar-name" title={companyName || '个人工作台'}>{companyName || '个人工作台'}</strong>}
-          </>}
+          <div className="sidebar-logo" title={companyName || '个人工作台'}>
+            {showLogo ? <img src={logoUrl} alt={companyName || '公司 Logo'} onError={() => setLogoFailed(true)} /> : 'V'}
+          </div>
+          {!collapsed && <div className="sidebar-workspace-copy">
+            <strong className="sidebar-name" title={companyName || '个人工作台'}>{companyName || '个人工作台'}</strong>
+            {appBridge && <button
+              className="sidebar-workspace-switch-button"
+              type="button"
+              title={activeWorkspace ? `当前工作空间：${activeWorkspace.label}${activeWorkspace.account ? ` · ${activeWorkspace.account}` : ''}` : '切换公司'}
+              aria-label="切换公司"
+              onClick={openWorkspaceSwitcher}
+            >切换公司<ChevronDown size={11} aria-hidden="true" /></button>}
+          </div>}
           <button className="sidebar-mobile-close" type="button" aria-label="关闭主导航" onClick={() => setMobileOpen(false)}><X size={18} /></button>
         </div>
         <nav className="sidebar-nav">

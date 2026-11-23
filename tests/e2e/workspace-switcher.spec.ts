@@ -84,7 +84,7 @@ test('登录页可以直接切换工作空间', async ({ browser }) => {
 test.describe('手机侧栏', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
-  test('点击左上角公司名称打开原生工作空间切换', async ({ page }) => {
+  test('点击公司名下方的切换公司按钮打开原生工作空间列表', async ({ page }) => {
     await page.addInitScript(() => {
       const target = window as typeof window & { workbenchApp?: Record<string, unknown>; __openedSwitcher?: boolean };
       target.workbenchApp = {
@@ -96,9 +96,9 @@ test.describe('手机侧栏', () => {
     });
     await page.goto('/');
     await page.locator('.mobile-tab-item[aria-label="更多模块"]').click();
-    const workspaceButton = page.getByRole('button', { name: '切换工作空间' });
+    const workspaceButton = page.getByRole('button', { name: '切换公司' });
     await expect(workspaceButton).toBeVisible();
-    await expect(workspaceButton).toContainText('公司 A · 线上 · admin');
+    await expect(workspaceButton).toContainText('切换公司');
     await workspaceButton.click();
     expect(await page.evaluate(() => (window as typeof window & { __openedSwitcher?: boolean }).__openedSwitcher)).toBe(true);
   });

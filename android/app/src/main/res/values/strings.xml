@@ -30,7 +30,6 @@
     <string name="network_page_current">当前使用</string>
     <string name="network_page_account">账号提示：%1$s</string>
     <string name="network_page_account_empty">尚未记录登录账号</string>
-    <string name="workspace_fallback_button">工作空间</string>
     <string name="network_row_current">%1$s（当前使用）</string>
     <string name="network_page_switching">正在连接…</string>
     <string name="network_page_empty">还没有保存任何地址，请先新增。</string>

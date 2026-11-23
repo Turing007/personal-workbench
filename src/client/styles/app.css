@@ -3286,45 +3286,32 @@ select {
   padding: 0 8px 12px;
 }
 
-.sidebar-workspace-switch {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-ui);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.sidebar-workspace-switch:hover .sidebar-workspace-copy small,
-.sidebar-workspace-switch:hover > svg { color: var(--sidebar-text); }
-
 .sidebar-workspace-copy {
   display: grid;
   flex: 1;
-  gap: 1px;
+  gap: 3px;
   min-width: 0;
 }
 
-.sidebar-workspace-copy small {
-  overflow: hidden;
+.sidebar-workspace-switch-button {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 3px;
+  min-height: 22px;
+  max-width: 100%;
+  padding: 0 7px;
+  border: 1px solid rgba(255, 255, 255, .15);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .06);
   color: var(--sidebar-text-muted);
   font-size: 10px;
   line-height: 1.2;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
 }
 
-.sidebar-workspace-switch > svg {
-  flex: none;
-  color: var(--sidebar-text-muted);
-}
+.sidebar-workspace-switch-button:hover { color: var(--sidebar-text); border-color: rgba(255, 255, 255, .3); }
 
 .sidebar-logo {
   display: grid;
@@ -4656,11 +4643,8 @@ select {
     padding-inline: 0;
   }
 
-  .sidebar-workspace-switch { justify-content: center; }
-
   .sidebar-name,
   .sidebar-workspace-copy,
-  .sidebar-workspace-switch > svg,
   .sidebar-item span,
   .sidebar-chevron {
     display: none;
@@ -4794,7 +4778,6 @@ select {
 
   .sidebar.is-mobile-open .sidebar-name,
   .sidebar.is-mobile-open .sidebar-workspace-copy,
-  .sidebar.is-mobile-open .sidebar-workspace-switch > svg,
   .sidebar.is-mobile-open .sidebar-item span,
   .sidebar.is-mobile-open .sidebar-chevron {
     display: block;
@@ -4806,8 +4789,6 @@ select {
     justify-content: flex-start;
     padding-inline: var(--space-3);
   }
-
-  .sidebar.is-mobile-open .sidebar-workspace-switch { justify-content: flex-start; }
 
   .sidebar.is-mobile-open .sidebar-item {
     justify-content: flex-start;

@@ -117,9 +117,6 @@ public class MainActivity extends Activity {
     private View browserView;
     private View setupView;
     private View networkView;
-    private View workspaceSwitchFallback;
-    /** 新版网页已经自带上角切换入口时，隐藏原生兜底按钮。 */
-    private boolean workspaceSwitchSuppressed;
     private LinearLayout networkList;
     private EditText urlInput;
     private TextView testResult;
@@ -154,12 +151,10 @@ public class MainActivity extends Activity {
         browserView = findViewById(R.id.browser_view);
         setupView = findViewById(R.id.setup_view);
         networkView = findViewById(R.id.network_view);
-        workspaceSwitchFallback = findViewById(R.id.workspace_switch_fallback);
         networkList = findViewById(R.id.network_list);
         urlInput = findViewById(R.id.url_input);
         testResult = findViewById(R.id.test_result);
         testButton = findViewById(R.id.test_button);
-        workspaceSwitchFallback.setOnClickListener(v -> showNetworkPage());
 
         configureWebView();
         bindSetupButtons();
@@ -241,6 +236,7 @@ public class MainActivity extends Activity {
                 loadProgress.setProgress(0);
                 // 不同服务器地址各自保留会话；主动落盘，避免 App 被杀后 WebView Cookie 还没写完。
                 CookieManager.getInstance().flush();
+                injectLegacyWorkspaceSwitch(view);
                 if (networkView.getVisibility() != View.VISIBLE) {
                     showView(browserView);
                 }
@@ -329,6 +325,34 @@ public class MainActivity extends Activity {
             saveImageToGallery(source, null);
             return true;
         });
+    }
+
+    /**
+     * 旧版网页没有左上角“切换公司”入口时，在侧栏公司名下面注入一个小按钮。
+     * 新版网页已有原生按钮（.sidebar-workspace-switch-button / .auth-workspace-switch），这里会自动跳过。
+     */
+    private void injectLegacyWorkspaceSwitch(WebView view) {
+        String script = "(function(){" +
+                "if(!window.workbenchApp||typeof window.workbenchApp.openNetworkSwitcher!=='function')return;" +
+                "function addStyle(){if(document.getElementById('wb-workspace-switch-style'))return;" +
+                "var s=document.createElement('style');s.id='wb-workspace-switch-style';" +
+                "s.textContent='[data-wb-workspace-switch]{display:inline-flex;align-items:center;justify-self:start;gap:3px;min-height:22px;max-width:100%;padding:0 7px;border:1px solid rgba(255,255,255,.15);border-radius:999px;background:rgba(255,255,255,.06);color:var(--sidebar-text-muted,#94a3b8);font:inherit;font-size:10px;line-height:1.2;white-space:nowrap;cursor:pointer}'+" +
+                "'[data-wb-workspace-switch]:hover{color:var(--sidebar-text,#e2e8f0);border-color:rgba(255,255,255,.3)}'+" +
+                "'@media(max-width:900px){.sidebar:not(.is-mobile-open) [data-wb-workspace-switch]{display:none!important}}';" +
+                "document.head.appendChild(s);}" +
+                "function makeButton(){var b=document.createElement('button');b.type='button';b.dataset.wbWorkspaceSwitch='1';b.textContent='切换公司';" +
+                "b.onclick=function(e){e.preventDefault();e.stopPropagation();window.workbenchApp.openNetworkSwitcher();};return b;}" +
+                "function ensure(){if(!document.body)return;" +
+                "if(document.querySelector('.sidebar-workspace-switch-button')||document.querySelector('.auth-workspace-switch')||document.querySelector('[data-wb-workspace-switch]'))return;" +
+                "addStyle();var brand=document.querySelector('.sidebar-brand');var name=brand&&brand.querySelector('.sidebar-name');" +
+                "if(brand&&name){var holder=document.createElement('div');holder.style.cssText='display:grid;gap:3px;min-width:0;flex:1';" +
+                "name.parentNode.insertBefore(holder,name);holder.appendChild(name);holder.appendChild(makeButton());return;}" +
+                "var auth=document.querySelector('.auth-card');if(auth){var button=makeButton();button.style.marginTop='10px';" +
+                "button.style.alignSelf='center';button.style.borderColor='var(--color-border-control,#cbd5e1)';" +
+                "button.style.background='transparent';button.style.color='var(--color-accent,#0f766e)';auth.appendChild(button);}}" +
+                "ensure();var observer=new MutationObserver(ensure);observer.observe(document.body,{childList:true,subtree:true});" +
+                "setTimeout(function(){observer.disconnect();},5000);})();";
+        view.evaluateJavascript(script, null);
     }
 
     /** 释放文件选择回调：不释放会让网页里的 file input 一直停在待选状态，后续点击全部无效。 */
@@ -764,8 +788,6 @@ public class MainActivity extends Activity {
     }
 
     private void loadServer(String url) {
-        // 每次换服务器都先显示兜底入口；新版网页加载完会主动把它隐藏。
-        workspaceSwitchSuppressed = false;
         showView(browserView);
         lastLoadedUrl = url;
         webView.loadUrl(url);
@@ -819,16 +841,6 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void openNetworkSwitcher() {
             runOnUiThread(MainActivity.this::showNetworkPage);
-        }
-
-        /** 新版网页自带上角工作空间入口后调用，避免原生兜底按钮重复遮挡页面。 */
-        @JavascriptInterface
-        public void setWorkspaceSwitchAvailable(boolean available) {
-            runOnUiThread(() -> {
-                workspaceSwitchSuppressed = available;
-                workspaceSwitchFallback.setVisibility(
-                        available || browserView.getVisibility() != View.VISIBLE ? View.GONE : View.VISIBLE);
-            });
         }
 
         /**
@@ -1370,8 +1382,6 @@ public class MainActivity extends Activity {
         browserView.setVisibility(target == browserView ? View.VISIBLE : View.GONE);
         setupView.setVisibility(target == setupView ? View.VISIBLE : View.GONE);
         networkView.setVisibility(target == networkView ? View.VISIBLE : View.GONE);
-        workspaceSwitchFallback.setVisibility(
-                target == browserView && !workspaceSwitchSuppressed ? View.VISIBLE : View.GONE);
     }
 
     private void showTestResult(int textRes, int colorRes) {
