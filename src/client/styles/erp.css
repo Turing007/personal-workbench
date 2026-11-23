@@ -343,6 +343,7 @@
   color: var(--erp-text-2);
   font: inherit;
   text-align: left;
+  white-space: normal;
   cursor: pointer;
 }
 
@@ -399,6 +400,7 @@
   font-weight: 600;
   line-height: 1.35;
   overflow-wrap: anywhere;
+  white-space: normal;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
@@ -1226,6 +1228,12 @@
     background: transparent;
     color: var(--erp-text-2);
     text-align: left;
+  }
+
+  /* 标题换行后卡片会变高，小图跟着拉伸铺满，避免图片下方留白。 */
+  .orders-page .order-card-products .order-product-quick-thumb {
+    height: 100%;
+    min-height: 52px;
   }
 
   .orders-page .order-card-amount {

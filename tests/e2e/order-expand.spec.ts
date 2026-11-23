@@ -186,6 +186,60 @@ test('产品卡片按标题长度自适应列数，标题最多两行', async ({
   }
 });
 
+test('手机端产品速览标题可换行，小图铺满卡片不留白', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 844 });
+  const stamp = Date.now();
+  const orderNo = `E2E-WRAP-${stamp}`;
+  const created = await page.request.post('/api/orders', {
+    data: {
+      orderNo,
+      orderedAt: dateInputValue(),
+      recipientName: '换行测试',
+      recipientInfo: '换行测试 13800000000 深圳市南山区',
+      items: [
+        { name: '锂电角磨机-02款', sku: `WRAP-1-${stamp}`, specification: '标准', quantity: 1, packCount: 1, unitPriceCents: 1000 },
+        { name: '水枪', sku: `WRAP-2-${stamp}`, specification: '标准', quantity: 1, packCount: 1, unitPriceCents: 1000 },
+      ],
+    },
+  });
+  expect(created.ok()).toBeTruthy();
+  const orderId = Number((await created.json()).data.id);
+  try {
+    await page.goto('/');
+    await page.locator('.mobile-tabbar button', { hasText: '订单' }).first().click();
+    await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(orderNo);
+    const card = page.locator('.orders-card-list .order-card', { hasText: orderNo }).first();
+    await expect(card).toBeVisible();
+    const products = card.locator('.order-product-quick-card');
+    await expect(products).toHaveCount(2);
+
+    const first = products.first();
+    const title = first.locator('.order-product-quick-copy strong');
+    await expect(title).toHaveText('锂电角磨机-02款');
+    const titleMetrics = await title.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        height: element.getBoundingClientRect().height,
+        lineHeight: parseFloat(style.lineHeight),
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+        whiteSpace: style.whiteSpace,
+      };
+    });
+    expect(titleMetrics.whiteSpace).toBe('normal');
+    expect(titleMetrics.height).toBeLessThanOrEqual(titleMetrics.lineHeight * 2 + 1);
+    expect(titleMetrics.scrollHeight).toBeLessThanOrEqual(titleMetrics.clientHeight + 1);
+
+    const blankBelowThumb = await first.evaluate((element) => {
+      const thumb = element.querySelector('.order-product-quick-thumb')!;
+      return element.getBoundingClientRect().bottom - thumb.getBoundingClientRect().bottom;
+    });
+    expect(blankBelowThumb).toBeLessThanOrEqual(2.5);
+  } finally {
+    await page.request.delete(`/api/orders/${orderId}`);
+  }
+});
+
 test('订单桌面行不显示展开箭头，批量选择条固定可见', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const orderNo = `E2E-EXPAND-${Date.now()}`;
