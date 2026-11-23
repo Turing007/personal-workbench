@@ -435,6 +435,67 @@ describe('订单号基础设施', () => {
     database.close();
   });
 
+  it('客户产品改价后旧订单保持原价，更新漏价也沿用订单价', async () => {
+    const { app, database } = await makeContext();
+    const customerId = insertCustomer(database, '价格快照客户');
+    const product = await app.inject({
+      method: 'POST',
+      url: `/api/customers/${customerId}/products`,
+      payload: {
+        name: '价格快照产品', sku: `PRICE-${Date.now()}`, specification: '大号', packCount: 12, finalPriceCents: 10_000, freightPerBoxCents: 500,
+      },
+    });
+    expect(product.statusCode).toBe(201);
+    const customerProductId = Number(product.json().data.id);
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      payload: orderInput({
+        customerId,
+        items: [{ customerProductId, name: '', sku: '', specification: '', packagingName: '彩盒包装', packCount: 12, quantity: 2 }],
+      }),
+    });
+    expect(created.statusCode).toBe(201);
+    const order = created.json().data as { id: number; order_no: string; items: Array<Record<string, unknown>> };
+    expect(order.items[0]).toMatchObject({ unit_price_cents: 10_000, freight_per_box_cents: 500, amount_cents: 20_000 });
+
+    const repriced = await app.inject({
+      method: 'PUT',
+      url: `/api/customer-products/${customerProductId}`,
+      payload: {
+        name: '价格快照产品', sku: String(product.json().data.sku), specification: '大号', packCount: 12, finalPriceCents: 20_000, freightPerBoxCents: 900,
+      },
+    });
+    expect(repriced.statusCode).toBe(200);
+
+    const unchanged = await app.inject({ method: 'GET', url: `/api/orders/${order.id}/detail` });
+    expect(unchanged.json().data.items[0]).toMatchObject({ unit_price_cents: 10_000, freight_per_box_cents: 500, amount_cents: 20_000 });
+
+    const updatePayload = {
+      orderNo: order.order_no,
+      orderedAt: '2026-08-10T08:00:00.000Z',
+      customerId,
+      recipientName: '张三',
+      recipientInfo: '深圳市宝安区',
+      items: [{ customerProductId, name: '价格快照产品', sku: String(product.json().data.sku), specification: '大号', packagingName: '彩盒包装', packCount: 12, quantity: 2 }],
+    };
+    const omittedPrice = await app.inject({ method: 'PUT', url: `/api/orders/${order.id}`, payload: updatePayload });
+    expect(omittedPrice.statusCode).toBe(200);
+    expect(omittedPrice.json().data.items[0]).toMatchObject({ unit_price_cents: 10_000, freight_per_box_cents: 500, amount_cents: 20_000 });
+
+    const intentionalPrice = await app.inject({
+      method: 'PUT',
+      url: `/api/orders/${order.id}`,
+      payload: { ...updatePayload, items: [{ ...updatePayload.items[0], unitPriceCents: 12_000 }] },
+    });
+    expect(intentionalPrice.statusCode).toBe(200);
+    expect(intentionalPrice.json().data.items[0]).toMatchObject({ unit_price_cents: 12_000, amount_cents: 24_000 });
+
+    await app.close();
+    database.close();
+  });
+
   it('新建订单时复制客户产品的定制要求和分类附件，并保留订单快照', async () => {
     const { app, database, fileStore } = await makeContext();
     const customerId = insertCustomer(database, '资料客户');

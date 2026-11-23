@@ -389,14 +389,13 @@
 }
 
 .orders-page .order-product-quick-copy strong {
-  display: -webkit-box;
-  overflow: hidden;
+  display: block;
   color: var(--erp-text);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  line-height: 1.25;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .orders-page .order-product-quick-spec {
@@ -792,14 +791,19 @@
   }
   .orders-page .order-ops-cell .row-actions.is-two-line {
     display: grid;
-    grid-template-columns: repeat(3, max-content);
-    justify-content: end;
+    grid-template-columns: minmax(0, 1fr);
     justify-items: end;
-    align-items: center;
-    column-gap: 6px;
-    row-gap: 3px;
+    gap: 3px;
     min-width: 0;
     max-width: 100%;
+  }
+  .orders-page .order-ops-cell .row-actions-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    min-width: 0;
+    min-height: 24px;
   }
   .orders-page .order-ops-cell .row-actions-cell {
     display: flex;
@@ -807,6 +811,14 @@
     justify-content: flex-end;
     min-width: 0;
     white-space: nowrap;
+  }
+  .orders-page .order-ops-cell .row-actions-cell:empty { display: none; }
+  .orders-page .order-ops-cell .row-actions-row .link-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 24px;
+    padding: 0 2px;
   }
 
   .orders-page .order-ops-cell .icon-button {

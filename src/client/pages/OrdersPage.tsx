@@ -373,12 +373,16 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
       : null;
     if (options?.twoLine) {
       return <div className="row-actions is-two-line">
-        <div className="row-actions-cell is-top">{detailButton}</div>
-        <div className="row-actions-cell is-top">{editButton}</div>
-        <div className="row-actions-cell is-top">{order.status !== 'draft' ? labelButton : null}</div>
-        <div className="row-actions-cell is-bottom">{publishButton ?? advanceButton}</div>
-        <div className="row-actions-cell is-bottom">{rollbackButton}</div>
-        <div className="row-actions-cell is-bottom">{deleteButton}</div>
+        <div className="row-actions-row is-top">
+          <div className="row-actions-cell is-top">{detailButton}</div>
+          <div className="row-actions-cell is-top">{editButton}</div>
+          <div className="row-actions-cell is-top">{order.status !== 'draft' ? labelButton : null}</div>
+        </div>
+        <div className="row-actions-row is-bottom">
+          <div className="row-actions-cell is-bottom">{publishButton ?? advanceButton}</div>
+          <div className="row-actions-cell is-bottom">{rollbackButton}</div>
+          <div className="row-actions-cell is-bottom">{deleteButton}</div>
+        </div>
       </div>;
     }
     return <div className="row-actions">{detailButton}{editButton}{order.status === 'draft' ? publishButton : <>{labelButton}{advanceButton}{rollbackButton}</>}{deleteButton}</div>;

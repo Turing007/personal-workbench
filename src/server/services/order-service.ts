@@ -261,7 +261,11 @@ export class OrderService {
     if (previousCompanyId !== nextCompanyId && (locks.hasReceipt || locks.hasValidInvoice)) {
       throw new Error('已有入账水单或有效发票，不能修改收款/开票公司；请先作废相关记录');
     }
-    const normalized = this.normalizeInput({ ...input, companyId: nextCompanyId, channel: nextChannel });
+    const previousItems = Array.isArray(previous?.items) ? previous.items as Array<Record<string, unknown>> : [];
+    const normalized = this.fillMissingItemPrices(
+      this.normalizeInput({ ...input, companyId: nextCompanyId, channel: nextChannel }),
+      previousItems,
+    );
     const previousPaths = this.getOrderRequirementPaths(orderId);
     // 编辑保存时把订单里已验证过的客户产品附件带回，命中后直接复用，避免每次保存都重新复制一份。
     const existingRequirementAttachments = this.repositories.listOrderContracts(orderId)
@@ -535,6 +539,43 @@ export class OrderService {
     const deleted = this.repositories.deleteOrderDetailImage(imageId);
     if (deleted && this.fileStore) await this.fileStore.deleteFile(deleted.relativePath).catch(() => undefined);
     return mapped;
+  }
+
+  /** 更新订单时，老行漏传单价/运费就沿用原订单行，绝不用产品现价覆盖历史价格。 */
+  private fillMissingItemPrices(input: CreateOrderInput, previousItems: Array<Record<string, unknown>>): CreateOrderInput {
+    if (!previousItems.length) return input;
+    const sameLine = (previous: Record<string, unknown>, item: CreateOrderInput['items'][number]) => {
+      const previousCustomerProductId = previous.customer_product_id == null ? null : Number(previous.customer_product_id);
+      const nextCustomerProductId = item.customerProductId ?? null;
+      if (previousCustomerProductId != null || nextCustomerProductId != null) {
+        return previousCustomerProductId === nextCustomerProductId;
+      }
+      const previousProductId = previous.product_id == null ? null : Number(previous.product_id);
+      const nextProductId = item.productId ?? null;
+      if (previousProductId != null || nextProductId != null) return previousProductId === nextProductId;
+      return String(previous.name ?? '') === item.name
+        && String(previous.sku ?? '') === (item.sku ?? '')
+        && String(previous.specification ?? '') === (item.specification ?? '');
+    };
+    return {
+      ...input,
+      items: input.items.map((item, index) => {
+        if (item.unitPriceCents != null && item.freightPerBoxCents != null) return item;
+        let previous: Record<string, unknown> | undefined = previousItems[index];
+        if (!previous || !sameLine(previous, item)) {
+          const candidates = item.customerProductId == null
+            ? []
+            : previousItems.filter((row) => Number(row.customer_product_id ?? 0) === item.customerProductId);
+          previous = candidates.length === 1 ? candidates[0] : undefined;
+        }
+        if (!previous) return item;
+        return {
+          ...item,
+          unitPriceCents: item.unitPriceCents ?? Number(previous.unit_price_cents ?? 0),
+          freightPerBoxCents: item.freightPerBoxCents ?? Number(previous.freight_per_box_cents ?? 0),
+        };
+      }),
+    };
   }
 
   private async validateCustomerProductReferences(
