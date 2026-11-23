@@ -1,4 +1,4 @@
-import { Package, PackageCheck, ListFilter, Paperclip, Plus, Printer, Trash2, Truck } from 'lucide-react';
+import { Clipboard, Package, PackageCheck, ListFilter, Paperclip, Plus, Printer, Trash2, Truck } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { autoPack } from '../../shared/packing';
 import LabelEditorModal, { type CartonLabel } from '../components/LabelEditorModal';
@@ -27,6 +27,7 @@ import type { Customer, CustomerSaveInput } from '../../shared/customers';
 import { cartonLabelRequirement } from '../../shared/customers';
 import { useIsNarrow } from '../use-is-narrow';
 import { useHideOnScroll } from '../use-hide-on-scroll';
+import { copyText } from '../copy-text';
 
 export interface OrdersPageProps {
   orders: OrderDraft[];
@@ -191,6 +192,10 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
   const [costOrder, setCostOrder] = useState<OrderDraft>();
   const [remarkOrder, setRemarkOrder] = useState<OrderDraft>();
   const [remarkDraft, setRemarkDraft] = useState('');
+  const [recipientOrder, setRecipientOrder] = useState<OrderDraft>();
+  const [recipientNameDraft, setRecipientNameDraft] = useState('');
+  const [recipientInfoDraft, setRecipientInfoDraft] = useState('');
+  const [batchShippingOpen, setBatchShippingOpen] = useState(false);
   const consumedInitialOrderId = useRef<number | null>(null);
   useEffect(() => {
     if (!initialStatus) return;
@@ -250,7 +255,9 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
       return matchesStatus && (!needle || searchable.includes(needle));
     });
   }, [statusFilters, channelOrders, query]);
-  const shippingViewActive = statusFilters.length === 1 && statusFilters[0] === 'shipping';
+  const activeStatusKey = statusFilters.length === 1 ? statusFilters[0] : 'all';
+  const showCreateOrder = activeStatusKey === 'all' || activeStatusKey === 'draft';
+  const shippingViewActive = activeStatusKey === 'shipping';
   const shippingOrdersInChannel = useMemo(() => channelOrders.filter((order) => order.status === 'shipping'), [channelOrders]);
   useEffect(() => {
     if (shippingViewActive) setSelectedIds([]);
@@ -315,6 +322,32 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
     onSaveOrder({ ...remarkOrder, remark: remarkDraft });
     setRemarkOrder(undefined);
   };
+  const openRecipientModal = (order: OrderDraft) => {
+    if (order.status === 'shipped') return;
+    setRecipientOrder(order);
+    setRecipientNameDraft(order.recipientName ?? '');
+    setRecipientInfoDraft(order.recipientInfo ?? '');
+  };
+  const saveRecipient = () => {
+    if (!recipientOrder) return;
+    if (!recipientNameDraft.trim()) {
+      onNotify?.('收件人名称不能为空', 'error');
+      return;
+    }
+    onSaveOrder({ ...recipientOrder, recipientName: recipientNameDraft.trim(), recipientInfo: recipientInfoDraft.trim() });
+    setRecipientOrder(undefined);
+  };
+  const copyRecipientInfo = async () => {
+    const name = recipientNameDraft.trim();
+    const info = recipientInfoDraft.trim();
+    const text = !info ? name : !name || info.includes(name) ? info : `${name} ${info}`;
+    if (!text) {
+      onNotify?.('收件信息为空，无法复制', 'error');
+      return;
+    }
+    if (await copyText(text)) onNotify?.('已复制收件信息', 'success');
+    else onNotify?.('复制失败，请手动选择文本复制', 'error');
+  };
   const deleteOrder = (order: OrderDraft) => { if (!onDeleteOrder) return; onDeleteOrder(order); setDetailOrder(undefined); setEditingOrder(undefined); setLabelOrder(undefined); };
   const confirmDeleteOrder = (order: OrderDraft) => { if (!window.confirm(`确定删除订单“${order.orderNo}”吗？订单及其附件、箱唛数据将一并删除。`)) return; deleteOrder(order); };
 
@@ -323,17 +356,6 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
     if (!onPublishOrder) return;
     if (!window.confirm(`确定发布草稿订单“${order.orderNo}”吗？发布后将进入待备货流程。`)) return;
     onPublishOrder(order);
-  };
-
-  /**
-   * 进入发货中视图：列表操作「继续发货」只切筛选；详情里的「去发货」额外用单号定位地址组。
-   * 待发货点「发货」不调用这里，按需求只改状态、不切视图。
-   */
-  const openShippingView = (order?: OrderDraft) => {
-    setDetailOrder(undefined);
-    setSelectedIds([]);
-    setStatusFilters(['shipping']);
-    if (order) setQuery(order.orderNo);
   };
 
   // 手机卡片把状态胶囊本身做成「一键推进」按钮：胶囊上直接写着下一步动作，点一下完成本步。
@@ -349,7 +371,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
 
   const runCardStatusAction = (order: OrderDraft, nextAction: OrderNextAction) => {
     if (nextAction.kind === 'advance') onAdvanceStatus?.(order, nextAction.target);
-    else if (nextAction.kind === 'shipping-view') openShippingView();
+    else if (nextAction.kind === 'shipping-view') setDetailOrder(order);
     else publishOrder(order);
   };
 
@@ -379,7 +401,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
       ? nextAction?.kind === 'advance' && onAdvanceStatus
         ? <button type="button" className="link-button muted" title={nextAction.label} onClick={() => onAdvanceStatus(order, nextAction.target)}>{nextAction.label}</button>
         : nextAction?.kind === 'shipping-view'
-          ? <button type="button" className="link-button muted" title="进入发货中视图" onClick={() => openShippingView()}>{nextAction.label}</button>
+          ? <button type="button" className="link-button muted" title="打开详情填写本次发货数量与物流单号" onClick={() => setDetailOrder(order)}>{nextAction.label}</button>
           : null
       : null;
     const hasShipments = order.items.some((item) => (item.shippedQuantity ?? 0) > 0);
@@ -407,31 +429,17 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
   };
 
   return <div className={`page-shell orders-page${searchHidden ? ' is-search-hidden' : ''}`}>
-    <div className="page-toolbar orders-page-heading">
-      <div className="orders-heading-copy">
-        <span className="page-breadcrumb">业务 / 订单</span>
-        <strong className="page-title">订单工作台</strong>
-        <span className="page-subtitle">跟进备货、打包、发货与箱唛打印进度</span>
-      </div>
-    </div>
     <div className="orders-channel-tabs" role="tablist" aria-label="订单渠道">
       {ORDER_CHANNELS.map((channel) => <button key={channel} type="button" role="tab" aria-selected={activeChannel === channel} className={activeChannel === channel ? 'is-active' : undefined} onClick={() => selectChannel(channel)}>{ORDER_CHANNEL_LABELS[channel]}订单<b>{channelCounts[channel]}</b></button>)}
     </div>
     <section className="table-panel orders-panel">
       <div className="page-toolbar table-toolbar orders-table-toolbar">
         <SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索订单号、客户、收件人、品名、SKU、规格" />
-        <StatusCards activeKey={statusFilters.length === 1 ? statusFilters[0] : 'all'} counts={counts} onSelect={(key) => setStatusFilters(key === 'all' ? [] : [key])} />
-        {!shippingViewActive && <span className="toolbar-count"><ListFilter size={14} />{visibleOrders.length} 条订单</span>}
-        <button type="button" className="button button-primary orders-create-button" onClick={() => setCreating(true)}><Plus size={15} />新建订单</button>
+        <StatusCards activeKey={activeStatusKey} counts={counts} onSelect={(key) => setStatusFilters(key === 'all' ? [] : [key])} />
+        <span className="toolbar-count"><ListFilter size={14} />{visibleOrders.length} 条订单</span>
+        {shippingViewActive && <button type="button" className="button button-primary orders-batch-button" onClick={() => setBatchShippingOpen(true)}><Truck size={15} />批量发货</button>}
+        {showCreateOrder && <button type="button" className="button button-primary orders-create-button" onClick={() => setCreating(true)}><Plus size={15} />新建订单</button>}
       </div>
-      {shippingViewActive ? <ShippingInProgressPanel
-        orders={shippingOrdersInChannel}
-        query={query}
-        onSaveTracking={onSaveTracking}
-        onConfirm={onConfirmShipping}
-        onOpenDetail={(order) => setDetailOrder(order)}
-        onNotify={onNotify}
-      /> : <>
       <div className="table-scroll orders-table-desktop">
         <table className="data-table orders-data-table">
           <thead><tr><th className="order-check-cell"><input type="checkbox" checked={allPrintableSelected} onChange={toggleAll} aria-label="选择当前列表待打印箱唛订单" /></th>{[
@@ -460,7 +468,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
             return <tr key={id}>
                 <td className="order-check-cell"><input type="checkbox" disabled={!isUnshippedOrder(order) || isDraftOrder(order)} checked={isUnshippedOrder(order) && !isDraftOrder(order) && selectedIds.includes(id)} onChange={() => setSelectedIds((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id])} aria-label={`选择订单${order.orderNo}`} /></td>
                 <td className="strong-cell order-no-cell"><div className="order-no-stack"><span title={order.orderNo}>{order.orderNo}</span><span className="order-no-date">{order.orderedAt.replace('T', ' ')}</span></div></td>
-                <td className="order-customer-cell"><div className="order-party"><strong className="order-party-customer" title={order.customerName || undefined}>{order.customerName || '未填客户'}{order.customerId == null && order.customerName?.trim() && <span className="badge badge-neutral" style={{ marginLeft: 5 }}>临时</span>}</strong><span className="order-party-recipient" title={order.recipientName || undefined}>收件人：{order.recipientName || '—'}</span></div></td>
+                <td className="order-customer-cell"><div className="order-party"><strong className="order-party-customer" title={order.customerName || undefined}>{order.customerName || '未填客户'}{order.customerId == null && order.customerName?.trim() && <span className="badge badge-neutral" style={{ marginLeft: 5 }}>临时</span>}</strong>{order.status === 'shipped' ? <span className="order-party-recipient" title={order.recipientName || undefined}>收件人：{order.recipientName || '—'}</span> : <button type="button" className="order-party-recipient order-recipient-link" title="编辑收件人信息" onClick={() => openRecipientModal(order)}>收件人：{order.recipientName || '未填'}</button>}</div></td>
                 <td className="order-product-cell"><OrderProductQuickList order={order} onOpen={() => setProductsOrder(order)} /></td>
                 <td className="order-box-cell"><button type="button" className="order-box-link" title="编辑/打印箱唛" aria-label={`编辑或打印订单${order.orderNo}箱唛`} onClick={() => openLabels(order)}>{boxCount}</button></td>
                 <td className="amount order-amount-cell"><button type="button" className="order-amount-link" title="查看/编辑财务与水单" aria-label={`查看订单${order.orderNo}财务与水单`} onClick={() => void openFinanceModal(order)}>¥ {order.amount || '0.00'}</button><div className="payment-sub" style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</div><button type="button" className={`order-profit-sub ${profit.costComplete ? (profit.profitCents ?? 0) < 0 ? 'is-loss' : 'is-profit' : 'is-pending'}`} title={profit.costComplete ? `毛利 ${(profit.profitCents ?? 0) / 100} · 毛利率 ${profit.marginPercent ?? '—'}%（点击调整成本）` : `成本待补：${profit.missingItemCount} 行产品未确认（点击补录成本）`} aria-label={`补录或调整订单${order.orderNo}成本`} onClick={() => openCostModal(order)}>{profit.costComplete ? `毛利 ¥${((profit.profitCents ?? 0) / 100).toFixed(2)}` : '成本待补'}</button></td>
@@ -487,7 +495,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
         });
         return <article key={orderKey(order)} className="order-card">
           <div className="order-card-head">
-            <div className="order-card-title"><strong>{order.orderNo}</strong><span>{order.customerId == null && order.customerName?.trim() ? '临时 · ' : ''}{order.customerName || '未填客户'} · {order.orderedAt.replace('T', ' ')} · {order.recipientName || '未填收件人'}</span></div>
+            <div className="order-card-title"><strong>{order.orderNo}</strong><span>{order.customerId == null && order.customerName?.trim() ? '临时 · ' : ''}{order.customerName || '未填客户'} · {order.orderedAt.replace('T', ' ')} · {order.status === 'shipped' ? order.recipientName || '未填收件人' : <button type="button" className="order-recipient-link" title="编辑收件人信息" onClick={() => openRecipientModal(order)}>{order.recipientName || '未填收件人'}</button>}</span></div>
             {renderCardStatus(order)}
           </div>
           <div className="order-card-mid">
@@ -521,7 +529,6 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
         <button type="button" className="button button-secondary button-sm" onClick={bulkPrint}><Printer size={14} />批量打印箱唛</button>
         <button type="button" className="button button-ghost button-sm" onClick={() => setSelectedIds([])}>取消选择</button>
       </div>}
-      </>}
     </section>
 
     <Modal open={creating || Boolean(editingOrder)} title={editingOrder ? `编辑订单 · ${editingOrder.orderNo}` : '新建订单'} onClose={() => { setCreating(false); setEditingOrder(undefined); }} width={1040}><OrderForm key={editingOrder?.id ?? (creating ? `new-${activeChannel}` : 'closed')} value={editingOrder} defaultChannel={activeChannel} customers={customers} companies={companies} onSaveCustomerProduct={onSaveCustomerProduct} onCreateCustomer={onCreateCustomer} onGetNextOrderNumber={onGetNextOrderNumber} onSubmit={(order) => { onSaveOrder(order); setCreating(false); setEditingOrder(undefined); }} onSaveDraft={onSaveDraft ? (order) => { onSaveDraft(order); setCreating(false); setEditingOrder(undefined); } : undefined} onCancel={() => { setCreating(false); setEditingOrder(undefined); }} /></Modal>
@@ -534,6 +541,33 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
         <div className="order-form-actions">
           <button type="button" className="button button-secondary" onClick={() => setRemarkOrder(undefined)}>取消</button>
           <button type="button" className="button button-primary" onClick={saveRemark}>保存备注</button>
+        </div>
+      </div>
+    </Modal>
+    <Modal open={batchShippingOpen} title="批量发货" onClose={() => setBatchShippingOpen(false)} width={1120} className="shipping-batch-modal">
+      <ShippingInProgressPanel
+        orders={shippingOrdersInChannel}
+        query={query}
+        onSaveTracking={onSaveTracking}
+        onConfirm={onConfirmShipping}
+        onOpenDetail={(order) => { setBatchShippingOpen(false); setDetailOrder(order); }}
+        onNotify={onNotify}
+      />
+    </Modal>
+    <Modal open={Boolean(recipientOrder)} title={recipientOrder ? `收件人信息 · ${recipientOrder.orderNo}` : '收件人信息'} onClose={() => setRecipientOrder(undefined)} width={520} compact>
+      <div style={{ display: 'grid', gap: 12 }}>
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={{ color: 'var(--color-text-secondary)', fontSize: 12 }}>收件人姓名</span>
+          <input aria-label="收件人姓名" autoFocus value={recipientNameDraft} onChange={(event) => setRecipientNameDraft(event.target.value)} placeholder="填写收件人姓名" style={{ width: '100%', height: 38, padding: '0 10px', border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', font: 'inherit' }} />
+        </label>
+        <label style={{ display: 'grid', gap: 6 }}>
+          <span style={{ color: 'var(--color-text-secondary)', fontSize: 12 }}>收件信息</span>
+          <textarea aria-label="收件信息" rows={4} value={recipientInfoDraft} onChange={(event) => setRecipientInfoDraft(event.target.value)} placeholder="电话、地址等完整收件信息" style={{ width: '100%', minHeight: 96, padding: 8, border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', font: 'inherit', resize: 'vertical' }} />
+        </label>
+        <div className="order-form-actions">
+          <button type="button" className="button button-secondary" onClick={() => { void copyRecipientInfo(); }}><Clipboard size={14} />复制收件信息</button>
+          <button type="button" className="button button-ghost" onClick={() => setRecipientOrder(undefined)}>取消</button>
+          <button type="button" className="button button-primary" onClick={saveRecipient}>保存</button>
         </div>
       </div>
     </Modal>
@@ -576,7 +610,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
         <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: 11 }}>发票编辑请从订单详情的“打开财务详情”进入财务页。</p>
       </div>}
     </Modal>
-    <OrderDetailModal open={Boolean(detailOrder)} order={detailOrder} onClose={() => setDetailOrder(undefined)} onEditOrder={openEdit} onEditLabels={(order) => { setDetailOrder(undefined); openLabels(order); }} onPrintLabels={(order) => { setDetailOrder(undefined); setPrintLabels(labelsByOrderId?.[orderKey(order)] ?? fallbackLabels(order)); }} onDeleteContract={onDeleteContract} onDeleteOrder={onDeleteOrder ? confirmDeleteOrder : undefined} onAdvanceStatus={onAdvanceStatus} onRollbackStatus={onRollbackStatus} onPublishOrder={onPublishOrder} onOpenShippingView={(order) => openShippingView(order)} onOpenFinance={onOpenFinance} onPromoteCustomer={(order) => setPromoteName(order.customerName?.trim() ?? '')} onShipmentChanged={async () => { await onRefreshOrders?.(); }} onNotify={onNotify} />
+    <OrderDetailModal open={Boolean(detailOrder)} order={detailOrder} onClose={() => setDetailOrder(undefined)} onEditOrder={openEdit} onEditLabels={(order) => { setDetailOrder(undefined); openLabels(order); }} onPrintLabels={(order) => { setDetailOrder(undefined); setPrintLabels(labelsByOrderId?.[orderKey(order)] ?? fallbackLabels(order)); }} onDeleteContract={onDeleteContract} onDeleteOrder={onDeleteOrder ? confirmDeleteOrder : undefined} onAdvanceStatus={onAdvanceStatus} onRollbackStatus={onRollbackStatus} onPublishOrder={onPublishOrder} onConfirmShipping={onConfirmShipping} onOpenFinance={onOpenFinance} onPromoteCustomer={(order) => setPromoteName(order.customerName?.trim() ?? '')} onShipmentChanged={async () => { await onRefreshOrders?.(); }} onNotify={onNotify} />
     <Modal open={Boolean(productsOrder)} title={productsOrder ? `产品明细 · ${productsOrder.orderNo}` : '产品明细'} onClose={() => setProductsOrder(undefined)} width={920}>{productsOrder && <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ display: 'grid', gridTemplateColumns: narrow ? 'repeat(2, minmax(0, 1fr))' : 'repeat(6, minmax(0, 1fr))', gap: 12, padding: 12, background: 'var(--tone-surface-frost)', border: '1px solid var(--tone-border-soft)', borderRadius: 'var(--radius-ui)' }}>
         <div style={{ display: 'grid', gap: 4, minWidth: 0 }}><span style={{ color: 'var(--tone-text-faint)', fontSize: 11 }}>订单号</span><strong style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{productsOrder.orderNo}</strong></div>

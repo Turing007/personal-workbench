@@ -270,6 +270,12 @@ export class OrderService {
       this.normalizeInput({ ...input, companyId: nextCompanyId, channel: nextChannel }),
       previousItems,
     );
+    const previousRecipientName = String(previous?.recipient_name ?? '').trim();
+    const previousRecipientInfo = String(previous?.recipient_info ?? '').trim();
+    if (previous?.status === 'shipped'
+      && (String(normalized.recipientName ?? '').trim() !== previousRecipientName || String(normalized.recipientInfo ?? '').trim() !== previousRecipientInfo)) {
+      throw new Error('已发货订单不能修改收件信息');
+    }
     if (hasShipments) {
       if (String(previous?.order_no ?? '') !== normalized.orderNo.trim()) {
         throw new Error('订单已有发货记录，订单号不能修改');

@@ -134,7 +134,7 @@ test.describe('财务管理工作台', () => {
       await expect(dialog.getByText('客户水单', { exact: true })).toBeVisible();
       await expect(dialog.getByRole('button', { name: /上传水单/ })).toBeVisible();
       // 仍停留在订单页，不跳财务模块
-      await expect(page.locator('.page-breadcrumb', { hasText: '业务 / 订单' })).toBeVisible();
+      await expect(page.locator('.orders-channel-tabs')).toBeVisible();
       await dialog.getByRole('button', { name: '关闭' }).click();
       await expect(dialog).toBeHidden();
     } finally {

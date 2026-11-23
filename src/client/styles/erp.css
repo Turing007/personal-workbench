@@ -172,34 +172,36 @@
 .finance-heading-copy .page-breadcrumb { grid-column: 1 / -1; }
 
 .orders-channel-tabs {
-  display: inline-flex;
+  display: flex;
   flex: 0 0 auto;
-  align-self: flex-start;
-  gap: 2px;
-  margin-bottom: 8px;
-  padding: 3px;
-  border: 1px solid var(--erp-divider);
-  border-radius: var(--radius-ui);
-  background: var(--erp-surface-muted);
+  align-self: stretch;
+  align-items: center;
+  gap: 18px;
+  margin: 0 0 4px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--erp-divider);
+  border-radius: 0;
+  background: transparent;
 }
 .orders-channel-tabs button {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   border: 0;
-  border-radius: var(--radius-ui);
+  border-radius: 0;
   background: transparent;
-  padding: 5px 10px;
+  padding: 4px 0 6px;
   color: var(--erp-muted);
   font: inherit;
-  font-size: 12px;
+  font-size: 12.5px;
   cursor: pointer;
 }
 .orders-channel-tabs button b { color: inherit; font-weight: 600; }
 .orders-channel-tabs button.is-active {
-  background: var(--color-surface);
+  background: transparent;
   color: var(--erp-text);
-  box-shadow: 0 1px 2px rgba(16, 32, 51, .08);
+  box-shadow: inset 0 -2px 0 var(--color-accent);
 }
 
 .products-page-head-title {
@@ -556,6 +558,119 @@
 
 .order-detail-cards-empty { grid-column: 1 / -1; }
 
+/* 收件人姓名可点：桌面行和手机卡片共用 */
+.orders-page .order-recipient-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--color-link);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.orders-page .order-party-recipient.order-recipient-link { color: var(--color-link); }
+.orders-page .order-recipient-link:hover { color: var(--color-accent-hover); }
+
+/* 订单详情：本次发货 */
+.order-shipping-form {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-accent-border);
+  border-radius: var(--radius-ui);
+  background: var(--color-accent-soft);
+}
+.order-shipping-form-head,
+.order-shipping-submit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.order-shipping-form-head strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--tone-accent-text);
+  font-size: 13px;
+}
+.order-shipping-form-head > span { color: var(--tone-text-faint); font-size: 11px; }
+.order-shipping-items { display: grid; gap: 6px; }
+.order-shipping-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px 46px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-ui);
+  background: var(--color-surface);
+}
+.order-shipping-item-copy { display: grid; gap: 1px; min-width: 0; }
+.order-shipping-item-copy strong {
+  overflow: hidden;
+  color: var(--erp-text);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.order-shipping-item-copy span {
+  color: var(--tone-text-faint);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.order-shipping-item input {
+  width: 100%;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-ui);
+  background: var(--color-surface);
+  color: var(--erp-text);
+  font: inherit;
+  font-size: 12px;
+  text-align: right;
+}
+.order-shipping-item-boxes {
+  color: var(--tone-text-faint);
+  font-size: 11px;
+  text-align: right;
+  white-space: nowrap;
+}
+.order-shipping-actions { display: flex; gap: 6px; }
+.order-shipping-tracking { display: grid; gap: 4px; }
+.order-shipping-tracking > span { color: var(--tone-text-faint); font-size: 11px; }
+.order-shipping-tracking input {
+  width: 100%;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-ui);
+  background: var(--color-surface);
+  color: var(--erp-text);
+  font: inherit;
+  font-size: 13px;
+}
+.order-shipping-reason { color: var(--tone-text-faint); font-size: 11px; }
+.order-shipping-reason.is-warning { color: var(--color-warning-text); }
+
+/* 批量发货弹窗：发货表与地址组沿用原面板 */
+.shipping-batch-modal .modal-body { padding: 0; overflow: auto; }
+.shipping-batch-modal .shipping-progress { min-height: 0; }
+
+@media (max-width: 900px) {
+  .order-shipping-form { padding: 10px; }
+  .order-shipping-item { grid-template-columns: minmax(0, 1fr) 60px 38px; gap: 6px; padding: 6px 7px; }
+  .order-shipping-item-copy strong { font-size: 12.5px; }
+  .order-shipping-item input { height: 32px; font-size: 13px; }
+  .order-shipping-tracking input { height: 36px; font-size: 13px; }
+  .order-shipping-submit .button { width: 100%; min-height: 34px; justify-content: center; }
+}
+
 .order-item-image-modal .modal-panel { height: min(86vh, 880px); }
 .order-item-image-modal .modal-body {
   display: flex;
@@ -637,16 +752,8 @@
     display: flex;
     flex-direction: column;
     height: calc(100dvh - var(--env-banner-h));
-    gap: 8px;
-    padding: 12px 20px 16px;
-  }
-
-  .orders-page .orders-page-heading {
-    display: flex;
-    flex: 0 0 auto;
-    align-items: flex-end;
-    min-height: 38px;
-    gap: 14px;
+    gap: 6px;
+    padding: 6px 20px 12px;
   }
 
   .orders-page .orders-panel {
@@ -692,7 +799,8 @@
     white-space: nowrap;
   }
 
-  .orders-page .orders-create-button {
+  .orders-page .orders-create-button,
+  .orders-page .orders-batch-button {
     height: 32px;
     min-height: 32px;
     margin-left: 0;
@@ -1117,7 +1225,8 @@
     font-size: 11px;
   }
 
-  .orders-page .orders-create-button {
+  .orders-page .orders-create-button,
+  .orders-page .orders-batch-button {
     order: 3;
     justify-self: end;
     height: 30px;

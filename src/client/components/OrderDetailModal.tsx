@@ -12,6 +12,8 @@ import type { OrderContractDraft, OrderDraft, OrderStatus } from './OrderForm';
 import { getOrderNextAction, getOrderRollbackAction } from '../order-workflow';
 import { OrderProfitSummaryCard } from './orders/OrderProfitEditor';
 import OrderShipmentsPanel from './orders/OrderShipmentsPanel';
+import OrderShippingForm from './orders/OrderShippingForm';
+import type { PartialShipmentEntryInput } from '../../shared/shipping';
 
 export interface OrderDetailModalProps {
   open: boolean;
@@ -26,8 +28,8 @@ export interface OrderDetailModalProps {
   onAdvanceStatus?: (order: OrderDraft, status: OrderStatus) => void;
   onRollbackStatus?: (order: OrderDraft, status: OrderStatus) => void;
   onPublishOrder?: (order: OrderDraft) => void;
-  /** 发货中：关闭详情并切到发货中视图，定位该订单所在地址组。 */
-  onOpenShippingView?: (order: OrderDraft) => void;
+  /** 发货中：在详情内确认本次发货。 */
+  onConfirmShipping?: (entries: PartialShipmentEntryInput[]) => Promise<{ batchId: number } | undefined>;
   onOpenFinance?: (order: OrderDraft) => void;
   onPromoteCustomer?: (order: OrderDraft) => void;
   onShipmentChanged?: () => Promise<void> | void;
@@ -74,7 +76,7 @@ export default function OrderDetailModal({
   onAdvanceStatus,
   onRollbackStatus,
   onPublishOrder,
-  onOpenShippingView,
+  onConfirmShipping,
   onOpenFinance,
   onPromoteCustomer,
   onShipmentChanged,
@@ -128,6 +130,8 @@ export default function OrderDetailModal({
           <div style={detailStyle}><span style={labelStyle}>总箱数</span><strong style={{ fontSize: 13 }}>{order.totalBoxes ?? order.items.reduce((sum, item) => sum + item.boxes, 0)}</strong></div>
           <div style={detailStyle}><span style={labelStyle}>物流单号</span><strong style={{ fontSize: 13 }}>{order.trackingNo || '未填写'}</strong></div>
         </div>
+
+        <OrderShippingForm order={order} onConfirmShipping={onConfirmShipping} onChanged={onShipmentChanged} onNotify={onNotify} />
 
         {order.financeSummary && <section style={{ display: 'grid', gap: 8, padding: 12, background: 'linear-gradient(135deg, var(--color-accent-soft), var(--color-surface) 62%)', border: '1px solid var(--color-accent-border)', borderRadius: 'var(--radius-ui)' }}>
           <div className="order-detail-finance-head">
@@ -207,7 +211,7 @@ export default function OrderDetailModal({
           {onOpenFinance && <button type="button" onClick={() => onOpenFinance(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--color-accent-border)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-soft)', color: 'var(--tone-accent-text)', cursor: 'pointer', fontSize: 12 }}>财务详情</button>}
           {onDeleteOrder && !hasShipments && <button type="button" onClick={() => onDeleteOrder(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-surface)', color: 'var(--tone-danger-text)', cursor: 'pointer', fontSize: 12 }}><Trash2 size={14} />删除订单</button>}
           {rollbackAction && onRollbackStatus && !hasShipments && <button type="button" title={`${rollbackAction.label}（保留物流、附件与收款数据）`} onClick={() => onRollbackStatus(order, rollbackAction.target)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--tone-border-cool)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 12 }}><Undo2 size={14} />{rollbackAction.label}</button>}
-          {nextAction?.kind === 'advance' && onAdvanceStatus && <button type="button" onClick={() => onAdvanceStatus(order, nextAction.target)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-fill)', color: '#fff', cursor: 'pointer', fontSize: 12 }}><Truck size={14} />{nextAction.label}</button>}{nextAction?.kind === 'shipping-view' && onOpenShippingView && <button type="button" onClick={() => onOpenShippingView(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-fill)', color: '#fff', cursor: 'pointer', fontSize: 12 }}><Truck size={14} />去发货</button>}
+          {nextAction?.kind === 'advance' && onAdvanceStatus && <button type="button" onClick={() => onAdvanceStatus(order, nextAction.target)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-fill)', color: '#fff', cursor: 'pointer', fontSize: 12 }}><Truck size={14} />{nextAction.label}</button>}
         </div>
       </div>
     </Modal>

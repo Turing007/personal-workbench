@@ -196,7 +196,8 @@ export default function ShippingInProgressPanel({ orders, query, onSaveTracking,
   const batchErrors = selectedViews.filter((view) => view.invalid).map((view) => `${view.group.orders.map((order) => order.orderNo).join('、')}：${view.invalidReason}`);
   const sheetSource = selectedViews.length ? selectedViews : visibleViews;
   const sheetLines = sheetSource.map((view) => view.sheetLine).filter(Boolean);
-  const sheetText = sheetLines.join('\n');
+  // 每个收件地址之间空一行，复制出去后便于按地址分块。
+  const sheetText = sheetLines.join('\n\n');
 
   const setItemQuantity = (order: OrderDraft, item: OrderItemDraft, value: number) => {
     const quantity = Math.min(remainingQuantity(item), Math.max(0, Math.trunc(Number(value) || 0)));
@@ -462,7 +463,7 @@ export default function ShippingInProgressPanel({ orders, query, onSaveTracking,
         <span className="shipping-address-hint">{sheetLines.length} 个地址 · 箱数按每单拆解</span>
         <button type="button" className="button button-secondary button-sm" disabled={!sheetText} onClick={() => { void copySheet(); }}><Clipboard size={13} />复制发货表</button>
       </div>
-      <textarea className="textarea" readOnly rows={Math.max(3, Math.min(8, sheetLines.length + 1))} value={sheetText} aria-label="发货表" placeholder="本次有数量后，这里按地址组生成可复制的收件信息与箱数" />
+      <textarea className="textarea" readOnly rows={Math.max(3, Math.min(12, sheetLines.length * 2))} value={sheetText} aria-label="发货表" placeholder="本次有数量后，这里按地址组生成可复制的收件信息与箱数" />
     </section>
 
     {selectedViews.length > 0 && <div className="shipping-progress-bulk" role="region" aria-label="发货中批量操作">

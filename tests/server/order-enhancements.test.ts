@@ -249,6 +249,15 @@ describe('订单号基础设施', () => {
     const itemId = Number(detail.json().data.items[0].id);
     const enteredShipping = await app.inject({ method: 'POST', url: `/api/orders/${orderId}/status`, payload: { to: 'shipping' } });
     expect(enteredShipping.statusCode).toBe(200);
+    const backToPending = await app.inject({
+      method: 'POST',
+      url: `/api/orders/${orderId}/status`,
+      payload: { to: 'ship_pending', reason: 'rollback' },
+    });
+    expect(backToPending.statusCode).toBe(200);
+    expect(database.prepare('SELECT status FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'ship_pending' });
+    const reEnteredShipping = await app.inject({ method: 'POST', url: `/api/orders/${orderId}/status`, payload: { to: 'shipping' } });
+    expect(reEnteredShipping.statusCode).toBe(200);
     const shipped = await app.inject({
       method: 'POST',
       url: '/api/shipping/partial',
@@ -986,6 +995,37 @@ describe('订单编辑护栏', () => {
     });
     expect(allowed.statusCode).toBe(200);
     expect(allowed.json().data.amount).toBe(100);
+
+    await app.close();
+    database.close();
+  });
+
+  it('已发货订单不能修改收件信息，其他字段仍可保存', async () => {
+    const { app, database } = await makeContext();
+    const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput() });
+    expect(created.statusCode).toBe(201);
+    const order = created.json().data as { id: number; order_no: string };
+    database.prepare("UPDATE orders SET status = 'shipped' WHERE id = ?").run(order.id);
+
+    const changed = await app.inject({
+      method: 'PUT',
+      url: `/api/orders/${order.id}`,
+      payload: orderInput({ orderNo: order.order_no, recipientName: '李四', recipientInfo: '北京市朝阳区' }),
+    });
+    expect(changed.statusCode).toBe(400);
+    expect(changed.json().error.message).toContain('收件信息');
+    expect(database.prepare('SELECT recipient_name, recipient_info FROM orders WHERE id = ?').get(order.id)).toEqual({
+      recipient_name: '张三',
+      recipient_info: '深圳市宝安区',
+    });
+
+    const allowed = await app.inject({
+      method: 'PUT',
+      url: `/api/orders/${order.id}`,
+      payload: orderInput({ orderNo: order.order_no, remark: '已发货只改备注' }),
+    });
+    expect(allowed.statusCode).toBe(200);
+    expect(allowed.json().data.remark).toBe('已发货只改备注');
 
     await app.close();
     database.close();
