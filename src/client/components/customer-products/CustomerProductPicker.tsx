@@ -86,7 +86,7 @@ export default function CustomerProductPicker({ customerId, value, onSelect, onA
               {image ? <img src={image} alt={`${product.name}图片`} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Package size={18} aria-hidden="true" />}
             </span>
             <span style={{ minWidth: 0 }}>
-              <strong style={{ display: 'block', color: 'var(--color-text)', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.name}</strong>
+              <strong className="customer-product-picker-name" title={product.name}>{product.name}</strong>
               <small style={{ display: 'block', marginTop: 3, color: 'var(--color-text-secondary)' }}>{product.sku || '无客户 SKU'} · {product.specification || '无规格'} · {product.packCount ? `${product.packCount} 个/箱` : '装箱数待完善'}{product.finalPriceCents != null ? ` · ¥${(product.finalPriceCents / 100).toFixed(2)}` : ' · 价格待完善'}{product.remark.trim() || product.attachments.length ? ' · 已配置备注/附件' : ''}</small>
               <small style={{ display: 'block', marginTop: 2, color: 'var(--color-text-secondary)' }}>供应商：{product.supplier?.trim() || '未填'} · 成本价：{standardCost == null ? '未核对成本' : `¥${(standardCost / 100).toFixed(2)}`}</small>
             </span>

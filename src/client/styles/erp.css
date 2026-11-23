@@ -4057,3 +4057,17 @@
 @media (hover: none) {
   .customer-product-picker-preview { display: none; }
 }
+
+/* 选品卡标题按内容最多显示两行，行高随标题增长。 */
+.customer-product-picker-name {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
