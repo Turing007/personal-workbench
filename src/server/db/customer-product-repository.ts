@@ -15,6 +15,7 @@ interface CustomerProductRow extends Record<string, unknown> {
   system_product_id: number | null;
   name: string;
   supplier_product_name: string;
+  system_supplier: string | null;
   specification: string;
   sku: string;
   pack_count: number | null;
@@ -56,6 +57,7 @@ const customerProductSelect = `
     cp.system_product_id,
     cp.name,
     cp.supplier_product_name,
+    p.supplier AS system_supplier,
     cp.specification,
     cp.sku,
     cp.pack_count,
@@ -99,6 +101,7 @@ const customerProductSelect = `
     cp.created_at,
     cp.updated_at
   FROM customer_products cp
+  LEFT JOIN products p ON p.id = cp.system_product_id
 `;
 
 function mapCustomerProduct(row: CustomerProductRow | undefined): CustomerProduct | undefined {
@@ -109,6 +112,7 @@ function mapCustomerProduct(row: CustomerProductRow | undefined): CustomerProduc
     systemProductId: row.system_product_id === null ? null : Number(row.system_product_id),
     name: String(row.name ?? ''),
     supplierProductName: String(row.supplier_product_name ?? ''),
+    supplier: String(row.system_supplier ?? ''),
     specification: String(row.specification ?? ''),
     sku: String(row.sku ?? ''),
     packCount: row.pack_count === null ? null : Number(row.pack_count),

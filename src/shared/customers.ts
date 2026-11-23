@@ -32,6 +32,8 @@ export interface CustomerProduct {
   systemProductId: number | null;
   name: string;
   supplierProductName: string;
+  /** 系统产品档案里的供应商名称；临时添加的客户产品为空。 */
+  supplier?: string;
   specification: string;
   sku: string;
   packCount: number | null;

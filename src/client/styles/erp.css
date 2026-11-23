@@ -4028,3 +4028,27 @@
 @media (max-width: 900px) {
   .finance-columns-button { display: none; }
 }
+
+/* 客户产品选品缩略图的桌面悬停大图；触屏不显示，避免点选时浮层残留。 */
+.customer-product-picker-preview {
+  position: fixed;
+  z-index: 50;
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-ui);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-popover);
+  pointer-events: none;
+}
+
+.customer-product-picker-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+@media (hover: none) {
+  .customer-product-picker-preview { display: none; }
+}
