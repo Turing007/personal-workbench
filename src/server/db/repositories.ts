@@ -1282,7 +1282,7 @@ export class DatabaseRepositories {
     return Number(result.changes ?? 0) > 0;
   }
 
-  /** 只回填物流单号、不动状态：发货工作区里给未推进到「待发货」的订单提前录单号用。 */
+  /** 只回填物流单号、不动状态：发货中视图里暂存单号用。 */
   updateOrderTracking(orderId: number, trackingNo: string): boolean {
     const result = this.database
       .prepare('UPDATE orders SET tracking_no = ?, updated_at = ? WHERE id = ?')
@@ -1982,7 +1982,8 @@ export class DatabaseRepositories {
       unique.forEach((entry, index) => {
         const order = selectOrder.get(entry.orderId) as Record<string, unknown> | undefined;
         if (!order) throw new Error(`订单不存在：${entry.orderId}`);
-        if (order.status !== 'ship_pending') throw new Error(`订单 ${order.order_no} 当前不可发货`);
+        // 新流程在发货中确认；旧的待发货直接确认保留兼容，避免缓存页面整批失败。
+        if (order.status !== 'shipping' && order.status !== 'ship_pending') throw new Error(`订单 ${order.order_no} 当前不可发货`);
         this.assertShipmentPaymentCleared(order);
         const trackingNo = String(entry.trackingNo ?? '').trim();
         if (!trackingNo) throw new Error(`订单 ${order.order_no} 缺少物流单号`);
@@ -2040,7 +2041,7 @@ export class DatabaseRepositories {
           'SELECT COUNT(*) AS count FROM order_items WHERE order_id = ? AND shipped_quantity < quantity',
         ).get(entry.orderId) as { count?: unknown } | undefined)?.count ?? 0);
         database.prepare('UPDATE orders SET tracking_no = ?, status = ?, updated_at = ? WHERE id = ?')
-          .run(trackingNo, remaining === 0 ? 'shipped' : 'ship_pending', timestamp, entry.orderId);
+          .run(trackingNo, remaining === 0 ? 'shipped' : 'shipping', timestamp, entry.orderId);
         insertBatchOrder.run(batchId, entry.orderId, trackingNo, index);
       });
       database.prepare("UPDATE shipment_batches SET status = 'confirmed', confirmed_at = ? WHERE id = ?").run(timestamp, batchId);
@@ -2066,8 +2067,8 @@ export class DatabaseRepositories {
       const latest = database.prepare(
         'SELECT tracking_no FROM shipments WHERE order_id = ? ORDER BY shipped_at DESC, id DESC LIMIT 1',
       ).get(Number(shipment.order_id)) as { tracking_no?: unknown } | undefined;
-      const order = database.prepare('SELECT status FROM orders WHERE id = ?').get(Number(shipment.order_id)) as { status?: unknown } | undefined;
-      const nextStatus = remaining === 0 ? 'shipped' : order?.status === 'shipped' ? 'ship_pending' : String(order?.status ?? 'ship_pending');
+      // 撤销后只要还有未发数量，就退回发货中继续处理；不再回到待发货。
+      const nextStatus = remaining === 0 ? 'shipped' : 'shipping';
       database.prepare('UPDATE orders SET tracking_no = ?, status = ?, updated_at = ? WHERE id = ?')
         .run(String(latest?.tracking_no ?? ''), nextStatus, now(), Number(shipment.order_id));
       return { orderId: Number(shipment.order_id) };

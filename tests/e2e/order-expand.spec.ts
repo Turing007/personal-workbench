@@ -324,14 +324,14 @@ test('订单列表显示附件备注、隐藏物流单号，并可回退误点�
   }
 });
 
-test('已发货订单需在详情里撤销发货记录，退回待发货', async ({ page }) => {
+test('已发货订单需在详情里撤销发货记录，退回发货中', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const stamp = Date.now();
   const orderNo = `E2E-UNSHIP-${stamp}`;
   const orderId = await seedOrder(page, orderNo);
   let proofId: number | undefined;
   try {
-    for (const to of ['stock_reported', 'pending_packing', 'ship_pending']) {
+    for (const to of ['stock_reported', 'pending_packing', 'ship_pending', 'shipping']) {
       const advanced = await page.request.post(`/api/orders/${orderId}/status`, { data: { to } });
       expect(advanced.ok()).toBeTruthy();
     }
@@ -359,7 +359,7 @@ test('已发货订单需在详情里撤销发货记录，退回待发货', async
 
     const detail = await page.request.get(`/api/orders/${orderId}`);
     const saved = (await detail.json()).data as { status: string };
-    expect(saved.status).toBe('ship_pending');
+    expect(saved.status).toBe('shipping');
   } finally {
     if (proofId != null) await page.request.post(`/api/finance/proofs/${proofId}/void`, { data: { note: 'e2e 清理' } });
     await page.request.delete(`/api/orders/${orderId}`);

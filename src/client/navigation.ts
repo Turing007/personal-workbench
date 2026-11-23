@@ -6,7 +6,6 @@ import {
   FileSpreadsheet,
   HandCoins,
   LayoutDashboard,
-  PackageCheck,
   PackageOpen,
   ReceiptText,
   Settings,
@@ -15,7 +14,7 @@ import {
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 
-export type NavigationKey = 'dashboard' | 'orders' | 'stock' | 'finance' | 'water-slips' | 'quotations' | 'sales-documents' | 'products' | 'product-catalog' | 'customer-products' | 'library' | 'shipping' | 'settings';
+export type NavigationKey = 'dashboard' | 'orders' | 'stock' | 'finance' | 'water-slips' | 'quotations' | 'sales-documents' | 'products' | 'product-catalog' | 'customer-products' | 'library' | 'settings';
 
 export interface NavigationItem {
   key: NavigationKey;
@@ -25,14 +24,13 @@ export interface NavigationItem {
   icon: ComponentType<{ size?: number; strokeWidth?: number }>;
 }
 
-/* 按业务流程排序：报价 → 开单 → 订单 → 备货 → 发货 → 收款，其后是资料库与设置 */
+/* 按业务流程排序：报价 → 开单 → 订单 → 备货 → 收款，其后是资料库与设置 */
 export const navigationItems: NavigationItem[] = [
   { key: 'dashboard', label: '工作台', shortLabel: '工作台', icon: LayoutDashboard },
   { key: 'quotations', label: '报价单', shortLabel: '报价', icon: ReceiptText },
   { key: 'sales-documents', label: '销售单', shortLabel: '销售', icon: FileSpreadsheet },
   { key: 'orders', label: '订单', shortLabel: '订单', icon: ClipboardList },
   { key: 'stock', label: '备货', shortLabel: '备货', icon: PackageOpen },
-  { key: 'shipping', label: '发货', shortLabel: '发货', icon: PackageCheck },
   { key: 'finance', label: '财务', shortLabel: '财务', icon: WalletCards },
   { key: 'water-slips', label: '水单', shortLabel: '水单', icon: HandCoins },
   { key: 'products', label: '产品库', shortLabel: '产品', icon: Boxes },

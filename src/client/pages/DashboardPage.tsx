@@ -139,6 +139,7 @@ export default function DashboardPage({
     { label: '已备货', hint: '备货完成，等待开始打包', count: counts.stock_reported ?? 0, icon: PackageCheck, onClick: () => onOpenOrders('stock_reported', channelFilter) },
     { label: '待打包', hint: '打包中，完成后进入待发货', count: counts.pending_packing ?? 0, icon: PackageCheck, onClick: () => onOpenOrders('pending_packing', channelFilter) },
     { label: '待发货', hint: '打包完成等待发出', count: counts.ship_pending ?? 0, icon: Truck, onClick: () => onOpenOrders('ship_pending', channelFilter) },
+    { label: '发货中', hint: '已开始发货，待回填单号/确认', count: counts.shipping ?? 0, icon: Truck, onClick: () => onOpenOrders('shipping', channelFilter) },
     { label: '待审核水单', hint: '确认后计入已收', count: financeStats?.pendingProofCount ?? 0, icon: HandCoins, tone: 'warning', onClick: () => onOpenWaterSlips('pending', channelFilter) },
     { label: '待开票', hint: '对公订单待开票', count: financeStats?.pendingInvoiceCount ?? 0, icon: ReceiptText, tone: 'warning', onClick: () => onOpenFinance(channelFilter) },
     { label: '未分配公司', hint: '补公司后才能汇总', count: unassignedCompanyCount, icon: WalletCards, tone: unassignedCompanyCount > 0 ? 'danger' : undefined, onClick: () => onOpenOrders(undefined, channelFilter) },

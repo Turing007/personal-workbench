@@ -16,6 +16,7 @@ export const ORDER_STATUS_SEQUENCE = [
   'stock_reported',
   'pending_packing',
   'ship_pending',
+  'shipping',
   'shipped',
 ] as const;
 
@@ -36,6 +37,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   stock_reported: '已备货',
   pending_packing: '待打包',
   ship_pending: '待发货',
+  shipping: '发货中',
   shipped: '已发货',
 };
 
@@ -45,8 +47,8 @@ export const ORDER_STATUS_LABELS_WITH_DRAFT: Record<AnyOrderStatus, string> = {
 };
 
 /**
- * 发货工作区可见范围：只要还没发货就能进来提前录物流单号。
- * 草稿不算（信息可能不全），已发货排除；真正「确认发货」仍只对 ship_pending 生效。
+ * 未发货状态：草稿不算（信息可能不全），已发货排除。
+ * 发货中仍属于未发完，允许继续处理和打印箱唛。
  */
 export function isUnshippedStatus(status: unknown): boolean {
   return status !== ORDER_DRAFT_STATUS && status !== 'shipped';
@@ -58,12 +60,13 @@ export function isDraftStatus(status: unknown): status is typeof ORDER_DRAFT_STA
 
 export type TransitionReason = 'manual' | 'rollback';
 
-/** 只开放可撤销的上一步业务动作，不按序号盲目回退；已发货可撤销回待发货，批次与打印记录保留。 */
+/** 只开放可撤销的上一步业务动作，不按序号盲目回退；已发货可退回发货中（有发货记录时由服务端拦截）。 */
 export const ORDER_ROLLBACK_TARGETS: Partial<Record<OrderStatus, OrderStatus>> = {
   stock_reported: 'pending_stock',
   pending_packing: 'stock_reported',
   ship_pending: 'pending_packing',
-  shipped: 'ship_pending',
+  shipping: 'ship_pending',
+  shipped: 'shipping',
 };
 
 export function canRollback(from: OrderStatus, to: OrderStatus): boolean {
@@ -158,7 +161,7 @@ export function canTransition(
 
   if (fromIndex < 0 || toIndex !== fromIndex + 1) return false;
   if (context.reason !== 'manual') return false;
-  if (from === 'ship_pending' && to === 'shipped') {
+  if (from === 'shipping' && to === 'shipped') {
     return Boolean(context.trackingNo?.trim());
   }
   return true;
@@ -193,7 +196,7 @@ export function getTransitionError(
   if (context.reason !== 'manual') {
     return '该状态推进必须由用户手动操作';
   }
-  if (from === 'ship_pending' && to === 'shipped' && !context.trackingNo?.trim()) {
+  if (from === 'shipping' && to === 'shipped' && !context.trackingNo?.trim()) {
     return '确认已发货前必须填写物流单号';
   }
   return canTransition(from, to, context) ? null : '当前条件不满足状态推进要求';

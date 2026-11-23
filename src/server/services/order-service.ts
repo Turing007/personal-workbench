@@ -30,12 +30,14 @@ const STATUS_ALIASES: Record<string, OrderStatus | 'draft'> = {
   stock_reported: 'stock_reported',
   pending_packing: 'pending_packing',
   ship_pending: 'ship_pending',
+  shipping: 'shipping',
   shipped: 'shipped',
   待打印箱唛: 'label_pending',
   待备货: 'pending_stock',
   已备货: 'stock_reported',
   待打包: 'pending_packing',
   待发货: 'ship_pending',
+  发货中: 'shipping',
   已发货: 'shipped',
 };
 
@@ -446,7 +448,7 @@ export class OrderService {
       }
       const items = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];
       if (items.some((item) => Number(item.shipped_quantity ?? 0) < Number(item.quantity ?? 0))) {
-        throw new Error('订单还有未发完的产品，请到发货工作区按数量确认发货');
+        throw new Error('订单还有未发完的产品，请到发货中按数量确认发货');
       }
     }
 

@@ -12,7 +12,7 @@ import { calculateFreightCents, calculateOrderLineAmountCents, calculateOrderTot
 import { dateInputValue, dateOnlyValue } from '../../shared/date-input';
 import { extractRecipientName } from '../order-recipient';
 import { ORDER_SETTLEMENT_LABELS, isSettlementType, type OrderSettlementType } from '../../shared/settlement';
-import { ORDER_CHANNEL_LABELS, type OrderChannel } from '../../shared/domain';
+import { ORDER_CHANNEL_LABELS, type AnyOrderStatus, type OrderChannel } from '../../shared/domain';
 import type { Company } from '../../shared/companies';
 import type { Customer, CustomerProduct as CustomerProductRecord, CustomerProductAttachment, CustomerProductSaveInput, CustomerSaveInput } from '../../shared/customers';
 import ImagePasteUpload, { type ImageAttachment } from './ImagePasteUpload';
@@ -25,7 +25,8 @@ import Modal from './Modal';
 import { OrderCostEditor, OrderItemCostEditor, OrderProfitSummaryCard } from './orders/OrderProfitEditor';
 
 export type ToastKind = 'success' | 'info' | 'error';
-export type OrderStatus = 'draft' | 'label_pending' | 'pending_stock' | 'stock_reported' | 'pending_packing' | 'ship_pending' | 'shipped';
+/** 订单状态统一从 shared/domain 派生，避免客户端再维护一份联合类型。 */
+export type OrderStatus = AnyOrderStatus;
 
 export interface PackagingOption {
   id: string;

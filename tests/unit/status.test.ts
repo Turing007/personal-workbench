@@ -16,6 +16,7 @@ describe('订单状态流转', () => {
       'stock_reported',
       'pending_packing',
       'ship_pending',
+      'shipping',
       'shipped',
     ] satisfies OrderStatus[]);
   });
@@ -33,11 +34,13 @@ describe('订单状态流转', () => {
     expect(canTransition('stock_reported', 'ship_pending')).toBe(false);
   });
 
-  it('待发货只有在物流单号非空时才能变为已发货', () => {
-    expect(canTransition('ship_pending', 'shipped', { reason: 'manual', trackingNo: '  ' })).toBe(false);
-    expect(canTransition('ship_pending', 'shipped', { reason: 'manual' })).toBe(false);
-    expect(canTransition('ship_pending', 'shipped', { reason: 'manual', trackingNo: 'SF123456' })).toBe(true);
-    expect(getTransitionError('ship_pending', 'shipped', { reason: 'manual' })).toContain('物流单号');
+  it('待发货进入发货中不要求物流单号，发货中确认已发货才要求单号', () => {
+    expect(canTransition('ship_pending', 'shipping', { reason: 'manual' })).toBe(true);
+    expect(canTransition('ship_pending', 'shipped', { reason: 'manual', trackingNo: 'SF123456' })).toBe(false);
+    expect(canTransition('shipping', 'shipped', { reason: 'manual', trackingNo: '  ' })).toBe(false);
+    expect(canTransition('shipping', 'shipped', { reason: 'manual' })).toBe(false);
+    expect(canTransition('shipping', 'shipped', { reason: 'manual', trackingNo: 'SF123456' })).toBe(true);
+    expect(getTransitionError('shipping', 'shipped', { reason: 'manual' })).toContain('物流单号');
   });
 
   it('不允许跳过中间状态或反向流转', () => {
@@ -46,22 +49,25 @@ describe('订单状态流转', () => {
     expect(canTransition('shipped', 'ship_pending', { reason: 'manual' })).toBe(false);
   });
 
-  it('只允许撤销最近一次备货/打包动作，已发货不能直接回退', () => {
+  it('只允许撤销最近一次备货/打包/发货动作，已发货不能直接跳过发货中', () => {
     expect(canRollback('stock_reported', 'pending_stock')).toBe(true);
     expect(canRollback('pending_packing', 'stock_reported')).toBe(true);
     expect(canRollback('ship_pending', 'pending_packing')).toBe(true);
     expect(canTransition('ship_pending', 'pending_packing', { reason: 'rollback' })).toBe(true);
     expect(getTransitionError('ship_pending', 'pending_packing', { reason: 'rollback' })).toBeNull();
 
+    expect(canRollback('shipping', 'ship_pending')).toBe(true);
+    expect(getTransitionError('shipping', 'ship_pending', { reason: 'rollback' })).toBeNull();
     expect(canRollback('ship_pending', 'stock_reported')).toBe(false);
-    expect(canRollback('shipped', 'ship_pending')).toBe(true);
+    expect(canRollback('shipped', 'shipping')).toBe(true);
+    expect(canRollback('shipped', 'ship_pending')).toBe(false);
     expect(canRollback('shipped', 'pending_packing')).toBe(false);
     expect(canRollback('pending_stock', 'label_pending')).toBe(false);
-    expect(getTransitionError('shipped', 'ship_pending', { reason: 'rollback' })).toBeNull();
+    expect(getTransitionError('shipped', 'shipping', { reason: 'rollback' })).toBeNull();
   });
 
-  it('发货工作区收所有未发货状态，草稿与已发货排除在外', () => {
-    for (const status of ['label_pending', 'pending_stock', 'stock_reported', 'pending_packing', 'ship_pending'] as OrderStatus[]) {
+  it('未发货状态包含发货中，草稿与已发货排除在外', () => {
+    for (const status of ['label_pending', 'pending_stock', 'stock_reported', 'pending_packing', 'ship_pending', 'shipping'] as OrderStatus[]) {
       expect(isUnshippedStatus(status)).toBe(true);
     }
     expect(isUnshippedStatus('shipped')).toBe(false);

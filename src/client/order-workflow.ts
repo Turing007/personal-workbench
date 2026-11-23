@@ -1,10 +1,9 @@
 import type { OrderDraft, OrderStatus } from './components/OrderForm';
 import { ORDER_STATUS_LABELS, ORDER_ROLLBACK_TARGETS, type OrderStatus as DomainOrderStatus } from '../shared/domain';
-import { isOrderPaymentCleared } from '../shared/finance';
 
 export type OrderNextAction =
   | { kind: 'advance'; label: string; target: OrderStatus }
-  | { kind: 'shipping'; label: string }
+  | { kind: 'shipping-view'; label: string }
   | { kind: 'publish'; label: string };
 
 const actions: Partial<Record<OrderStatus, OrderNextAction>> = {
@@ -13,7 +12,8 @@ const actions: Partial<Record<OrderStatus, OrderNextAction>> = {
   pending_stock: { kind: 'advance', label: '确认已备货', target: 'stock_reported' },
   stock_reported: { kind: 'advance', label: '开始打包', target: 'pending_packing' },
   pending_packing: { kind: 'advance', label: '完成打包', target: 'ship_pending' },
-  ship_pending: { kind: 'shipping', label: '发货' },
+  ship_pending: { kind: 'advance', label: '发货', target: 'shipping' },
+  shipping: { kind: 'shipping-view', label: '继续发货' },
 };
 
 export function getOrderNextAction(status?: OrderStatus): OrderNextAction | undefined {
@@ -30,7 +30,7 @@ export function getOrderRollbackAction(status?: OrderStatus): OrderRollbackActio
   if (!status || status === 'draft') return undefined;
   const target = ORDER_ROLLBACK_TARGETS[status];
   if (!target) return undefined;
-  return { label: status === 'shipped' ? '撤销发货' : `回退到${ORDER_STATUS_LABELS[target]}`, target };
+  return { label: status === 'shipped' ? '退回发货中' : `回退到${ORDER_STATUS_LABELS[target]}`, target };
 }
 
 export function isUnshippedOrder(order: OrderDraft): boolean {
@@ -62,7 +62,7 @@ export interface BatchAdvancePlan {
  * 批量操作分类：
  * - 备货：待备货 → 已备货
  * - 打包：已备货/待打包 → 完成打包推进到待发货（已备货订单会先经过待打包）
- * - 发货：待发货且已填物流单号 → 已发货（缺物流单号的订单跳过）
+ * - 发货：待发货 → 发货中（只推进状态，单号和确认发货在发货中视图完成）
  */
 export function getBatchAdvancePlan(
   selected: BatchAdvanceOrder[],
@@ -78,11 +78,7 @@ export function getBatchAdvancePlan(
     } else if (action === 'pack' && order.status === 'pending_packing') {
       targets.push({ order, steps: ['ship_pending'] });
     } else if (action === 'ship' && order.status === 'ship_pending') {
-      const receivableCents = order.financeSummary?.receivableCents ?? Math.round(Number(order.amount || 0) * 100);
-      const receivedCents = order.financeSummary?.receivedCents ?? 0;
-      if (!String(order.trackingNo ?? '').trim()) skipped.push({ orderNo: order.orderNo, reason: '缺少物流单号' });
-      else if (!isOrderPaymentCleared(receivableCents, receivedCents)) skipped.push({ orderNo: order.orderNo, reason: '未确认收到货款' });
-      else targets.push({ order, steps: ['shipped'] });
+      targets.push({ order, steps: ['shipping'] });
     } else {
       skipped.push({ orderNo: order.orderNo, reason: '当前状态不支持该操作' });
     }

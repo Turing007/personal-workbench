@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { FINANCE_PAYMENT_STATUS_LABELS, INVOICE_STATUS_LABELS, PAYMENT_PROOF_STATUS_LABELS } from '../../shared/finance';
 import { ORDER_SETTLEMENT_LABELS, invoiceDisplayLabel } from '../../shared/settlement';
 import { getOrderFulfillmentProgress } from '../../shared/shipping';
+import { ORDER_STATUS_LABELS_WITH_DRAFT } from '../../shared/domain';
 import { formatDateTime } from '../../shared/formatters';
 import { thumbUrl } from '../image-urls';
 import Modal from './Modal';
@@ -25,22 +26,15 @@ export interface OrderDetailModalProps {
   onAdvanceStatus?: (order: OrderDraft, status: OrderStatus) => void;
   onRollbackStatus?: (order: OrderDraft, status: OrderStatus) => void;
   onPublishOrder?: (order: OrderDraft) => void;
-  onOpenShipping?: (order: OrderDraft) => void;
+  /** 发货中：关闭详情并切到发货中视图，定位该订单所在地址组。 */
+  onOpenShippingView?: (order: OrderDraft) => void;
   onOpenFinance?: (order: OrderDraft) => void;
   onPromoteCustomer?: (order: OrderDraft) => void;
   onShipmentChanged?: () => Promise<void> | void;
   onNotify?: (message: string, kind?: 'success' | 'error' | 'info') => void;
 }
 
-const statusLabels: Record<OrderStatus, string> = {
-  draft: '草稿',
-  label_pending: '待打印箱唛',
-  pending_stock: '待备货',
-  stock_reported: '已备货',
-  pending_packing: '待打包',
-  ship_pending: '待发货',
-  shipped: '已发货',
-};
+const statusLabels: Record<OrderStatus, string> = ORDER_STATUS_LABELS_WITH_DRAFT;
 
 const detailStyle = { display: 'grid', gap: 4, minWidth: 0 };
 const labelStyle = { color: 'var(--tone-text-faint)', fontSize: 11 };
@@ -80,7 +74,7 @@ export default function OrderDetailModal({
   onAdvanceStatus,
   onRollbackStatus,
   onPublishOrder,
-  onOpenShipping,
+  onOpenShippingView,
   onOpenFinance,
   onPromoteCustomer,
   onShipmentChanged,
@@ -100,7 +94,7 @@ export default function OrderDetailModal({
   const financeProofStatus = (order.financeSummary?.proofStatus ?? 'none') as keyof typeof PAYMENT_PROOF_STATUS_LABELS;
   const financeInvoiceStatus = (order.financeSummary?.invoiceStatus ?? 'not_requested') as keyof typeof INVOICE_STATUS_LABELS;
   const fulfillment = getOrderFulfillmentProgress(order.items);
-  const partiallyShipped = order.status === 'ship_pending' && fulfillment.isPartiallyShipped;
+  const shippingInProgress = order.status === 'shipping';
   const hasShipments = order.items.some((item) => (item.shippedQuantity ?? 0) > 0);
 
   const deleteContract = async (contract: OrderContractDraft) => {
@@ -127,7 +121,7 @@ export default function OrderDetailModal({
     <Modal open={open} title={`订单详情 · ${order.orderNo}`} onClose={onClose} width={760} variant="drawer" className="order-detail-drawer">
       <div style={{ display: 'grid', gap: 16 }}>
         <div className="order-detail-summary">
-          <div style={detailStyle}><span style={labelStyle}>订单状态</span><strong style={{ color: order.status === 'draft' ? 'var(--tone-text-soft)' : 'var(--tone-accent-text)', fontSize: 13 }}>{partiallyShipped ? '部分发货' : order.status ? statusLabels[order.status] : '未设置'}</strong><span style={{ color: partiallyShipped ? 'var(--tone-accent-text)' : order.status === 'draft' ? 'var(--tone-text-soft)' : order.labelPrintedAt ? 'var(--tone-accent-text)' : 'var(--color-warning-text)', fontSize: 11 }}>{partiallyShipped ? `已发 ${fulfillment.shippedQuantity}/${fulfillment.totalQuantity} 件 · 剩余 ${fulfillment.remainingQuantity} 件` : order.status === 'draft' ? '草稿订单，发布后进入正式流程' : order.labelPrintedAt ? `箱唛已打印 · ${formatDateTime(order.labelPrintedAt)}` : '箱唛待打印（不影响流程）'}</span></div>
+          <div style={detailStyle}><span style={labelStyle}>订单状态</span><strong style={{ color: order.status === 'draft' ? 'var(--tone-text-soft)' : shippingInProgress ? 'var(--status-shipping)' : 'var(--tone-accent-text)', fontSize: 13 }}>{order.status ? statusLabels[order.status] : '未设置'}</strong><span style={{ color: shippingInProgress ? 'var(--status-shipping)' : order.status === 'draft' ? 'var(--tone-text-soft)' : order.labelPrintedAt ? 'var(--tone-accent-text)' : 'var(--color-warning-text)', fontSize: 11 }}>{shippingInProgress ? `已发 ${fulfillment.shippedQuantity}/${fulfillment.totalQuantity} 件 · 剩余 ${fulfillment.remainingQuantity} 件` : order.status === 'draft' ? '草稿订单，发布后进入正式流程' : order.labelPrintedAt ? `箱唛已打印 · ${formatDateTime(order.labelPrintedAt)}` : '箱唛待打印（不影响流程）'}</span></div>
           <div style={detailStyle}><span style={labelStyle}>下单时间</span><strong style={{ fontSize: 13 }}>{formatDate(order.orderedAt)}</strong>{order.createdBy && <span style={{ color: 'var(--tone-text-soft)', fontSize: 11 }}>创建人 · {order.createdBy}</span>}</div>
           <div style={detailStyle}><span style={labelStyle}>订单金额</span><strong style={{ fontSize: 13 }}>¥ {order.amount || '0.00'}</strong></div>
           <div style={detailStyle}><span style={labelStyle}>运费</span><strong style={{ fontSize: 13 }}>¥ {((order.shippingCents ?? 0) / 100).toFixed(2)}</strong></div>
@@ -213,7 +207,7 @@ export default function OrderDetailModal({
           {onOpenFinance && <button type="button" onClick={() => onOpenFinance(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--color-accent-border)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-soft)', color: 'var(--tone-accent-text)', cursor: 'pointer', fontSize: 12 }}>财务详情</button>}
           {onDeleteOrder && !hasShipments && <button type="button" onClick={() => onDeleteOrder(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-surface)', color: 'var(--tone-danger-text)', cursor: 'pointer', fontSize: 12 }}><Trash2 size={14} />删除订单</button>}
           {rollbackAction && onRollbackStatus && !hasShipments && <button type="button" title={`${rollbackAction.label}（保留物流、附件与收款数据）`} onClick={() => onRollbackStatus(order, rollbackAction.target)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--tone-border-cool)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 12 }}><Undo2 size={14} />{rollbackAction.label}</button>}
-          {nextAction?.kind === 'advance' && onAdvanceStatus && <button type="button" onClick={() => onAdvanceStatus(order, nextAction.target)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-fill)', color: '#fff', cursor: 'pointer', fontSize: 12 }}><Truck size={14} />{nextAction.label}</button>}{nextAction?.kind === 'shipping' && onOpenShipping && <button type="button" onClick={() => onOpenShipping(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-fill)', color: '#fff', cursor: 'pointer', fontSize: 12 }}><Truck size={14} />{nextAction.label}</button>}
+          {nextAction?.kind === 'advance' && onAdvanceStatus && <button type="button" onClick={() => onAdvanceStatus(order, nextAction.target)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-fill)', color: '#fff', cursor: 'pointer', fontSize: 12 }}><Truck size={14} />{nextAction.label}</button>}{nextAction?.kind === 'shipping-view' && onOpenShippingView && <button type="button" onClick={() => onOpenShippingView(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-fill)', color: '#fff', cursor: 'pointer', fontSize: 12 }}><Truck size={14} />去发货</button>}
         </div>
       </div>
     </Modal>

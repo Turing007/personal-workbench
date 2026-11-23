@@ -247,6 +247,8 @@ describe('订单号基础设施', () => {
 
     const detail = await app.inject({ method: 'GET', url: `/api/orders/${orderId}/detail` });
     const itemId = Number(detail.json().data.items[0].id);
+    const enteredShipping = await app.inject({ method: 'POST', url: `/api/orders/${orderId}/status`, payload: { to: 'shipping' } });
+    expect(enteredShipping.statusCode).toBe(200);
     const shipped = await app.inject({
       method: 'POST',
       url: '/api/shipping/partial',
@@ -257,13 +259,13 @@ describe('订单号基础设施', () => {
     const shippedRollback = await app.inject({
       method: 'POST',
       url: `/api/orders/${orderId}/status`,
-      payload: { to: 'ship_pending', reason: 'rollback' },
+      payload: { to: 'shipping', reason: 'rollback' },
     });
     expect(shippedRollback.statusCode).toBe(400);
     expect(shippedRollback.json().error.message).toContain('撤销发货记录');
     const voided = await app.inject({ method: 'DELETE', url: `/api/shipping/shipments/${shipmentId}` });
     expect(voided.statusCode).toBe(200);
-    expect(database.prepare('SELECT status FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'ship_pending' });
+    expect(database.prepare('SELECT status FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'shipping' });
     database.close();
   });
 
@@ -275,7 +277,7 @@ describe('订单号基础设施', () => {
       payload: orderInput({ items: [{ name: '收款校验产品', sku: 'VT-PAY', specification: '标准', packagingName: '彩盒包装', packCount: 10, quantity: 10, unitPriceCents: 1000 }] }),
     });
     const orderId = Number(created.json().data.id);
-    for (const to of ['stock_reported', 'pending_packing', 'ship_pending']) {
+    for (const to of ['stock_reported', 'pending_packing', 'ship_pending', 'shipping']) {
       const advanced = await app.inject({ method: 'POST', url: `/api/orders/${orderId}/status`, payload: { to } });
       expect(advanced.statusCode).toBe(200);
     }

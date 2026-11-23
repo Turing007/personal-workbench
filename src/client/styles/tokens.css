@@ -139,6 +139,8 @@
   --status-stock-reported-soft: #ecfeff;
   --status-pending-packing: #ea580c;
   --status-pending-packing-soft: #fff7ed;
+  --status-shipping: #0284c7;
+  --status-shipping-soft: #f0f9ff;
 }
 
 /* ===== 深色模式：跟随系统 ===== */
@@ -216,6 +218,8 @@
     --status-stock-reported-soft: rgba(34, 211, 238, .12);
     --status-pending-packing: #fb923c;
     --status-pending-packing-soft: rgba(251, 146, 60, .13);
+    --status-shipping: #38bdf8;
+    --status-shipping-soft: rgba(56, 189, 248, .13);
   }
 }
 

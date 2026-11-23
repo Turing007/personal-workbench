@@ -9,6 +9,7 @@ import OrderItemCards from '../components/OrderItemCards';
 import OrderForm, { type CustomerProduct, type OrderDraft, type OrderStatus } from '../components/OrderForm';
 import OrderProductQuickList from '../components/orders/OrderProductQuickList';
 import PromoteCustomerModal from '../components/orders/PromoteCustomerModal';
+import ShippingInProgressPanel from '../components/orders/ShippingInProgressPanel';
 import PrintWorkspace from '../components/PrintWorkspace';
 import StatusCards from '../components/StatusCards';
 import { ORDER_CHANNELS, ORDER_CHANNEL_LABELS, ORDER_STATUS_LABELS_WITH_DRAFT, type OrderChannel } from '../../shared/domain';
@@ -19,7 +20,7 @@ import PaymentProofEditor from '../components/finance/PaymentProofEditor';
 import { OrderCostEditor, OrderItemCostEditor, OrderProfitSummaryCard } from '../components/orders/OrderProfitEditor';
 import { badgeClass, errorText, money } from '../components/finance/finance-format';
 import { calculateOrderProfit } from '../../shared/order-profit';
-import { getOrderFulfillmentProgress } from '../../shared/shipping';
+import { getOrderFulfillmentProgress, type PartialShipmentEntryInput } from '../../shared/shipping';
 import { formatDateTime } from '../../shared/formatters';
 import type { Company } from '../../shared/companies';
 import type { Customer, CustomerSaveInput } from '../../shared/customers';
@@ -54,7 +55,10 @@ export interface OrdersPageProps {
   onRollbackStatus?: (order: OrderDraft, status: OrderStatus) => void;
   onBatchAdvance?: (orders: OrderDraft[], action: BatchAdvanceAction) => void;
   onPublishOrder?: (order: OrderDraft) => void;
-  onOpenShipping?: (order: OrderDraft) => void;
+  /** 发货中：暂存物流单号，不推进状态。 */
+  onSaveTracking?: (orderId: string, trackingNo: string) => Promise<boolean>;
+  /** 发货中：确认本批/合并发货，返回批次 ID 用于下载清单。 */
+  onConfirmShipping?: (entries: PartialShipmentEntryInput[]) => Promise<{ batchId: number } | undefined>;
   onOpenFinance?: (order: OrderDraft) => void;
   onSaveLabels?: (order: OrderDraft, labels: CartonLabel[]) => void | Promise<CartonLabel[] | undefined>;
   onMergeLabels?: (order: OrderDraft, labelIds: string[]) => Promise<CartonLabel[] | undefined> | CartonLabel[] | undefined;
@@ -65,19 +69,12 @@ export interface OrdersPageProps {
   onNotify?: (message: string, kind?: 'success' | 'info' | 'error') => void;
 }
 
-const statusLabels: Record<OrderStatus, string> = {
-  draft: '草稿',
-  label_pending: '待打印箱唛',
-  pending_stock: '待备货',
-  stock_reported: '已备货',
-  pending_packing: '待打包',
-  ship_pending: '待发货',
-  shipped: '已发货',
-};
+const statusLabels: Record<OrderStatus, string> = ORDER_STATUS_LABELS_WITH_DRAFT;
 
 function statusBadgeClass(status?: OrderStatus): string {
   if (status === 'draft') return 'badge badge-neutral';
   if (status === 'shipped') return 'badge badge-success';
+  if (status === 'shipping') return 'badge badge-info';
   if (status === 'ship_pending') return 'badge badge-warning';
   return 'badge badge-neutral';
 }
@@ -165,7 +162,7 @@ export function fallbackLabels(order: OrderDraft): CartonLabel[] {
 
 const ORDERS_CHANNEL_STORAGE_KEY = 'workbench:orders-channel';
 
-export default function OrdersPage({ orders, customers, companies = [], labelsByOrderId, initialOrderId, initialStatus, onInitialStatusConsumed, initialChannel, onInitialChannelConsumed, startCreate, onStartCreateConsumed, onSaveOrder, onSaveDraft, onDeleteOrder, onSaveCustomerProduct, onCreateCustomer, onGetNextOrderNumber, onDeleteContract, onGenerateContract, onAdvanceStatus, onRollbackStatus, onBatchAdvance, onPublishOrder, onOpenShipping, onOpenFinance, onSaveLabels, onMergeLabels, onRestoreAutoLabels, onPrintHistory, onRefreshOrders, onNotify }: OrdersPageProps) {
+export default function OrdersPage({ orders, customers, companies = [], labelsByOrderId, initialOrderId, initialStatus, onInitialStatusConsumed, initialChannel, onInitialChannelConsumed, startCreate, onStartCreateConsumed, onSaveOrder, onSaveDraft, onDeleteOrder, onSaveCustomerProduct, onCreateCustomer, onGetNextOrderNumber, onDeleteContract, onGenerateContract, onAdvanceStatus, onRollbackStatus, onBatchAdvance, onPublishOrder, onSaveTracking, onConfirmShipping, onOpenFinance, onSaveLabels, onMergeLabels, onRestoreAutoLabels, onPrintHistory, onRefreshOrders, onNotify }: OrdersPageProps) {
   const [activeChannel, setActiveChannel] = useState<OrderChannel>(() => {
     try {
       const saved = localStorage.getItem(ORDERS_CHANNEL_STORAGE_KEY);
@@ -253,6 +250,11 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
       return matchesStatus && (!needle || searchable.includes(needle));
     });
   }, [statusFilters, channelOrders, query]);
+  const shippingViewActive = statusFilters.length === 1 && statusFilters[0] === 'shipping';
+  const shippingOrdersInChannel = useMemo(() => channelOrders.filter((order) => order.status === 'shipping'), [channelOrders]);
+  useEffect(() => {
+    if (shippingViewActive) setSelectedIds([]);
+  }, [shippingViewActive]);
   const showAttachmentColumn = visibleOrders.some((order) => (order.contracts?.length ?? 0) > 0);
 
   const openLabels = (order: OrderDraft) => {
@@ -323,6 +325,17 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
     onPublishOrder(order);
   };
 
+  /**
+   * 进入发货中视图：列表操作「继续发货」只切筛选；详情里的「去发货」额外用单号定位地址组。
+   * 待发货点「发货」不调用这里，按需求只改状态、不切视图。
+   */
+  const openShippingView = (order?: OrderDraft) => {
+    setDetailOrder(undefined);
+    setSelectedIds([]);
+    setStatusFilters(['shipping']);
+    if (order) setQuery(order.orderNo);
+  };
+
   // 手机卡片把状态胶囊本身做成「一键推进」按钮：胶囊上直接写着下一步动作，点一下完成本步。
   // 缺对应回调时返回 undefined，让胶囊退回只读徽章，避免出现「点了没反应」的按钮。
   const cardStatusAction = (order: OrderDraft) => {
@@ -330,24 +343,24 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
     if (!nextAction) return undefined;
     const available = nextAction.kind === 'advance'
       ? Boolean(onAdvanceStatus)
-      : nextAction.kind === 'shipping' ? Boolean(onOpenShipping) : Boolean(onPublishOrder);
+      : nextAction.kind === 'shipping-view' ? true : Boolean(onPublishOrder);
     return available ? nextAction : undefined;
   };
 
   const runCardStatusAction = (order: OrderDraft, nextAction: OrderNextAction) => {
     if (nextAction.kind === 'advance') onAdvanceStatus?.(order, nextAction.target);
-    else if (nextAction.kind === 'shipping') onOpenShipping?.(order);
+    else if (nextAction.kind === 'shipping-view') openShippingView();
     else publishOrder(order);
   };
 
   const renderCardStatus = (order: OrderDraft) => {
     const nextAction = cardStatusAction(order);
     const progress = getOrderFulfillmentProgress(order.items);
-    const partiallyShipped = order.status === 'ship_pending' && progress.isPartiallyShipped;
-    const label = partiallyShipped ? '部分发货' : order.status ? statusLabels[order.status] : '-';
-    if (!nextAction) return <span className={statusBadgeClass(order.status)} title={partiallyShipped ? `已发 ${progress.shippedQuantity}/${progress.totalQuantity} 件` : undefined}>{label}</span>;
-    const nextLabel = partiallyShipped ? '继续发货' : nextAction.label;
-    return <button type="button" className={`status-action-pill tone-${(order.status ?? 'draft').replace(/_/g, '-')}`} aria-label={`${label}，一键${nextLabel}`} title={`一键${nextLabel}${partiallyShipped ? ` · 已发 ${progress.shippedQuantity}/${progress.totalQuantity} 件` : ''}`} onClick={() => runCardStatusAction(order, nextAction)}><span className="status-action-pill-current">{label}</span><span className="status-action-pill-next">{nextLabel}</span></button>;
+    const label = order.status ? statusLabels[order.status] : '-';
+    const progressText = order.status === 'shipping' ? `已发 ${progress.shippedQuantity}/${progress.totalQuantity} 件 · 剩余 ${progress.remainingQuantity} 件` : undefined;
+    if (!nextAction) return <span className={statusBadgeClass(order.status)} title={progressText}>{label}</span>;
+    const nextLabel = nextAction.label;
+    return <button type="button" className={`status-action-pill tone-${(order.status ?? 'draft').replace(/_/g, '-')}`} aria-label={`${label}，一键${nextLabel}`} title={`一键${nextLabel}${progressText ? ` · ${progressText}` : ''}`} onClick={() => runCardStatusAction(order, nextAction)}><span className="status-action-pill-current">{label}</span><span className="status-action-pill-next">{nextLabel}</span></button>;
   };
 
   // 桌面表格行与手机卡片共用的操作按钮。草稿订单不显示箱唛/流程推进，改为发布入口。
@@ -365,13 +378,13 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
     const advanceButton = order.status !== 'draft' && showNextAction
       ? nextAction?.kind === 'advance' && onAdvanceStatus
         ? <button type="button" className="link-button muted" title={nextAction.label} onClick={() => onAdvanceStatus(order, nextAction.target)}>{nextAction.label}</button>
-        : nextAction?.kind === 'shipping' && onOpenShipping
-          ? <button type="button" className="link-button muted" title={nextAction.label} onClick={() => onOpenShipping(order)}>{nextAction.label}</button>
+        : nextAction?.kind === 'shipping-view'
+          ? <button type="button" className="link-button muted" title="进入发货中视图" onClick={() => openShippingView()}>{nextAction.label}</button>
           : null
       : null;
     const hasShipments = order.items.some((item) => (item.shippedQuantity ?? 0) > 0);
     const rollbackButton = order.status !== 'draft' && rollbackAction && onRollbackStatus && !hasShipments
-      ? <button type="button" className="link-button muted" title={`${rollbackAction.label}（保留物流、附件与收款数据）`} onClick={() => onRollbackStatus(order, rollbackAction.target)}>{order.status === 'shipped' ? '撤销发货' : '回退'}</button>
+      ? <button type="button" className="link-button muted" title={`${rollbackAction.label}（保留物流、附件与收款数据）`} onClick={() => onRollbackStatus(order, rollbackAction.target)}>{order.status === 'shipped' ? rollbackAction.label : '回退'}</button>
       : null;
     const deleteButton = onDeleteOrder && !hasShipments
       ? <button type="button" className="icon-button danger" title="删除订单" onClick={() => confirmDeleteOrder(order)}><Trash2 size={14} /></button>
@@ -408,9 +421,17 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
       <div className="page-toolbar table-toolbar orders-table-toolbar">
         <SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索订单号、客户、收件人、品名、SKU、规格" />
         <StatusCards activeKey={statusFilters.length === 1 ? statusFilters[0] : 'all'} counts={counts} onSelect={(key) => setStatusFilters(key === 'all' ? [] : [key])} />
-        <span className="toolbar-count"><ListFilter size={14} />{visibleOrders.length} 条订单</span>
+        {!shippingViewActive && <span className="toolbar-count"><ListFilter size={14} />{visibleOrders.length} 条订单</span>}
         <button type="button" className="button button-primary orders-create-button" onClick={() => setCreating(true)}><Plus size={15} />新建订单</button>
       </div>
+      {shippingViewActive ? <ShippingInProgressPanel
+        orders={shippingOrdersInChannel}
+        query={query}
+        onSaveTracking={onSaveTracking}
+        onConfirm={onConfirmShipping}
+        onOpenDetail={(order) => setDetailOrder(order)}
+        onNotify={onNotify}
+      /> : <>
       <div className="table-scroll orders-table-desktop">
         <table className="data-table orders-data-table">
           <thead><tr><th className="order-check-cell"><input type="checkbox" checked={allPrintableSelected} onChange={toggleAll} aria-label="选择当前列表待打印箱唛订单" /></th>{[
@@ -443,7 +464,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
                 <td className="order-product-cell"><OrderProductQuickList order={order} onOpen={() => setProductsOrder(order)} /></td>
                 <td className="order-box-cell"><button type="button" className="order-box-link" title="编辑/打印箱唛" aria-label={`编辑或打印订单${order.orderNo}箱唛`} onClick={() => openLabels(order)}>{boxCount}</button></td>
                 <td className="amount order-amount-cell"><button type="button" className="order-amount-link" title="查看/编辑财务与水单" aria-label={`查看订单${order.orderNo}财务与水单`} onClick={() => void openFinanceModal(order)}>¥ {order.amount || '0.00'}</button><div className="payment-sub" style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</div><button type="button" className={`order-profit-sub ${profit.costComplete ? (profit.profitCents ?? 0) < 0 ? 'is-loss' : 'is-profit' : 'is-pending'}`} title={profit.costComplete ? `毛利 ${(profit.profitCents ?? 0) / 100} · 毛利率 ${profit.marginPercent ?? '—'}%（点击调整成本）` : `成本待补：${profit.missingItemCount} 行产品未确认（点击补录成本）`} aria-label={`补录或调整订单${order.orderNo}成本`} onClick={() => openCostModal(order)}>{profit.costComplete ? `毛利 ¥${((profit.profitCents ?? 0) / 100).toFixed(2)}` : '成本待补'}</button></td>
-                <td className="order-status-cell"><span className={statusBadgeClass(order.status)}>{order.status === 'ship_pending' && fulfillment.isPartiallyShipped ? '部分发货' : order.status ? statusLabels[order.status] : '-'}</span>{order.status === 'ship_pending' && fulfillment.isPartiallyShipped ? <div className="status-sub is-partial" title={`已发 ${fulfillment.shippedItems}/${fulfillment.totalItems} 款 · ${fulfillment.shippedQuantity}/${fulfillment.totalQuantity} 件`}>已发 {fulfillment.shippedQuantity}/{fulfillment.totalQuantity} 件</div> : order.status !== 'shipped' && <div className={`status-sub ${order.labelPrintedAt ? 'is-printed' : 'is-pending'}`} title={order.labelPrintedAt ? `箱唛打印时间：${formatDateTime(order.labelPrintedAt)}` : undefined}>{order.status === 'draft' ? '草稿订单，发布后进入流程' : order.labelPrintedAt ? '已打印箱唛' : '箱唛待打印'}</div>}</td>
+                <td className="order-status-cell"><span className={statusBadgeClass(order.status)}>{order.status ? statusLabels[order.status] : '-'}</span>{order.status === 'shipping' ? <div className="status-sub is-partial" title={`已发 ${fulfillment.shippedItems}/${fulfillment.totalItems} 款 · ${fulfillment.shippedQuantity}/${fulfillment.totalQuantity} 件`}>已发 {fulfillment.shippedQuantity}/{fulfillment.totalQuantity} 件 · 剩余 {fulfillment.remainingQuantity} 件</div> : order.status !== 'shipped' && <div className={`status-sub ${order.labelPrintedAt ? 'is-printed' : 'is-pending'}`} title={order.labelPrintedAt ? `箱唛打印时间：${formatDateTime(order.labelPrintedAt)}` : undefined}>{order.status === 'draft' ? '草稿订单，发布后进入流程' : order.labelPrintedAt ? '已打印箱唛' : '箱唛待打印'}</div>}</td>
                 {showAttachmentColumn && <td className="order-attachment-cell">{attachmentCount > 0 && <div className="order-extra-files">{(order.contracts ?? []).map((contract) => <a key={contract.id} href={contract.url} target="_blank" rel="noreferrer" title={contract.name}><span>{contract.name}</span><Printer size={10} /></a>)}</div>}</td>}
                 <td className="order-remark-cell"><button type="button" className={`order-remark-full order-remark-edit${order.remark?.trim() ? '' : ' is-empty'}`} title={order.remark?.trim() ? order.remark : '点击添加备注'} aria-label={`编辑订单${order.orderNo}备注`} onClick={() => openRemarkModal(order)}>{order.remark?.trim() || '点击添加'}</button></td>
                 <td className="order-ops-cell">{renderOrderActions(order, { twoLine: true })}</td>
@@ -454,6 +475,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
       </div>
       <div className="orders-card-list" aria-label="订单卡片列表">{visibleOrders.map((order) => {
         const boxCount = orderBoxCount(order); const paymentStatus = orderPaymentStatus(order);
+        const fulfillment = getOrderFulfillmentProgress(order.items);
         const attachmentCount = order.contracts?.length ?? 0;
         const profit = calculateOrderProfit({
           amountCents: Math.round(Number(order.amount || 0) * 100),
@@ -475,7 +497,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
           <div className="order-card-meta">
             <button type="button" className="order-box-link" title="编辑/打印箱唛" aria-label={`编辑或打印订单${order.orderNo}箱唛`} onClick={() => openLabels(order)}>{boxCount} 箱</button>
             <span style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</span>
-            {order.status !== 'shipped' && <span>{order.status === 'draft' ? '草稿未发布' : order.labelPrintedAt ? '箱唛已打印' : '箱唛待打印'}</span>}
+            {order.status === 'shipping' ? <span className="status-sub is-partial">已发 {fulfillment.shippedQuantity}/{fulfillment.totalQuantity} 件 · 剩余 {fulfillment.remainingQuantity} 件</span> : order.status !== 'shipped' && <span>{order.status === 'draft' ? '草稿未发布' : order.labelPrintedAt ? '箱唛已打印' : '箱唛待打印'}</span>}
             <button type="button" className={`order-card-profit-link ${profit.costComplete ? (profit.profitCents ?? 0) < 0 ? 'finance-warning' : 'finance-positive' : 'finance-warning'}`} title={profit.costComplete ? '点击调整成本' : '点击补录成本'} aria-label={`补录或调整订单${order.orderNo}成本`} onClick={() => openCostModal(order)}>{profit.costComplete ? `毛利 ¥${((profit.profitCents ?? 0) / 100).toFixed(2)}` : '成本待补'}</button>
           </div>
           <div className="order-card-extra">
@@ -495,10 +517,11 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
         <span className="badge badge-accent">已选 {selectedOrders.length} 条</span>
         <button type="button" className="button button-secondary button-sm" title="将所选待备货订单标记为已备货" onClick={() => onBatchAdvance?.(selectedOrders, 'stock')}><PackageCheck size={14} />一键备货</button>
         <button type="button" className="button button-secondary button-sm" title="将所选已备货/待打包订单完成打包，推进到待发货" onClick={() => onBatchAdvance?.(selectedOrders, 'pack')}><Package size={14} />一键打包</button>
-        <button type="button" className="button button-secondary button-sm" title="将所选待发货订单（已填物流单号）标记为已发货" onClick={() => onBatchAdvance?.(selectedOrders, 'ship')}><Truck size={14} />一键发货</button>
+        <button type="button" className="button button-secondary button-sm" title="将所选待发货订单推进到发货中，之后在发货中回填单号并确认" onClick={() => onBatchAdvance?.(selectedOrders, 'ship')}><Truck size={14} />进入发货中</button>
         <button type="button" className="button button-secondary button-sm" onClick={bulkPrint}><Printer size={14} />批量打印箱唛</button>
         <button type="button" className="button button-ghost button-sm" onClick={() => setSelectedIds([])}>取消选择</button>
       </div>}
+      </>}
     </section>
 
     <Modal open={creating || Boolean(editingOrder)} title={editingOrder ? `编辑订单 · ${editingOrder.orderNo}` : '新建订单'} onClose={() => { setCreating(false); setEditingOrder(undefined); }} width={1040}><OrderForm key={editingOrder?.id ?? (creating ? `new-${activeChannel}` : 'closed')} value={editingOrder} defaultChannel={activeChannel} customers={customers} companies={companies} onSaveCustomerProduct={onSaveCustomerProduct} onCreateCustomer={onCreateCustomer} onGetNextOrderNumber={onGetNextOrderNumber} onSubmit={(order) => { onSaveOrder(order); setCreating(false); setEditingOrder(undefined); }} onSaveDraft={onSaveDraft ? (order) => { onSaveDraft(order); setCreating(false); setEditingOrder(undefined); } : undefined} onCancel={() => { setCreating(false); setEditingOrder(undefined); }} /></Modal>
@@ -553,7 +576,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
         <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: 11 }}>发票编辑请从订单详情的“打开财务详情”进入财务页。</p>
       </div>}
     </Modal>
-    <OrderDetailModal open={Boolean(detailOrder)} order={detailOrder} onClose={() => setDetailOrder(undefined)} onEditOrder={openEdit} onEditLabels={(order) => { setDetailOrder(undefined); openLabels(order); }} onPrintLabels={(order) => { setDetailOrder(undefined); setPrintLabels(labelsByOrderId?.[orderKey(order)] ?? fallbackLabels(order)); }} onDeleteContract={onDeleteContract} onDeleteOrder={onDeleteOrder ? confirmDeleteOrder : undefined} onAdvanceStatus={onAdvanceStatus} onRollbackStatus={onRollbackStatus} onPublishOrder={onPublishOrder} onOpenFinance={onOpenFinance} onPromoteCustomer={(order) => setPromoteName(order.customerName?.trim() ?? '')} onShipmentChanged={async () => { await onRefreshOrders?.(); }} onNotify={onNotify} />
+    <OrderDetailModal open={Boolean(detailOrder)} order={detailOrder} onClose={() => setDetailOrder(undefined)} onEditOrder={openEdit} onEditLabels={(order) => { setDetailOrder(undefined); openLabels(order); }} onPrintLabels={(order) => { setDetailOrder(undefined); setPrintLabels(labelsByOrderId?.[orderKey(order)] ?? fallbackLabels(order)); }} onDeleteContract={onDeleteContract} onDeleteOrder={onDeleteOrder ? confirmDeleteOrder : undefined} onAdvanceStatus={onAdvanceStatus} onRollbackStatus={onRollbackStatus} onPublishOrder={onPublishOrder} onOpenShippingView={(order) => openShippingView(order)} onOpenFinance={onOpenFinance} onPromoteCustomer={(order) => setPromoteName(order.customerName?.trim() ?? '')} onShipmentChanged={async () => { await onRefreshOrders?.(); }} onNotify={onNotify} />
     <Modal open={Boolean(productsOrder)} title={productsOrder ? `产品明细 · ${productsOrder.orderNo}` : '产品明细'} onClose={() => setProductsOrder(undefined)} width={920}>{productsOrder && <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ display: 'grid', gridTemplateColumns: narrow ? 'repeat(2, minmax(0, 1fr))' : 'repeat(6, minmax(0, 1fr))', gap: 12, padding: 12, background: 'var(--tone-surface-frost)', border: '1px solid var(--tone-border-soft)', borderRadius: 'var(--radius-ui)' }}>
         <div style={{ display: 'grid', gap: 4, minWidth: 0 }}><span style={{ color: 'var(--tone-text-faint)', fontSize: 11 }}>订单号</span><strong style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{productsOrder.orderNo}</strong></div>

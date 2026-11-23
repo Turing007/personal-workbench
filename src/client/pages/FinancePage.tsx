@@ -26,7 +26,7 @@ import { invoiceDisplayLabel, isPersonalSettlement } from '../../shared/settleme
 import { useIsNarrow } from '../use-is-narrow';
 import { useHideOnScroll } from '../use-hide-on-scroll';
 import { copyText } from '../copy-text';
-import type { OrderChannel } from '../../shared/domain';
+import { ORDER_STATUS_LABELS_WITH_DRAFT, type OrderChannel } from '../../shared/domain';
 
 /** 按月偏移量平移 YYYY-MM，offset 为负表示往前翻 */
 function shiftMonth(month: string, offset: number): string {
@@ -48,7 +48,7 @@ interface FinancePageProps {
   onCompaniesChanged?: () => Promise<void> | void;
 }
 
-const orderStatusLabels: Record<string, string> = { label_pending: '待打印箱唛', pending_stock: '待备货', stock_reported: '已备货', pending_packing: '待打包', ship_pending: '待发货', shipped: '已发货' };
+const orderStatusLabels: Record<string, string> = ORDER_STATUS_LABELS_WITH_DRAFT;
 
 type FinanceColumnKey = 'customer' | 'company' | 'date' | 'amounts' | 'payment' | 'proof' | 'invoice' | 'logistics';
 const FINANCE_COLUMN_OPTIONS: Array<[FinanceColumnKey, string]> = [

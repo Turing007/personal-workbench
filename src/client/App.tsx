@@ -17,12 +17,11 @@ import type { ProductRecord } from './components/ProductEditor';
 import type { Customer } from '../shared/customers';
 import type { Company } from '../shared/companies';
 import OrdersPage, { fallbackLabels } from './pages/OrdersPage';
-import DashboardPage from './pages/DashboardPage';
 import { getBatchAdvancePlan, getOrderRollbackAction, type BatchAdvanceAction } from './order-workflow';
 import ProductsPage from './pages/ProductsPage';
 import CatalogPage from './pages/CatalogPage';
 import CustomerProductsPage from './pages/CustomerProductsPage';
-import ShippingPage from './pages/ShippingPage';
+import DashboardPage from './pages/DashboardPage';
 import SettingsPage, { type SettingsSectionKey } from './pages/SettingsPage';
 import QuotationPage from './pages/QuotationPage';
 import SalesDocumentsPage from './pages/SalesDocumentsPage';
@@ -191,8 +190,6 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
   const [companyProfile, setCompanyProfile] = useState<CompanySnapshot>({ name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '', wechatQrRelativePath: null });
   const [labelsByOrderId, setLabelsByOrderId] = useState<Record<string, CartonLabel[]>>({});
   const [customerProductsInitialCustomerId, setCustomerProductsInitialCustomerId] = useState<number | null>(null);
-  const [shippingInitialOrder, setShippingInitialOrder] = useState<OrderDraft>();
-  const [shippingInitialOrders, setShippingInitialOrders] = useState<OrderDraft[]>();
   const [financeInitialOrderId, setFinanceInitialOrderId] = useState<number>();
   const [financeInitialChannel, setFinanceInitialChannel] = useState<OrderChannel>();
   const [waterInitialChannel, setWaterInitialChannel] = useState<OrderChannel>();
@@ -222,7 +219,6 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     // when leaving the customer product page so a later manual visit does
     // not unexpectedly jump back to the last synced customer.
     if (next !== 'customer-products') setCustomerProductsInitialCustomerId(null);
-    if (next !== 'shipping') setShippingInitialOrder(undefined);
     if (next !== 'finance') { setFinanceInitialOrderId(undefined); setFinanceReturnOrderId(undefined); setFinanceInitialChannel(undefined); }
     if (next !== 'water-slips') setWaterInitialChannel(undefined);
     if (next !== 'orders') { setOrdersInitialOrderId(null); setOrdersInitialChannel(undefined); }
@@ -706,15 +702,19 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
       const proceed = window.confirm(`订单“${order.orderNo}”尚未打印箱唛，是否继续进入“${targetLabel}”？\n提示：打印箱唛仅作为提醒，不会阻止流程。`);
       if (!proceed) return;
     }
-    try { await advanceOrderStatus(Number(order.id), status); await loadOrders(); notify(`订单 ${order.orderNo} 已推进到下一状态`, 'success'); } catch (error) { notify((error as { message?: string }).message ?? '状态推进失败', 'error'); }
+    try {
+      await advanceOrderStatus(Number(order.id), status);
+      await loadOrders();
+      notify(status === 'shipping' ? `订单 ${order.orderNo} 已进入发货中，可在发货中状态处理` : `订单 ${order.orderNo} 已推进到下一状态`, 'success');
+    } catch (error) { notify((error as { message?: string }).message ?? '状态推进失败', 'error'); }
   };
   const rollback = async (order: OrderDraft, status: OrderStatus) => {
     if (!order.id) return;
     const action = getOrderRollbackAction(order.status);
     if (!action || action.target !== status) return;
-    const undoShipping = order.status === 'shipped' && action.target === 'ship_pending';
+    const undoShipping = order.status === 'shipped' && action.target === 'shipping';
     const message = undoShipping
-      ? `确定撤销发货，把订单“${order.orderNo}”退回待发货吗？\n已确认的发货批次、物流单号和箱唛打印记录都会保留。`
+      ? `确定撤销发货，把订单“${order.orderNo}”退回发货中吗？\n已确认的发货批次、物流单号和箱唛打印记录都会保留。`
       : `确定把订单“${order.orderNo}”${action.label}吗？\n物流单号、箱唛打印记录、订单附件和收款数据都会保留。`;
     if (!window.confirm(message)) return;
     try {
@@ -725,62 +725,22 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
       notify((error as { message?: string }).message ?? '订单状态回退失败', 'error');
     }
   };
-  // 批量推进：一键备货 / 一键打包 / 一键发货，逐单推进、单单容错，结束后统一汇总。
+  // 批量推进：一键备货 / 一键打包 / 批量进入发货中，逐单推进、单单容错，结束后统一汇总。
   const batchAdvance = async (selected: OrderDraft[], action: BatchAdvanceAction) => {
-    const actionLabels = { stock: '备货', pack: '打包', ship: '发货' } as const;
+    const actionLabels = { stock: '备货', pack: '打包', ship: '进入发货中' } as const;
     const plan = getBatchAdvancePlan(selected, action);
-    // 一键发货：未填物流单号的订单无法直接发货（发货必须留单号），引导到发货工作区补录。
-    const untrackedOrders = action === 'ship'
-      ? plan.skipped
-        .filter((item) => item.reason === '缺少物流单号')
-        .map((item) => selected.find((order) => order.orderNo === item.orderNo))
-        .filter((order): order is OrderDraft => Boolean(order))
-      : [];
-    const unpaidSkipped = action === 'ship' ? plan.skipped.filter((item) => item.reason === '未确认收到货款') : [];
-    if (!plan.targets.length && !untrackedOrders.length) {
+    if (!plan.targets.length) {
       const reason = plan.skipped.length ? plan.skipped[0].reason : '当前状态不支持该操作';
       notify(`所选订单没有可批量${actionLabels[action]}的订单（${reason}）`, 'error');
       return;
     }
-    const unprintedCount = action === 'ship' ? 0 : plan.targets.filter((target) => !target.order.labelPrintedAt).length;
+    const unprintedCount = plan.targets.filter((target) => !target.order.labelPrintedAt).length;
     const lines: string[] = [];
     if (action === 'stock') lines.push(`确定对 ${plan.targets.length} 单执行“批量备货”吗？`, '备货：待备货 → 已备货');
     if (action === 'pack') lines.push(`确定对 ${plan.targets.length} 单执行“批量打包”吗？`, '打包：已备货/待打包 → 完成打包，推进到待发货');
-    if (action === 'ship' && plan.targets.length) lines.push(`确定对 ${plan.targets.length} 单执行“批量发货”吗？`, '发货：待发货 → 已发货');
-    if (untrackedOrders.length) lines.push(`另有 ${untrackedOrders.length} 单未填物流单号，${plan.targets.length ? '发货后将' : '将'}打开发货工作区补录。`);
-    if (unpaidSkipped.length) lines.push(`另有 ${unpaidSkipped.length} 单未确认收到货款，需先在订单金额里上传并审核水单。`);
+    if (action === 'ship') lines.push(`确定对 ${plan.targets.length} 单执行“进入发货中”吗？`, '进入后到「发货中」回填物流单号并确认发货。');
     if (unprintedCount) lines.push(`注意：其中 ${unprintedCount} 单尚未打印箱唛（仅作提醒，不阻止流程）`);
     if (!window.confirm(lines.join('\n'))) return;
-    if (action === 'ship') {
-      const selectedById = new Map(selected.map((order) => [String(order.id), order]));
-      const entries: PartialShipmentEntryInput[] = plan.targets.flatMap(({ order }) => {
-        const fullOrder = selectedById.get(String(order.id));
-        if (!fullOrder) return [];
-        const items = fullOrder.items
-          .map((item) => ({ orderItemId: Number(item.id), quantity: Math.max(0, item.quantity - (item.shippedQuantity ?? 0)) }))
-          .filter((item) => item.quantity > 0);
-        return items.length ? [{ orderId: Number(fullOrder.id), trackingNo: fullOrder.trackingNo.trim(), items }] : [];
-      });
-      let failed = 0;
-      try {
-        if (entries.length) await confirmPartialShipments(entries);
-      } catch (error) {
-        failed = entries.length;
-        notify((error as { message?: string }).message ?? '批量发货失败', 'error');
-      }
-      await loadOrders();
-      if (entries.length && !failed) {
-        const parts = [`批量发货完成：成功 ${entries.length} 单`];
-        if (untrackedOrders.length) parts.push(`${untrackedOrders.length} 单转入发货工作区补录物流单号`);
-        if (unpaidSkipped.length) parts.push(`${unpaidSkipped.length} 单未确认收到货款`);
-        notify(parts.join('，'), 'success');
-      }
-      if (untrackedOrders.length) {
-        setShippingInitialOrders(untrackedOrders);
-        navigate('shipping');
-      }
-      return;
-    }
     let advanced = 0;
     const failed: string[] = [];
     for (const { order, steps } of plan.targets) {
@@ -792,19 +752,12 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
       }
     }
     await loadOrders();
-    if (plan.targets.length) {
-      const parts = [`批量${actionLabels[action]}完成：成功 ${advanced} 单`];
-      if (untrackedOrders.length) parts.push(`${untrackedOrders.length} 单转入发货工作区补录物流单号`);
-      if (unpaidSkipped.length) parts.push(`${unpaidSkipped.length} 单未确认收到货款`);
-      if (failed.length) {
-        notify(`${parts.join('，')}；失败 ${failed.length} 单：${failed.slice(0, 3).join('、')}${failed.length > 3 ? '等' : ''}`, 'error');
-      } else {
-        notify(parts.join('，'), 'success');
-      }
-    }
-    if (untrackedOrders.length) {
-      setShippingInitialOrders(untrackedOrders);
-      navigate('shipping');
+    const parts = [`批量${actionLabels[action]}完成：成功 ${advanced} 单`];
+    if (plan.skipped.length) parts.push(`跳过 ${plan.skipped.length} 单`);
+    if (failed.length) {
+      notify(`${parts.join('，')}；失败 ${failed.length} 单：${failed.slice(0, 3).join('、')}${failed.length > 3 ? '等' : ''}`, 'error');
+    } else {
+      notify(parts.join('，'), 'success');
     }
   };
   const saveOrderLabels = async (order: OrderDraft, labels: CartonLabel[]) => {
@@ -861,12 +814,11 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     } catch (error) { notify((error as { message?: string }).message ?? '打印记录失败', 'error'); throw error; }
   };
 
-  // 发货工作区只收待发货订单；订单列表点「发货」后会出现在这里。
-  const shippingOrders = useMemo(() => orders.filter((order) => order.status === 'ship_pending'), [orders]);
-  const updateTracking = (id: string, value: string) => setOrders((current) => current.map((order) => orderKey(order) === id ? { ...order, trackingNo: value } : order));
+  // 发货中视图：单号失焦暂存，不推进状态；成功后同步本地订单，避免下次失焦重复保存。
   const saveShippingTracking = async (id: string, value: string) => {
     try {
       await updateOrderTracking(id, value);
+      setOrders((current) => current.map((order) => orderKey(order) === id ? { ...order, trackingNo: value } : order));
       return true;
     } catch (error) {
       notify((error as { message?: string }).message ?? '物流单号保存失败', 'error');
@@ -875,7 +827,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
   };
   const confirmShipping = async (entries: PartialShipmentEntryInput[]) => {
     if (!entries.length) {
-      notify('批次里还没有可确认发货的产品数量', 'error');
+      notify('还没有选择本次发货的产品数量', 'error');
       return;
     }
     try {
@@ -883,7 +835,10 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
       await loadOrders();
       notify(`已确认 ${entries.length} 单本次发货`, 'success');
       return result;
-    } catch (error) { notify((error as { message?: string }).message ?? '发货确认失败', 'error'); }
+    } catch (error) {
+      notify((error as { message?: string }).message ?? '发货确认失败', 'error');
+      return undefined;
+    }
   };
 
   const backup = async () => {
@@ -940,7 +895,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     {active === 'dashboard' && <DashboardPage orders={orders} onOpenOrders={(status, channel) => { setOrdersInitialStatus(status); setOrdersInitialChannel(channel); navigate('orders'); }} onOpenFinance={(channel) => { setFinanceInitialChannel(channel); navigate('finance'); }} onOpenWaterSlips={(status, channel) => { setWaterInitialStatus(status); setWaterInitialChannel(channel); navigate('water-slips'); }} onNewOrder={(channel) => { setOrdersInitialChannel(channel); setOrdersStartCreate(true); navigate('orders'); }} onNewQuotation={() => { setQuotationStartCreate(true); navigate('quotations'); }} onNewProduct={() => { setProductStartCreate(true); navigate('products'); }} onRefresh={loadOrders} />}
     {active === 'finance' && <FinancePage onNotify={notify} initialOrderId={financeInitialOrderId} initialChannel={financeInitialChannel} returnOrderId={financeReturnOrderId} customers={customers} companies={companies} onCompaniesChanged={loadCompanies} onReturnToOrder={(orderId) => { setOrdersInitialOrderId(orderId); setFinanceReturnOrderId(undefined); navigate('orders'); }} />}
     {active === 'water-slips' && <WaterSlipPage onNotify={notify} initialStatus={waterInitialStatus} initialChannel={waterInitialChannel} onInitialFiltersConsumed={() => setWaterInitialStatus(undefined)} onOpenOrder={(orderId) => { setOrdersInitialOrderId(orderId); navigate('orders'); }} onOpenFinance={(orderId, channel) => { setFinanceInitialOrderId(orderId); setFinanceReturnOrderId(orderId); setFinanceInitialChannel(channel); navigate('finance'); }} />}
-    {active === 'orders' && <OrdersPage orders={orders} customers={customers} companies={companies} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} initialStatus={ordersInitialStatus} onInitialStatusConsumed={() => setOrdersInitialStatus(undefined)} initialChannel={ordersInitialChannel} onInitialChannelConsumed={() => setOrdersInitialChannel(undefined)} startCreate={ordersStartCreate} onStartCreateConsumed={() => setOrdersStartCreate(false)} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onRollbackStatus={(order, status) => { void rollback(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onOpenShipping={() => { setShippingInitialOrder(undefined); setShippingInitialOrders(undefined); navigate('shipping'); }} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); setFinanceReturnOrderId(Number(order.id)); setFinanceInitialChannel(order.channel); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} onRefreshOrders={async () => { await Promise.all([loadOrders(), loadCustomers()]); }} onNotify={notify} />}
+    {active === 'orders' && <OrdersPage orders={orders} customers={customers} companies={companies} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} initialStatus={ordersInitialStatus} onInitialStatusConsumed={() => setOrdersInitialStatus(undefined)} initialChannel={ordersInitialChannel} onInitialChannelConsumed={() => setOrdersInitialChannel(undefined)} startCreate={ordersStartCreate} onStartCreateConsumed={() => setOrdersStartCreate(false)} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onRollbackStatus={(order, status) => { void rollback(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onSaveTracking={saveShippingTracking} onConfirmShipping={confirmShipping} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); setFinanceReturnOrderId(Number(order.id)); setFinanceInitialChannel(order.channel); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} onRefreshOrders={async () => { await Promise.all([loadOrders(), loadCustomers()]); }} onNotify={notify} />}
     {active === 'stock' && <StockPage onNotify={notify} systemProducts={products} />}
     {active === 'quotations' && <QuotationPage onNotify={notify} startCreate={quotationStartCreate} onStartCreateConsumed={() => setQuotationStartCreate(false)} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
     {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={async (orderId) => { await loadOrders(); setOrdersInitialOrderId(orderId); navigate('orders'); }} />}
@@ -948,7 +903,6 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     {active === 'product-catalog' && <CatalogPage products={products} loading={loading} onNotify={notify} />}
     {active === 'customer-products' && <CustomerProductsPage customers={customers} systemProducts={products} initialCustomerId={customerProductsInitialCustomerId ?? undefined} loading={loading} onCustomersChanged={loadCustomers} onNotify={notify} />}
     {active === 'library' && <LibraryPage customers={customers} onNotify={notify} />}
-    {active === 'shipping' && <ShippingPage orders={shippingOrders} initialOrder={shippingInitialOrder} initialOrders={shippingInitialOrders} onUpdateTracking={updateTracking} onSaveTracking={saveShippingTracking} onConfirm={confirmShipping} onNotify={notify} />}
     {active === 'settings' && <SettingsPage onBackup={backup} onRestore={restore} onProfileChanged={setCompanyProfile} currentUser={user} mobileTabs={mobileTabs} onMobileTabsChange={updateMobileTabs} initialSection={settingsInitialSection ?? undefined} />}
   </main><MobileTabBar activeKey={active} tabs={mobileTabs} onNavigate={navigate} onOpenMore={() => setMobileNavOpen(true)} /><Toast messages={messages} onDismiss={(id) => setMessages((current) => current.filter((item) => item.id !== id))} /></div>;
 }

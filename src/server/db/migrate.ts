@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 46;
+const CURRENT_SCHEMA_VERSION = 47;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -1653,6 +1653,23 @@ function migrateVersionFortySix(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '46', now);
 }
 
+/**
+ * 发货中状态：旧的部分发货数据仍停在待发货，统一归一到 shipping。
+ * 只改状态，不刷新 updated_at，不动历史已发货和纯待发货订单。
+ */
+function migrateVersionFortySeven(database: DatabaseSync, now: string): void {
+  database.prepare(`
+    UPDATE orders
+    SET status = 'shipping'
+    WHERE status = 'ship_pending'
+      AND (
+        EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = orders.id AND oi.shipped_quantity > 0)
+        OR EXISTS (SELECT 1 FROM shipments s WHERE s.order_id = orders.id)
+      )
+  `).run();
+  upsertSetting(database, 'schema_version', '47', now);
+}
+
 function migrateVersionFortyFour(database: DatabaseSync, now: string): void {
   const orderColumns: Array<[string, string]> = [
     ['logistics_cost_cents', 'INTEGER CHECK (logistics_cost_cents IS NULL OR logistics_cost_cents >= 0)'],
@@ -1797,6 +1814,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionFortyFour(transactionDatabase, now);
     migrateVersionFortyFive(transactionDatabase, now);
     migrateVersionFortySix(transactionDatabase, now);
+    migrateVersionFortySeven(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

@@ -11,7 +11,7 @@ test.beforeEach(async ({ context }) => {
   await injectSession(context, sessionCookie);
 });
 
-const STATUS_FILTERS = ['全部订单', '草稿', '待备货', '已备货', '待打包', '待发货', '已发货'];
+const STATUS_FILTERS = ['全部订单', '草稿', '待备货', '已备货', '待打包', '待发货', '发货中', '已发货'];
 
 // 从最窄的小屏一路覆盖到常见的中等尺寸：任何一档都必须收成两行，
 // 用 auto-fit 之类的自适应列数会在一窄机型上掉到三列、变成三行。
@@ -23,10 +23,10 @@ for (const viewportWidth of VIEWPORT_WIDTHS) {
 
     /**
      * 手机端的状态筛选原来是一条横向滚动条，选「待发货 / 已发货」必须先滑到最右，滑动还不跟手。
-     * 这里钉住四件事：7 个状态全部平铺可见、整条筛选区不产生横向溢出（不用滑）、
+     * 这里钉住四件事：8 个状态全部平铺可见、整条筛选区不产生横向溢出（不用滑）、
      * 稳定收成两行、状态名不被省略号截断，且点一下即切换选中。
      */
-    test('手机端订单筛选：7 个状态平铺成两行且不用横滑，点一下即切换', async ({ page }) => {
+    test('手机端订单筛选：8 个状态平铺成两行且不用横滑，点一下即切换', async ({ page }) => {
       await page.goto('/');
       await page.locator('.mobile-tab-item[aria-label="更多模块"]').click();
       await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
@@ -51,7 +51,7 @@ for (const viewportWidth of VIEWPORT_WIDTHS) {
         tallest: Math.max(...Array.from(node.querySelectorAll<HTMLElement>('.status-card'), (card) => card.getBoundingClientRect().height)),
       }));
 
-      // 7 个状态固定「4 + 3」两行，多了就是没压紧
+      // 8 个状态固定「4 + 4」两行，多了就是没压紧
       expect(probe.rows).toBe(2);
       // 状态名不能被省略号吃掉，否则「待备货 / 已备货」这类只差一个字的状态会分不清
       expect(probe.truncated).toBe(0);

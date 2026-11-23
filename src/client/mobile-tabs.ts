@@ -5,8 +5,8 @@ export const MOBILE_TABS_STORAGE_KEY = 'workbench:mobile-tabs';
 /** 底部栏最多显示的模块数，超过后每个 Tab 会挤到看不清。 */
 export const MOBILE_TAB_LIMIT = 4;
 
-/** 默认与历史行为保持一致：订单 → 报价 → 发货 → 财务。 */
-export const DEFAULT_MOBILE_TABS: NavigationKey[] = ['orders', 'quotations', 'shipping', 'finance'];
+/** 默认与历史行为保持一致：订单 → 报价 → 备货 → 财务。 */
+export const DEFAULT_MOBILE_TABS: NavigationKey[] = ['orders', 'quotations', 'stock', 'finance'];
 
 function isNavigationKey(value: unknown): value is NavigationKey {
   return typeof value === 'string' && (navigationKeys as string[]).includes(value);

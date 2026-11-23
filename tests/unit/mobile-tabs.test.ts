@@ -38,9 +38,13 @@ describe('normalizeMobileTabs', () => {
   });
 
   it('drops unknown keys, deduplicates and truncates to the limit', () => {
-    expect(normalizeMobileTabs(['finance', 'finance', 'nope', 'orders', 'stock', 'shipping', 'products']))
-      .toEqual(['finance', 'orders', 'stock', 'shipping']);
-    expect(normalizeMobileTabs(['finance', 'finance', 'nope', 'orders', 'stock', 'shipping', 'products'])).toHaveLength(MOBILE_TAB_LIMIT);
+    expect(normalizeMobileTabs(['finance', 'finance', 'nope', 'orders', 'stock', 'products', 'library']))
+      .toEqual(['finance', 'orders', 'stock', 'products']);
+    expect(normalizeMobileTabs(['finance', 'finance', 'nope', 'orders', 'stock', 'products', 'library'])).toHaveLength(MOBILE_TAB_LIMIT);
+  });
+
+  it('drops the removed shipping module from old saved tabs', () => {
+    expect(normalizeMobileTabs(['orders', 'shipping'])).toEqual(['orders']);
   });
 
   it('falls back to the default when every entry is invalid', () => {
@@ -54,9 +58,9 @@ describe('normalizeMobileTabs', () => {
 
 describe('moveMobileTab', () => {
   it('swaps neighbours and returns a new array', () => {
-    const tabs: NavigationKey[] = ['orders', 'quotations', 'shipping', 'finance'];
+    const tabs: NavigationKey[] = ['orders', 'quotations', 'stock', 'finance'];
     const moved = moveMobileTab(tabs, 'quotations', -1);
-    expect(moved).toEqual(['quotations', 'orders', 'shipping', 'finance']);
+    expect(moved).toEqual(['quotations', 'orders', 'stock', 'finance']);
     expect(moved).not.toBe(tabs);
   });
 
@@ -64,7 +68,7 @@ describe('moveMobileTab', () => {
     const tabs: NavigationKey[] = ['orders', 'quotations'];
     expect(moveMobileTab(tabs, 'orders', -1)).toBe(tabs);
     expect(moveMobileTab(tabs, 'quotations', 1)).toBe(tabs);
-    expect(moveMobileTab(tabs, 'shipping', 1)).toBe(tabs);
+    expect(moveMobileTab(tabs, 'products', 1)).toBe(tabs);
   });
 });
 
@@ -74,7 +78,7 @@ describe('toggleMobileTab', () => {
   });
 
   it('refuses to exceed the limit', () => {
-    const full: NavigationKey[] = ['orders', 'quotations', 'shipping', 'finance'];
+    const full: NavigationKey[] = ['orders', 'quotations', 'stock', 'finance'];
     expect(toggleMobileTab(full, 'products')).toBe(full);
   });
 
@@ -87,7 +91,7 @@ describe('toggleMobileTab', () => {
 describe('isDefaultMobileTabs', () => {
   it('detects the default combination, including the order of tabs', () => {
     expect(isDefaultMobileTabs([...DEFAULT_MOBILE_TABS])).toBe(true);
-    expect(isDefaultMobileTabs(['quotations', 'orders', 'shipping', 'finance'])).toBe(false);
+    expect(isDefaultMobileTabs(['quotations', 'orders', 'stock', 'finance'])).toBe(false);
     expect(isDefaultMobileTabs(DEFAULT_MOBILE_TABS.slice(0, 2))).toBe(false);
   });
 });

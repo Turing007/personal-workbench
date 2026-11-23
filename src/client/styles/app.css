@@ -2911,6 +2911,7 @@ select {
 .status-action-pill.tone-stock-reported { --tone: var(--status-stock-reported); --tone-soft: var(--status-stock-reported-soft); }
 .status-action-pill.tone-pending-packing { --tone: var(--status-pending-packing); --tone-soft: var(--status-pending-packing-soft); }
 .status-action-pill.tone-ship-pending { --tone: var(--color-danger-strong); --tone-soft: var(--color-danger-soft); }
+.status-action-pill.tone-shipping { --tone: var(--status-shipping); --tone-soft: var(--status-shipping-soft); }
 .status-action-pill.tone-shipped { --tone: var(--color-success); --tone-soft: var(--color-success-soft); }
 
 /* 多选标签（颜色 / 插脚） */

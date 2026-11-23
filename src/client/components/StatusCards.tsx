@@ -26,6 +26,7 @@ const definitions: Array<Omit<StatusCardItem, 'count'>> = [
   { key: 'stock_reported', label: '已备货', tone: 'var(--status-stock-reported)', toneSoft: 'var(--status-stock-reported-soft)' },
   { key: 'pending_packing', label: '待打包', tone: 'var(--status-pending-packing)', toneSoft: 'var(--status-pending-packing-soft)' },
   { key: 'ship_pending', label: '待发货', tone: 'var(--color-danger-strong)', toneSoft: 'var(--color-danger-soft)' },
+  { key: 'shipping', label: '发货中', tone: 'var(--status-shipping)', toneSoft: 'var(--status-shipping-soft)' },
   { key: 'shipped', label: '已发货', tone: 'var(--color-success)', toneSoft: 'var(--color-success-soft)' },
 ];
 

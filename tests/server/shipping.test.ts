@@ -165,7 +165,7 @@ describe('发货确认事务', () => {
     });
     expect(created.statusCode).toBe(201);
     const orderId = Number(created.json().data.id);
-    for (const to of ['stock_reported', 'pending_packing', 'ship_pending']) {
+    for (const to of ['stock_reported', 'pending_packing', 'ship_pending', 'shipping']) {
       const advanced = await app.inject({ method: 'POST', url: `/api/orders/${orderId}/status`, payload: { to } });
       expect(advanced.statusCode).toBe(200);
     }
@@ -181,7 +181,7 @@ describe('发货确认事务', () => {
     expect(first.statusCode).toBe(201);
     const firstShipment = first.json().data.shipments[0];
     expect(firstShipment.items[0]).toMatchObject({ quantity: 4, boxes: 1, remainingAfter: 6 });
-    expect(database.prepare('SELECT status, tracking_no FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'ship_pending', tracking_no: 'SF-PART-1' });
+    expect(database.prepare('SELECT status, tracking_no FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'shipping', tracking_no: 'SF-PART-1' });
     expect(database.prepare('SELECT shipped_quantity FROM order_items WHERE id = ?').get(angle.id)).toEqual({ shipped_quantity: 4 });
 
     const over = await app.inject({
@@ -222,7 +222,7 @@ describe('发货确认事务', () => {
 
     const removed = await app.inject({ method: 'DELETE', url: `/api/shipping/shipments/${finalShipment.id}` });
     expect(removed.statusCode).toBe(200);
-    expect(database.prepare('SELECT status FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'ship_pending' });
+    expect(database.prepare('SELECT status FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'shipping' });
     expect(database.prepare('SELECT shipped_quantity FROM order_items WHERE id = ?').get(angle.id)).toEqual({ shipped_quantity: 4 });
     expect(database.prepare('SELECT shipped_quantity FROM order_items WHERE id = ?').get(gun.id)).toEqual({ shipped_quantity: 0 });
 
@@ -281,6 +281,44 @@ describe('发货确认事务', () => {
     expect(allowedEdit.statusCode).toBe(200);
     expect(allowedEdit.json().data.remark).toBe('发货后只改备注');
     expect(database.prepare('SELECT id, shipped_quantity FROM order_items WHERE id = ?').get(angle.id)).toEqual({ id: angle.id, shipped_quantity: 4 });
+    database.close();
+  });
+
+  it('同地址合并发货：多单同一单号、同一批次，分别生成发货记录', async () => {
+    const { database, app } = await makeContext();
+    const firstOrderId = await createShipPendingOrder(app, 'SO-MERGE-1');
+    const secondOrderId = await createShipPendingOrder(app, 'SO-MERGE-2');
+    for (const orderId of [firstOrderId, secondOrderId]) {
+      const advanced = await app.inject({ method: 'POST', url: `/api/orders/${orderId}/status`, payload: { to: 'shipping' } });
+      expect(advanced.statusCode).toBe(200);
+      markPaid(database, orderId);
+    }
+    const firstDetail = await app.inject({ method: 'GET', url: `/api/orders/${firstOrderId}/detail` });
+    const secondDetail = await app.inject({ method: 'GET', url: `/api/orders/${secondOrderId}/detail` });
+    const firstItem = firstDetail.json().data.items[0] as { id: number; quantity: number };
+    const secondItem = secondDetail.json().data.items[0] as { id: number; quantity: number };
+
+    const confirmed = await app.inject({
+      method: 'POST',
+      url: '/api/shipping/partial',
+      payload: {
+        orders: [
+          { orderId: firstOrderId, trackingNo: 'SF-MERGE-1', items: [{ orderItemId: firstItem.id, quantity: firstItem.quantity }] },
+          { orderId: secondOrderId, trackingNo: 'SF-MERGE-1', items: [{ orderItemId: secondItem.id, quantity: secondItem.quantity }] },
+        ],
+      },
+    });
+    expect(confirmed.statusCode).toBe(201);
+    const result = confirmed.json().data as { batchId: number; shipments: Array<{ orderId: number; trackingNo: string }> };
+    expect(result.shipments).toHaveLength(2);
+    expect(result.shipments.every((shipment) => shipment.trackingNo === 'SF-MERGE-1')).toBe(true);
+    expect(database.prepare('SELECT batch_id, tracking_no FROM shipments WHERE order_id IN (?, ?) ORDER BY order_id').all(firstOrderId, secondOrderId))
+      .toEqual([
+        { batch_id: result.batchId, tracking_no: 'SF-MERGE-1' },
+        { batch_id: result.batchId, tracking_no: 'SF-MERGE-1' },
+      ]);
+    expect(database.prepare('SELECT status FROM orders WHERE id IN (?, ?) ORDER BY id').all(firstOrderId, secondOrderId))
+      .toEqual([{ status: 'shipped' }, { status: 'shipped' }]);
     database.close();
   });
 });

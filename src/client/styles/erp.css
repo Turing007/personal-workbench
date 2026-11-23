@@ -4110,3 +4110,101 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
+
+/* ---------- 订单页：发货中状态视图 ---------- */
+.shipping-progress { display: flex; flex: 1; flex-direction: column; min-height: 0; background: var(--erp-surface); }
+
+.shipping-progress-head { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--erp-divider); background: var(--erp-surface-muted); }
+.shipping-progress-title { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--erp-text); }
+.shipping-progress-title svg { flex: none; color: var(--status-shipping); }
+.shipping-progress-title strong { font-size: 13px; font-weight: 650; }
+.shipping-progress-title span { color: var(--erp-muted); font-size: 11px; white-space: nowrap; }
+.shipping-progress-hint { color: var(--erp-muted); font-size: 10.5px; white-space: nowrap; }
+
+.shipping-progress-last-batch { display: flex; flex: none; align-items: center; justify-content: flex-end; gap: 8px; padding: 4px 12px; color: var(--erp-muted); font-size: 11px; }
+
+.shipping-progress-list { display: grid; flex: 1; grid-auto-rows: max-content; align-items: start; align-content: start; gap: 10px; min-height: 0; overflow: auto; padding: 10px 12px; }
+
+.shipping-address-group { align-self: start; overflow: hidden; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface); }
+.shipping-address-group.is-selected { border-color: var(--color-accent); box-shadow: 0 0 0 2px var(--color-accent-soft); }
+
+.shipping-address-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 7px 10px; padding: 10px 12px 0; }
+.shipping-address-head > input[type='checkbox'] { margin-top: 3px; }
+.shipping-address-party { display: grid; gap: 2px; min-width: 0; }
+.shipping-address-party strong { overflow: hidden; color: var(--erp-text); font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.shipping-address-party span { overflow: hidden; color: var(--erp-muted); font-size: 11.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.shipping-address-totals { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 10px; color: var(--erp-text-2); font-size: 11.5px; }
+.shipping-address-totals b { color: var(--erp-text); font-weight: 650; }
+.shipping-address-totals .button { height: 26px; min-height: 26px; padding: 0 8px; font-size: 11px; }
+.shipping-address-badges, .shipping-address-actions { display: flex; flex-wrap: wrap; align-items: center; grid-column: 2 / -1; gap: 4px; }
+.shipping-address-actions { justify-content: flex-end; }
+.shipping-address-actions .button { height: 26px; min-height: 26px; padding: 0 8px; font-size: 11px; }
+.shipping-address-badges .button { height: 26px; min-height: 26px; padding: 0 8px; font-size: 11px; }
+.shipping-address-badges .button:first-of-type { margin-left: auto; }
+
+.shipping-address-tracking { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+.shipping-address-tracking .input { flex: 1; min-width: 0; }
+.shipping-address-hint { color: var(--erp-muted); font-size: 10.5px; }
+.shipping-address-hint.is-warning { color: var(--color-warning); }
+
+.shipping-address-orders { display: grid; gap: 6px; padding: 0 12px 8px; }
+.shipping-address-order { display: grid; gap: 4px; padding: 7px 8px; border: 1px solid var(--erp-divider); border-radius: var(--radius-ui); background: var(--erp-surface-muted); }
+.shipping-address-order-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.shipping-address-order-head strong { color: var(--erp-text); font-size: 12px; font-weight: 650; }
+.shipping-address-order-head > span:not(.badge) { color: var(--erp-muted); font-size: 11px; }
+.shipping-address-order-progress { color: var(--status-shipping) !important; font-size: 10.5px !important; }
+.shipping-address-order-head .link-button { margin-left: auto; font-size: 11px; }
+.shipping-address-order .shipping-batch-item-list { grid-column: 1 / -1; }
+
+.shipping-address-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; padding: 8px 12px; border-top: 1px solid var(--erp-divider); background: var(--erp-surface); }
+.shipping-address-footer-actions { display: flex; gap: 4px; }
+.shipping-address-invalid { flex: 1; min-width: 0; color: var(--color-warning-text); font-size: 10.5px; }
+.shipping-address-footer .button-primary { margin-left: auto; }
+
+.shipping-progress-sheet { flex: none; padding: 8px 12px 10px; border-top: 1px solid var(--erp-divider); background: var(--erp-surface); }
+.shipping-progress-sheet .shipping-sheet-head { display: flex; align-items: center; gap: 8px; }
+.shipping-progress-sheet .shipping-sheet-head strong { flex: none; color: var(--erp-text); font-size: 12px; font-weight: 600; }
+.shipping-progress-sheet .shipping-sheet-head .shipping-address-hint { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shipping-progress-sheet .textarea { width: 100%; min-height: 64px; margin-top: 5px; border-color: var(--erp-border); font-size: 11.5px; }
+
+.shipping-progress-bulk { display: flex; flex: none; align-items: center; flex-wrap: wrap; gap: 6px 8px; padding: 8px 12px; border-top: 1px solid var(--erp-border); background: var(--erp-surface-muted); box-shadow: 0 -4px 12px rgba(16, 32, 51, .06); }
+.shipping-progress-bulk .notice { flex: 1; min-width: 0; padding: 4px 8px; border: 1px solid var(--color-warning-border); border-radius: var(--radius-ui); background: var(--color-warning-soft); color: var(--color-warning); font-size: 10.5px; }
+
+@media (max-width: 900px) {
+  .shipping-progress { display: flex; flex-direction: column; }
+  .shipping-progress-head { padding: 6px 0; border-bottom: 0; background: transparent; }
+  .shipping-progress-title strong { font-size: 14px; }
+  .shipping-progress-title span { font-size: 12px; }
+  .shipping-progress-hint { display: none; }
+  .shipping-progress-list { overflow: visible; padding: 8px 0; }
+  .shipping-address-head { grid-template-columns: auto minmax(0, 1fr); gap: 6px 8px; padding: 10px 10px 0; }
+  .shipping-address-party strong { font-size: 13px; }
+  .shipping-address-party span { font-size: 12px; }
+  .shipping-address-totals { grid-column: 2; justify-content: flex-start; font-size: 12px; }
+  .shipping-address-totals .button { height: 30px; min-height: 30px; padding: 0 9px; font-size: 12px; }
+  .shipping-address-badges, .shipping-address-actions { grid-column: 2; }
+  .shipping-address-actions { justify-content: flex-start; }
+  .shipping-address-actions .button { height: 30px; min-height: 30px; padding: 0 9px; font-size: 12px; }
+  .shipping-address-badges .button { height: 30px; min-height: 30px; padding: 0 9px; font-size: 12px; }
+  .shipping-address-tracking { flex-wrap: wrap; padding: 8px 10px; }
+  .shipping-address-tracking .input { flex-basis: 100%; }
+  .shipping-address-hint { font-size: 11px; }
+  .shipping-address-orders { padding: 0 10px 8px; }
+  .shipping-address-footer { padding: 8px 10px; }
+  .shipping-address-footer-actions .button { height: 30px; min-height: 30px; font-size: 12px; }
+  .shipping-address-invalid { flex-basis: 100%; font-size: 11px; }
+  .shipping-address-footer .button-primary { width: 100%; min-height: 36px; margin-left: 0; justify-content: center; }
+  .shipping-address-order-head strong { font-size: 13px; }
+  .shipping-address-order-head > span:not(.badge) { font-size: 12px; }
+  .shipping-address-order-head .link-button { font-size: 12px; }
+  .shipping-progress-sheet { padding: 8px 0; }
+  .shipping-progress-sheet .shipping-sheet-head .shipping-address-hint { display: none; }
+  .shipping-progress-sheet .textarea { min-height: 78px; font-size: 13px; }
+  .shipping-progress-bulk { position: sticky; bottom: calc(58px + env(safe-area-inset-bottom, 0px)); z-index: 3; padding: 8px 0; border-top: 1px solid var(--erp-divider); background: var(--erp-page); box-shadow: none; }
+  .shipping-progress-bulk .badge { flex: none; }
+  .shipping-progress-bulk .notice { flex-basis: 100%; }
+  .shipping-progress-bulk .button-primary { flex: 1; min-height: 36px; }
+  .shipping-batch-item input[type='number'] { height: 30px; font-size: 13px; }
+  .shipping-batch-item-copy strong { font-size: 12.5px; }
+  .shipping-batch-item-copy span { font-size: 11.5px; }
+}

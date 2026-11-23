@@ -16,7 +16,7 @@ test('工作台：默认落地、待办、快捷新建和跳到待审核水单',
   await page.goto('/');
   await expect(page.getByText('工作台', { exact: true }).first()).toBeVisible();
   await expect(page.locator('.dashboard-metrics > div')).toHaveCount(4);
-  await expect(page.locator('.dashboard-task')).toHaveCount(7);
+  await expect(page.locator('.dashboard-task')).toHaveCount(8);
 
   await page.getByRole('button', { name: '新建订单' }).click();
   const orderDialog = page.getByRole('dialog', { name: '新建订单' });
@@ -86,7 +86,7 @@ test('工作台手机端不横向溢出', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   await expect(page.locator('.dashboard-metrics')).toBeVisible();
-  await expect(page.locator('.dashboard-task')).toHaveCount(7);
+  await expect(page.locator('.dashboard-task')).toHaveCount(8);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });

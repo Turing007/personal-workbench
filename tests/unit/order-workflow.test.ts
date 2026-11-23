@@ -7,7 +7,8 @@ describe('订单下一步动作', () => {
     expect(getOrderNextAction('pending_stock')).toEqual({ kind: 'advance', label: '确认已备货', target: 'stock_reported' });
     expect(getOrderNextAction('stock_reported')).toEqual({ kind: 'advance', label: '开始打包', target: 'pending_packing' });
     expect(getOrderNextAction('pending_packing')).toEqual({ kind: 'advance', label: '完成打包', target: 'ship_pending' });
-    expect(getOrderNextAction('ship_pending')).toEqual({ kind: 'shipping', label: '发货' });
+    expect(getOrderNextAction('ship_pending')).toEqual({ kind: 'advance', label: '发货', target: 'shipping' });
+    expect(getOrderNextAction('shipping')).toEqual({ kind: 'shipping-view', label: '继续发货' });
   });
 
   it('已发货订单没有下一步动作', () => {
@@ -30,7 +31,8 @@ describe('订单状态回退动作', () => {
     expect(getOrderRollbackAction('stock_reported')).toEqual({ label: '回退到待备货', target: 'pending_stock' });
     expect(getOrderRollbackAction('pending_packing')).toEqual({ label: '回退到已备货', target: 'stock_reported' });
     expect(getOrderRollbackAction('ship_pending')).toEqual({ label: '回退到待打包', target: 'pending_packing' });
-    expect(getOrderRollbackAction('shipped')).toEqual({ label: '撤销发货', target: 'ship_pending' });
+    expect(getOrderRollbackAction('shipping')).toEqual({ label: '回退到待发货', target: 'ship_pending' });
+    expect(getOrderRollbackAction('shipped')).toEqual({ label: '退回发货中', target: 'shipping' });
     expect(getOrderRollbackAction('pending_stock')).toBeUndefined();
     expect(getOrderRollbackAction('draft')).toBeUndefined();
   });
@@ -67,25 +69,28 @@ describe('订单批量操作分类', () => {
     expect(plan.skipped).toEqual([]);
   });
 
-  it('一键发货要求已填物流单号，缺单号的订单跳过并说明原因', () => {
+  it('一键发货只把待发货推进到发货中，不要求单号和收款', () => {
     const plan = run('ship', [
       order('SO-1', 'ship_pending', 'SF123'),
       order('SO-2', 'ship_pending'),
       order('SO-3', 'pending_packing'),
     ]);
-    expect(plan.targets.map((target) => [target.order.orderNo, target.steps])).toEqual([['SO-1', ['shipped']]]);
-    expect(plan.skipped).toEqual([
-      { orderNo: 'SO-2', reason: '缺少物流单号' },
-      { orderNo: 'SO-3', reason: '当前状态不支持该操作' },
+    expect(plan.targets.map((target) => [target.order.orderNo, target.steps])).toEqual([
+      ['SO-1', ['shipping']],
+      ['SO-2', ['shipping']],
     ]);
+    expect(plan.skipped).toEqual([{ orderNo: 'SO-3', reason: '当前状态不支持该操作' }]);
   });
 
-  it('一键发货要求货款已确认到账，部分付款也跳过', () => {
+  it('一键发货不受未收款和缺单号影响，统一进入发货中再处理', () => {
     const plan = run('ship', [
-      { ...order('SO-1', 'ship_pending', 'SF123'), amount: '100', financeSummary: { receivableCents: 10000, receivedCents: 0 } },
+      { ...order('SO-1', 'ship_pending', ''), amount: '100', financeSummary: { receivableCents: 10000, receivedCents: 0 } },
       { ...order('SO-2', 'ship_pending', 'SF456'), amount: '100', financeSummary: { receivableCents: 10000, receivedCents: 10000 } },
     ]);
-    expect(plan.targets.map((target) => [target.order.orderNo, target.steps])).toEqual([['SO-2', ['shipped']]]);
-    expect(plan.skipped).toEqual([{ orderNo: 'SO-1', reason: '未确认收到货款' }]);
+    expect(plan.targets.map((target) => [target.order.orderNo, target.steps])).toEqual([
+      ['SO-1', ['shipping']],
+      ['SO-2', ['shipping']],
+    ]);
+    expect(plan.skipped).toEqual([]);
   });
 });
