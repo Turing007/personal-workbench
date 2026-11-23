@@ -84,6 +84,7 @@ export default function OrderItemCards({ order, showPackaging = true }: OrderIte
               <div><dt>规格</dt><dd>{item.specification || '—'}</dd></div>
               <div><dt>SKU</dt><dd>{item.sku || '—'}</dd></div>
               <div><dt>装箱</dt><dd>{item.packSize || '—'} 件/箱 · {item.boxes} 箱</dd></div>
+              {(item.shippedQuantity ?? 0) > 0 && <div><dt>发货</dt><dd>已发 {item.shippedQuantity}/{item.quantity} · {item.quantity - (item.shippedQuantity ?? 0) > 0 ? `剩 ${item.quantity - (item.shippedQuantity ?? 0)}` : '已发完'}</dd></div>}
             </dl>
             <div className="order-detail-card-money">
               <span>单价 <b>{money(unitPriceCents)}</b></span>

@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 45;
+const CURRENT_SCHEMA_VERSION = 46;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -387,7 +387,11 @@ CREATE TABLE IF NOT EXISTS shipments (
   shipped_at TEXT NOT NULL,
   total_boxes INTEGER NOT NULL CHECK (total_boxes > 0),
   recipient_info TEXT NOT NULL DEFAULT '',
-  remark TEXT NOT NULL DEFAULT ''
+  remark TEXT NOT NULL DEFAULT '',
+  batch_id INTEGER REFERENCES shipment_batches(id) ON DELETE SET NULL,
+  shipment_no TEXT,
+  customer_name TEXT NOT NULL DEFAULT '',
+  recipient_name TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS shipment_batches (
@@ -406,6 +410,24 @@ CREATE TABLE IF NOT EXISTS shipment_batch_orders (
   sort_order INTEGER NOT NULL DEFAULT 0,
   UNIQUE (batch_id, order_id)
 );
+
+CREATE TABLE IF NOT EXISTS shipment_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  shipment_id INTEGER NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+  order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  sku TEXT NOT NULL DEFAULT '',
+  specification TEXT NOT NULL DEFAULT '',
+  pack_count INTEGER NOT NULL CHECK (pack_count > 0),
+  quantity INTEGER NOT NULL CHECK (quantity > 0),
+  boxes INTEGER NOT NULL CHECK (boxes > 0),
+  remaining_after INTEGER NOT NULL DEFAULT 0 CHECK (remaining_after >= 0),
+  remark TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_shipment_items_shipment ON shipment_items(shipment_id, sort_order, id);
+CREATE INDEX IF NOT EXISTS idx_shipment_items_order_item ON shipment_items(order_item_id);
 
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
@@ -629,7 +651,8 @@ type MigratedTable =
   | 'payment_proofs'
   | 'finance_receipts'
   | 'catalogs'
-  | 'companies';
+  | 'companies'
+  | 'shipments';
 
 interface MigrationPreflight {
   schemaVersion: number;
@@ -1517,6 +1540,119 @@ function migrateVersionFortyFive(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '45', now);
 }
 
+/**
+ * 部分发货：订单行记录已发数量，发货单记录本次明细。
+ * 历史已发货订单按全部数量回填，保证进度、发货历史和 PDF 可直接使用。
+ */
+function migrateVersionFortySix(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'order_items', 'shipped_quantity', 'INTEGER NOT NULL DEFAULT 0 CHECK (shipped_quantity >= 0)');
+  addColumnIfMissing(database, 'shipments', 'batch_id', 'INTEGER REFERENCES shipment_batches(id) ON DELETE SET NULL');
+  addColumnIfMissing(database, 'shipments', 'shipment_no', 'TEXT');
+  addColumnIfMissing(database, 'shipments', 'customer_name', "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(database, 'shipments', 'recipient_name', "TEXT NOT NULL DEFAULT ''");
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS shipment_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shipment_id INTEGER NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+      order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
+      name TEXT NOT NULL,
+      sku TEXT NOT NULL DEFAULT '',
+      specification TEXT NOT NULL DEFAULT '',
+      pack_count INTEGER NOT NULL CHECK (pack_count > 0),
+      quantity INTEGER NOT NULL CHECK (quantity > 0),
+      boxes INTEGER NOT NULL CHECK (boxes > 0),
+      remaining_after INTEGER NOT NULL DEFAULT 0 CHECK (remaining_after >= 0),
+      remark TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_shipment_items_shipment ON shipment_items(shipment_id, sort_order, id);
+    CREATE INDEX IF NOT EXISTS idx_shipment_items_order_item ON shipment_items(order_item_id);
+  `);
+
+  database.exec(`
+    UPDATE shipments
+    SET customer_name = COALESCE((SELECT o.customer_name FROM orders o WHERE o.id = shipments.order_id), ''),
+        recipient_name = COALESCE((SELECT o.recipient_name FROM orders o WHERE o.id = shipments.order_id), '')
+    WHERE customer_name = '' OR recipient_name = '';
+  `);
+
+  const insertShipment = database.prepare(
+    `INSERT INTO shipments
+      (order_id, tracking_no, shipped_at, total_boxes, recipient_info, remark, shipment_no, customer_name, recipient_name)
+     VALUES (?, ?, ?, ?, ?, '', ?, ?, ?)`,
+  );
+  const insertShipmentItem = database.prepare(
+    `INSERT INTO shipment_items
+      (shipment_id, order_item_id, name, sku, specification, pack_count, quantity, boxes, remaining_after, remark, sort_order, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?)`,
+  );
+  const orderItems = database.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort_order, id');
+  const itemBoxes = database.prepare(`
+    SELECT COALESCE(
+      (SELECT SUM(cli.box_count) FROM carton_label_items cli WHERE cli.order_item_id = oi.id),
+      CASE WHEN oi.pack_count > 0 THEN (oi.quantity + oi.pack_count - 1) / oi.pack_count ELSE 1 END,
+      1
+    ) AS boxes
+    FROM order_items oi WHERE oi.id = ?
+  `);
+  const insertItemsForShipment = (shipmentId: number, orderId: number, createdAt: string) => {
+    const existing = database.prepare('SELECT COUNT(*) AS count FROM shipment_items WHERE shipment_id = ?').get(shipmentId) as { count?: unknown } | undefined;
+    if (Number(existing?.count ?? 0) > 0) return;
+    const items = orderItems.all(orderId) as Array<Record<string, unknown>>;
+    items.forEach((item, index) => {
+      const boxes = Math.max(1, Number((itemBoxes.get(Number(item.id)) as { boxes?: unknown } | undefined)?.boxes ?? 1));
+      insertShipmentItem.run(
+        shipmentId,
+        Number(item.id),
+        String(item.name ?? ''),
+        String(item.sku ?? ''),
+        String(item.specification ?? ''),
+        Math.max(1, Number(item.pack_count ?? 1)),
+        Math.max(1, Number(item.quantity ?? 1)),
+        boxes,
+        index,
+        createdAt,
+      );
+    });
+  };
+
+  const shippedWithoutShipment = database.prepare(`
+    SELECT o.* FROM orders o
+    WHERE o.status = 'shipped'
+      AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.order_id = o.id)
+  `).all() as Array<Record<string, unknown>>;
+  for (const order of shippedWithoutShipment) {
+    const items = orderItems.all(Number(order.id)) as Array<Record<string, unknown>>;
+    const boxes = items.reduce((sum, item) => {
+      const count = Math.max(1, Number((itemBoxes.get(Number(item.id)) as { boxes?: unknown } | undefined)?.boxes ?? 1));
+      return sum + count;
+    }, 0);
+    const shipmentNo = `${String(order.order_no ?? order.id)}-FH1`;
+    const shipmentId = Number(insertShipment.run(
+      Number(order.id),
+      String(order.tracking_no ?? ''),
+      String(order.updated_at ?? order.ordered_at ?? now),
+      Math.max(1, boxes),
+      String(order.recipient_info ?? ''),
+      shipmentNo,
+      String(order.customer_name ?? ''),
+      String(order.recipient_name ?? ''),
+    ).lastInsertRowid);
+    insertItemsForShipment(shipmentId, Number(order.id), String(order.updated_at ?? now));
+  }
+
+  const shipments = database.prepare('SELECT id, order_id, shipped_at FROM shipments').all() as Array<Record<string, unknown>>;
+  for (const shipment of shipments) insertItemsForShipment(Number(shipment.id), Number(shipment.order_id), String(shipment.shipped_at ?? now));
+
+  database.exec(`
+    UPDATE order_items
+    SET shipped_quantity = quantity
+    WHERE order_id IN (SELECT id FROM orders WHERE status = 'shipped');
+  `);
+  upsertSetting(database, 'schema_version', '46', now);
+}
+
 function migrateVersionFortyFour(database: DatabaseSync, now: string): void {
   const orderColumns: Array<[string, string]> = [
     ['logistics_cost_cents', 'INTEGER CHECK (logistics_cost_cents IS NULL OR logistics_cost_cents >= 0)'],
@@ -1660,6 +1796,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionFortyThree(transactionDatabase, now);
     migrateVersionFortyFour(transactionDatabase, now);
     migrateVersionFortyFive(transactionDatabase, now);
+    migrateVersionFortySix(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

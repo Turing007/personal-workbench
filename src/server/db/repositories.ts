@@ -11,6 +11,7 @@ import { DEFAULT_PRODUCT_IMAGE_CATEGORY } from '../../shared/product-image-categ
 import { normalizeProductStatus, type ProductStatus } from '../../shared/product-status.js';
 import { mapStoredPurchaseQuotes, normalizePurchaseQuotes, purchaseQuoteMirror } from '../../shared/product-purchase-quotes.js';
 import { cartonLabelRequirement } from '../../shared/customers.js';
+import type { PartialShipmentEntryInput, ShipmentItemRecord, ShipmentRecord } from '../../shared/shipping.js';
 
 type SqlValue = string | number | null;
 
@@ -987,7 +988,7 @@ export class DatabaseRepositories {
     });
   }
 
-  updateOrder(orderId: number, input: UpdateOrderInput) {
+  updateOrder(orderId: number, input: UpdateOrderInput, options: { preserveItems?: boolean } = {}) {
     const timestamp = now();
     const settlementType = input.settlementType === 'personal' ? 'personal' : 'corporate';
     return withTransaction(this.database, (database) => {
@@ -1055,6 +1056,39 @@ export class DatabaseRepositories {
           UPDATE order_finance SET receivable_cents = ?, outstanding_cents = ?, payment_status = ?, updated_at = ?
           WHERE order_id = ?
         `).run(amountCents, calculateOutstandingCents(amountCents, receivedCents), deriveFinancePaymentStatus(amountCents, receivedCents), timestamp, orderId);
+      }
+
+      if (options.preserveItems) {
+        const insertAttachment = database.prepare(`
+          INSERT OR IGNORE INTO order_contracts
+            (order_id, category, source_customer_product_id, relative_path, original_name, mime_type, size_bytes, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const attachment of input.orderAttachments ?? []) {
+          insertAttachment.run(orderId, attachment.category, attachment.sourceCustomerProductId ?? null, attachment.relativePath, attachment.originalName, attachment.mimeType, attachment.size, timestamp);
+        }
+        const updateItemCosts = database.prepare(`
+          UPDATE order_items SET machine_cost_cents = ?, battery_cost_cents = ?, charger_cost_cents = ?,
+            packaging_cost_cents = ?, accessory_cost_cents = ?, other_cost_cents = ?, cost_confirmed = ?, updated_at = ?
+          WHERE id = ? AND order_id = ?
+        `);
+        input.items.forEach((item, index) => {
+          const previousItem = previousItems[index];
+          if (!previousItem) return;
+          updateItemCosts.run(
+            item.machineCostCents ?? null,
+            item.batteryCostCents ?? null,
+            item.chargerCostCents ?? null,
+            item.packagingCostCents ?? null,
+            item.accessoryCostCents ?? null,
+            item.otherCostCents ?? null,
+            item.costConfirmed ? 1 : 0,
+            timestamp,
+            Number(previousItem.id),
+            orderId,
+          );
+        });
+        return this.getOrderDetail(orderId);
       }
 
       // 明细、数量、装箱数、箱唛要求没变时保留现有箱唛，避免只改备注/附件/价格就丢手工合箱。
@@ -1712,6 +1746,38 @@ export class DatabaseRepositories {
     return { ...batch, orders };
   }
 
+  /** 旧版整单发货接口：把剩余未发数量全部记入本次发货明细，保持进度与历史一致。 */
+  private addFullRemainingShipmentItems(database: DatabaseSync, shipmentId: number, orderId: number, timestamp: string): void {
+    const items = database.prepare(
+      'SELECT * FROM order_items WHERE order_id = ? AND shipped_quantity < quantity ORDER BY sort_order, id',
+    ).all(orderId) as Array<Record<string, unknown>>;
+    const insert = database.prepare(`
+      INSERT INTO shipment_items
+        (shipment_id, order_item_id, name, sku, specification, pack_count, quantity, boxes, remaining_after, remark, sort_order, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+    `);
+    const update = database.prepare('UPDATE order_items SET shipped_quantity = quantity, updated_at = ? WHERE id = ?');
+    items.forEach((item, index) => {
+      const quantity = Math.max(0, Number(item.quantity ?? 0) - Number(item.shipped_quantity ?? 0));
+      if (quantity <= 0) return;
+      const packCount = Math.max(1, Number(item.pack_count ?? 1));
+      insert.run(
+        shipmentId,
+        Number(item.id),
+        String(item.name ?? ''),
+        String(item.sku ?? ''),
+        String(item.specification ?? ''),
+        packCount,
+        quantity,
+        Math.max(1, Math.ceil(quantity / packCount)),
+        String(item.remark ?? ''),
+        index,
+        timestamp,
+      );
+      update.run(timestamp, Number(item.id));
+    });
+  }
+
   private assertShipmentPaymentCleared(order: Record<string, unknown>): void {
     const receivableCents = Number(order.finance_receivable_cents ?? order.amount_cents ?? 0);
     const receivedCents = Number(order.finance_received_cents ?? 0);
@@ -1744,7 +1810,8 @@ export class DatabaseRepositories {
       orders.forEach((order) => {
         if (order.status !== 'ship_pending') throw new Error(`订单 ${order.order_no} 当前不可发货`);
         this.assertShipmentPaymentCleared(order);
-        insertShipment.run(order.order_id, String(order.tracking_no), timestamp, Math.max(1, Number(order.total_boxes)), String(order.recipient_info ?? ''));
+        const shipmentId = Number(insertShipment.run(order.order_id, String(order.tracking_no), timestamp, Math.max(1, Number(order.total_boxes)), String(order.recipient_info ?? '')).lastInsertRowid);
+        this.addFullRemainingShipmentItems(database, shipmentId, Number(order.order_id), timestamp);
         database.prepare('UPDATE orders SET tracking_no = ?, status = \'shipped\', updated_at = ? WHERE id = ?').run(order.tracking_no, timestamp, order.order_id);
       });
       database.prepare('UPDATE shipment_batches SET status = \'confirmed\', confirmed_at = ? WHERE id = ?').run(timestamp, batchId);
@@ -1780,11 +1847,230 @@ export class DatabaseRepositories {
         if (!trackingNo) throw new Error(`订单 ${order.order_no} 缺少物流单号`);
         this.assertShipmentPaymentCleared(order);
         insertBatchOrder.run(batchId, entry.orderId, trackingNo, index);
-        insertShipment.run(entry.orderId, trackingNo, timestamp, Math.max(1, Number(order.total_boxes)), String(order.recipient_info ?? ''));
+        const shipmentId = Number(insertShipment.run(entry.orderId, trackingNo, timestamp, Math.max(1, Number(order.total_boxes)), String(order.recipient_info ?? '')).lastInsertRowid);
+        this.addFullRemainingShipmentItems(database, shipmentId, entry.orderId, timestamp);
         updateOrder.run(trackingNo, timestamp, entry.orderId);
       });
       database.prepare("UPDATE shipment_batches SET status = 'confirmed', confirmed_at = ? WHERE id = ?").run(timestamp, batchId);
       return batchId;
+    });
+  }
+
+  hasOrderShipments(orderId: number): boolean {
+    const row = this.database.prepare('SELECT 1 AS found FROM shipments WHERE order_id = ? LIMIT 1').get(orderId);
+    return row !== undefined;
+  }
+
+  private mapShipmentRow(row: Record<string, unknown>): ShipmentRecord {
+    const items = this.database
+      .prepare('SELECT * FROM shipment_items WHERE shipment_id = ? ORDER BY sort_order, id')
+      .all(Number(row.id)) as Array<Record<string, unknown>>;
+    return {
+      id: Number(row.id),
+      shipmentNo: String(row.shipment_no ?? `FH-${row.id}`),
+      orderId: Number(row.order_id),
+      orderNo: String(row.order_no ?? ''),
+      batchId: row.batch_id == null ? null : Number(row.batch_id),
+      batchNo: String(row.batch_no ?? ''),
+      trackingNo: String(row.tracking_no ?? ''),
+      shippedAt: String(row.shipped_at ?? ''),
+      totalBoxes: Math.max(1, Number(row.total_boxes ?? 1)),
+      customerName: String(row.customer_name || row.order_customer_name || ''),
+      recipientName: String(row.recipient_name || row.order_recipient_name || ''),
+      recipientInfo: String(row.recipient_info ?? ''),
+      remark: String(row.remark ?? ''),
+      companyName: String(row.company_name ?? ''),
+      items: items.map((item): ShipmentItemRecord => ({
+        id: Number(item.id),
+        orderItemId: item.order_item_id == null ? null : Number(item.order_item_id),
+        name: String(item.name ?? ''),
+        sku: String(item.sku ?? ''),
+        specification: String(item.specification ?? ''),
+        packCount: Math.max(1, Number(item.pack_count ?? 1)),
+        quantity: Math.max(1, Number(item.quantity ?? 1)),
+        boxes: Math.max(1, Number(item.boxes ?? 1)),
+        remainingAfter: Math.max(0, Number(item.remaining_after ?? 0)),
+        remark: String(item.remark ?? ''),
+        sortOrder: Number(item.sort_order ?? 0),
+      })),
+    };
+  }
+
+  listOrderShipments(orderId: number): ShipmentRecord[] {
+    const rows = this.database
+      .prepare(`
+        SELECT s.*, o.order_no, o.customer_name AS order_customer_name, o.recipient_name AS order_recipient_name,
+          sb.batch_no,
+          COALESCE(NULLIF(c.full_name, ''), c.short_name, '') AS company_name
+        FROM shipments s
+        JOIN orders o ON o.id = s.order_id
+        LEFT JOIN shipment_batches sb ON sb.id = s.batch_id
+        LEFT JOIN companies c ON c.id = o.company_id
+        WHERE s.order_id = ?
+        ORDER BY s.shipped_at DESC, s.id DESC
+      `)
+      .all(orderId) as Array<Record<string, unknown>>;
+    return rows.map((row) => this.mapShipmentRow(row));
+  }
+
+  getShipment(shipmentId: number): ShipmentRecord | undefined {
+    const row = this.database
+      .prepare(`
+        SELECT s.*, o.order_no, o.customer_name AS order_customer_name, o.recipient_name AS order_recipient_name,
+          sb.batch_no,
+          COALESCE(NULLIF(c.full_name, ''), c.short_name, '') AS company_name
+        FROM shipments s
+        JOIN orders o ON o.id = s.order_id
+        LEFT JOIN shipment_batches sb ON sb.id = s.batch_id
+        LEFT JOIN companies c ON c.id = o.company_id
+        WHERE s.id = ?
+      `)
+      .get(shipmentId) as Record<string, unknown> | undefined;
+    return row ? this.mapShipmentRow(row) : undefined;
+  }
+
+  listBatchShipments(batchId: number): ShipmentRecord[] {
+    const rows = this.database
+      .prepare(`
+        SELECT s.*, o.order_no, o.customer_name AS order_customer_name, o.recipient_name AS order_recipient_name,
+          sb.batch_no,
+          COALESCE(NULLIF(c.full_name, ''), c.short_name, '') AS company_name
+        FROM shipments s
+        JOIN orders o ON o.id = s.order_id
+        LEFT JOIN shipment_batches sb ON sb.id = s.batch_id
+        LEFT JOIN companies c ON c.id = o.company_id
+        WHERE s.batch_id = ?
+        ORDER BY s.id
+      `)
+      .all(batchId) as Array<Record<string, unknown>>;
+    return rows.map((row) => this.mapShipmentRow(row));
+  }
+
+  /** 一次确认多个订单的部分发货；每单一条物流单号、一条发货记录。 */
+  confirmPartialShipments(entries: PartialShipmentEntryInput[]): number {
+    const unique = [...new Map(entries.map((entry) => [entry.orderId, entry])).values()];
+    if (!unique.length) throw new Error('至少选择一个待发货订单');
+    const timestamp = now();
+    return withTransaction(this.database, (database) => {
+      const batchNo = `BATCH-${timestamp.replace(/[-:TZ.]/g, '').slice(0, 14)}-${randomUUID().slice(0, 8)}`;
+      const batchId = lastInsertId(
+        database.prepare("INSERT INTO shipment_batches (batch_no, status, created_at) VALUES (?, 'draft', ?)").run(batchNo, timestamp),
+      );
+      const selectOrder = database.prepare(`
+        SELECT o.id, o.order_no, o.status, o.customer_name, o.recipient_name, o.recipient_info, o.amount_cents,
+          f.receivable_cents AS finance_receivable_cents, f.received_cents AS finance_received_cents
+        FROM orders o LEFT JOIN order_finance f ON f.order_id = o.id WHERE o.id = ?
+      `);
+      const selectItems = database.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort_order, id');
+      const insertShipment = database.prepare(`
+        INSERT INTO shipments
+          (order_id, tracking_no, shipped_at, total_boxes, recipient_info, remark, batch_id, shipment_no, customer_name, recipient_name)
+        VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, ?)
+      `);
+      const insertShipmentItem = database.prepare(`
+        INSERT INTO shipment_items
+          (shipment_id, order_item_id, name, sku, specification, pack_count, quantity, boxes, remaining_after, remark, sort_order, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const updateItem = database.prepare(
+        'UPDATE order_items SET shipped_quantity = shipped_quantity + ?, updated_at = ? WHERE id = ? AND order_id = ? AND shipped_quantity + ? <= quantity',
+      );
+      const insertBatchOrder = database.prepare(
+        'INSERT INTO shipment_batch_orders (batch_id, order_id, tracking_no, sort_order) VALUES (?, ?, ?, ?)',
+      );
+
+      unique.forEach((entry, index) => {
+        const order = selectOrder.get(entry.orderId) as Record<string, unknown> | undefined;
+        if (!order) throw new Error(`订单不存在：${entry.orderId}`);
+        if (order.status !== 'ship_pending') throw new Error(`订单 ${order.order_no} 当前不可发货`);
+        this.assertShipmentPaymentCleared(order);
+        const trackingNo = String(entry.trackingNo ?? '').trim();
+        if (!trackingNo) throw new Error(`订单 ${order.order_no} 缺少物流单号`);
+        const available = new Map((selectItems.all(entry.orderId) as Array<Record<string, unknown>>).map((item) => [Number(item.id), item]));
+        const selected: Array<{ item: Record<string, unknown>; quantity: number; boxes: number; remainingAfter: number }> = [];
+        const seen = new Set<number>();
+        entry.items.forEach((input) => {
+          const orderItemId = Number(input.orderItemId);
+          if (!Number.isSafeInteger(orderItemId) || seen.has(orderItemId)) throw new Error(`订单 ${order.order_no} 存在重复或无效的产品行`);
+          seen.add(orderItemId);
+          const item = available.get(orderItemId);
+          if (!item) throw new Error(`订单 ${order.order_no} 中不存在产品行 ${orderItemId}`);
+          const ordered = Math.max(0, Number(item.quantity ?? 0));
+          const shipped = Math.max(0, Number(item.shipped_quantity ?? 0));
+          const remaining = Math.max(0, ordered - shipped);
+          const quantity = Math.trunc(Number(input.quantity));
+          if (!Number.isSafeInteger(quantity) || quantity <= 0) throw new Error(`订单 ${order.order_no} 的「${String(item.name ?? '')}」发货数量必须大于 0`);
+          if (quantity > remaining) throw new Error(`订单 ${order.order_no} 的「${String(item.name ?? '')}」最多还能发 ${remaining}`);
+          const packCount = Math.max(1, Number(item.pack_count ?? 1));
+          selected.push({ item, quantity, boxes: Math.max(1, Math.ceil(quantity / packCount)), remainingAfter: remaining - quantity });
+        });
+        if (!selected.length) throw new Error(`订单 ${order.order_no} 没有选择发货产品`);
+        const totalBoxes = selected.reduce((sum, item) => sum + item.boxes, 0);
+        const previousShipments = Number((database.prepare('SELECT COUNT(*) AS count FROM shipments WHERE order_id = ?').get(entry.orderId) as { count?: unknown } | undefined)?.count ?? 0);
+        const shipmentId = lastInsertId(insertShipment.run(
+          entry.orderId,
+          trackingNo,
+          timestamp,
+          totalBoxes,
+          String(order.recipient_info ?? ''),
+          batchId,
+          `${String(order.order_no ?? entry.orderId)}-FH${previousShipments + 1}`,
+          String(order.customer_name ?? ''),
+          String(order.recipient_name ?? ''),
+        ));
+        selected.forEach((item, itemIndex) => {
+          const update = updateItem.run(item.quantity, timestamp, Number(item.item.id), entry.orderId, item.quantity);
+          if (Number(update.changes ?? 0) === 0) throw new Error(`订单 ${order.order_no} 的「${String(item.item.name ?? '')}」发货数量超出剩余`);
+          insertShipmentItem.run(
+            shipmentId,
+            Number(item.item.id),
+            String(item.item.name ?? ''),
+            String(item.item.sku ?? ''),
+            String(item.item.specification ?? ''),
+            Math.max(1, Number(item.item.pack_count ?? 1)),
+            item.quantity,
+            item.boxes,
+            item.remainingAfter,
+            String(item.item.remark ?? ''),
+            itemIndex,
+            timestamp,
+          );
+        });
+        const remaining = Number((database.prepare(
+          'SELECT COUNT(*) AS count FROM order_items WHERE order_id = ? AND shipped_quantity < quantity',
+        ).get(entry.orderId) as { count?: unknown } | undefined)?.count ?? 0);
+        database.prepare('UPDATE orders SET tracking_no = ?, status = ?, updated_at = ? WHERE id = ?')
+          .run(trackingNo, remaining === 0 ? 'shipped' : 'ship_pending', timestamp, entry.orderId);
+        insertBatchOrder.run(batchId, entry.orderId, trackingNo, index);
+      });
+      database.prepare("UPDATE shipment_batches SET status = 'confirmed', confirmed_at = ? WHERE id = ?").run(timestamp, batchId);
+      return batchId;
+    });
+  }
+
+  voidShipment(shipmentId: number): { orderId: number } | undefined {
+    return withTransaction(this.database, (database) => {
+      const shipment = database.prepare('SELECT * FROM shipments WHERE id = ?').get(shipmentId) as Record<string, unknown> | undefined;
+      if (!shipment) return undefined;
+      const items = database.prepare('SELECT * FROM shipment_items WHERE shipment_id = ?').all(shipmentId) as Array<Record<string, unknown>>;
+      for (const item of items) {
+        if (item.order_item_id == null) throw new Error('发货明细缺少订单行，不能撤销');
+        database.prepare(
+          'UPDATE order_items SET shipped_quantity = MAX(0, shipped_quantity - ?), updated_at = ? WHERE id = ? AND order_id = ?',
+        ).run(Math.max(0, Number(item.quantity ?? 0)), now(), Number(item.order_item_id), Number(shipment.order_id));
+      }
+      database.prepare('DELETE FROM shipments WHERE id = ?').run(shipmentId);
+      const remaining = Number((database.prepare(
+        'SELECT COALESCE(SUM(quantity - shipped_quantity), 0) AS remaining FROM order_items WHERE order_id = ?',
+      ).get(Number(shipment.order_id)) as { remaining?: unknown } | undefined)?.remaining ?? 0);
+      const latest = database.prepare(
+        'SELECT tracking_no FROM shipments WHERE order_id = ? ORDER BY shipped_at DESC, id DESC LIMIT 1',
+      ).get(Number(shipment.order_id)) as { tracking_no?: unknown } | undefined;
+      const order = database.prepare('SELECT status FROM orders WHERE id = ?').get(Number(shipment.order_id)) as { status?: unknown } | undefined;
+      const nextStatus = remaining === 0 ? 'shipped' : order?.status === 'shipped' ? 'ship_pending' : String(order?.status ?? 'ship_pending');
+      database.prepare('UPDATE orders SET tracking_no = ?, status = ?, updated_at = ? WHERE id = ?')
+        .run(String(latest?.tracking_no ?? ''), nextStatus, now(), Number(shipment.order_id));
+      return { orderId: Number(shipment.order_id) };
     });
   }
 

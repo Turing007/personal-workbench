@@ -215,7 +215,7 @@ describe('SQLite database foundation', () => {
     const database = new DatabaseSync(':memory:');
     migrateDatabase(database);
 
-    expect(getSetting(database, 'schema_version')).toBe('45');
+    expect(getSetting(database, 'schema_version')).toBe('46');
     expect(getSetting(database, 'customer_products_v6_initialized')).toBe('1');
     expect(getColumnNames(database, 'customers')).toEqual(expect.arrayContaining([
       'id',
@@ -305,7 +305,7 @@ describe('SQLite database foundation', () => {
     expect(database.prepare('SELECT COUNT(*) AS count FROM orders').get()?.count).toBe(1);
     expect(database.prepare('SELECT status, label_printed_at FROM orders WHERE id = ?').get(orderId)).toMatchObject({ status: 'pending_stock' });
     expect(getSetting(database, 'customer_products_v6_initialized')).toBe('1');
-    expect(getSetting(database, 'schema_version')).toBe('45');
+    expect(getSetting(database, 'schema_version')).toBe('46');
     expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     expect(database
       .prepare('PRAGMA foreign_key_list(order_items)')
@@ -414,7 +414,7 @@ describe('SQLite database foundation', () => {
     migrateDatabase(database);
 
     expect(database.prepare('SELECT COUNT(*) AS count FROM customer_products').get()?.count).toBe(1);
-    expect(getSetting(database, 'schema_version')).toBe('45');
+    expect(getSetting(database, 'schema_version')).toBe('46');
     expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     database.close();
   });
@@ -499,18 +499,18 @@ describe('SQLite database foundation', () => {
         updated_at TEXT NOT NULL
       );
       INSERT INTO settings (key, value, updated_at)
-      VALUES ('schema_version', ' 46 ', '2026-08-11');
+      VALUES ('schema_version', ' 47 ', '2026-08-11');
     `);
     const schemaBefore = database
       .prepare("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")
       .all();
 
-    expect(() => migrateDatabase(database)).toThrow('Unsupported database schema version 46; this application supports up to version 45');
+    expect(() => migrateDatabase(database)).toThrow('Unsupported database schema version 47; this application supports up to version 46');
 
     expect(database
       .prepare("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")
       .all()).toEqual(schemaBefore);
-    expect(getSetting(database, 'schema_version')).toBe(' 46 ');
+    expect(getSetting(database, 'schema_version')).toBe(' 47 ');
     expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'products'").get()).toBeUndefined();
     database.close();
   });
@@ -642,6 +642,7 @@ describe('SQLite database foundation', () => {
       'settings',
       'shipment_batch_orders',
       'shipment_batches',
+      'shipment_items',
       'shipments',
       'supplier_catalog_files',
       'supplier_catalogs',
@@ -650,7 +651,7 @@ describe('SQLite database foundation', () => {
 
     expect(database.prepare('PRAGMA foreign_keys').get()?.foreign_keys).toBe(1);
     expect(database.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe('wal');
-    expect(database.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()?.value).toBe('45');
+    expect(database.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()?.value).toBe('46');
     expect(getColumnNames(database, 'product_packaging')).toEqual(expect.arrayContaining([
       'inner_size',
       'inner_weight',
@@ -669,7 +670,7 @@ describe('SQLite database foundation', () => {
     expect(productDefault.parameters).toBe('');
 
     migrateDatabase(database);
-    expect(database.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()?.value).toBe('45');
+    expect(database.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()?.value).toBe('46');
 
     const indexNames = database
       .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY name")
@@ -926,7 +927,7 @@ describe('SQLite database foundation', () => {
     migrateDatabase(database);
 
     expect(getColumnNames(database, 'product_images').slice(-2)).toEqual(['category', 'note']);
-    expect(getSetting(database, 'schema_version')).toBe('45');
+    expect(getSetting(database, 'schema_version')).toBe('46');
 
     database.prepare("INSERT INTO products (name, created_at, updated_at) VALUES ('临时代理产品', '2026-01-01', '2026-01-01')").run();
     database
@@ -1215,7 +1216,7 @@ describe('v35：电池插脚名称统一为缩写', () => {
     expect(plugsOf(database, '空值')).toEqual([]);
     const presets = JSON.parse(String(database.prepare("SELECT value FROM settings WHERE key = 'product_option_presets'").get()?.value));
     expect(presets).toEqual({ colors: ['蓝'], plugs: ['MT', 'MI', 'DE'] });
-    expect(getSetting(database, 'schema_version')).toBe('45');
+    expect(getSetting(database, 'schema_version')).toBe('46');
     database.close();
   });
 
@@ -1254,6 +1255,7 @@ describe('v44：订单利润成本', () => {
       ALTER TABLE order_items DROP COLUMN label_cost_cents;
       ALTER TABLE order_items DROP COLUMN other_cost_cents;
       ALTER TABLE order_items DROP COLUMN cost_confirmed;
+      ALTER TABLE order_items DROP COLUMN shipped_quantity;
       ALTER TABLE customer_products DROP COLUMN battery_cost_cents;
       ALTER TABLE customer_products DROP COLUMN charger_cost_cents;
       ALTER TABLE customer_products DROP COLUMN packaging_cost_cents;
@@ -1281,7 +1283,7 @@ describe('v44：订单利润成本', () => {
 
     migrateDatabase(database);
 
-    expect(getSetting(database, 'schema_version')).toBe('45');
+    expect(getSetting(database, 'schema_version')).toBe('46');
     expect(getColumnNames(database, 'orders').slice(-5)).toEqual([
       'logistics_cost_cents',
       'label_cost_cents',
@@ -1289,7 +1291,7 @@ describe('v44：订单利润成本', () => {
       'other_cost_note',
       'cost_confirmed',
     ]);
-    expect(getColumnNames(database, 'order_items').slice(-8)).toEqual([
+    expect(getColumnNames(database, 'order_items').slice(-9)).toEqual([
       'machine_cost_cents',
       'battery_cost_cents',
       'charger_cost_cents',
@@ -1298,6 +1300,7 @@ describe('v44：订单利润成本', () => {
       'label_cost_cents',
       'other_cost_cents',
       'cost_confirmed',
+      'shipped_quantity',
     ]);
     expect(getColumnNames(database, 'customer_products').slice(-7)).toEqual([
       'battery_cost_cents',
@@ -1373,13 +1376,42 @@ describe('v44：订单利润成本', () => {
 
     migrateDatabase(database);
 
-    expect(getSetting(database, 'schema_version')).toBe('45');
+    expect(getSetting(database, 'schema_version')).toBe('46');
     expect(database.prepare('SELECT COUNT(*) AS count FROM orders').get()?.count).toBe(1);
     expect(database.prepare('SELECT COUNT(*) AS count FROM order_items').get()?.count).toBe(1);
     expect(database.prepare('SELECT amount_cents, order_detail, logistics_cost_cents, channel FROM orders WHERE id = ?').get(orderId))
       .toMatchObject({ amount_cents: 12345, order_detail: '历史订单明细', logistics_cost_cents: null, channel: 'offline' });
     expect(database.prepare('SELECT amount_cents, name, machine_cost_cents FROM order_items WHERE id = ?').get(orderItemId))
       .toMatchObject({ amount_cents: 12000, name: '历史电钻', machine_cost_cents: null });
+    database.close();
+  });
+});
+
+describe('v46：部分发货回填', () => {
+  it('历史已发货订单回填已发数量，并为旧发货单补明细', () => {
+    const database = new DatabaseSync(':memory:');
+    migrateDatabase(database);
+    const now = new Date().toISOString();
+    const orderId = Number(database.prepare(`
+      INSERT INTO orders (order_no, ordered_at, amount, amount_cents, recipient_name, status, created_at, updated_at)
+      VALUES ('SO-V46-001', '2026-11-20', 100, 10000, '张三', 'shipped', ?, ?)
+    `).run(now, now).lastInsertRowid);
+    const itemId = Number(database.prepare(`
+      INSERT INTO order_items (order_id, name, sku, specification, pack_count, quantity, unit_price_cents, amount_cents, created_at, updated_at)
+      VALUES (?, '历史产品', 'V46-1', '标准', 10, 20, 500, 10000, ?, ?)
+    `).run(orderId, now, now).lastInsertRowid);
+    database.prepare(`
+      INSERT INTO shipments (order_id, tracking_no, shipped_at, total_boxes, recipient_info)
+      VALUES (?, 'SF-V46', ?, 2, '杭州市')
+    `).run(orderId, now);
+    database.exec("DROP TABLE shipment_items; UPDATE settings SET value = '45' WHERE key = 'schema_version';");
+
+    migrateDatabase(database);
+
+    expect(getSetting(database, 'schema_version')).toBe('46');
+    expect(database.prepare('SELECT shipped_quantity FROM order_items WHERE id = ?').get(itemId)).toEqual({ shipped_quantity: 20 });
+    expect(database.prepare('SELECT name, quantity, boxes, remaining_after FROM shipment_items WHERE order_item_id = ?').get(itemId))
+      .toMatchObject({ name: '历史产品', quantity: 20, boxes: 2, remaining_after: 0 });
     database.close();
   });
 });

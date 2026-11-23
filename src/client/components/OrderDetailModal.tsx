@@ -2,6 +2,7 @@ import { Download, ExternalLink, FileText, Image as ImageIcon, Package, Printer,
 import { useState } from 'react';
 import { FINANCE_PAYMENT_STATUS_LABELS, INVOICE_STATUS_LABELS, PAYMENT_PROOF_STATUS_LABELS } from '../../shared/finance';
 import { ORDER_SETTLEMENT_LABELS, invoiceDisplayLabel } from '../../shared/settlement';
+import { getOrderFulfillmentProgress } from '../../shared/shipping';
 import { formatDateTime } from '../../shared/formatters';
 import { thumbUrl } from '../image-urls';
 import Modal from './Modal';
@@ -9,6 +10,7 @@ import OrderItemCards from './OrderItemCards';
 import type { OrderContractDraft, OrderDraft, OrderStatus } from './OrderForm';
 import { getOrderNextAction, getOrderRollbackAction } from '../order-workflow';
 import { OrderProfitSummaryCard } from './orders/OrderProfitEditor';
+import OrderShipmentsPanel from './orders/OrderShipmentsPanel';
 
 export interface OrderDetailModalProps {
   open: boolean;
@@ -26,6 +28,8 @@ export interface OrderDetailModalProps {
   onOpenShipping?: (order: OrderDraft) => void;
   onOpenFinance?: (order: OrderDraft) => void;
   onPromoteCustomer?: (order: OrderDraft) => void;
+  onShipmentChanged?: () => Promise<void> | void;
+  onNotify?: (message: string, kind?: 'success' | 'error' | 'info') => void;
 }
 
 const statusLabels: Record<OrderStatus, string> = {
@@ -79,6 +83,8 @@ export default function OrderDetailModal({
   onOpenShipping,
   onOpenFinance,
   onPromoteCustomer,
+  onShipmentChanged,
+  onNotify,
 }: OrderDetailModalProps) {
   const [deletingContractId, setDeletingContractId] = useState<string>();
   const [generatingContract, setGeneratingContract] = useState(false);
@@ -93,6 +99,9 @@ export default function OrderDetailModal({
   const financePaymentStatus = (order.financeSummary?.paymentStatus ?? 'unpaid') as keyof typeof FINANCE_PAYMENT_STATUS_LABELS;
   const financeProofStatus = (order.financeSummary?.proofStatus ?? 'none') as keyof typeof PAYMENT_PROOF_STATUS_LABELS;
   const financeInvoiceStatus = (order.financeSummary?.invoiceStatus ?? 'not_requested') as keyof typeof INVOICE_STATUS_LABELS;
+  const fulfillment = getOrderFulfillmentProgress(order.items);
+  const partiallyShipped = order.status === 'ship_pending' && fulfillment.isPartiallyShipped;
+  const hasShipments = order.items.some((item) => (item.shippedQuantity ?? 0) > 0);
 
   const deleteContract = async (contract: OrderContractDraft) => {
     if (!onDeleteContract || deletingContractId || !window.confirm(`确定删除合同“${contract.name}”吗？`)) return;
@@ -118,7 +127,7 @@ export default function OrderDetailModal({
     <Modal open={open} title={`订单详情 · ${order.orderNo}`} onClose={onClose} width={760} variant="drawer" className="order-detail-drawer">
       <div style={{ display: 'grid', gap: 16 }}>
         <div className="order-detail-summary">
-          <div style={detailStyle}><span style={labelStyle}>订单状态</span><strong style={{ color: order.status === 'draft' ? 'var(--tone-text-soft)' : 'var(--tone-accent-text)', fontSize: 13 }}>{order.status ? statusLabels[order.status] : '未设置'}</strong><span style={{ color: order.status === 'draft' ? 'var(--tone-text-soft)' : order.labelPrintedAt ? 'var(--tone-accent-text)' : 'var(--color-warning-text)', fontSize: 11 }}>{order.status === 'draft' ? '草稿订单，发布后进入正式流程' : order.labelPrintedAt ? `箱唛已打印 · ${formatDateTime(order.labelPrintedAt)}` : '箱唛待打印（不影响流程）'}</span></div>
+          <div style={detailStyle}><span style={labelStyle}>订单状态</span><strong style={{ color: order.status === 'draft' ? 'var(--tone-text-soft)' : 'var(--tone-accent-text)', fontSize: 13 }}>{partiallyShipped ? '部分发货' : order.status ? statusLabels[order.status] : '未设置'}</strong><span style={{ color: partiallyShipped ? 'var(--tone-accent-text)' : order.status === 'draft' ? 'var(--tone-text-soft)' : order.labelPrintedAt ? 'var(--tone-accent-text)' : 'var(--color-warning-text)', fontSize: 11 }}>{partiallyShipped ? `已发 ${fulfillment.shippedQuantity}/${fulfillment.totalQuantity} 件 · 剩余 ${fulfillment.remainingQuantity} 件` : order.status === 'draft' ? '草稿订单，发布后进入正式流程' : order.labelPrintedAt ? `箱唛已打印 · ${formatDateTime(order.labelPrintedAt)}` : '箱唛待打印（不影响流程）'}</span></div>
           <div style={detailStyle}><span style={labelStyle}>下单时间</span><strong style={{ fontSize: 13 }}>{formatDate(order.orderedAt)}</strong>{order.createdBy && <span style={{ color: 'var(--tone-text-soft)', fontSize: 11 }}>创建人 · {order.createdBy}</span>}</div>
           <div style={detailStyle}><span style={labelStyle}>订单金额</span><strong style={{ fontSize: 13 }}>¥ {order.amount || '0.00'}</strong></div>
           <div style={detailStyle}><span style={labelStyle}>运费</span><strong style={{ fontSize: 13 }}>¥ {((order.shippingCents ?? 0) / 100).toFixed(2)}</strong></div>
@@ -175,6 +184,8 @@ export default function OrderDetailModal({
           <OrderItemCards order={order} />
         </section>
 
+        <OrderShipmentsPanel order={order} onChanged={onShipmentChanged} onNotify={onNotify} />
+
         {order.items.some((item) => item.customerProductAttachments?.length) && <section style={{ display: 'none' }} />}
         {contracts.length > 0 && <section style={{ display: 'grid', gap: 7 }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><FileText size={15} /><strong style={{ fontSize: 13 }}>订单附件</strong><span style={{ color: 'var(--tone-text-faint)', fontSize: 11 }}>（{contracts.length}）</span></div><div style={{ display: 'grid', gap: 6 }}>{contracts.map((contract) => <div key={`contract-${contract.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, padding: '7px 9px', border: '1px solid var(--tone-border-soft)', borderRadius: 'var(--radius-ui)', background: 'var(--tone-surface-tint)' }}><FileText size={18} color="var(--tone-accent-text)" /><div style={{ minWidth: 0, flex: 1 }}><div title={contract.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--tone-text-strong)', fontSize: 12 }}>{contract.name}</div><span style={{ color: 'var(--tone-text-faint)', fontSize: 11 }}>{formatFileSize(contract.size)} · {contract.category && contract.category !== 'other' ? requirementAttachmentLabels[contract.category] ?? '订单附件' : '订单附件'}</span></div>{contract.url && <><a href={contract.url} target="_blank" rel="noreferrer" title="打开订单附件" style={{ color: 'var(--tone-accent-text)' }}><ExternalLink size={14} /></a><a href={contract.url} download={contract.name} title="下载订单附件" style={{ color: 'var(--color-text-secondary)' }}><Download size={14} /></a></>}{onDeleteContract && <button type="button" onClick={() => { void deleteContract(contract); }} title="删除订单附件" style={{ border: 0, background: 'transparent', color: 'var(--tone-danger-text)', cursor: 'pointer' }}><Trash2 size={14} /></button>}</div>)}</div></section>}
 
@@ -200,8 +211,8 @@ export default function OrderDetailModal({
           {onPrintLabels && <button type="button" onClick={() => onPrintLabels(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--tone-accent-text)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-soft)', color: 'var(--tone-accent-text)', cursor: 'pointer', fontSize: 12 }}><Printer size={14} />打印箱唛</button>}</>}
           {onGenerateContract && <button type="button" onClick={() => { void generateContract(); }} disabled={generatingContract} title="按设置中的合同模板生成购销合同 PDF，并归档到订单附件" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--tone-accent-text)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-soft)', color: 'var(--tone-accent-text)', cursor: generatingContract ? 'wait' : 'pointer', opacity: generatingContract ? 0.6 : 1, fontSize: 12 }}><FileText size={14} />{generatingContract ? '正在生成…' : '生成购销合同'}</button>}
           {onOpenFinance && <button type="button" onClick={() => onOpenFinance(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--color-accent-border)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-soft)', color: 'var(--tone-accent-text)', cursor: 'pointer', fontSize: 12 }}>财务详情</button>}
-          {onDeleteOrder && <button type="button" onClick={() => onDeleteOrder(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-surface)', color: 'var(--tone-danger-text)', cursor: 'pointer', fontSize: 12 }}><Trash2 size={14} />删除订单</button>}
-          {rollbackAction && onRollbackStatus && <button type="button" title={`${rollbackAction.label}（保留物流、附件与收款数据）`} onClick={() => onRollbackStatus(order, rollbackAction.target)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--tone-border-cool)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 12 }}><Undo2 size={14} />{rollbackAction.label}</button>}
+          {onDeleteOrder && !hasShipments && <button type="button" onClick={() => onDeleteOrder(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-surface)', color: 'var(--tone-danger-text)', cursor: 'pointer', fontSize: 12 }}><Trash2 size={14} />删除订单</button>}
+          {rollbackAction && onRollbackStatus && !hasShipments && <button type="button" title={`${rollbackAction.label}（保留物流、附件与收款数据）`} onClick={() => onRollbackStatus(order, rollbackAction.target)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: '1px solid var(--tone-border-cool)', borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-surface)', color: 'var(--color-text-secondary)', cursor: 'pointer', fontSize: 12 }}><Undo2 size={14} />{rollbackAction.label}</button>}
           {nextAction?.kind === 'advance' && onAdvanceStatus && <button type="button" onClick={() => onAdvanceStatus(order, nextAction.target)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-fill)', color: '#fff', cursor: 'pointer', fontSize: 12 }}><Truck size={14} />{nextAction.label}</button>}{nextAction?.kind === 'shipping' && onOpenShipping && <button type="button" onClick={() => onOpenShipping(order)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, border: 0, borderRadius: 'var(--radius-ui)', padding: '7px 11px', background: 'var(--color-accent-fill)', color: '#fff', cursor: 'pointer', fontSize: 12 }}><Truck size={14} />{nextAction.label}</button>}
         </div>
       </div>

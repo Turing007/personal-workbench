@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import ShippingBatchPanel from '../components/ShippingBatchPanel';
 import type { OrderDraft } from '../components/OrderForm';
 import type { OrderChannel } from '../../shared/domain';
+import type { PartialShipmentEntryInput } from '../../shared/shipping';
+import { downloadShippingBatchPdf } from '../api';
+import { saveFileOrDownload } from '../file-save';
 
 export interface ShippingPageProps {
   orders: OrderDraft[];
@@ -10,11 +13,14 @@ export interface ShippingPageProps {
   onUpdateTracking?: (orderId: string, value: string) => void;
   /** 保存批次内的物流单号，不推进状态。 */
   onSaveTracking?: (orderId: string, value: string) => Promise<boolean>;
-  onConfirm?: (orders: OrderDraft[]) => Promise<void> | void;
+  onConfirm?: (entries: PartialShipmentEntryInput[]) => Promise<{ batchId: number } | void> | void;
+  onNotify?: (message: string, kind?: 'success' | 'error' | 'info') => void;
 }
 
-export default function ShippingPage({ orders, initialOrder, initialOrders, onUpdateTracking, onSaveTracking, onConfirm }: ShippingPageProps) {
+export default function ShippingPage({ orders, initialOrder, initialOrders, onUpdateTracking, onSaveTracking, onConfirm, onNotify }: ShippingPageProps) {
   const [batch, setBatch] = useState<OrderDraft[]>([]);
+  const [lastBatchId, setLastBatchId] = useState<number>();
+  const [batchPdfBusy, setBatchPdfBusy] = useState(false);
   const [channel, setChannel] = useState<'all' | OrderChannel>('all');
   const eligible = useMemo(() => orders.filter((order) => order.status === 'ship_pending' && (channel === 'all' || order.channel === channel)), [orders, channel]);
   useEffect(() => {
@@ -35,6 +41,22 @@ export default function ShippingPage({ orders, initialOrder, initialOrders, onUp
     setBatch((current) => current.map((order) => (order.id ?? order.orderNo) === id ? { ...order, trackingNo: value } : order));
     onUpdateTracking?.(id, value);
   };
+  const confirm = async (entries: PartialShipmentEntryInput[]) => {
+    const result = await onConfirm?.(entries);
+    setBatch([]);
+    if (result?.batchId) setLastBatchId(result.batchId);
+  };
+  const downloadLastBatchPdf = async () => {
+    if (!lastBatchId || batchPdfBusy) return;
+    setBatchPdfBusy(true);
+    try {
+      await saveFileOrDownload(await downloadShippingBatchPdf(lastBatchId), `发货清单-${lastBatchId}.pdf`);
+    } catch (error) {
+      onNotify?.(error instanceof Error ? error.message : '发货清单生成失败', 'error');
+    } finally {
+      setBatchPdfBusy(false);
+    }
+  };
   return <div className="page-shell shipping-page">
     <div className="shipping-page-head">
       <div className="shipping-heading-copy">
@@ -47,8 +69,12 @@ export default function ShippingPage({ orders, initialOrder, initialOrders, onUp
         <span className="badge badge-warning">{eligible.length} 条待发货</span>
       </div>
     </div>
+    {lastBatchId && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, padding: '4px 0', color: 'var(--erp-muted)', fontSize: 11 }}>
+      <span>上一批发货已确认</span>
+      <button type="button" className="button button-secondary button-sm" disabled={batchPdfBusy} onClick={() => { void downloadLastBatchPdf(); }}>{batchPdfBusy ? '生成中…' : '下载本批发货清单'}</button>
+    </div>}
     <section className="table-panel shipping-panel">
-      <ShippingBatchPanel orders={batch} allOrders={eligible} onAdd={add} onRemove={remove} onTrackingChange={tracking} onSaveTracking={onSaveTracking} onClear={() => setBatch([])} onConfirm={() => { void onConfirm?.(batch); }} />
+      <ShippingBatchPanel orders={batch} allOrders={eligible} onAdd={add} onRemove={remove} onTrackingChange={tracking} onSaveTracking={onSaveTracking} onClear={() => setBatch([])} onConfirm={confirm} />
     </section>
   </div>;
 }

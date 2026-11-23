@@ -72,11 +72,12 @@ import {
   updateProduct,
   importProducts,
   updateOrderTracking,
-  confirmShippingDirect,
+  confirmPartialShipments,
 } from './api';
 import type { ApiOrderDetail, ApiOrderRow, AuthUser } from './api';
-import { isOrderPaymentCleared, type PaymentProofStatus } from '../shared/finance';
+import type { PaymentProofStatus } from '../shared/finance';
 import { normalizeOrderChannel, type OrderChannel } from '../shared/domain';
+import type { PartialShipmentEntryInput } from '../shared/shipping';
 
 function createId(prefix: string) { return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 
@@ -113,7 +114,7 @@ function mapOrderItem(row: Record<string, unknown>): OrderItemDraft {
   const nullableCents = (key: string) => row[key] == null && row[key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())] == null
     ? null
     : Math.max(0, Math.trunc(asNumber(row[key] ?? row[key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())], 0)));
-  return { id: String(row.id ?? createId('item')), customerProductId, productId: productId == null ? undefined : String(productId), name: String(row.name ?? row.product_name ?? ''), sku: String(row.sku ?? ''), specification: String(row.specification ?? row.spec ?? ''), quantity, packSize, boxes: Math.ceil(quantity / packSize), unitPriceCents, amountCents, freightPerBoxCents: Math.max(0, Math.trunc(asNumber(row.freight_per_box_cents ?? row.freightPerBoxCents, 0))), machineCostCents: nullableCents('machine_cost_cents'), batteryCostCents: nullableCents('battery_cost_cents'), chargerCostCents: nullableCents('charger_cost_cents'), packagingCostCents: nullableCents('packaging_cost_cents'), accessoryCostCents: nullableCents('accessory_cost_cents'), otherCostCents: nullableCents('other_cost_cents'), costConfirmed: Boolean(row.cost_confirmed ?? row.costConfirmed), remark: String(row.remark ?? ''), labelRequirement: String(row.label_requirement ?? row.labelRequirement ?? ''), customerProductAttachments: rawRequirementAttachments.map((raw) => { const item = raw as Record<string, unknown>; const relativePath = String(item.relative_path ?? item.relativePath ?? ''); return { id: Number(item.id), customerProductId: customerProductId ?? 0, relativePath, originalName: String(item.original_name ?? item.originalName ?? '客户产品资料'), mimeType: String(item.mime_type ?? item.mimeType ?? ''), size: asNumber(item.size ?? item.size_bytes), createdAt: String(item.created_at ?? item.createdAt ?? ''), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), category: (['label', 'instruction', 'packaging', 'other'].includes(String(item.category)) ? String(item.category) : 'other') as import('../shared/customers').CustomerProductAttachmentCategory }; }), packaging };
+  return { id: String(row.id ?? createId('item')), customerProductId, productId: productId == null ? undefined : String(productId), shippedQuantity: Math.max(0, Math.trunc(asNumber(row.shipped_quantity ?? row.shippedQuantity, 0))), name: String(row.name ?? row.product_name ?? ''), sku: String(row.sku ?? ''), specification: String(row.specification ?? row.spec ?? ''), quantity, packSize, boxes: Math.ceil(quantity / packSize), unitPriceCents, amountCents, freightPerBoxCents: Math.max(0, Math.trunc(asNumber(row.freight_per_box_cents ?? row.freightPerBoxCents, 0))), machineCostCents: nullableCents('machine_cost_cents'), batteryCostCents: nullableCents('battery_cost_cents'), chargerCostCents: nullableCents('charger_cost_cents'), packagingCostCents: nullableCents('packaging_cost_cents'), accessoryCostCents: nullableCents('accessory_cost_cents'), otherCostCents: nullableCents('other_cost_cents'), costConfirmed: Boolean(row.cost_confirmed ?? row.costConfirmed), remark: String(row.remark ?? ''), labelRequirement: String(row.label_requirement ?? row.labelRequirement ?? ''), customerProductAttachments: rawRequirementAttachments.map((raw) => { const item = raw as Record<string, unknown>; const relativePath = String(item.relative_path ?? item.relativePath ?? ''); return { id: Number(item.id), customerProductId: customerProductId ?? 0, relativePath, originalName: String(item.original_name ?? item.originalName ?? '客户产品资料'), mimeType: String(item.mime_type ?? item.mimeType ?? ''), size: asNumber(item.size ?? item.size_bytes), createdAt: String(item.created_at ?? item.createdAt ?? ''), url: String(item.url ?? (relativePath ? `/files/${relativePath}` : '')), category: (['label', 'instruction', 'packaging', 'other'].includes(String(item.category)) ? String(item.category) : 'other') as import('../shared/customers').CustomerProductAttachmentCategory }; }), packaging };
 }
 
 function mapOrderDetail(row: ApiOrderDetail | ApiOrderRow): OrderDraft {
@@ -750,6 +751,36 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     if (unpaidSkipped.length) lines.push(`另有 ${unpaidSkipped.length} 单未确认收到货款，需先在订单金额里上传并审核水单。`);
     if (unprintedCount) lines.push(`注意：其中 ${unprintedCount} 单尚未打印箱唛（仅作提醒，不阻止流程）`);
     if (!window.confirm(lines.join('\n'))) return;
+    if (action === 'ship') {
+      const selectedById = new Map(selected.map((order) => [String(order.id), order]));
+      const entries: PartialShipmentEntryInput[] = plan.targets.flatMap(({ order }) => {
+        const fullOrder = selectedById.get(String(order.id));
+        if (!fullOrder) return [];
+        const items = fullOrder.items
+          .map((item) => ({ orderItemId: Number(item.id), quantity: Math.max(0, item.quantity - (item.shippedQuantity ?? 0)) }))
+          .filter((item) => item.quantity > 0);
+        return items.length ? [{ orderId: Number(fullOrder.id), trackingNo: fullOrder.trackingNo.trim(), items }] : [];
+      });
+      let failed = 0;
+      try {
+        if (entries.length) await confirmPartialShipments(entries);
+      } catch (error) {
+        failed = entries.length;
+        notify((error as { message?: string }).message ?? '批量发货失败', 'error');
+      }
+      await loadOrders();
+      if (entries.length && !failed) {
+        const parts = [`批量发货完成：成功 ${entries.length} 单`];
+        if (untrackedOrders.length) parts.push(`${untrackedOrders.length} 单转入发货工作区补录物流单号`);
+        if (unpaidSkipped.length) parts.push(`${unpaidSkipped.length} 单未确认收到货款`);
+        notify(parts.join('，'), 'success');
+      }
+      if (untrackedOrders.length) {
+        setShippingInitialOrders(untrackedOrders);
+        navigate('shipping');
+      }
+      return;
+    }
     let advanced = 0;
     const failed: string[] = [];
     for (const { order, steps } of plan.targets) {
@@ -842,26 +873,16 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
       return false;
     }
   };
-  const confirmShipping = async (batch: OrderDraft[]) => {
-    // 只有已到「待发货」的订单能确认发货；其余单子的物流单号已单独保存，不会被这次操作带走。
-    const ready = batch.filter((order) => order.status === 'ship_pending');
-    if (!ready.length) {
-      notify('批次里还没有可确认发货的订单：需先把状态推进到「待发货」，物流单号可以先保存', 'error');
-      return;
-    }
-    const unpaid = ready.filter((order) => {
-      const receivableCents = order.financeSummary?.receivableCents ?? Math.round(Number(order.amount || 0) * 100);
-      const receivedCents = order.financeSummary?.receivedCents ?? 0;
-      return !isOrderPaymentCleared(receivableCents, receivedCents);
-    });
-    if (unpaid.length) {
-      notify(`有 ${unpaid.length} 单未确认收到货款，请先在订单金额里上传并审核水单`, 'error');
+  const confirmShipping = async (entries: PartialShipmentEntryInput[]) => {
+    if (!entries.length) {
+      notify('批次里还没有可确认发货的产品数量', 'error');
       return;
     }
     try {
-      await confirmShippingDirect(ready.map((order) => ({ orderId: Number(order.id), trackingNo: String(order.trackingNo ?? '') })));
+      const result = await confirmPartialShipments(entries);
       await loadOrders();
-      notify(ready.length === batch.length ? '发货批次已确认' : `已确认 ${ready.length} 单发货，另有 ${batch.length - ready.length} 单未到「待发货」，只保留了物流单号`, 'success');
+      notify(`已确认 ${entries.length} 单本次发货`, 'success');
+      return result;
     } catch (error) { notify((error as { message?: string }).message ?? '发货确认失败', 'error'); }
   };
 
@@ -927,7 +948,7 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     {active === 'product-catalog' && <CatalogPage products={products} loading={loading} onNotify={notify} />}
     {active === 'customer-products' && <CustomerProductsPage customers={customers} systemProducts={products} initialCustomerId={customerProductsInitialCustomerId ?? undefined} loading={loading} onCustomersChanged={loadCustomers} onNotify={notify} />}
     {active === 'library' && <LibraryPage customers={customers} onNotify={notify} />}
-    {active === 'shipping' && <ShippingPage orders={shippingOrders} initialOrder={shippingInitialOrder} initialOrders={shippingInitialOrders} onUpdateTracking={updateTracking} onSaveTracking={saveShippingTracking} onConfirm={confirmShipping} />}
+    {active === 'shipping' && <ShippingPage orders={shippingOrders} initialOrder={shippingInitialOrder} initialOrders={shippingInitialOrders} onUpdateTracking={updateTracking} onSaveTracking={saveShippingTracking} onConfirm={confirmShipping} onNotify={notify} />}
     {active === 'settings' && <SettingsPage onBackup={backup} onRestore={restore} onProfileChanged={setCompanyProfile} currentUser={user} mobileTabs={mobileTabs} onMobileTabsChange={updateMobileTabs} initialSection={settingsInitialSection ?? undefined} />}
   </main><MobileTabBar activeKey={active} tabs={mobileTabs} onNavigate={navigate} onOpenMore={() => setMobileNavOpen(true)} /><Toast messages={messages} onDismiss={(id) => setMessages((current) => current.filter((item) => item.id !== id))} /></div>;
 }

@@ -771,6 +771,7 @@
   }
 
   .orders-page .status-sub.is-printed { color: var(--color-accent); cursor: help; }
+.orders-page .status-sub.is-partial { color: var(--color-accent); cursor: help; }
   .orders-page .status-sub.is-pending { color: var(--color-warning); }
   .orders-page .order-profit-sub {
     display: block;
@@ -2376,6 +2377,7 @@
     background: transparent;
   }
   .shipping-order-identity { display: grid; gap: 2px; min-width: 0; }
+  .shipping-order-identity .badge { justify-self: start; }
   .shipping-order-box-count { color: var(--erp-muted); font-size: 10.5px; }
   .shipping-order-box-count.is-waiting { color: var(--color-warning); }
   .shipping-tracking-input { width: 100%; height: 30px; border-color: var(--erp-border); box-shadow: none; font-size: 11.5px; }
@@ -4057,6 +4059,43 @@
 @media (hover: none) {
   .customer-product-picker-preview { display: none; }
 }
+
+/* 部分发货：批次订单内按产品选择本次发货数量。 */
+.shipping-batch-item-list {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 3px;
+}
+
+.shipping-batch-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 74px 42px;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: var(--radius-ui);
+  background: var(--erp-surface-muted);
+}
+
+.shipping-batch-item-copy { display: grid; gap: 1px; min-width: 0; }
+.shipping-batch-item-copy strong { overflow: hidden; color: var(--erp-text); font-size: 11.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.shipping-batch-item-copy span { overflow: hidden; color: var(--erp-muted); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.shipping-batch-item input[type='number'] { width: 100%; height: 26px; border: 1px solid var(--erp-border); border-radius: var(--radius-ui); background: var(--erp-surface); color: var(--erp-text); font-size: 11px; text-align: right; }
+.shipping-batch-item-boxes { color: var(--erp-muted); font-size: 10.5px; text-align: right; white-space: nowrap; }
+.shipping-batch-order .shipping-batch-actions { grid-column: 1 / -1; flex-wrap: wrap; justify-self: stretch; }
+
+@media (max-width: 900px) {
+  .shipping-batch-item { grid-template-columns: auto minmax(0, 1fr) 64px 38px; padding: 5px 6px; }
+  .shipping-batch-order .shipping-batch-actions { grid-column: 1 / -1; grid-row: auto; justify-self: stretch; }
+}
+
+.order-items-locked input,
+.order-items-locked select,
+.order-items-locked textarea,
+.order-items-locked button { pointer-events: none; opacity: .72; }
 
 /* 选品卡标题按内容最多显示两行，行高随标题增长。 */
 .customer-product-picker-name {

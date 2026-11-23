@@ -66,10 +66,10 @@ test.describe('App 网络区块', () => {
     await page.goto('/');
     await page.getByRole('button', { name: '设置', exact: true }).click();
     await page.getByRole('button', { name: '手机连接', exact: true }).click();
-    await expect(page.locator('.app-network-item')).toHaveCount(2);
+    await expect(page.locator('.settings-workspace-item')).toHaveCount(2);
 
-    await page.locator('.app-network-item').nth(1).locator('.app-network-remove').click();
-    await expect(page.locator('.app-network-item')).toHaveCount(1);
-    await expect(page.locator('.app-network-item').first()).toContainText('本地测试');
+    await page.locator('.settings-workspace-item').nth(1).getByRole('button', { name: /删除/ }).click();
+    await expect(page.locator('.settings-workspace-item')).toHaveCount(1);
+    await expect(page.locator('.settings-workspace-item').first()).toContainText('本地测试');
   });
 });

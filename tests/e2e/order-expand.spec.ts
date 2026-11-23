@@ -324,7 +324,7 @@ test('订单列表显示附件备注、隐藏物流单号，并可回退误点�
   }
 });
 
-test('已发货订单可在列表撤销发货，退回待发货并保留物流单号', async ({ page }) => {
+test('已发货订单需在详情里撤销发货记录，退回待发货', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const stamp = Date.now();
   const orderNo = `E2E-UNSHIP-${stamp}`;
@@ -336,7 +336,11 @@ test('已发货订单可在列表撤销发货，退回待发货并保留物流�
       expect(advanced.ok()).toBeTruthy();
     }
     proofId = await payOrder(page, orderId, 10000);
-    const shipped = await page.request.post(`/api/orders/${orderId}/status`, { data: { to: 'shipped', trackingNo: `SF-UNDO-${stamp}` } });
+    const beforeShip = await (await page.request.get(`/api/orders/${orderId}/detail`)).json();
+    const item = beforeShip.data.items[0] as { id: number; quantity: number };
+    const shipped = await page.request.post('/api/shipping/partial', {
+      data: { orders: [{ orderId, trackingNo: `SF-UNDO-${stamp}`, items: [{ orderItemId: item.id, quantity: item.quantity }] }] },
+    });
     expect(shipped.ok()).toBeTruthy();
 
     await page.goto('/');
@@ -346,14 +350,16 @@ test('已发货订单可在列表撤销发货，退回待发货并保留物流�
     await expect(row.locator('.order-status-cell')).toContainText('已发货');
     await expect(row.locator('.order-status-cell')).not.toContainText('箱唛待打印');
 
+    await row.locator('.order-ops-cell').getByRole('button', { name: '详情', exact: true }).click();
+    const detailDialog = page.getByRole('dialog', { name: /订单详情/ });
+    await expect(detailDialog.getByText('发货记录')).toBeVisible();
     page.once('dialog', (dialog) => void dialog.accept());
-    await row.locator('.order-ops-cell').getByRole('button', { name: '撤销发货', exact: true }).click();
-    await expect(row.locator('.order-status-cell')).toContainText('待发货');
+    await detailDialog.getByRole('button', { name: '撤销本次' }).click();
+    await expect(detailDialog.getByText('发货记录')).toHaveCount(0);
 
     const detail = await page.request.get(`/api/orders/${orderId}`);
-    const saved = (await detail.json()).data as { status: string; tracking_no: string };
+    const saved = (await detail.json()).data as { status: string };
     expect(saved.status).toBe('ship_pending');
-    expect(saved.tracking_no).toBe(`SF-UNDO-${stamp}`);
   } finally {
     if (proofId != null) await page.request.post(`/api/finance/proofs/${proofId}/void`, { data: { note: 'e2e 清理' } });
     await page.request.delete(`/api/orders/${orderId}`);

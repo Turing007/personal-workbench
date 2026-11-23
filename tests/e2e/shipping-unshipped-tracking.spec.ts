@@ -104,6 +104,68 @@ test.describe('发货工作区收待发货订单', () => {
     }
   });
 
+  test('待发货订单可按产品数量分批发货，发完后自动完成', async ({ page }) => {
+    const stamp = Date.now();
+    const orderNo = `E2E-PARTIAL-${stamp}`;
+    const customer = await (await page.request.post('/api/customers', {
+      data: { name: `E2E分批客户${stamp}`, contactName: '分批联系人', contactPhone: '13900000003', shippingInfo: '杭州市西湖区' },
+    })).json();
+    const created = await page.request.post('/api/orders', {
+      data: {
+        orderNo,
+        orderedAt: new Date().toISOString(),
+        channel: 'online',
+        customerId: customer.data.id,
+        recipientName: '分批联系人',
+        recipientInfo: '杭州市西湖区',
+        amount: 0,
+        items: [
+          { name: '圆砂机', sku: `PART-A-${stamp}`, specification: '20V', packagingName: '纸箱', packCount: 10, quantity: 10, unitPriceCents: 0 },
+          { name: '水枪', sku: `PART-B-${stamp}`, specification: 'MT', packagingName: '纸箱', packCount: 5, quantity: 5, unitPriceCents: 0 },
+        ],
+      },
+    });
+    expect(created.ok()).toBeTruthy();
+    const orderId = Number((await created.json()).data.id);
+    try {
+      await advanceToShipPending(page, orderId);
+      await openShipping(page);
+      await page.locator('.shipping-available-order', { hasText: orderNo }).getByRole('button', { name: '加入批次' }).click();
+      await page.getByLabel(`${orderNo}-圆砂机-本次数量`).fill('4');
+      await page.getByRole('textbox', { name: `${orderNo}物流单号` }).fill(`SF-PART-A-${stamp}`);
+      await page.getByRole('button', { name: '确认本次发货' }).click();
+      await expect(page.getByText('已确认 1 单本次发货')).toBeVisible();
+      await expect(page.getByRole('button', { name: '下载本批发货清单' })).toBeVisible();
+
+      const partial = await (await page.request.get(`/api/orders/${orderId}/detail`)).json();
+      expect(partial.data.status).toBe('ship_pending');
+      expect(partial.data.items.find((item: { sku: string }) => item.sku === `PART-A-${stamp}`).shipped_quantity).toBe(4);
+      expect(partial.data.items.find((item: { sku: string }) => item.sku === `PART-B-${stamp}`).shipped_quantity).toBe(0);
+
+      const available = page.locator('.shipping-available-order', { hasText: orderNo });
+      await expect(available).toContainText('部分发货');
+      await available.getByRole('button', { name: '加入批次' }).click();
+      const batchOrder = page.locator('.shipping-batch-order', { hasText: orderNo });
+      await batchOrder.getByRole('button', { name: '本次全发' }).click();
+      await page.getByRole('textbox', { name: `${orderNo}物流单号` }).fill(`SF-PART-B-${stamp}`);
+      await page.getByRole('button', { name: '确认本次发货' }).click();
+      await expect(page.getByText('已确认 1 单本次发货')).toBeVisible();
+
+      const completed = await (await page.request.get(`/api/orders/${orderId}/detail`)).json();
+      expect(completed.data.status).toBe('shipped');
+      expect(completed.data.items.every((item: { shipped_quantity: number; quantity: number }) => item.shipped_quantity === item.quantity)).toBe(true);
+      const history = await (await page.request.get(`/api/shipping/orders/${orderId}/shipments`)).json();
+      expect(history.data).toHaveLength(2);
+    } finally {
+      const history = await page.request.get(`/api/shipping/orders/${orderId}/shipments`);
+      if (history.ok()) {
+        for (const shipment of (await history.json()).data) await page.request.delete(`/api/shipping/shipments/${shipment.id}`);
+      }
+      await page.request.delete(`/api/orders/${orderId}`);
+      await page.request.delete(`/api/customers/${customer.data.id}`);
+    }
+  });
+
   test('待发货订单点“发货”只进入发货工作区，不自动加入批次', async ({ page }) => {
     const stamp = Date.now();
     const { customerId, orderId, orderNo } = await seedOrder(page, stamp);
@@ -127,7 +189,7 @@ test.describe('发货工作区收待发货订单', () => {
       await available.getByRole('button', { name: '加入批次' }).click();
       await expect(page.locator('.shipping-batch-order', { hasText: orderNo })).toContainText('未收款');
       await expect(page.getByText(/未确认收到货款/)).toBeVisible();
-      await expect(page.getByRole('button', { name: '确认批次发货' })).toBeDisabled();
+      await expect(page.getByRole('button', { name: '确认本次发货' })).toBeDisabled();
     } finally {
       await page.request.delete(`/api/orders/${orderId}`);
       await page.request.delete(`/api/customers/${customerId}`);

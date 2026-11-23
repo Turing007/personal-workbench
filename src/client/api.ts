@@ -14,6 +14,7 @@ import { mapStoredPurchaseQuotes, type ProductPurchaseQuote } from '../shared/pr
 import type { PackagingPreset } from '../shared/packaging-presets';
 import type { ProductOptionPresets } from '../shared/product-options';
 import type { StockPreparation } from '../shared/stock';
+import type { PartialShipmentEntryInput, ShipmentRecord } from '../shared/shipping';
 import type { LibraryCategory, LibrarySort } from '../shared/library';
 import type {
   Customer,
@@ -95,6 +96,7 @@ export interface ApiOrderItemDetail {
   specification: string;
   quantity: number;
   pack_count: number;
+  shipped_quantity?: number;
   unit_price_cents?: number;
   amount_cents?: number;
   machine_cost_cents?: number | null;
@@ -1208,6 +1210,21 @@ export function getShippingBatchText(batchId: number) { return request<{ text: s
 export function confirmShippingBatch(batchId: number) { return request(`/api/shipping/batches/${batchId}/confirm`, { method: 'POST' }); }
 export function confirmShippingDirect(orders: Array<{ orderId: number; trackingNo: string }>) {
   return request<{ id: number; batchNo: string; status: string }>('/api/shipping/confirm', { method: 'POST', body: JSON.stringify({ orders }) });
+}
+export function confirmPartialShipments(orders: PartialShipmentEntryInput[]) {
+  return request<{ batchId: number; shipments: ShipmentRecord[] }>('/api/shipping/partial', { method: 'POST', body: JSON.stringify({ orders }) });
+}
+export function getOrderShipments(orderId: number | string) {
+  return request<ShipmentRecord[]>(`/api/shipping/orders/${orderId}/shipments`);
+}
+export function voidShipment(shipmentId: number | string) {
+  return request<{ orderId: number }>(`/api/shipping/shipments/${shipmentId}`, { method: 'DELETE' });
+}
+export function downloadShipmentPdf(shipmentId: number | string) {
+  return requestBlob(`/api/shipping/shipments/${shipmentId}/pdf`);
+}
+export function downloadShippingBatchPdf(batchId: number | string) {
+  return requestBlob(`/api/shipping/batches/${batchId}/pdf`);
 }
 
 export async function uploadPaymentProof(orderId: number | string, file: File, note = '') {

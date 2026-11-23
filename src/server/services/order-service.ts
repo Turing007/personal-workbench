@@ -262,10 +262,20 @@ export class OrderService {
       throw new Error('已有入账水单或有效发票，不能修改收款/开票公司；请先作废相关记录');
     }
     const previousItems = Array.isArray(previous?.items) ? previous.items as Array<Record<string, unknown>> : [];
+    const hasShipments = previousItems.some((item) => Number(item.shipped_quantity ?? 0) > 0)
+      || this.repositories.hasOrderShipments(orderId);
     const normalized = this.fillMissingItemPrices(
       this.normalizeInput({ ...input, companyId: nextCompanyId, channel: nextChannel }),
       previousItems,
     );
+    if (hasShipments) {
+      if (String(previous?.order_no ?? '') !== normalized.orderNo.trim()) {
+        throw new Error('订单已有发货记录，订单号不能修改');
+      }
+      if (this.itemSnapshotChanged(normalized.items, previousItems)) {
+        throw new Error('订单已有发货记录，产品明细、数量、包装和价格不能修改；请先撤销发货记录');
+      }
+    }
     const previousPaths = this.getOrderRequirementPaths(orderId);
     // 编辑保存时把订单里已验证过的客户产品附件带回，命中后直接复用，避免每次保存都重新复制一份。
     const existingRequirementAttachments = this.repositories.listOrderContracts(orderId)
@@ -299,7 +309,7 @@ export class OrderService {
       if (locks.hasValidInvoice && nextAmountCents < locks.validInvoiceCents) {
         throw new Error(`订单金额不能低于已开发票合计 ¥${(locks.validInvoiceCents / 100).toFixed(2)}；请先作废相关发票`);
       }
-      updated = this.repositories.updateOrder(orderId, withCustomerProducts);
+      updated = this.repositories.updateOrder(orderId, withCustomerProducts, { preserveItems: hasShipments });
     } catch (error) {
       if (withCustomerProducts) await this.deleteCopiedRequirementFiles(withCustomerProducts, new Set(previousPaths));
       throw error;
@@ -315,6 +325,10 @@ export class OrderService {
     const order = this.repositories.getOrderDetail(orderId) as Record<string, unknown> | undefined;
     if (!order) return false;
     if (order.status === 'shipped') throw new Error('已发货订单不能删除；请先撤销发货');
+    const items = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];
+    if (items.some((item) => Number(item.shipped_quantity ?? 0) > 0) || this.repositories.hasOrderShipments(orderId)) {
+      throw new Error('订单已有发货记录，不能删除；请先撤销发货记录');
+    }
     const locks = this.repositories.getOrderFinanceLocks(orderId);
     if (locks.hasReceipt || locks.hasValidInvoice) {
       throw new Error('订单已有收款或有效发票，不能删除；请先作废相关记录');
@@ -420,12 +434,19 @@ export class OrderService {
     if (error || !canTransition(from, to, { reason, trackingNo: nextTrackingNo })) {
       throw new Error(error ?? '订单状态不能推进');
     }
+    if (reason === 'rollback' && this.repositories.hasOrderShipments(orderId)) {
+      throw new Error('订单已有发货记录，不能回退状态；请先在订单详情中撤销发货记录');
+    }
     if (to === 'shipped') {
       const finance = this.repositories.getOrderFinanceSummary(orderId);
       const receivableCents = Number(finance?.receivable_cents ?? order.amount_cents ?? 0);
       const receivedCents = Number(finance?.received_cents ?? 0);
       if (!isOrderPaymentCleared(receivableCents, receivedCents)) {
         throw new Error(`订单尚未确认收到货款（已收 ¥${(receivedCents / 100).toFixed(2)} / 应收 ¥${(receivableCents / 100).toFixed(2)}），不能发货`);
+      }
+      const items = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];
+      if (items.some((item) => Number(item.shipped_quantity ?? 0) < Number(item.quantity ?? 0))) {
+        throw new Error('订单还有未发完的产品，请到发货工作区按数量确认发货');
       }
     }
 
@@ -539,6 +560,47 @@ export class OrderService {
     const deleted = this.repositories.deleteOrderDetailImage(imageId);
     if (deleted && this.fileStore) await this.fileStore.deleteFile(deleted.relativePath).catch(() => undefined);
     return mapped;
+  }
+
+  /** 有发货记录后锁定产品行，只允许改订单头和附件；防止重建行导致已发数量、箱唛和发货历史错位。 */
+  private itemSnapshotChanged(items: CreateOrderInput['items'], previousItems: Array<Record<string, unknown>>): boolean {
+    const normalizePackaging = (packaging: unknown) => (
+      Array.isArray(packaging)
+        ? packaging.map((raw) => {
+          const pack = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+          return [String(pack.name ?? ''), Math.max(1, Number(pack.packCount ?? pack.pack_count ?? 1))];
+        })
+        : []
+    );
+    const next = items.map((item) => ({
+      customerProductId: item.customerProductId ?? null,
+      productId: item.productId ?? null,
+      name: String(item.name ?? '').trim(),
+      sku: String(item.sku ?? '').trim(),
+      specification: String(item.specification ?? '').trim(),
+      packCount: Math.max(1, Number(item.packCount ?? item.packaging?.[0]?.packCount ?? 1)),
+      quantity: Number(item.quantity ?? 0),
+      unitPriceCents: Number(item.unitPriceCents ?? 0),
+      freightPerBoxCents: Number(item.freightPerBoxCents ?? 0),
+      packaging: normalizePackaging(item.packaging),
+      remark: String(item.remark ?? '').trim(),
+      labelRequirement: String(item.labelRequirement ?? '').trim(),
+    }));
+    const previous = previousItems.map((item) => ({
+      customerProductId: item.customer_product_id == null ? null : Number(item.customer_product_id),
+      productId: item.product_id == null ? null : Number(item.product_id),
+      name: String(item.name ?? '').trim(),
+      sku: String(item.sku ?? '').trim(),
+      specification: String(item.specification ?? '').trim(),
+      packCount: Math.max(1, Number(item.pack_count ?? 1)),
+      quantity: Number(item.quantity ?? 0),
+      unitPriceCents: Number(item.unit_price_cents ?? 0),
+      freightPerBoxCents: Number(item.freight_per_box_cents ?? 0),
+      packaging: normalizePackaging(item.packaging),
+      remark: String(item.remark ?? '').trim(),
+      labelRequirement: String(item.label_requirement ?? '').trim(),
+    }));
+    return JSON.stringify(next) !== JSON.stringify(previous);
   }
 
   /** 更新订单时，老行漏传单价/运费就沿用原订单行，绝不用产品现价覆盖历史价格。 */

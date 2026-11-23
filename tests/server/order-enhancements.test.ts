@@ -12,6 +12,7 @@ import { OrderNumberService, orderDateKey } from '../../src/server/services/orde
 import { registerOrderRoutes } from '../../src/server/routes/orders';
 import { registerLabelRoutes } from '../../src/server/routes/labels';
 import { registerCustomerProductRoutes } from '../../src/server/routes/customer-products';
+import { registerShippingRoutes } from '../../src/server/routes/shipping';
 import { CustomerProductRepository } from '../../src/server/db/customer-product-repository';
 import { CustomerRepository } from '../../src/server/db/customer-repository';
 import { CustomerProductService } from '../../src/server/services/customer-product-service';
@@ -38,6 +39,7 @@ async function makeContext() {
   await app.register(multipart, { limits: { files: 5, fileSize: 20 * 1024 * 1024 } });
   await registerOrderRoutes(app, { repositories, customerRepository, customerProductRepository, fileStore });
   await registerLabelRoutes(app, { repositories });
+  await registerShippingRoutes(app, { repositories });
   await registerCustomerProductRoutes(app, {
     service: new CustomerProductService(
       customerProductRepository,
@@ -93,6 +95,18 @@ function orderInput(overrides: Record<string, unknown> = {}) {
     }],
     ...overrides,
   };
+}
+
+function markPaid(database: ReturnType<typeof openDatabase>, orderId: number): void {
+  const amountCents = Number(database.prepare('SELECT amount_cents FROM orders WHERE id = ?').get(orderId)?.amount_cents ?? 0);
+  const now = new Date().toISOString();
+  database.prepare(
+    `INSERT INTO finance_receipts (order_id, received_at, amount_cents, created_at, updated_at)
+     VALUES (?, '2026-08-10', ?, ?, ?)`,
+  ).run(orderId, amountCents, now, now);
+  database.prepare(
+    `UPDATE order_finance SET received_cents = ?, outstanding_cents = 0, payment_status = 'paid', updated_at = ? WHERE order_id = ?`,
+  ).run(amountCents, now, orderId);
 }
 
 describe('订单号基础设施', () => {
@@ -198,7 +212,7 @@ describe('订单号基础设施', () => {
     database.close();
   });
 
-  it('可回退误点的备货/打包状态，已发货可撤销回待发货，跳级回退必须拒绝', async () => {
+  it('可回退误点的备货/打包状态，发货后只能撤销发货记录，跳级回退必须拒绝', async () => {
     const { app, database } = await makeContext();
     const created = await app.inject({
       method: 'POST',
@@ -231,18 +245,25 @@ describe('订单号基础设施', () => {
     });
     expect(jumpBack.statusCode).toBe(400);
 
-    const shipped = await app.inject({ method: 'POST', url: `/api/orders/${orderId}/status`, payload: { to: 'shipped' } });
-    expect(shipped.statusCode).toBe(200);
+    const detail = await app.inject({ method: 'GET', url: `/api/orders/${orderId}/detail` });
+    const itemId = Number(detail.json().data.items[0].id);
+    const shipped = await app.inject({
+      method: 'POST',
+      url: '/api/shipping/partial',
+      payload: { orders: [{ orderId, trackingNo: 'SF-ROLLBACK', items: [{ orderItemId: itemId, quantity: 10 }] }] },
+    });
+    expect(shipped.statusCode).toBe(201);
+    const shipmentId = Number(shipped.json().data.shipments[0].id);
     const shippedRollback = await app.inject({
       method: 'POST',
       url: `/api/orders/${orderId}/status`,
       payload: { to: 'ship_pending', reason: 'rollback' },
     });
-    expect(shippedRollback.statusCode).toBe(200);
-    expect(database.prepare('SELECT status, tracking_no FROM orders WHERE id = ?').get(orderId)).toEqual({
-      status: 'ship_pending',
-      tracking_no: 'SF-ROLLBACK',
-    });
+    expect(shippedRollback.statusCode).toBe(400);
+    expect(shippedRollback.json().error.message).toContain('撤销发货记录');
+    const voided = await app.inject({ method: 'DELETE', url: `/api/shipping/shipments/${shipmentId}` });
+    expect(voided.statusCode).toBe(200);
+    expect(database.prepare('SELECT status FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'ship_pending' });
     database.close();
   });
 
@@ -277,12 +298,14 @@ describe('订单号基础设施', () => {
       `UPDATE order_finance SET received_cents = ?, outstanding_cents = 0, payment_status = 'paid', updated_at = ? WHERE order_id = ?`,
     ).run(amountCents, now, orderId);
 
+    const detail = await app.inject({ method: 'GET', url: `/api/orders/${orderId}/detail` });
+    const itemId = Number(detail.json().data.items[0].id);
     const shipped = await app.inject({
       method: 'POST',
-      url: `/api/orders/${orderId}/status`,
-      payload: { to: 'shipped', trackingNo: 'SF-PAY-GUARD' },
+      url: '/api/shipping/partial',
+      payload: { orders: [{ orderId, trackingNo: 'SF-PAY-GUARD', items: [{ orderItemId: itemId, quantity: 10 }] }] },
     });
-    expect(shipped.statusCode).toBe(200);
+    expect(shipped.statusCode).toBe(201);
     expect(database.prepare('SELECT status FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'shipped' });
     database.close();
   });
@@ -887,7 +910,7 @@ describe('删除订单', () => {
     database.close();
   });
 
-  it('未发货订单删除时清理发货子表', async () => {
+  it('已有发货记录的未发货订单不能删除', async () => {
     const { app, database } = await makeContext();
     const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput() });
     expect(created.statusCode).toBe(201);
@@ -905,11 +928,12 @@ describe('删除订单', () => {
     ).run(orderId, now);
 
     const removed = await app.inject({ method: 'DELETE', url: `/api/orders/${orderId}` });
-    expect(removed.statusCode).toBe(200);
+    expect(removed.statusCode).toBe(400);
+    expect(removed.json().error.message).toContain('发货记录');
 
-    expect(database.prepare('SELECT COUNT(*) AS n FROM orders WHERE id = ?').get(orderId)).toEqual({ n: 0 });
-    expect(database.prepare('SELECT COUNT(*) AS n FROM shipment_batch_orders WHERE order_id = ?').get(orderId)).toEqual({ n: 0 });
-    expect(database.prepare('SELECT COUNT(*) AS n FROM shipments WHERE order_id = ?').get(orderId)).toEqual({ n: 0 });
+    expect(database.prepare('SELECT COUNT(*) AS n FROM orders WHERE id = ?').get(orderId)).toEqual({ n: 1 });
+    expect(database.prepare('SELECT COUNT(*) AS n FROM shipment_batch_orders WHERE order_id = ?').get(orderId)).toEqual({ n: 1 });
+    expect(database.prepare('SELECT COUNT(*) AS n FROM shipments WHERE order_id = ?').get(orderId)).toEqual({ n: 1 });
 
     await app.close();
     database.close();

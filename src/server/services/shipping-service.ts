@@ -1,5 +1,6 @@
 import type { DatabaseRepositories } from '../db/repositories.js';
 import { formatShippingText } from '../../shared/formatters.js';
+import type { PartialShipmentEntryInput } from '../../shared/shipping.js';
 import { OrderService } from './order-service.js';
 
 export interface ShippingServiceOptions {
@@ -74,6 +75,30 @@ export class ShippingService {
   confirmDirect(entries: Array<{ orderId: number; trackingNo: string }>) {
     const batchId = this.repositories.confirmShipmentDirect(entries);
     return this.getBatch(batchId);
+  }
+
+  confirmPartial(entries: PartialShipmentEntryInput[]) {
+    const batchId = this.repositories.confirmPartialShipments(entries);
+    return {
+      id: batchId,
+      shipments: this.repositories.listBatchShipments(batchId),
+    };
+  }
+
+  listOrderShipments(orderId: number) {
+    return this.repositories.listOrderShipments(orderId);
+  }
+
+  getShipment(shipmentId: number) {
+    return this.repositories.getShipment(shipmentId);
+  }
+
+  listBatchShipments(batchId: number) {
+    return this.repositories.listBatchShipments(batchId);
+  }
+
+  voidShipment(shipmentId: number) {
+    return this.repositories.voidShipment(shipmentId);
   }
 
   formatRows(rows: Array<{ totalCartons: number; shippingInfo: string }>): string {

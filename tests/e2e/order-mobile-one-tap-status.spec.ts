@@ -148,6 +148,7 @@ test('手机端订单卡片：无后续动作的订单仍是只读状态，不�
   const created = (await orderResponse.json()).data;
   const orderId = Number(created.id ?? created.order_id);
   const orderNo = String(created.order_no);
+  let proofId: number | undefined;
 
   try {
     // 走到「已发货」为止：状态机在终点没有下一步，胶囊必须退回只读徽章。
@@ -156,8 +157,12 @@ test('手机端订单卡片：无后续动作的订单仍是只读状态，不�
       const advance = await page.request.post(`/api/orders/${orderId}/status`, { data: step });
       expect(advance.ok()).toBeTruthy();
     }
-    await payOrder(page, orderId, 10000);
-    const shipped = await page.request.post(`/api/orders/${orderId}/status`, { data: { to: 'shipped', trackingNo: `E2E-TRACK-${stamp}` } });
+    proofId = await payOrder(page, orderId, 10000);
+    const detail = await (await page.request.get(`/api/orders/${orderId}/detail`)).json();
+    const item = detail.data.items[0] as { id: number; quantity: number };
+    const shipped = await page.request.post('/api/shipping/partial', {
+      data: { orders: [{ orderId, trackingNo: `E2E-TRACK-${stamp}`, items: [{ orderItemId: item.id, quantity: item.quantity }] }] },
+    });
     expect(shipped.ok()).toBeTruthy();
 
     await openOrdersModule(page);
@@ -166,6 +171,11 @@ test('手机端订单卡片：无后续动作的订单仍是只读状态，不�
     await expect(card.locator('.order-card-head')).toContainText('已发货');
     await expect(card.locator('.status-action-pill')).toHaveCount(0);
   } finally {
+    const shipments = await page.request.get(`/api/shipping/orders/${orderId}/shipments`);
+    if (shipments.ok()) {
+      for (const shipment of (await shipments.json()).data) await page.request.delete(`/api/shipping/shipments/${shipment.id}`);
+    }
+    if (proofId != null) await page.request.post(`/api/finance/proofs/${proofId}/void`, { data: { note: 'e2e 清理' } });
     await page.request.delete(`/api/orders/${orderId}`);
     await page.request.delete(`/api/customers/${customer.id}`);
   }

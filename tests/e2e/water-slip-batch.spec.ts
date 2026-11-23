@@ -102,6 +102,17 @@ test('水单批量确认与批量驳回：勾选、合计、二次确认和逐�
     await expect(page.getByText('已驳回 1 张水单')).toBeVisible();
     await expect(refreshed.filter({ hasText: '已驳回' })).toHaveCount(1);
   } finally {
+    const proofs = await request.get(`/api/finance/orders/${order.id}/proofs`, { headers: { Cookie: `wb_session=${sessionCookie}` } });
+    if (proofs.ok()) {
+      for (const proof of (await proofs.json()).data.items) {
+        if (proof.status !== 'void') {
+          await request.post(`/api/finance/proofs/${proof.id}/void`, {
+            headers: { Cookie: `wb_session=${sessionCookie}` },
+            data: { note: 'e2e 清理' },
+          });
+        }
+      }
+    }
     await authenticatedDelete(request, `/api/orders/${order.id}`);
     await authenticatedDelete(request, `/api/finance/companies/${company.id}`);
   }
