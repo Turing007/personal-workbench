@@ -330,8 +330,8 @@
 /* ---------- 订单页 ---------- */
 /* 订单列表产品速览：桌面与手机卡片共用基础排版 */
 .orders-page .order-product-quick-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   align-items: stretch;
   gap: 6px;
   width: 100%;
@@ -347,15 +347,14 @@
   cursor: pointer;
 }
 
-/* 单产品订单占满整行，长品名不被压成多行。 */
-.orders-page .order-product-quick-list.is-single { grid-template-columns: minmax(0, 1fr); }
-
 .orders-page .order-product-quick-card {
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: 52px minmax(0, 1fr);
   align-items: stretch;
   gap: 0;
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   padding: 0;
   border: 1px solid var(--erp-border);
@@ -416,7 +415,6 @@
 }
 
 .orders-page .order-product-quick-empty {
-  grid-column: 1 / -1;
   color: var(--color-link);
   font-size: 10.5px;
 }
@@ -1218,8 +1216,8 @@
   }
 
   .orders-page .order-card-products {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: wrap;
     flex: 1;
     min-width: 0;
     max-width: 100%;

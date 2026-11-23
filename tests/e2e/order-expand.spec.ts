@@ -96,7 +96,12 @@ test('订单展开的产品明细带产品图', async ({ page }) => {
     await expect(desktopSpec).toHaveText('12V 100Ah 高频纯正弦波 * 2');
     expect(await desktopSpec.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
     await expect(productCell.locator('.order-product-quick-thumb img')).toHaveAttribute('src', /\/api\/thumbs\/240\//);
-    expect(await productCell.locator('.order-product-quick-list').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1);
+    const desktopSingle = await productCell.locator('.order-product-quick-list').evaluate((element) => {
+      const card = element.querySelector('.order-product-quick-card')!;
+      return { display: getComputedStyle(element).display, listWidth: element.getBoundingClientRect().width, cardWidth: card.getBoundingClientRect().width };
+    });
+    expect(desktopSingle.display).toBe('flex');
+    expect(Math.abs(desktopSingle.cardWidth - desktopSingle.listWidth)).toBeLessThan(1.5);
     expect(await productCell.locator('.order-product-quick-thumb').first().evaluate((element) => {
       const rect = element.getBoundingClientRect();
       return rect.width >= 48 && Math.abs(rect.width - rect.height) < 0.5;
@@ -119,7 +124,12 @@ test('订单展开的产品明细带产品图', async ({ page }) => {
     await expect(mobileSpec).toHaveText('12V 100Ah 高频纯正弦波 * 2');
     expect(await mobileSpec.evaluate((element) => element.scrollHeight <= element.clientHeight + 1)).toBe(true);
     await expect(cardProducts.locator('.order-product-quick-thumb img')).toBeVisible();
-    expect(await cardProducts.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1);
+    const mobileSingle = await cardProducts.evaluate((element) => {
+      const quickCard = element.querySelector('.order-product-quick-card')!;
+      return { display: getComputedStyle(element).display, listWidth: element.getBoundingClientRect().width, cardWidth: quickCard.getBoundingClientRect().width };
+    });
+    expect(mobileSingle.display).toBe('flex');
+    expect(Math.abs(mobileSingle.cardWidth - mobileSingle.listWidth)).toBeLessThan(1.5);
     await expect(card.locator('.order-expand-toggle')).toHaveCount(0);
 
     await cardProducts.click();
@@ -138,7 +148,7 @@ test('订单展开的产品明细带产品图', async ({ page }) => {
   }
 });
 
-test('产品卡片按标题长度自适应列数，标题最多两行', async ({ page }) => {
+test('产品卡片按标题宽度自适应换行，标题最多两行', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const stamp = Date.now();
   const shortNo = `E2E-ADAPT-SHORT-${stamp}`;
@@ -156,7 +166,7 @@ test('产品卡片按标题长度自适应列数，标题最多两行', async ({
     expect(response.ok()).toBeTruthy();
     return Number((await response.json()).data.id);
   };
-  const shortId = await createOrder(shortNo, ['老款圆砂高配+螺丝刀', '水枪']);
+  const shortId = await createOrder(shortNo, ['圆砂', '水枪']);
   const longId = await createOrder(longNo, ['全自动无刷圆砂机高配版附赠螺丝刀套装', '水枪']);
   try {
     await page.goto('/');
@@ -168,25 +178,38 @@ test('产品卡片按标题长度自适应列数，标题最多两行', async ({
       return row.locator('.order-product-cell');
     };
 
-    const shortCell = await productCell(shortNo);
-    expect(await shortCell.locator('.order-product-quick-list').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(2);
-    const longCell = await productCell(longNo);
-    expect(await longCell.locator('.order-product-quick-list').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(1);
-
-    for (const cell of [shortCell, longCell]) {
+    const cardTops = async (cell: import('@playwright/test').Locator) => cell.locator('.order-product-quick-card').evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().top)));
+    const assertTitles = async (cell: import('@playwright/test').Locator) => {
       const titleMetrics = await cell.locator('.order-product-quick-copy strong').evaluateAll((elements) => elements.map((element) => {
         const rect = element.getBoundingClientRect();
-        return { height: rect.height, lineHeight: parseFloat(getComputedStyle(element).lineHeight) };
+        return {
+          height: rect.height,
+          lineHeight: parseFloat(getComputedStyle(element).lineHeight),
+          scrollHeight: element.scrollHeight,
+          clientHeight: element.clientHeight,
+          whiteSpace: getComputedStyle(element).whiteSpace,
+        };
       }));
+      expect(titleMetrics.every((item) => item.whiteSpace === 'normal')).toBe(true);
       expect(titleMetrics.every((item) => item.height <= item.lineHeight * 2 + 1)).toBe(true);
-    }
+      expect(titleMetrics.every((item) => item.scrollHeight <= item.clientHeight + 1)).toBe(true);
+    };
+
+    const shortCell = await productCell(shortNo);
+    const shortTops = await cardTops(shortCell);
+    await assertTitles(shortCell);
+    const longCell = await productCell(longNo);
+    const longTops = await cardTops(longCell);
+    await assertTitles(longCell);
+    expect(new Set(shortTops).size).toBe(1);
+    expect(new Set(longTops).size).toBe(2);
   } finally {
     await page.request.delete(`/api/orders/${shortId}`);
     await page.request.delete(`/api/orders/${longId}`);
   }
 });
 
-test('手机端产品速览标题可换行，小图铺满卡片不留白', async ({ page }) => {
+test('单产品卡片占满整行，长标题最多两行', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 844 });
   const stamp = Date.now();
   const orderNo = `E2E-WRAP-${stamp}`;
@@ -196,10 +219,7 @@ test('手机端产品速览标题可换行，小图铺满卡片不留白', async
       orderedAt: dateInputValue(),
       recipientName: '换行测试',
       recipientInfo: '换行测试 13800000000 深圳市南山区',
-      items: [
-        { name: '锂电角磨机-02款', sku: `WRAP-1-${stamp}`, specification: '标准', quantity: 1, packCount: 1, unitPriceCents: 1000 },
-        { name: '水枪', sku: `WRAP-2-${stamp}`, specification: '标准', quantity: 1, packCount: 1, unitPriceCents: 1000 },
-      ],
+      items: [{ name: '全自动无刷圆砂机高配版附赠螺丝刀套装', sku: `WRAP-${stamp}`, specification: '标准', quantity: 1, packCount: 1, unitPriceCents: 1000 }],
     },
   });
   expect(created.ok()).toBeTruthy();
@@ -210,33 +230,87 @@ test('手机端产品速览标题可换行，小图铺满卡片不留白', async
     await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(orderNo);
     const card = page.locator('.orders-card-list .order-card', { hasText: orderNo }).first();
     await expect(card).toBeVisible();
-    const products = card.locator('.order-product-quick-card');
-    await expect(products).toHaveCount(2);
+    await expect(card.locator('.order-product-quick-card')).toHaveCount(1);
 
-    const first = products.first();
-    const title = first.locator('.order-product-quick-copy strong');
-    await expect(title).toHaveText('锂电角磨机-02款');
-    const titleMetrics = await title.evaluate((element) => {
-      const style = getComputedStyle(element);
+    const layout = await card.locator('.order-product-quick-list').evaluate((element) => {
+      const quickCard = element.querySelector('.order-product-quick-card')!;
+      const title = element.querySelector('.order-product-quick-copy strong')!;
+      const thumb = element.querySelector('.order-product-quick-thumb')!;
+      const style = getComputedStyle(title);
       return {
-        height: element.getBoundingClientRect().height,
-        lineHeight: parseFloat(style.lineHeight),
-        scrollHeight: element.scrollHeight,
-        clientHeight: element.clientHeight,
-        whiteSpace: style.whiteSpace,
+        listWidth: element.getBoundingClientRect().width,
+        cardWidth: quickCard.getBoundingClientRect().width,
+        titleHeight: title.getBoundingClientRect().height,
+        titleLineHeight: parseFloat(style.lineHeight),
+        titleScrollHeight: title.scrollHeight,
+        titleClientHeight: title.clientHeight,
+        titleWhiteSpace: style.whiteSpace,
+        blankBelowThumb: quickCard.getBoundingClientRect().bottom - thumb.getBoundingClientRect().bottom,
       };
     });
-    expect(titleMetrics.whiteSpace).toBe('normal');
-    expect(titleMetrics.height).toBeLessThanOrEqual(titleMetrics.lineHeight * 2 + 1);
-    expect(titleMetrics.scrollHeight).toBeLessThanOrEqual(titleMetrics.clientHeight + 1);
-
-    const blankBelowThumb = await first.evaluate((element) => {
-      const thumb = element.querySelector('.order-product-quick-thumb')!;
-      return element.getBoundingClientRect().bottom - thumb.getBoundingClientRect().bottom;
-    });
-    expect(blankBelowThumb).toBeLessThanOrEqual(2.5);
+    expect(Math.abs(layout.cardWidth - layout.listWidth)).toBeLessThan(1.5);
+    expect(layout.titleWhiteSpace).toBe('normal');
+    expect(layout.titleHeight).toBeGreaterThan(layout.titleLineHeight);
+    expect(layout.titleHeight).toBeLessThanOrEqual(layout.titleLineHeight * 2 + 1);
+    expect(layout.titleScrollHeight).toBeLessThanOrEqual(layout.titleClientHeight + 1);
+    expect(layout.blankBelowThumb).toBeLessThanOrEqual(2.5);
   } finally {
     await page.request.delete(`/api/orders/${orderId}`);
+  }
+});
+
+test('手机端多产品卡片按标题宽度顺序换行，能并排才并排', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const stamp = Date.now();
+  const tiepijianNo = `E2E-FLOW-TPJ-${stamp}`;
+  const xiaoyingjuNo = `E2E-FLOW-XYJ-${stamp}`;
+  const createOrder = async (orderNo: string, names: string[]) => {
+    const response = await page.request.post('/api/orders', {
+      data: {
+        orderNo,
+        orderedAt: dateInputValue(),
+        recipientName: '换行规则测试',
+        recipientInfo: '换行规则测试 13800000000 深圳市南山区',
+        items: names.map((name, index) => ({ name, sku: `FLOW-${index}-${stamp}`, specification: '标准', quantity: 1, packCount: 1, unitPriceCents: 1000 })),
+      },
+    });
+    expect(response.ok()).toBeTruthy();
+    return Number((await response.json()).data.id);
+  };
+  const tiepijianId = await createOrder(tiepijianNo, ['铁皮剪+手套+内六角', '铁皮剪+手套+内六角', '铁皮剪+手套+内六角']);
+  const xiaoyingjuId = await createOrder(xiaoyingjuNo, ['小鹰锯-4寸外转子带底板', '水泵-有刷']);
+  const rowCount = async (container: import('@playwright/test').Locator) => new Set(await container.locator('.order-product-quick-card').evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().top)))).size;
+  const assertTitlesVisible = async (container: import('@playwright/test').Locator) => {
+    const metrics = await container.locator('.order-product-quick-copy strong').evaluateAll((elements) => elements.map((element) => ({
+      height: element.getBoundingClientRect().height,
+      lineHeight: parseFloat(getComputedStyle(element).lineHeight),
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+    })));
+    expect(metrics.every((item) => item.height <= item.lineHeight * 2 + 1)).toBe(true);
+    expect(metrics.every((item) => item.scrollHeight <= item.clientHeight + 1)).toBe(true);
+  };
+  try {
+    await page.goto('/');
+    await page.locator('.mobile-tabbar button', { hasText: '订单' }).first().click();
+    const openMobileOrder = async (orderNo: string) => {
+      await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(orderNo);
+      const card = page.locator('.orders-card-list .order-card', { hasText: orderNo }).first();
+      await expect(card).toBeVisible();
+      return card;
+    };
+    const tiepijianCard = await openMobileOrder(tiepijianNo);
+    expect(await tiepijianCard.locator('.order-product-quick-card')).toHaveCount(3);
+    expect(await rowCount(tiepijianCard)).toBe(3);
+    await assertTitlesVisible(tiepijianCard);
+
+    const xiaoyingjuCard = await openMobileOrder(xiaoyingjuNo);
+    expect(await xiaoyingjuCard.locator('.order-product-quick-card')).toHaveCount(2);
+    expect(await rowCount(xiaoyingjuCard)).toBe(2);
+    await assertTitlesVisible(xiaoyingjuCard);
+  } finally {
+    await page.request.delete(`/api/orders/${tiepijianId}`);
+    await page.request.delete(`/api/orders/${xiaoyingjuId}`);
   }
 });
 

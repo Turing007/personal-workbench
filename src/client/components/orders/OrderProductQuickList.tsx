@@ -14,7 +14,7 @@ function productImageUrl(item: OrderItemDraft): string {
   return path.startsWith('/files/') ? path : `/files/${path}`;
 }
 
-/** 按 11px 字号估算标题宽度；超过两列两行的容量就整单改为单列。 */
+/** 按 11px 字号估算标题宽度，用于让卡片宽度跟着标题走。 */
 function estimatedTextWidth(value: string): number {
   let width = 0;
   for (const char of value) {
@@ -25,13 +25,15 @@ function estimatedTextWidth(value: string): number {
   return width;
 }
 
+/** 缩略图 + 左右内边距 + 边框；再留几像素余量，避免估算误差把标题挤成两行。 */
+const QUICK_CARD_CHROME_WIDTH = 73;
+
 /** 订单列表收起态的产品摘要：让图片、规格和数量无需打开明细即可快速核对。 */
 export default function OrderProductQuickList({ order, onOpen, className }: OrderProductQuickListProps) {
   const title = order.items
     .map((item) => `${item.name || '未填产品'} · ${item.specification || '规格未填写'} · ${item.quantity} 件`)
     .join('\n');
-  const hasLongTitle = order.items.some((item) => estimatedTextWidth(item.name || '未填产品') > 150);
-  const singleColumn = order.items.length === 1 || hasLongTitle;
+  const singleColumn = order.items.length === 1;
 
   return <button
     type="button"
@@ -41,7 +43,8 @@ export default function OrderProductQuickList({ order, onOpen, className }: Orde
   >
     {order.items.length ? order.items.map((item) => {
       const imageUrl = productImageUrl(item);
-      return <span className="order-product-quick-card" key={item.id}>
+      const cardWidth = singleColumn ? '100%' : `${Math.ceil(estimatedTextWidth(item.name || '未填产品')) + QUICK_CARD_CHROME_WIDTH}px`;
+      return <span className="order-product-quick-card" key={item.id} style={{ width: cardWidth }}>
         <span className={`order-product-quick-thumb${imageUrl ? '' : ' is-empty'}`}>
           {imageUrl
             ? <img src={thumbUrl(imageUrl, 240)} alt={`${item.name || '产品'}图片`} loading="lazy" decoding="async" />
