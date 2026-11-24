@@ -779,10 +779,21 @@
 /* 发货中页签：沿用订单表格/卡片，产品行内直接改本次数量 */
 .shipping-product-editor { display: grid; gap: 6px; min-width: 0; }
 .shipping-product-editor .order-shipping-item {
-  grid-template-columns: 40px minmax(0, 1fr) 64px 44px;
+  grid-template-columns: 52px minmax(0, 1fr) 64px 44px;
+  align-items: stretch;
   gap: 6px;
-  padding: 6px 7px;
+  padding: 0 7px 0 0;
+  overflow: hidden;
 }
+.shipping-product-editor .order-shipping-item-thumb {
+  width: 52px;
+  height: 100%;
+  min-height: 52px;
+  border-radius: 0;
+}
+.shipping-product-editor .order-shipping-item-copy { align-content: center; padding: 4px 0; }
+.shipping-product-editor .order-shipping-item input { align-self: center; }
+.shipping-product-editor .order-shipping-item-boxes { align-self: center; }
 .shipping-product-editor .order-shipping-item-copy strong {
   display: -webkit-box;
   overflow: hidden;
@@ -847,7 +858,7 @@
   .order-shipping-item { grid-template-columns: 40px minmax(0, 1fr) 60px 38px; gap: 6px; padding: 6px 7px; }
   .order-shipping-item-copy strong { font-size: 12.5px; }
   .order-shipping-item input { height: 32px; font-size: 13px; }
-  .shipping-product-editor .order-shipping-item { grid-template-columns: 40px minmax(0, 1fr) 60px 38px; }
+  .shipping-product-editor .order-shipping-item { grid-template-columns: 52px minmax(0, 1fr) 60px 38px; padding: 0 7px 0 0; }
   .orders-shipping-mobile-actions .button { min-height: 36px; }
   .orders-shipping-sheet-drawer .textarea { font-size: 13px; }
 }
