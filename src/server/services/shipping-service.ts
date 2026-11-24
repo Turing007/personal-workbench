@@ -89,6 +89,10 @@ export class ShippingService {
     return this.repositories.listOrderShipments(orderId);
   }
 
+  previewOrderShipment(orderId: number, entries: Array<{ orderItemId: number; quantity: number }>, trackingNo: string) {
+    return this.repositories.previewOrderShipment(orderId, entries, { trackingNo, shippedAt: new Date().toISOString() });
+  }
+
   getShipment(shipmentId: number) {
     return this.repositories.getShipment(shipmentId);
   }

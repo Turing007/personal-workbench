@@ -1,9 +1,9 @@
 import { Download, FileText, Printer, Undo2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { getOrderFulfillmentProgress, type PartialShipmentEntryInput } from '../../../shared/shipping';
+import type { PartialShipmentEntryInput } from '../../../shared/shipping';
 import type { OrderDraft, OrderStatus } from '../OrderForm';
 import ShippingProductEditor from './ShippingProductEditor';
-import { downloadLatestOrderShippingList } from './download-order-shipping-list';
+import { downloadOrderShippingList } from './download-order-shipping-list';
 import { useShippingDraft } from './use-shipping-draft';
 
 export interface ShippingOrderTableRowProps {
@@ -23,7 +23,6 @@ export interface ShippingOrderTableRowProps {
 
 export default function ShippingOrderTableRow({ order, selected = false, onToggleSelect, onQuantitiesChange, onOpenDetail, onEditLabels, onEditRecipient, onRollbackStatus, onConfirmShipping, onSaveTracking, onRefresh, onNotify }: ShippingOrderTableRowProps) {
   const draft = useShippingDraft({ order, onConfirmShipping, onSaveTracking, onRefresh, onNotify });
-  const progress = getOrderFulfillmentProgress(order.items);
   const hasShipments = order.items.some((item) => (item.shippedQuantity ?? 0) > 0);
   const boxCount = Number(order.totalBoxes ?? 0) || order.items.reduce((sum, item) => sum + (Number(item.boxes) || 0), 0);
   const [sheetBusy, setSheetBusy] = useState(false);
@@ -35,7 +34,11 @@ export default function ShippingOrderTableRow({ order, selected = false, onToggl
   const downloadSheet = async () => {
     setSheetBusy(true);
     try {
-      const fileName = await downloadLatestOrderShippingList(order);
+      const fileName = await downloadOrderShippingList(
+        order,
+        draft.selections.map(({ item, quantity }) => ({ orderItemId: Number(item.id), quantity })),
+        draft.trackingNo.trim(),
+      );
       onNotify?.(`已生成 ${fileName}`, 'success');
     } catch (error) {
       onNotify?.(error instanceof Error ? error.message : '发货清单生成失败', 'error');
@@ -58,7 +61,6 @@ export default function ShippingOrderTableRow({ order, selected = false, onToggl
     <td className="order-status-cell">
       <span className="badge badge-info">发货中</span>
       {!draft.paid && <span className="badge badge-danger">{draft.paymentStatus === 'partial' ? '部分收款' : '未收款'}</span>}
-      <div className="status-sub is-partial" title={`已发 ${progress.shippedItems}/${progress.totalItems} 款 · ${progress.shippedQuantity}/${progress.totalQuantity} 件`}>已发 {progress.shippedQuantity}/{progress.totalQuantity} 件 · 剩余 {progress.remainingQuantity} 件</div>
     </td>
     <td className="order-tracking-cell">
       <input className="input orders-shipping-tracking-input" aria-label={`${order.orderNo}物流单号`} value={draft.trackingNo} onChange={(event) => draft.setTrackingNo(event.target.value)} onBlur={() => { void draft.saveTracking(); }} placeholder="回填物流单号" />
@@ -69,7 +71,7 @@ export default function ShippingOrderTableRow({ order, selected = false, onToggl
         <div className="orders-shipping-row-links">
           {onOpenDetail && <button type="button" className="link-button" onClick={() => onOpenDetail(order)}><FileText size={13} />详情</button>}
           {onEditLabels && <button type="button" className="link-button" onClick={() => onEditLabels(order)}><Printer size={13} />箱唛</button>}
-          <button type="button" className="link-button" disabled={sheetBusy} title="按订单生成最近一次发货清单" onClick={() => { void downloadSheet(); }}><Download size={13} />{sheetBusy ? '生成中…' : '发货清单'}</button>
+          <button type="button" className="link-button" disabled={sheetBusy || !draft.selections.length} title={draft.selections.length ? '按当前填写的本次数量生成发货清单，可随包打印' : '先填写本次发货数量'} onClick={() => { void downloadSheet(); }}><Download size={13} />{sheetBusy ? '生成中…' : '发货清单'}</button>
           {!hasShipments && onRollbackStatus && <button type="button" className="link-button muted" onClick={() => onRollbackStatus(order, 'ship_pending')}><Undo2 size={13} />回退</button>}
         </div>
         <button type="button" className="button button-primary button-sm orders-shipping-confirm" disabled={draft.disabled} title={draft.reason || '确认本次发货'} onClick={() => { void draft.confirm(); }}>{draft.submitting ? '提交中…' : '确认发货'}</button>

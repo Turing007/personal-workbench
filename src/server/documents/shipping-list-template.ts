@@ -5,8 +5,10 @@ export interface ShippingListTemplateOptions {
   generatedAt?: string;
 }
 
+/** 库里存的是 UTC 时间，直接截取会比北京时间少 8 小时。 */
 function formatDateTime(value: string): string {
-  return value ? value.replace('T', ' ').slice(0, 16) : '';
+  if (!value) return '';
+  return new Date(new Date(value).getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 16).replace('T', ' ');
 }
 
 function detail(label: string, value: string): string {

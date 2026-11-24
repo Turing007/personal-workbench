@@ -1946,6 +1946,68 @@ export class DatabaseRepositories {
     return rows.map((row) => this.mapShipmentRow(row));
   }
 
+  /** 发货前按当前填写的本次数量生成清单草稿；只读，不写发货记录、不改已发数量。 */
+  previewOrderShipment(
+    orderId: number,
+    entries: Array<{ orderItemId: number; quantity: number }>,
+    options: { trackingNo: string; shippedAt: string },
+  ): ShipmentRecord | undefined {
+    const order = this.database.prepare(`
+      SELECT o.order_no, o.status, o.customer_name, o.recipient_name, o.recipient_info,
+        COALESCE(NULLIF(c.full_name, ''), c.short_name, '') AS company_name
+      FROM orders o LEFT JOIN companies c ON c.id = o.company_id WHERE o.id = ?
+    `).get(orderId) as Record<string, unknown> | undefined;
+    if (!order) return undefined;
+    const orderNo = String(order.order_no ?? '');
+    if (order.status !== 'shipping') throw new Error(`订单 ${orderNo} 当前不是发货中状态，不能打印发货清单`);
+    const available = new Map((this.database
+      .prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort_order, id')
+      .all(orderId) as Array<Record<string, unknown>>).map((item) => [Number(item.id), item]));
+    const seen = new Set<number>();
+    const items: ShipmentItemRecord[] = [];
+    for (const entry of entries) {
+      if (entry.quantity === 0) continue;
+      if (seen.has(entry.orderItemId)) throw new Error(`订单 ${orderNo} 存在重复或无效的产品行`);
+      seen.add(entry.orderItemId);
+      const item = available.get(entry.orderItemId);
+      if (!item) throw new Error(`订单 ${orderNo} 中不存在产品行 ${entry.orderItemId}`);
+      const remaining = Math.max(0, Number(item.quantity ?? 0) - Number(item.shipped_quantity ?? 0));
+      if (entry.quantity > remaining) throw new Error(`订单 ${orderNo} 的「${String(item.name ?? '')}」最多还能发 ${remaining}`);
+      const packCount = Math.max(1, Number(item.pack_count ?? 1));
+      items.push({
+        id: 0,
+        orderItemId: entry.orderItemId,
+        name: String(item.name ?? ''),
+        sku: String(item.sku ?? ''),
+        specification: String(item.specification ?? ''),
+        packCount,
+        quantity: entry.quantity,
+        boxes: Math.max(1, Math.ceil(entry.quantity / packCount)),
+        remainingAfter: remaining - entry.quantity,
+        remark: String(item.remark ?? ''),
+        sortOrder: items.length,
+      });
+    }
+    if (!items.length) throw new Error(`订单 ${orderNo} 没有选择发货产品`);
+    return {
+      id: 0,
+      shipmentNo: '',
+      orderId,
+      orderNo,
+      batchId: null,
+      batchNo: '',
+      trackingNo: options.trackingNo,
+      shippedAt: options.shippedAt,
+      totalBoxes: items.reduce((sum, item) => sum + item.boxes, 0),
+      customerName: String(order.customer_name ?? ''),
+      recipientName: String(order.recipient_name ?? ''),
+      recipientInfo: String(order.recipient_info ?? ''),
+      remark: '',
+      companyName: String(order.company_name ?? ''),
+      items,
+    };
+  }
+
   /** 一次确认多个订单的部分发货；每单一条物流单号、一条发货记录。 */
   confirmPartialShipments(entries: PartialShipmentEntryInput[]): number {
     const unique = [...new Map(entries.map((entry) => [entry.orderId, entry])).values()];

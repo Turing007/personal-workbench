@@ -228,21 +228,38 @@ test('发货中表格行直接编辑本次数量并回填单号，不显示金�
     expect(thumbLayout.bottom).toBeLessThanOrEqual(1.5);
     await expect(row.getByLabel(`${orderNo}-圆砂机-本次发货数量`)).toHaveValue('10');
 
+    // 确认发货前就能按当前填写的本次数量打印清单，随包使用；打印不产生发货记录。
     await row.getByLabel(`${orderNo}-圆砂机-本次发货数量`).fill('4');
     await row.getByLabel(`${orderNo}-水枪-本次发货数量`).fill('0');
     await row.getByLabel(`${orderNo}物流单号`).fill(`SF-DETAIL-1-${stamp}`);
+    const previewRequest = page.waitForRequest((request) => request.method() === 'POST' && request.url().includes(`/api/shipping/orders/${orderId}/list-preview`));
+    const sheetDownload = page.waitForEvent('download');
+    await row.getByRole('button', { name: '发货清单', exact: true }).click();
+    expect((await sheetDownload).suggestedFilename()).toContain('发货清单');
+    const previewPayload = (await previewRequest).postDataJSON() as { trackingNo: string; items: Array<{ quantity: number }> };
+    expect(previewPayload.trackingNo).toBe(`SF-DETAIL-1-${stamp}`);
+    expect(previewPayload.items.map((item) => item.quantity)).toEqual([4]);
+    expect((await (await page.request.get(`/api/shipping/orders/${orderId}/shipments`)).json()).data).toHaveLength(0);
+
     await row.getByRole('button', { name: '确认发货', exact: true }).click();
     await expect(page.getByText('已确认 1 单本次发货')).toBeVisible();
-    await expect(row).toContainText('已发 4/15 件 · 剩余 11 件');
+    await expect(row.locator('.status-sub')).toHaveCount(0);
     await expect(row.getByLabel(`${orderNo}-圆砂机-本次发货数量`)).toHaveValue('6');
     const partial = await (await page.request.get(`/api/orders/${orderId}`)).json();
     expect(partial.data.status).toBe('shipping');
     expect(partial.data.items.find((item: { sku: string }) => item.sku === `DETAIL-A-${stamp}`).shipped_quantity).toBe(4);
     expect(partial.data.items.find((item: { sku: string }) => item.sku === `DETAIL-B-${stamp}`).shipped_quantity).toBe(0);
 
-    const sheetDownload = page.waitForEvent('download');
-    await row.getByRole('button', { name: '发货清单', exact: true }).click();
-    expect((await sheetDownload).suggestedFilename()).toContain('发货清单');
+    // 已发/剩余数量改到产品卡片最下面，按每个产品自己的已发数量显示。
+    await page.locator('.orders-page .status-cards .status-card', { hasText: '全部订单' }).click();
+    const allRow = page.locator('.orders-table-desktop tbody tr', { hasText: orderNo }).first();
+    await expect(allRow).toBeVisible();
+    await expect(allRow.locator('.order-status-cell')).toContainText('发货中');
+    await expect(allRow.locator('.order-status-cell')).not.toContainText('已发');
+    await expect(allRow.locator('.order-product-quick-card', { hasText: '圆砂机' })).toContainText('已发 4/10 · 剩 6');
+    await expect(allRow.locator('.order-product-quick-card', { hasText: '水枪' }).locator('.order-product-quick-shipped')).toHaveCount(0);
+    await page.locator('.orders-page .status-cards .status-card', { hasText: '发货中' }).click();
+    await expect(row).toBeVisible();
 
     await row.getByLabel(`${orderNo}-圆砂机-本次发货数量`).fill('6');
     await row.getByLabel(`${orderNo}-水枪-本次发货数量`).fill('5');
@@ -334,10 +351,16 @@ test('手机端发货中卡片直接编辑本次数量并回填单号', async ({
     await expect(card.getByLabel(`${orderNo}-手机发货产品-本次发货数量`)).toHaveValue('10');
     await card.getByLabel(`${orderNo}-手机发货产品-本次发货数量`).fill('4');
     await card.getByLabel(`${orderNo}物流单号`).fill(`SF-MOBILE-INLINE-${stamp}`);
+    const mobileSheet = page.waitForEvent('download');
+    await card.getByRole('button', { name: '发货清单', exact: true }).click();
+    expect((await mobileSheet).suggestedFilename()).toContain('发货清单');
     await card.getByRole('button', { name: '确认发货', exact: true }).click();
     await expect(page.getByText('已确认 1 单本次发货')).toBeVisible();
-    await expect(card).toContainText('已发 4/10 件 · 剩余 6 件');
+    await expect(card.locator('.orders-shipping-progress')).toHaveCount(0);
     await expect(card.getByLabel(`${orderNo}-手机发货产品-本次发货数量`)).toHaveValue('6');
+    await page.locator('.orders-page .status-cards .status-card', { hasText: '全部订单' }).click();
+    const allCard = page.locator('.orders-card-list .order-card', { hasText: orderNo }).first();
+    await expect(allCard.locator('.order-product-quick-card')).toContainText('已发 4/10 · 剩 6');
     const detail = await (await page.request.get(`/api/orders/${orderId}`)).json();
     expect(detail.data.status).toBe('shipping');
     expect(detail.data.items[0].shipped_quantity).toBe(4);

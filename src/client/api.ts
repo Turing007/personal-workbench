@@ -1223,6 +1223,9 @@ export function voidShipment(shipmentId: number | string) {
 export function downloadShipmentPdf(shipmentId: number | string) {
   return requestBlob(`/api/shipping/shipments/${shipmentId}/pdf`);
 }
+export function downloadOrderShippingListPreview(orderId: number | string, input: { trackingNo: string; items: Array<{ orderItemId: number; quantity: number }> }) {
+  return requestBlob(`/api/shipping/orders/${orderId}/list-preview`, { method: 'POST', body: JSON.stringify(input) });
+}
 export function downloadShippingBatchPdf(batchId: number | string) {
   return requestBlob(`/api/shipping/batches/${batchId}/pdf`);
 }

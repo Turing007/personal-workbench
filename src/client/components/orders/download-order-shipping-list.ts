@@ -1,15 +1,15 @@
-import { downloadShipmentPdf, getOrderShipments } from '../../api';
+import { downloadOrderShippingListPreview } from '../../api';
 import { saveFileOrDownload } from '../../file-save';
-import type { OrderDraft } from '../OrderForm';
 
-/** 按订单下载最近一次发货清单；多次发货的完整记录仍在订单详情里。 */
-export async function downloadLatestOrderShippingList(order: OrderDraft): Promise<string> {
+/** 按当前填写的本次数量生成发货清单，随包打印；不产生发货记录，确认发货前也能打。 */
+export async function downloadOrderShippingList(
+  order: { id?: string | number; orderNo: string },
+  items: Array<{ orderItemId: number; quantity: number }>,
+  trackingNo: string,
+): Promise<string> {
   if (!order.id) throw new Error('订单不存在');
-  const shipments = await getOrderShipments(order.id);
-  if (!shipments.length) throw new Error('该订单还没有确认发货，确认后可生成发货清单');
-  const latest = [...shipments].sort((a, b) => b.shippedAt.localeCompare(a.shippedAt) || b.id - a.id)[0]!;
-  const blob = await downloadShipmentPdf(latest.id);
-  const fileName = `${latest.shipmentNo || order.orderNo}-发货清单.pdf`;
+  const blob = await downloadOrderShippingListPreview(order.id, { trackingNo, items });
+  const fileName = `${order.orderNo}-发货清单.pdf`;
   await saveFileOrDownload(blob, fileName);
   return fileName;
 }

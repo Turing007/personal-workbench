@@ -349,9 +349,10 @@
   cursor: pointer;
 }
 
+/* 卡片等宽平分并铺满整行：一行放得下几个就各占几分之一，末行不满的独占整行。 */
 .orders-page .order-product-quick-card {
   display: grid;
-  flex: 0 0 auto;
+  flex: 1 1 116px;
   grid-template-columns: 52px minmax(0, 1fr);
   align-items: stretch;
   gap: 0;
@@ -364,11 +365,13 @@
   background: var(--erp-surface);
 }
 
+/* 标题换行后卡片会变高，小图跟着拉伸铺满，避免图片下方留白。 */
 .orders-page .order-product-quick-thumb {
   display: grid;
   place-items: center;
   width: 52px;
-  height: 52px;
+  height: 100%;
+  min-height: 52px;
   overflow: hidden;
   background: var(--erp-surface-muted);
   color: var(--erp-muted);
@@ -419,6 +422,18 @@
 .orders-page .order-product-quick-empty {
   color: var(--color-link);
   font-size: 10.5px;
+}
+
+/* 已发/剩余信息贴在卡片最下面，跨满整卡宽度，窄卡片也能一行放下。 */
+.orders-page .order-product-quick-shipped {
+  grid-column: 1 / -1;
+  padding: 0 6px 4px 7px;
+  overflow: hidden;
+  color: var(--color-accent);
+  font-size: 10.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 订单产品明细卡片：桌面两列、手机一列；图片左、信息右，图片完整显示不裁切。 */
@@ -692,7 +707,6 @@
 .orders-shipping-card-title strong { color: var(--erp-text); font-size: 13px; font-weight: 650; }
 .orders-shipping-card-title span { color: var(--erp-muted); font-size: 10.5px; }
 .orders-shipping-card-state { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.orders-shipping-progress { color: var(--erp-muted); font-size: 11px; white-space: nowrap; }
 .orders-shipping-recipient {
   display: flex;
   align-items: baseline;
@@ -934,8 +948,11 @@
   border: 0;
   background: transparent;
   padding: 0;
-  color: inherit;
+  color: var(--erp-text);
   font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
 .orders-page .order-box-link:hover { text-decoration: underline; }
@@ -1071,7 +1088,6 @@
   }
 
   .orders-page .status-sub.is-printed { color: var(--color-accent); cursor: help; }
-.orders-page .status-sub.is-partial { color: var(--color-accent); cursor: help; }
   .orders-page .status-sub.is-pending { color: var(--color-warning); }
   .orders-page .order-profit-sub {
     display: block;
@@ -1527,12 +1543,6 @@
     background: transparent;
     color: var(--erp-text-2);
     text-align: left;
-  }
-
-  /* 标题换行后卡片会变高，小图跟着拉伸铺满，避免图片下方留白。 */
-  .orders-page .order-card-products .order-product-quick-thumb {
-    height: 100%;
-    min-height: 52px;
   }
 
   .orders-page .order-card-amount {

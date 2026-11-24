@@ -10,6 +10,7 @@ import { CustomerRepository } from '../../src/server/db/customer-repository';
 import { CustomerProductRepository } from '../../src/server/db/customer-product-repository';
 import { registerOrderRoutes } from '../../src/server/routes/orders';
 import { registerShippingRoutes } from '../../src/server/routes/shipping';
+import { renderShippingListHtml } from '../../src/server/documents/shipping-list-template';
 
 const directories: string[] = [];
 const apps: FastifyInstance[] = [];
@@ -281,6 +282,90 @@ describe('发货确认事务', () => {
     expect(allowedEdit.statusCode).toBe(200);
     expect(allowedEdit.json().data.remark).toBe('发货后只改备注');
     expect(database.prepare('SELECT id, shipped_quantity FROM order_items WHERE id = ?').get(angle.id)).toEqual({ id: angle.id, shipped_quantity: 4 });
+    database.close();
+  });
+
+  it('发货清单按北京时间显示发货日期和打印时间', () => {
+    const html = renderShippingListHtml([{
+      id: 1,
+      shipmentNo: 'SO-1-FH1',
+      orderId: 1,
+      orderNo: 'SO-1',
+      batchId: null,
+      batchNo: '',
+      trackingNo: 'SF1',
+      shippedAt: '2026-08-10T01:30:00.000Z',
+      totalBoxes: 1,
+      customerName: '客户',
+      recipientName: '张三',
+      recipientInfo: '深圳市宝安区',
+      remark: '',
+      companyName: '',
+      items: [],
+    }], { generatedAt: '2026-08-10T18:05:00.000Z' });
+    expect(html).toContain('2026-08-10 09:30');
+    expect(html).toContain('2026-08-11 02:05');
+  });
+
+  it('发货前按当前填写的本次数量打印发货清单，不写发货记录、不改已发数量', async () => {
+    const { database, app, pdfCalls } = await makeContext();
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      payload: {
+        ...orderPayload('SO-LIST-1'),
+        items: [
+          { name: '圆砂机', sku: 'ANGLE-LIST', specification: '20V', packagingName: '彩盒', packCount: 10, quantity: 10, unitPriceCents: 1000 },
+          { name: '水枪', sku: 'GUN-LIST', specification: 'MT', packagingName: '彩盒', packCount: 5, quantity: 5, unitPriceCents: 800 },
+        ],
+      },
+    });
+    const orderId = Number(created.json().data.id);
+    for (const to of ['stock_reported', 'pending_packing', 'ship_pending']) {
+      const advanced = await app.inject({ method: 'POST', url: `/api/orders/${orderId}/status`, payload: { to } });
+      expect(advanced.statusCode).toBe(200);
+    }
+    const detail = await app.inject({ method: 'GET', url: `/api/orders/${orderId}/detail` });
+    const [angle, gun] = detail.json().data.items as Array<{ id: number }>;
+    const print = (items: Array<{ orderItemId: number; quantity: number }>, trackingNo = 'SF-LIST-1', id: number | string = orderId) =>
+      app.inject({ method: 'POST', url: `/api/shipping/orders/${id}/list-preview`, payload: { trackingNo, items } });
+
+    const notShipping = await print([{ orderItemId: angle.id, quantity: 10 }]);
+    expect(notShipping.statusCode).toBe(400);
+    expect(notShipping.json().error.message).toContain('发货中');
+
+    const advanced = await app.inject({ method: 'POST', url: `/api/orders/${orderId}/status`, payload: { to: 'shipping' } });
+    expect(advanced.statusCode).toBe(200);
+
+    const missing = await app.inject({ method: 'POST', url: `/api/shipping/orders/${orderId}/list-preview`, payload: { trackingNo: '' } });
+    expect(missing.statusCode).toBe(400);
+    const nothing = await print([{ orderItemId: angle.id, quantity: 0 }, { orderItemId: gun.id, quantity: 0 }]);
+    expect(nothing.statusCode).toBe(400);
+    expect(nothing.json().error.message).toContain('没有选择发货产品');
+    const over = await print([{ orderItemId: angle.id, quantity: 11 }]);
+    expect(over.statusCode).toBe(400);
+    expect(over.json().error.message).toContain('最多还能发 10');
+    const foreignItem = await print([{ orderItemId: angle.id + 1000, quantity: 1 }]);
+    expect(foreignItem.statusCode).toBe(400);
+    expect(foreignItem.json().error.message).toContain('不存在产品行');
+    const unknownOrder = await print([{ orderItemId: angle.id, quantity: 1 }], 'SF-X', 999999);
+    expect(unknownOrder.statusCode).toBe(404);
+    expect(pdfCalls).toHaveLength(0);
+
+    const preview = await print([{ orderItemId: angle.id, quantity: 4 }, { orderItemId: gun.id, quantity: 0 }]);
+    expect(preview.statusCode).toBe(200);
+    expect(preview.headers['content-type']).toContain('application/pdf');
+    expect(preview.headers['content-disposition']).toContain(`${encodeURIComponent('SO-LIST-1-发货清单.pdf')}`);
+    expect(pdfCalls).toHaveLength(1);
+    expect(pdfCalls[0]).toContain('圆砂机');
+    expect(pdfCalls[0]).not.toContain('水枪');
+    expect(pdfCalls[0]).toContain('SF-LIST-1');
+    expect(pdfCalls[0]).toContain('本次合计数量：<strong>4</strong>');
+    expect(pdfCalls[0]).toContain('本次合计箱数：<strong>1</strong>');
+
+    expect(database.prepare('SELECT status, tracking_no FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'shipping', tracking_no: '' });
+    expect(database.prepare('SELECT COUNT(*) AS n FROM shipments WHERE order_id = ?').get(orderId)).toEqual({ n: 0 });
+    expect(database.prepare('SELECT shipped_quantity FROM order_items WHERE id = ?').get(angle.id)).toEqual({ shipped_quantity: 0 });
     database.close();
   });
 

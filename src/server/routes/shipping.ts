@@ -85,6 +85,18 @@ function parsePartialEntries(value: unknown): PartialShipmentEntryInput[] {
   });
 }
 
+function parsePreviewItems(value: unknown): Array<{ orderItemId: number; quantity: number }> {
+  if (!Array.isArray(value) || value.length === 0) throw new ApiError(400, 'VALIDATION_ERROR', '请先填写本次发货数量', 'items');
+  return value.map((raw, index) => {
+    const item = asRecord(raw);
+    const orderItemId = Number(item.orderItemId);
+    const quantity = Number(item.quantity);
+    if (!Number.isSafeInteger(orderItemId) || orderItemId <= 0) throw new ApiError(400, 'VALIDATION_ERROR', '产品行 ID 必须是正整数', `items[${index}].orderItemId`);
+    if (!Number.isSafeInteger(quantity) || quantity < 0) throw new ApiError(400, 'VALIDATION_ERROR', '本次发货数量必须是不小于 0 的整数', `items[${index}].quantity`);
+    return { orderItemId, quantity };
+  });
+}
+
 function mapShipment(shipment: ShipmentRecord) {
   return {
     id: shipment.id,
@@ -216,6 +228,23 @@ export async function registerShippingRoutes(app: FastifyInstance, options: Ship
   app.get('/api/shipping/orders/:orderId/shipments', async (request: FastifyRequest<{ Params: { orderId: string } }>, reply) =>
     safeRoute(() => sendSuccess(reply, service.listOrderShipments(parseId(request.params.orderId, 'orderId')).map(mapShipment)), reply),
   );
+
+  // 发货清单随包打印：按当前填写的本次数量出清单，确认发货前也能打；不写发货记录、不改已发数量。
+  app.post('/api/shipping/orders/:orderId/list-preview', async (request: FastifyRequest<{ Params: { orderId: string } }>, reply) => safeRoute(async () => {
+    const body = asRecord(request.body);
+    const shipment = service.previewOrderShipment(
+      parseId(request.params.orderId, 'orderId'),
+      parsePreviewItems(body.items),
+      optionalText(body.trackingNo, 'trackingNo', '物流单号'),
+    );
+    if (!shipment) throw new ApiError(404, 'NOT_FOUND', '订单不存在');
+    const pdf = await pdfRenderer.render(renderShippingListHtml([shipment], { generatedAt: new Date().toISOString() }));
+    const filename = `${shipment.orderNo}-发货清单.pdf`;
+    return reply
+      .header('Content-Type', 'application/pdf')
+      .header('Content-Disposition', `attachment; filename="shipping-list.pdf"; filename*=UTF-8''${encodeURIComponent(filename)}`)
+      .send(pdf);
+  }, reply));
 
   app.delete('/api/shipping/shipments/:shipmentId', async (request: FastifyRequest<{ Params: { shipmentId: string } }>, reply) =>
     safeRoute(() => {

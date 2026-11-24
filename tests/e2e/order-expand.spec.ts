@@ -148,11 +148,12 @@ test('订单展开的产品明细带产品图', async ({ page }) => {
   }
 });
 
-test('产品卡片按标题宽度自适应换行，标题最多两行', async ({ page }) => {
+test('产品卡片等宽平分铺满整行，标题最多两行', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const stamp = Date.now();
   const shortNo = `E2E-ADAPT-SHORT-${stamp}`;
   const longNo = `E2E-ADAPT-LONG-${stamp}`;
+  const fiveNo = `E2E-ADAPT-FIVE-${stamp}`;
   const createOrder = async (orderNo: string, names: string[]) => {
     const response = await page.request.post('/api/orders', {
       data: {
@@ -168,6 +169,7 @@ test('产品卡片按标题宽度自适应换行，标题最多两行', async ({
   };
   const shortId = await createOrder(shortNo, ['圆砂', '水枪']);
   const longId = await createOrder(longNo, ['全自动无刷圆砂机高配版附赠螺丝刀套装', '水枪']);
+  const fiveId = await createOrder(fiveNo, ['铁皮剪+手套+内六角', '水枪', '角磨机', '电钻', '电锤']);
   try {
     await page.goto('/');
     await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
@@ -178,7 +180,25 @@ test('产品卡片按标题宽度自适应换行，标题最多两行', async ({
       return row.locator('.order-product-cell');
     };
 
-    const cardTops = async (cell: import('@playwright/test').Locator) => cell.locator('.order-product-quick-card').evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().top)));
+    // 同一步里量出每张卡的宽度和所在行：同一行宽度一致，且该行宽度正好铺满列表。
+    const assertRowsFill = async (cell: import('@playwright/test').Locator, expectedCards: number) => {
+      const layout = await cell.locator('.order-product-quick-list').first().evaluate((element) => {
+        const list = element.getBoundingClientRect();
+        const cards = [...element.querySelectorAll('.order-product-quick-card')].map((card) => {
+          const rect = card.getBoundingClientRect();
+          return { top: Math.round(rect.top - list.top), width: rect.width };
+        });
+        return { listWidth: list.width, cards };
+      });
+      expect(layout.cards).toHaveLength(expectedCards);
+      const rows = new Map<number, number[]>();
+      for (const card of layout.cards) rows.set(card.top, [...(rows.get(card.top) ?? []), card.width]);
+      for (const widths of rows.values()) {
+        expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(1);
+        expect(Math.abs(widths.reduce((sum, width) => sum + width, 0) + 6 * (widths.length - 1) - layout.listWidth)).toBeLessThanOrEqual(1.5);
+      }
+      return rows;
+    };
     const assertTitles = async (cell: import('@playwright/test').Locator) => {
       const titleMetrics = await cell.locator('.order-product-quick-copy strong').evaluateAll((elements) => elements.map((element) => {
         const rect = element.getBoundingClientRect();
@@ -196,16 +216,21 @@ test('产品卡片按标题宽度自适应换行，标题最多两行', async ({
     };
 
     const shortCell = await productCell(shortNo);
-    const shortTops = await cardTops(shortCell);
+    expect((await assertRowsFill(shortCell, 2)).size).toBe(1);
     await assertTitles(shortCell);
     const longCell = await productCell(longNo);
-    const longTops = await cardTops(longCell);
+    expect((await assertRowsFill(longCell, 2)).size).toBe(1);
     await assertTitles(longCell);
-    expect(new Set(shortTops).size).toBe(1);
-    expect(new Set(longTops).size).toBe(2);
+    // 5 个产品：末行不满时独占整行，不留半截空白。
+    const fiveCell = await productCell(fiveNo);
+    const fiveRows = await assertRowsFill(fiveCell, 5);
+    const lastRow = [...fiveRows.values()].at(-1)!;
+    expect(lastRow).toHaveLength(1);
+    await assertTitles(fiveCell);
   } finally {
     await page.request.delete(`/api/orders/${shortId}`);
     await page.request.delete(`/api/orders/${longId}`);
+    await page.request.delete(`/api/orders/${fiveId}`);
   }
 });
 
@@ -259,7 +284,7 @@ test('单产品卡片占满整行，长标题最多两行', async ({ page }) => 
   }
 });
 
-test('手机端多产品卡片按标题宽度顺序换行，能并排才并排', async ({ page }) => {
+test('手机端产品卡片等宽铺满整行，末行独占整行', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const stamp = Date.now();
   const tiepijianNo = `E2E-FLOW-TPJ-${stamp}`;
@@ -279,7 +304,24 @@ test('手机端多产品卡片按标题宽度顺序换行，能并排才并排',
   };
   const tiepijianId = await createOrder(tiepijianNo, ['铁皮剪+手套+内六角', '铁皮剪+手套+内六角', '铁皮剪+手套+内六角']);
   const xiaoyingjuId = await createOrder(xiaoyingjuNo, ['小鹰锯-4寸外转子带底板', '水泵-有刷']);
-  const rowCount = async (container: import('@playwright/test').Locator) => new Set(await container.locator('.order-product-quick-card').evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().top)))).size;
+  const assertRowsFill = async (container: import('@playwright/test').Locator, expectedCards: number) => {
+    const layout = await container.evaluate((element) => {
+      const list = element.getBoundingClientRect();
+      const cards = [...element.querySelectorAll('.order-product-quick-card')].map((card) => {
+        const rect = card.getBoundingClientRect();
+        return { top: Math.round(rect.top - list.top), width: rect.width };
+      });
+      return { listWidth: list.width, cards };
+    });
+    expect(layout.cards).toHaveLength(expectedCards);
+    const rows = new Map<number, number[]>();
+    for (const card of layout.cards) rows.set(card.top, [...(rows.get(card.top) ?? []), card.width]);
+    for (const widths of rows.values()) {
+      expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(1);
+      expect(Math.abs(widths.reduce((sum, width) => sum + width, 0) + 6 * (widths.length - 1) - layout.listWidth)).toBeLessThanOrEqual(1.5);
+    }
+    return rows;
+  };
   const assertTitlesVisible = async (container: import('@playwright/test').Locator) => {
     const metrics = await container.locator('.order-product-quick-copy strong').evaluateAll((elements) => elements.map((element) => ({
       height: element.getBoundingClientRect().height,
@@ -300,13 +342,13 @@ test('手机端多产品卡片按标题宽度顺序换行，能并排才并排',
       return card;
     };
     const tiepijianCard = await openMobileOrder(tiepijianNo);
-    expect(await tiepijianCard.locator('.order-product-quick-card')).toHaveCount(3);
-    expect(await rowCount(tiepijianCard)).toBe(3);
+    const tiepijianRows = await assertRowsFill(tiepijianCard.locator('.order-card-products'), 3);
+    expect([...tiepijianRows.values()].at(-1)).toHaveLength(1);
     await assertTitlesVisible(tiepijianCard);
 
     const xiaoyingjuCard = await openMobileOrder(xiaoyingjuNo);
-    expect(await xiaoyingjuCard.locator('.order-product-quick-card')).toHaveCount(2);
-    expect(await rowCount(xiaoyingjuCard)).toBe(2);
+    const xiaoyingjuRows = await assertRowsFill(xiaoyingjuCard.locator('.order-card-products'), 2);
+    expect(xiaoyingjuRows.size).toBe(1);
     await assertTitlesVisible(xiaoyingjuCard);
   } finally {
     await page.request.delete(`/api/orders/${tiepijianId}`);
