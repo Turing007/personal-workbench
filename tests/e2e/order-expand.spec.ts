@@ -489,6 +489,14 @@ test('订单列表显示附件备注、隐藏物流单号，并可回退误点�
     await expect(card.locator('.order-remark-full')).toHaveText(remark);
     await expect(card).not.toContainText(`SF-HIDDEN-${stamp}`);
     await expect(card.locator('.order-expand-toggle')).toHaveCount(0);
+    // 箱数在状态胶囊前；未付款和成本待补在金额下方，未付款标红。
+    await expect(card.locator('.order-card-head .order-box-link')).toContainText('箱');
+    await expect(card.locator('.order-card-meta .order-box-link')).toHaveCount(0);
+    await expect(card.locator('.order-card-money .order-card-payment')).toHaveText('未付款');
+    await expect(card.locator('.order-card-money .order-card-payment')).toHaveAttribute('style', /--color-danger/);
+    await expect(card.locator('.order-card-money .order-card-profit-link')).toContainText('成本待补');
+    await expect(row.locator('.payment-sub')).toHaveText('未付款');
+    await expect(row.locator('.payment-sub')).toHaveAttribute('style', /--color-danger/);
   } finally {
     await page.request.delete(`/api/orders/${orderId}`);
   }

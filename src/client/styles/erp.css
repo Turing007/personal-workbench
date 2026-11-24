@@ -424,14 +424,15 @@
   font-size: 10.5px;
 }
 
-/* 已发/剩余跟在规格数量下面；两段各自不折行，窄卡片只在段间换行，不会把数字拆开。 */
+/* 已发数量跟在规格数量下面：未发完红色提醒，全部发完用常规青色。 */
 .orders-page .order-product-quick-shipped {
   color: var(--color-accent);
   font-size: 10.5px;
   line-height: 1.35;
+  white-space: nowrap;
 }
 
-.orders-page .order-product-quick-shipped span { white-space: nowrap; }
+.orders-page .order-product-quick-shipped.is-partial { color: var(--color-danger); }
 
 /* 订单产品明细卡片：桌面两列、手机一列；图片左、信息右，图片完整显示不裁切。 */
 .order-detail-cards {
@@ -1556,6 +1557,19 @@
     cursor: pointer;
   }
   .orders-page .order-card-amount:hover { text-decoration: underline; }
+
+  /* 金额、付款状态和毛利/成本待补在右侧一列，窄屏也不挤占产品卡片。 */
+  .orders-page .order-card-money {
+    display: grid;
+    flex: none;
+    justify-items: end;
+    gap: 2px;
+    max-width: 40%;
+    font-size: 10.5px;
+    line-height: 1.3;
+    text-align: right;
+  }
+  .orders-page .order-card-payment { white-space: normal; }
 
   .orders-page .order-card-meta {
     display: flex;

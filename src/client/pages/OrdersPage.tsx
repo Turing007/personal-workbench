@@ -93,7 +93,7 @@ const paymentBadgeClass: Record<FinancePaymentStatus, string> = {
 };
 
 const paymentStatusColor: Record<FinancePaymentStatus, string> = {
-  unpaid: 'var(--tone-text-soft)',
+  unpaid: 'var(--color-danger)',
   partial: 'var(--color-warning-text)',
   paid: 'var(--color-success)',
   overpaid: 'var(--color-info)',
@@ -602,18 +602,20 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
         return <article key={orderKey(order)} className="order-card">
           <div className="order-card-head">
             <div className="order-card-title"><strong>{order.orderNo}</strong><span>{order.customerId == null && order.customerName?.trim() ? '临时 · ' : ''}{order.customerName || '未填客户'} · {order.orderedAt.replace('T', ' ')} · {order.status === 'shipped' ? order.recipientName || '未填收件人' : <button type="button" className="order-recipient-link" title="编辑收件人信息" onClick={() => openRecipientModal(order)}>{order.recipientName || '未填收件人'}</button>}</span></div>
+            <button type="button" className="order-box-link" title="编辑/打印箱唛" aria-label={`编辑或打印订单${order.orderNo}箱唛`} onClick={() => openLabels(order)}>{boxCount} 箱</button>
             {renderCardStatus(order)}
           </div>
           <div className="order-card-mid">
             <OrderProductQuickList order={order} className="order-card-products" onOpen={() => setProductsOrder(order)} />
-            <button type="button" className="order-card-amount" title="查看/编辑财务与水单" aria-label={`查看订单${order.orderNo}财务与水单`} onClick={() => void openFinanceModal(order)}>¥ {order.amount || '0.00'}</button>
+            <div className="order-card-money">
+              <button type="button" className="order-card-amount" title="查看/编辑财务与水单" aria-label={`查看订单${order.orderNo}财务与水单`} onClick={() => void openFinanceModal(order)}>¥ {order.amount || '0.00'}</button>
+              <span className="order-card-payment" style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</span>
+              <button type="button" className={`order-card-profit-link ${profit.costComplete ? (profit.profitCents ?? 0) < 0 ? 'finance-warning' : 'finance-positive' : 'finance-warning'}`} title={profit.costComplete ? '点击调整成本' : '点击补录成本'} aria-label={`补录或调整订单${order.orderNo}成本`} onClick={() => openCostModal(order)}>{profit.costComplete ? `毛利 ¥${((profit.profitCents ?? 0) / 100).toFixed(2)}` : '成本待补'}</button>
+            </div>
           </div>
-          <div className="order-card-meta">
-            <button type="button" className="order-box-link" title="编辑/打印箱唛" aria-label={`编辑或打印订单${order.orderNo}箱唛`} onClick={() => openLabels(order)}>{boxCount} 箱</button>
-            <span style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</span>
-            {order.status !== 'shipped' && <span>{order.status === 'draft' ? '草稿未发布' : order.labelPrintedAt ? '箱唛已打印' : '箱唛待打印'}</span>}
-            <button type="button" className={`order-card-profit-link ${profit.costComplete ? (profit.profitCents ?? 0) < 0 ? 'finance-warning' : 'finance-positive' : 'finance-warning'}`} title={profit.costComplete ? '点击调整成本' : '点击补录成本'} aria-label={`补录或调整订单${order.orderNo}成本`} onClick={() => openCostModal(order)}>{profit.costComplete ? `毛利 ¥${((profit.profitCents ?? 0) / 100).toFixed(2)}` : '成本待补'}</button>
-          </div>
+          {order.status !== 'shipped' && <div className="order-card-meta">
+            <span>{order.status === 'draft' ? '草稿未发布' : order.labelPrintedAt ? '箱唛已打印' : '箱唛待打印'}</span>
+          </div>}
           <div className="order-card-extra">
             {attachmentCount > 0 && <div className="order-extra-section">
               <span className="order-extra-label"><Paperclip size={11} />附件</span>

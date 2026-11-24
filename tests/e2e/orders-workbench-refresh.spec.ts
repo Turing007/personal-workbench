@@ -256,7 +256,8 @@ test('发货中表格行直接编辑本次数量并回填单号，不显示金�
     await expect(allRow).toBeVisible();
     await expect(allRow.locator('.order-status-cell')).toContainText('发货中');
     await expect(allRow.locator('.order-status-cell')).not.toContainText('已发');
-    await expect(allRow.locator('.order-product-quick-card', { hasText: '圆砂机' })).toContainText('已发 4/10 · 剩 6');
+    await expect(allRow.locator('.order-product-quick-card', { hasText: '圆砂机' })).toContainText('已发 4/10');
+    await expect(allRow.locator('.order-product-quick-card', { hasText: '圆砂机' }).locator('.order-product-quick-shipped')).toHaveClass(/is-partial/);
     await expect(allRow.locator('.order-product-quick-card', { hasText: '水枪' }).locator('.order-product-quick-shipped')).toHaveCount(0);
     await page.locator('.orders-page .status-cards .status-card', { hasText: '发货中' }).click();
     await expect(row).toBeVisible();
@@ -268,6 +269,11 @@ test('发货中表格行直接编辑本次数量并回填单号，不显示金�
     await expect(row).toHaveCount(0);
     const completed = await (await page.request.get(`/api/orders/${orderId}`)).json();
     expect(completed.data.status).toBe('shipped');
+    // 全部发完：已发行保留青色，不再标红。
+    await page.locator('.orders-page .status-cards .status-card', { hasText: '全部订单' }).click();
+    const doneShipped = page.locator('.orders-table-desktop tbody tr', { hasText: orderNo }).first().locator('.order-product-quick-card', { hasText: '圆砂机' }).locator('.order-product-quick-shipped');
+    await expect(doneShipped).toHaveText('已发 10/10');
+    await expect(doneShipped).not.toHaveClass(/is-partial/);
   } finally {
     await cleanupOrders(page, [orderId]);
   }
@@ -360,7 +366,7 @@ test('手机端发货中卡片直接编辑本次数量并回填单号', async ({
     await expect(card.getByLabel(`${orderNo}-手机发货产品-本次发货数量`)).toHaveValue('6');
     await page.locator('.orders-page .status-cards .status-card', { hasText: '全部订单' }).click();
     const allCard = page.locator('.orders-card-list .order-card', { hasText: orderNo }).first();
-    await expect(allCard.locator('.order-product-quick-card')).toContainText('已发 4/10 · 剩 6');
+    await expect(allCard.locator('.order-product-quick-card')).toContainText('已发 4/10');
     const detail = await (await page.request.get(`/api/orders/${orderId}`)).json();
     expect(detail.data.status).toBe('shipping');
     expect(detail.data.items[0].shipped_quantity).toBe(4);
