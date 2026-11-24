@@ -8,9 +8,9 @@ import OrderDetailModal from '../components/OrderDetailModal';
 import OrderItemCards from '../components/OrderItemCards';
 import OrderForm, { type CustomerProduct, type OrderDraft, type OrderStatus } from '../components/OrderForm';
 import OrderProductQuickList from '../components/orders/OrderProductQuickList';
-import OrderShippingCard from '../components/orders/OrderShippingCard';
+import ShippingOrderMobileCard from '../components/orders/ShippingOrderMobileCard';
+import ShippingOrderTableRow from '../components/orders/ShippingOrderTableRow';
 import PromoteCustomerModal from '../components/orders/PromoteCustomerModal';
-import ShippingInProgressPanel from '../components/orders/ShippingInProgressPanel';
 import PrintWorkspace from '../components/PrintWorkspace';
 import StatusCards from '../components/StatusCards';
 import { ORDER_CHANNELS, ORDER_CHANNEL_LABELS, ORDER_STATUS_LABELS_WITH_DRAFT, type OrderChannel } from '../../shared/domain';
@@ -21,7 +21,7 @@ import PaymentProofEditor from '../components/finance/PaymentProofEditor';
 import { OrderCostEditor, OrderItemCostEditor, OrderProfitSummaryCard } from '../components/orders/OrderProfitEditor';
 import { badgeClass, errorText, money } from '../components/finance/finance-format';
 import { calculateOrderProfit } from '../../shared/order-profit';
-import { getOrderFulfillmentProgress, type PartialShipmentEntryInput } from '../../shared/shipping';
+import { boxesForQuantity, buildShippingSheetLine, getOrderFulfillmentProgress, groupShippingOrders, remainingQuantity, type PartialShipmentEntryInput } from '../../shared/shipping';
 import { formatDateTime } from '../../shared/formatters';
 import type { Company } from '../../shared/companies';
 import type { Customer, CustomerSaveInput } from '../../shared/customers';
@@ -196,7 +196,9 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
   const [recipientOrder, setRecipientOrder] = useState<OrderDraft>();
   const [recipientNameDraft, setRecipientNameDraft] = useState('');
   const [recipientInfoDraft, setRecipientInfoDraft] = useState('');
-  const [batchShippingOpen, setBatchShippingOpen] = useState(false);
+  const [selectedShippingKeys, setSelectedShippingKeys] = useState<string[]>([]);
+  const [shippingQuantities, setShippingQuantities] = useState<Record<string, Record<string, number>>>({});
+  const [shippingSheetOpen, setShippingSheetOpen] = useState(false);
   const consumedInitialOrderId = useRef<number | null>(null);
   useEffect(() => {
     if (!initialStatus) return;
@@ -259,10 +261,54 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
   const activeStatusKey = statusFilters.length === 1 ? statusFilters[0] : 'all';
   const showCreateOrder = activeStatusKey === 'all' || activeStatusKey === 'draft';
   const shippingViewActive = activeStatusKey === 'shipping';
-  const shippingOrdersInChannel = useMemo(() => channelOrders.filter((order) => order.status === 'shipping'), [channelOrders]);
   useEffect(() => {
     if (shippingViewActive) setSelectedIds([]);
   }, [shippingViewActive]);
+  useEffect(() => {
+    setSelectedShippingKeys([]);
+    setShippingSheetOpen(false);
+  }, [shippingViewActive, activeChannel]);
+
+  const selectedShippingOrders = useMemo(
+    () => visibleOrders.filter((order) => selectedShippingKeys.includes(orderKey(order))),
+    [visibleOrders, selectedShippingKeys],
+  );
+  const allShippingSelected = visibleOrders.length > 0 && visibleOrders.every((order) => selectedShippingKeys.includes(orderKey(order)));
+  const toggleShippingSelection = (order: OrderDraft) => {
+    const key = orderKey(order);
+    setSelectedShippingKeys((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
+  };
+  const toggleAllShipping = () => {
+    setSelectedShippingKeys(allShippingSelected ? [] : visibleOrders.map(orderKey));
+  };
+  const updateShippingQuantities = (key: string, quantities: Record<string, number>) => {
+    setShippingQuantities((current) => current[key] === quantities ? current : { ...current, [key]: quantities });
+  };
+  const shippingSheetLines = useMemo(() => {
+    const groups = groupShippingOrders(selectedShippingOrders);
+    return groups.map((group) => {
+      const entries = group.orders.map((order) => {
+        const quantities = shippingQuantities[orderKey(order)]
+          ?? Object.fromEntries(order.items.map((item) => [item.id, remainingQuantity(item)]));
+        const boxes = order.items.reduce((sum, item) => {
+          const quantity = Math.min(remainingQuantity(item), Math.max(0, Math.trunc(Number(quantities[item.id] ?? 0) || 0)));
+          return sum + boxesForQuantity(quantity, item.packSize);
+        }, 0);
+        return { boxes };
+      }).filter((entry) => entry.boxes > 0);
+      if (!entries.length) return '';
+      return buildShippingSheetLine({ recipientName: group.recipientName, recipientInfo: group.recipientInfo, entries });
+    }).filter(Boolean);
+  }, [selectedShippingOrders, shippingQuantities]);
+  const shippingSheetText = shippingSheetLines.join('\n\n');
+  const copyShippingSheet = async () => {
+    if (!shippingSheetText) {
+      onNotify?.('勾选的订单还没有可复制的发货表内容', 'error');
+      return;
+    }
+    if (await copyText(shippingSheetText)) onNotify?.(`已复制发货表（${shippingSheetLines.length} 个地址）`, 'success');
+    else onNotify?.('复制失败，请手动选择文本复制', 'error');
+  };
   const showAttachmentColumn = visibleOrders.some((order) => (order.contracts?.length ?? 0) > 0);
 
   const openLabels = (order: OrderDraft) => {
@@ -445,23 +491,63 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
         <SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索订单号、客户、收件人、品名、SKU、规格" />
         <StatusCards activeKey={activeStatusKey} counts={counts} onSelect={(key) => setStatusFilters(key === 'all' ? [] : [key])} />
         <span className="toolbar-count"><ListFilter size={14} />{visibleOrders.length} 条订单</span>
-        {shippingViewActive && <button type="button" className="button button-primary orders-batch-button" onClick={() => setBatchShippingOpen(true)}><Truck size={15} />批量发货</button>}
         {showCreateOrder && <button type="button" className="button button-primary orders-create-button" onClick={() => setCreating(true)}><Plus size={15} />新建订单</button>}
       </div>
-      {shippingViewActive ? <div className="orders-shipping-list" aria-label="发货中订单">
-        {visibleOrders.map((order) => <OrderShippingCard
+      {shippingViewActive ? <>
+      <div className="table-scroll orders-table-desktop orders-shipping-table-wrap">
+        <table className="data-table orders-data-table orders-shipping-table">
+          <thead><tr>
+            <th className="order-check-cell"><input type="checkbox" checked={allShippingSelected} onChange={toggleAllShipping} aria-label="选择当前列表发货中订单" /></th>
+            <th className="order-no-cell">订单号</th>
+            <th className="order-customer-cell">客户 / 收件人</th>
+            <th className="order-product-cell">产品详情</th>
+            <th className="order-box-cell">总箱数</th>
+            <th className="order-status-cell">状态</th>
+            <th className="order-tracking-cell">物流单号</th>
+            <th className="order-ops-cell">操作</th>
+          </tr></thead>
+          <tbody>{visibleOrders.map((order) => <ShippingOrderTableRow
+            key={orderKey(order)}
+            order={order}
+            selected={selectedShippingKeys.includes(orderKey(order))}
+            onToggleSelect={() => toggleShippingSelection(order)}
+            onQuantitiesChange={updateShippingQuantities}
+            onOpenDetail={setDetailOrder}
+            onEditLabels={openLabels}
+            onEditRecipient={openRecipientModal}
+            onRollbackStatus={onRollbackStatus}
+            onConfirmShipping={onConfirmShipping}
+            onSaveTracking={onSaveTracking}
+            onRefresh={onRefreshOrders}
+            onNotify={onNotify}
+          />)}</tbody>
+        </table>
+        {!visibleOrders.length && <div className="table-state">暂无符合条件的发货中订单</div>}
+      </div>
+      <div className="orders-card-list orders-shipping-mobile-list" aria-label="发货中订单">
+        {visibleOrders.map((order) => <ShippingOrderMobileCard
           key={orderKey(order)}
           order={order}
+          selected={selectedShippingKeys.includes(orderKey(order))}
+          onToggleSelect={() => toggleShippingSelection(order)}
+          onQuantitiesChange={updateShippingQuantities}
           onOpenDetail={setDetailOrder}
           onEditLabels={openLabels}
           onEditRecipient={openRecipientModal}
           onRollbackStatus={onRollbackStatus}
           onConfirmShipping={onConfirmShipping}
+          onSaveTracking={onSaveTracking}
           onRefresh={onRefreshOrders}
           onNotify={onNotify}
         />)}
         {!visibleOrders.length && <div className="table-state">暂无符合条件的发货中订单</div>}
-      </div> : <>
+      </div>
+      {selectedShippingOrders.length > 0 && <div className="orders-bulk-bar orders-shipping-bulk-bar" role="region" aria-label="发货表批量操作">
+        <span className="badge badge-accent">已选 {selectedShippingOrders.length} 单</span>
+        <button type="button" className="button button-primary button-sm" onClick={() => setShippingSheetOpen(true)}>查看发货表</button>
+        <button type="button" className="button button-ghost button-sm" onClick={() => setSelectedShippingKeys([])}>取消选择</button>
+      </div>}
+      </> : <>
       <div className="table-scroll orders-table-desktop">
         <table className="data-table orders-data-table">
           <thead><tr><th className="order-check-cell"><input type="checkbox" checked={allPrintableSelected} onChange={toggleAll} aria-label="选择当前列表待打印箱唛订单" /></th>{[
@@ -567,15 +653,14 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
         </div>
       </div>
     </Modal>
-    <Modal open={batchShippingOpen} title="批量发货" onClose={() => setBatchShippingOpen(false)} width={1120} className="shipping-batch-modal">
-      <ShippingInProgressPanel
-        orders={shippingOrdersInChannel}
-        query={query}
-        onSaveTracking={onSaveTracking}
-        onConfirm={onConfirmShipping}
-        onOpenDetail={(order) => { setBatchShippingOpen(false); setDetailOrder(order); }}
-        onNotify={onNotify}
-      />
+    <Modal open={shippingSheetOpen} title="发货表" onClose={() => setShippingSheetOpen(false)} width={560} variant="drawer" className="orders-shipping-sheet-modal">
+      <div className="orders-shipping-sheet-drawer">
+        <div className="orders-shipping-sheet-head">
+          <span>{shippingSheetLines.length} 个地址 · {selectedShippingOrders.length} 单</span>
+          <button type="button" className="button button-primary" disabled={!shippingSheetText} onClick={() => { void copyShippingSheet(); }}>复制发货表</button>
+        </div>
+        <textarea className="textarea" readOnly rows={Math.max(6, Math.min(18, shippingSheetLines.length * 2))} value={shippingSheetText} aria-label="发货表" placeholder="勾选订单并填写本次数量后生成发货表" />
+      </div>
     </Modal>
     <Modal open={Boolean(recipientOrder)} title={recipientOrder ? `收件人信息 · ${recipientOrder.orderNo}` : '收件人信息'} onClose={() => setRecipientOrder(undefined)} width={520} compact>
       <div style={{ display: 'grid', gap: 12 }}>

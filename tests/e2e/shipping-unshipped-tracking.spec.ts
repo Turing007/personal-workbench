@@ -74,14 +74,6 @@ async function openShippingStatusView(page: Page) {
   await page.locator('.orders-page .status-cards .status-card', { hasText: '发货中' }).click();
 }
 
-async function openShippingBatch(page: Page) {
-  await openShippingStatusView(page);
-  await page.getByRole('button', { name: '批量发货', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: '批量发货' });
-  await expect(dialog).toBeVisible();
-  return dialog;
-}
-
 test.describe('发货中状态', () => {
   test('待发货点发货只变状态、不切视图；发货导航已移除', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -107,44 +99,36 @@ test.describe('发货中状态', () => {
       }
 
       await openOrders(page, 'online');
-      // 原发货模块入口必须消失，避免两套发货入口。
       await expect(page.locator('.sidebar-nav').getByRole('button', { name: '发货', exact: true })).toHaveCount(0);
       await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(online.orderNo);
       const row = page.locator('.orders-table-desktop tbody tr', { hasText: online.orderNo }).first();
       await expect(row.locator('.order-status-cell')).toContainText('待发货');
 
       await row.getByRole('button', { name: '发货', exact: true }).click();
-      // 只改状态，不自动切到发货中视图；当前还是普通订单表格。
-      await expect(page.getByText('发货工作区')).toHaveCount(0);
       await expect(page.locator('.orders-data-table')).toBeVisible();
       await expect(row.locator('.order-status-cell')).toContainText('发货中');
 
-      // 当前渠道只看当前渠道的发货中订单。
       await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(offline.orderNo);
       await expect(page.locator('.orders-table-desktop tbody tr', { hasText: offline.orderNo })).toHaveCount(0);
       await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(online.orderNo);
 
       await row.getByRole('button', { name: '继续发货', exact: true }).click();
       await expect(page.locator('.orders-page .status-cards .status-card', { hasText: '发货中' })).toHaveAttribute('aria-pressed', 'true');
-      const shippingCard = page.locator('.orders-shipping-card', { hasText: online.orderNo });
-      await expect(shippingCard).toBeVisible();
-      await expect(shippingCard.getByRole('region', { name: '本次发货' })).toBeVisible();
-
-      const batch = await openShippingBatch(page);
-      await expect(batch.locator('.shipping-address-group', { hasText: online.orderNo })).toBeVisible();
-      await batch.getByRole('button', { name: '关闭' }).click();
+      const shippingRow = page.locator('.orders-shipping-table tbody tr', { hasText: online.orderNo });
+      await expect(shippingRow).toBeVisible();
+      await expect(shippingRow.getByLabel(`${online.orderNo}物流单号`)).toBeVisible();
+      await expect(shippingRow.getByLabel(/本次发货数量/).first()).toBeVisible();
 
       await page.locator('.orders-channel-tabs').getByRole('tab', { name: /线下订单/ }).click();
-      const offlineBatch = await openShippingBatch(page);
-      await expect(offlineBatch.locator('.shipping-address-group', { hasText: online.orderNo })).toHaveCount(0);
-      await offlineBatch.getByRole('button', { name: '关闭' }).click();
+      await expect(page.locator('.orders-shipping-table tbody tr', { hasText: online.orderNo })).toHaveCount(0);
     } finally {
       await cleanupOrders(page, [online.id, offline.id]);
     }
   });
 
-  test('同地址三单合并：2箱 + 3箱 + 5箱，发货表保留拆解并共用单号确认', async ({ page }) => {
+  test('多选同地址订单生成发货表，箱数按单拆解并可复制', async ({ page, context }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     const stamp = Date.now();
     const recipientInfo = `杭州市西湖区合并发货路${stamp}号`;
     const orders: Array<{ id: number; orderNo: string }> = [];
@@ -161,159 +145,69 @@ test.describe('发货中状态', () => {
       for (const order of orders) await advanceToShipping(page, order.id);
 
       await openOrders(page, 'online');
-      const batch = await openShippingBatch(page);
-      const group = batch.locator('.shipping-address-group', { hasText: recipientInfo });
-      await expect(group).toBeVisible();
-      for (const order of orders) await expect(group).toContainText(order.orderNo);
-      await expect(group).toContainText('2箱 + 3箱 + 5箱 = 10箱');
+      await openShippingStatusView(page);
+      for (const order of orders) {
+        await page.locator('.orders-shipping-table tbody tr', { hasText: order.orderNo }).getByRole('checkbox').check();
+      }
+      const bar = page.getByRole('region', { name: '发货表批量操作' });
+      await expect(bar).toContainText('已选 3 单');
+      await bar.getByRole('button', { name: '查看发货表' }).click();
 
-      // 拆开后每单独立，再并回同一地址组，箱数拆解恢复。
-      await group.getByRole('button', { name: '拆开' }).click();
-      await expect(batch.locator('.shipping-address-group', { hasText: orders[0]!.orderNo })).toContainText('2箱');
-      await expect(batch.locator('.shipping-address-group', { hasText: orders[2]!.orderNo })).toContainText('5箱');
-      await batch.locator('.shipping-address-group', { hasText: orders[0]!.orderNo }).getByRole('button', { name: '合并地址' }).click();
-      await expect(group).toContainText('2箱 + 3箱 + 5箱 = 10箱');
-
-      const trackingNo = `SF-MERGE-${stamp}`;
-      await group.getByRole('textbox', { name: '合并物流单号-合并收件人' }).fill(trackingNo);
-      const sheet = batch.getByRole('textbox', { name: '发货表' });
+      const drawer = page.getByRole('dialog', { name: '发货表' });
+      await expect(drawer).toBeVisible();
+      const sheet = drawer.getByRole('textbox', { name: '发货表' });
       await expect.poll(async () => sheet.inputValue()).toContain(`2箱 + 3箱 + 5箱 ${recipientInfo}`);
+      await drawer.getByRole('button', { name: '复制发货表' }).click();
+      await expect(page.getByText('已复制发货表（1 个地址）')).toBeVisible();
+      await drawer.getByRole('button', { name: '关闭' }).click();
 
-      await group.getByRole('button', { name: '确认合并发货' }).click();
-      await expect(page.getByText('已确认 3 单本次发货')).toBeVisible();
-      await expect(group).toHaveCount(0);
-      await expect(batch.getByRole('button', { name: '下载本批发货清单' })).toBeVisible();
-
-      let batchId: number | undefined;
       for (const order of orders) {
         const detail = await (await page.request.get(`/api/orders/${order.id}`)).json();
-        expect(detail.data.status).toBe('shipped');
+        expect(detail.data.status).toBe('shipping');
         const history = await (await page.request.get(`/api/shipping/orders/${order.id}/shipments`)).json();
-        expect(history.data).toHaveLength(1);
-        expect(history.data[0].trackingNo).toBe(trackingNo);
-        if (batchId == null) batchId = Number(history.data[0].batchId);
-        expect(Number(history.data[0].batchId)).toBe(batchId);
+        expect(history.data).toHaveLength(0);
       }
     } finally {
       await cleanupOrders(page, orders.map((order) => order.id));
     }
   });
 
-  test('按数量分批发货：部分发完留在发货中，全部发完转已发货', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const stamp = Date.now();
-    const order = await seedOrder(page, {
-      orderNo: `E2E-SHIP-PART-${stamp}`,
-      channel: 'online',
-      recipientName: '分批收件人',
-      recipientInfo: `杭州市西湖区分批发货${stamp}号`,
-      items: [
-        { name: '圆砂机', sku: `PART-A-${stamp}`, packCount: 10, quantity: 10 },
-        { name: '水枪', sku: `PART-B-${stamp}`, packCount: 5, quantity: 5 },
-      ],
-    });
-    try {
-      await advanceToShipping(page, order.id);
-      await openOrders(page, 'online');
-      const batch = await openShippingBatch(page);
-      const group = batch.locator('.shipping-address-group', { hasText: order.orderNo });
-      await expect(group).toBeVisible();
-
-      await batch.getByLabel(`${order.orderNo}-圆砂机-本次数量`).fill('4');
-      await group.getByRole('textbox', { name: `${order.orderNo}物流单号` }).fill(`SF-PART-1-${stamp}`);
-      await group.getByRole('button', { name: '确认本次发货' }).click();
-      await expect(page.getByText('已确认 1 单本次发货')).toBeVisible();
-
-      const partial = await (await page.request.get(`/api/orders/${order.id}`)).json();
-      expect(partial.data.status).toBe('shipping');
-      expect(partial.data.items.find((item: { sku: string }) => item.sku === `PART-A-${stamp}`).shipped_quantity).toBe(4);
-      expect(partial.data.items.find((item: { sku: string }) => item.sku === `PART-B-${stamp}`).shipped_quantity).toBe(5);
-      await expect(group).toBeVisible();
-      await expect(batch.getByLabel(`${order.orderNo}-圆砂机-本次数量`)).toHaveValue('6');
-      // 水枪已全部发完，不再出现在本次可发行里。
-      await expect(batch.getByLabel(`${order.orderNo}-水枪-本次数量`)).toHaveCount(0);
-
-      await group.getByRole('textbox', { name: `${order.orderNo}物流单号` }).fill(`SF-PART-2-${stamp}`);
-      await group.getByRole('button', { name: '确认本次发货' }).click();
-      await expect(group).toHaveCount(0);
-
-      const completed = await (await page.request.get(`/api/orders/${order.id}`)).json();
-      expect(completed.data.status).toBe('shipped');
-      expect(completed.data.items.every((item: { shipped_quantity: number; quantity: number }) => item.shipped_quantity === item.quantity)).toBe(true);
-      const history = await (await page.request.get(`/api/shipping/orders/${order.id}/shipments`)).json();
-      expect(history.data).toHaveLength(2);
-    } finally {
-      await cleanupOrders(page, [order.id]);
-    }
-  });
-
-  test('发货表多个收件地址之间空一行', async ({ page }) => {
+  test('多选不同收件地址生成发货表，地址之间空行', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const stamp = Date.now();
     const orders: Array<{ id: number; orderNo: string; recipientInfo: string }> = [];
     try {
       for (const index of [1, 2]) {
-        const recipientInfo = `杭州市西湖区发货表地址${stamp}号${index}`;
+        const recipientInfo = `杭州市西湖区表格地址${stamp}号${index}`;
         const order = await seedOrder(page, {
           orderNo: `E2E-SHIP-SHEET-${stamp}-${index}`,
           channel: 'online',
           recipientInfo,
-          items: [{ name: `发货表产品${index}`, sku: `SHEET-${stamp}-${index}`, packCount: 10, quantity: 10 }],
+          items: [{ name: `表格产品${index}`, sku: `SHEET-${stamp}-${index}`, packCount: 10, quantity: 10 }],
         });
         orders.push({ ...order, recipientInfo });
         await advanceToShipping(page, order.id);
       }
 
       await openOrders(page, 'online');
-      await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(`发货表地址${stamp}`);
-      const batch = await openShippingBatch(page);
-      const sheet = batch.getByRole('textbox', { name: '发货表' });
+      await openShippingStatusView(page);
+      for (const order of orders) {
+        await page.locator('.orders-shipping-table tbody tr', { hasText: order.orderNo }).getByRole('checkbox').check();
+      }
+      const bar = page.getByRole('region', { name: '发货表批量操作' });
+      await expect(bar).toContainText('已选 2 单');
+      await bar.getByRole('button', { name: '查看发货表' }).click();
+
+      const drawer = page.getByRole('dialog', { name: '发货表' });
+      const sheet = drawer.getByRole('textbox', { name: '发货表' });
       await expect.poll(async () => sheet.inputValue()).toContain(orders[0]!.recipientInfo);
       const value = await sheet.inputValue();
       for (const order of orders) expect(value).toContain(order.recipientInfo);
-      const lines = value.split('\n');
-      expect(lines.filter(Boolean)).toHaveLength(2);
-      expect(lines.some((line) => line.trim() === '')).toBe(true);
+      expect(value.split('\n\n')).toHaveLength(2);
+      expect(value.split('\n').some((line) => line.trim() === '')).toBe(true);
+      await drawer.getByRole('button', { name: '关闭' }).click();
     } finally {
       await cleanupOrders(page, orders.map((order) => order.id));
-    }
-  });
-
-  test('未收款可以进入发货中，但确认发货按钮置灰；单号暂存刷新后还在', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const stamp = Date.now();
-    const order = await seedOrder(page, {
-      orderNo: `E2E-SHIP-UNPAID-${stamp}`,
-      channel: 'online',
-      recipientName: '未收款收件人',
-      recipientInfo: `杭州市西湖区未收款${stamp}号`,
-      amount: 100,
-      items: [{ name: '未收款产品', sku: `UNPAID-${stamp}`, packCount: 10, quantity: 10 }],
-    });
-    try {
-      await advanceToShipping(page, order.id);
-      await openOrders(page, 'online');
-      const batch = await openShippingBatch(page);
-      const group = batch.locator('.shipping-address-group', { hasText: order.orderNo });
-      await expect(group).toBeVisible();
-      await expect(group).toContainText('未收款');
-      await expect(group.getByRole('button', { name: '确认本次发货' })).toBeDisabled();
-
-      const trackingInput = group.getByRole('textbox', { name: `${order.orderNo}物流单号` });
-      const trackingNo = `SF-UNPAID-${stamp}`;
-      const patch = page.waitForResponse((response) => (
-        new URL(response.url()).pathname === `/api/orders/${order.id}/tracking` && response.request().method() === 'PATCH'
-      ));
-      await trackingInput.fill(trackingNo);
-      await trackingInput.blur();
-      expect((await patch).status()).toBe(200);
-
-      await page.reload();
-      await openOrders(page, 'online');
-      const reopened = await openShippingBatch(page);
-      await expect(reopened.locator('.shipping-address-group', { hasText: order.orderNo }).getByRole('textbox', { name: `${order.orderNo}物流单号` })).toHaveValue(trackingNo);
-    } finally {
-      await cleanupOrders(page, [order.id]);
     }
   });
 
@@ -355,76 +249,42 @@ test.describe('发货中状态', () => {
     }
   });
 
-  test('发货中勾选两个地址组，一次确认发货', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
+  test('手机端多选订单生成发货表，右侧抽屉可打开', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
     const stamp = Date.now();
     const orders: Array<{ id: number; orderNo: string; recipientInfo: string }> = [];
     try {
       for (const index of [1, 2]) {
-        const recipientInfo = `杭州市西湖区批量确认${stamp}号${index}`;
+        const recipientInfo = `杭州市西湖区手机表格${stamp}号${index}`;
         const order = await seedOrder(page, {
-          orderNo: `E2E-SHIP-BATCH-CONFIRM-${stamp}-${index}`,
+          orderNo: `E2E-SHIP-MOBILE-SHEET-${stamp}-${index}`,
           channel: 'online',
           recipientInfo,
-          items: [{ name: `批量确认产品${index}`, sku: `BATCH-CONFIRM-${stamp}-${index}`, packCount: 10, quantity: 10 }],
+          items: [{ name: `手机表格产品${index}`, sku: `MOBILE-SHEET-${stamp}-${index}`, packCount: 10, quantity: 10 }],
         });
         orders.push({ ...order, recipientInfo });
         await advanceToShipping(page, order.id);
       }
 
-      await openOrders(page, 'online');
-      const batch = await openShippingBatch(page);
-      for (const [index, order] of orders.entries()) {
-        const group = batch.locator('.shipping-address-group', { hasText: order.orderNo });
-        await group.locator('.shipping-address-head input[type="checkbox"]').check();
-        await group.getByRole('textbox', { name: `${order.orderNo}物流单号` }).fill(`SF-BATCH-${stamp}-${index + 1}`);
-      }
-      const bulk = batch.locator('.shipping-progress-bulk');
-      await expect(bulk).toContainText('已选 2 个地址 · 2 单');
-      await bulk.getByRole('button', { name: '确认选中发货' }).click();
-      await expect(page.getByText('已确认 2 单本次发货')).toBeVisible();
-      for (const order of orders) await expect(batch.locator('.shipping-address-group', { hasText: order.orderNo })).toHaveCount(0);
-
-      let batchId: number | undefined;
-      for (const order of orders) {
-        const detail = await (await page.request.get(`/api/orders/${order.id}`)).json();
-        expect(detail.data.status).toBe('shipped');
-        const history = await (await page.request.get(`/api/shipping/orders/${order.id}/shipments`)).json();
-        expect(history.data).toHaveLength(1);
-        if (batchId == null) batchId = Number(history.data[0].batchId);
-        expect(Number(history.data[0].batchId)).toBe(batchId);
-      }
-    } finally {
-      await cleanupOrders(page, orders.map((order) => order.id));
-    }
-  });
-
-  test('手机端批量发货弹窗不横滑', async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    const stamp = Date.now();
-    const order = await seedOrder(page, {
-      orderNo: `E2E-SHIP-MOBILE-${stamp}`,
-      channel: 'online',
-      recipientName: '手机发货收件人',
-      recipientInfo: `杭州市西湖区手机发货${stamp}号`,
-      items: [{ name: '手机发货产品', sku: `MOBILE-${stamp}`, packCount: 10, quantity: 20 }],
-    });
-    try {
-      await advanceToShipping(page, order.id);
       await page.goto('/');
       await page.locator('.mobile-tab-item[aria-label="更多模块"]').click();
       await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
       await page.locator('.orders-channel-tabs').getByRole('tab', { name: /线上订单/ }).click();
-      const batch = await openShippingBatch(page);
-      const group = batch.locator('.shipping-address-group', { hasText: order.orderNo });
-      await expect(group).toBeVisible();
-      const overflow = await batch.evaluate((element) => {
-        const body = element.querySelector('.modal-body');
-        return body ? body.scrollWidth - body.clientWidth : 0;
-      });
-      expect(overflow).toBeLessThanOrEqual(1);
+      await openShippingStatusView(page);
+      for (const order of orders) {
+        await page.locator('.orders-shipping-mobile-card', { hasText: order.orderNo }).getByRole('checkbox').check();
+      }
+      const bar = page.getByRole('region', { name: '发货表批量操作' });
+      await expect(bar).toContainText('已选 2 单');
+      await bar.getByRole('button', { name: '查看发货表' }).click();
+      const drawer = page.getByRole('dialog', { name: '发货表' });
+      await expect(drawer).toBeVisible();
+      const value = await drawer.getByRole('textbox', { name: '发货表' }).inputValue();
+      for (const order of orders) expect(value).toContain(order.recipientInfo);
+      expect(value.split('\n\n')).toHaveLength(2);
+      await drawer.getByRole('button', { name: '关闭' }).click();
     } finally {
-      await cleanupOrders(page, [order.id]);
+      await cleanupOrders(page, orders.map((order) => order.id));
     }
   });
 });

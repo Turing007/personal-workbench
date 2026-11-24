@@ -86,7 +86,8 @@ test('订单页顶部只剩渠道标签，新建订单只在全部和草稿显�
     await expect(page.getByRole('button', { name: '新建订单' })).toHaveCount(0);
     await status('发货中').click();
     await expect(page.getByRole('button', { name: '新建订单' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: '批量发货' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '批量发货' })).toHaveCount(0);
+    await expect(page.locator('.orders-shipping-table thead')).toContainText('物流单号');
 
     await page.setViewportSize({ width: 390, height: 844 });
     await status('草稿').click();
@@ -95,7 +96,8 @@ test('订单页顶部只剩渠道标签，新建订单只在全部和草稿显�
     await expect(page.getByRole('button', { name: '新建订单' })).toHaveCount(0);
     await status('发货中').click();
     await expect(page.getByRole('button', { name: '新建订单' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: '批量发货' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '批量发货' })).toHaveCount(0);
+    await expect(page.locator('.orders-shipping-mobile-list')).toBeVisible();
   } finally {
     await cleanupOrders(page, [draftId]);
   }
@@ -183,7 +185,7 @@ test('手机端点击收件人姓名打开编辑窗', async ({ page }) => {
   }
 });
 
-test('发货中页签卡片直接编辑本次数量并回填单号，不显示金额附件备注', async ({ page }) => {
+test('发货中表格行直接编辑本次数量并回填单号，不显示金额附件备注', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const stamp = Date.now();
   const orderNo = `E2E-DETAIL-SHIP-${stamp}`;
@@ -201,49 +203,39 @@ test('发货中页签卡片直接编辑本次数量并回填单号，不显示�
     await advanceToShipping(page, orderId);
     await openOrders(page);
     await page.locator('.orders-page .status-cards .status-card', { hasText: '发货中' }).click();
-    const card = page.locator('.orders-shipping-card', { hasText: orderNo });
-    await expect(card).toBeVisible();
-    await expect(card).not.toContainText('¥');
-    await expect(card).not.toContainText('备注');
-    await expect(card).not.toContainText('附件');
-    await expect(card.getByRole('region', { name: '本次发货' })).toBeVisible();
-    const cardLayout = await card.evaluate((element) => {
-      const items = element.querySelector('.order-shipping-items')!;
-      const input = element.querySelector('.orders-shipping-ship-box input')!;
-      const confirm = element.querySelector('.orders-shipping-ship-box button')!;
-      const form = element.querySelector('.order-shipping-form')!;
-      const shipBox = element.querySelector('.orders-shipping-ship-box')!;
-      return {
-        columns: getComputedStyle(items).gridTemplateColumns.split(' ').length,
-        inputBottom: input.getBoundingClientRect().bottom,
-        confirmTop: confirm.getBoundingClientRect().top,
-        shipTop: shipBox.getBoundingClientRect().top,
-        formTop: form.getBoundingClientRect().top,
-        cardTop: element.getBoundingClientRect().top,
-      };
-    });
-    expect(cardLayout.columns).toBe(3);
-    expect(cardLayout.confirmTop).toBeGreaterThanOrEqual(cardLayout.inputBottom - 1);
-    expect(cardLayout.shipTop - cardLayout.cardTop).toBeLessThan(120);
-    expect(cardLayout.shipTop).toBeLessThan(cardLayout.formTop);
+    const row = page.locator('.orders-shipping-table tbody tr', { hasText: orderNo });
+    await expect(row).toBeVisible();
+    await expect(page.locator('.orders-shipping-table thead')).not.toContainText('金额');
+    await expect(page.locator('.orders-shipping-table thead')).not.toContainText('附件');
+    await expect(page.locator('.orders-shipping-table thead')).not.toContainText('备注');
+    await expect(page.locator('.orders-shipping-table thead')).toContainText('状态');
+    await expect(page.locator('.orders-shipping-table thead')).toContainText('物流单号');
+    await expect(row).not.toContainText('¥');
+    await expect(row.locator('.order-shipping-item')).toHaveCount(2);
+    await expect(row.locator('.order-shipping-item-thumb')).toHaveCount(2);
+    await expect(row.getByLabel(`${orderNo}-圆砂机-本次发货数量`)).toHaveValue('10');
 
-    await card.getByLabel(`${orderNo}-圆砂机-本次发货数量`).fill('4');
-    await card.getByLabel(`${orderNo}-水枪-本次发货数量`).fill('0');
-    await card.getByLabel(`${orderNo}-本次物流单号`).fill(`SF-DETAIL-1-${stamp}`);
-    await card.getByRole('button', { name: '确认本次发货' }).click();
+    await row.getByLabel(`${orderNo}-圆砂机-本次发货数量`).fill('4');
+    await row.getByLabel(`${orderNo}-水枪-本次发货数量`).fill('0');
+    await row.getByLabel(`${orderNo}物流单号`).fill(`SF-DETAIL-1-${stamp}`);
+    await row.getByRole('button', { name: '确认发货', exact: true }).click();
     await expect(page.getByText('已确认 1 单本次发货')).toBeVisible();
-    await expect(card).toContainText('已发 4/15 件 · 剩余 11 件');
-    await expect(card.getByLabel(`${orderNo}-圆砂机-本次发货数量`)).toHaveValue('6');
+    await expect(row).toContainText('已发 4/15 件 · 剩余 11 件');
+    await expect(row.getByLabel(`${orderNo}-圆砂机-本次发货数量`)).toHaveValue('6');
     const partial = await (await page.request.get(`/api/orders/${orderId}`)).json();
     expect(partial.data.status).toBe('shipping');
     expect(partial.data.items.find((item: { sku: string }) => item.sku === `DETAIL-A-${stamp}`).shipped_quantity).toBe(4);
     expect(partial.data.items.find((item: { sku: string }) => item.sku === `DETAIL-B-${stamp}`).shipped_quantity).toBe(0);
 
-    await card.getByLabel(`${orderNo}-圆砂机-本次发货数量`).fill('6');
-    await card.getByLabel(`${orderNo}-水枪-本次发货数量`).fill('5');
-    await card.getByLabel(`${orderNo}-本次物流单号`).fill(`SF-DETAIL-2-${stamp}`);
-    await card.getByRole('button', { name: '确认本次发货' }).click();
-    await expect(card).toHaveCount(0);
+    const sheetDownload = page.waitForEvent('download');
+    await row.getByRole('button', { name: '发货清单', exact: true }).click();
+    expect((await sheetDownload).suggestedFilename()).toContain('发货清单');
+
+    await row.getByLabel(`${orderNo}-圆砂机-本次发货数量`).fill('6');
+    await row.getByLabel(`${orderNo}-水枪-本次发货数量`).fill('5');
+    await row.getByLabel(`${orderNo}物流单号`).fill(`SF-DETAIL-2-${stamp}`);
+    await row.getByRole('button', { name: '确认发货', exact: true }).click();
+    await expect(row).toHaveCount(0);
     const completed = await (await page.request.get(`/api/orders/${orderId}`)).json();
     expect(completed.data.status).toBe('shipped');
   } finally {
@@ -251,7 +243,7 @@ test('发货中页签卡片直接编辑本次数量并回填单号，不显示�
   }
 });
 
-test('发货中卡片显示未收款并禁用确认发货', async ({ page }) => {
+test('发货中表格行显示未收款并禁用确认发货', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const stamp = Date.now();
   const orderNo = `E2E-SHIP-UNPAID-CARD-${stamp}`;
@@ -265,14 +257,14 @@ test('发货中卡片显示未收款并禁用确认发货', async ({ page }) => 
     await advanceToShipping(page, orderId);
     await openOrders(page);
     await page.locator('.orders-page .status-cards .status-card', { hasText: '发货中' }).click();
-    const card = page.locator('.orders-shipping-card', { hasText: orderNo });
-    await expect(card).toBeVisible();
-    await expect(card).toContainText('未收款');
-    const confirm = card.getByRole('button', { name: '确认本次发货' });
+    const row = page.locator('.orders-shipping-table tbody tr', { hasText: orderNo });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('未收款');
+    const confirm = row.getByRole('button', { name: '确认发货', exact: true });
     await expect(confirm).toBeDisabled();
-    await card.getByLabel(`${orderNo}-本次物流单号`).fill(`SF-UNPAID-CARD-${stamp}`);
+    await row.getByLabel(`${orderNo}物流单号`).fill(`SF-UNPAID-CARD-${stamp}`);
     await expect(confirm).toBeDisabled();
-    await expect(card).toContainText('未收齐全款，暂不能发货');
+    await expect(row).toContainText('未收齐全款，暂不能发货');
   } finally {
     await cleanupOrders(page, [orderId]);
   }
@@ -291,14 +283,51 @@ test('发货中可回退到待发货，有发货记录时不显示回退', async
     await advanceToShipping(page, orderId);
     await openOrders(page);
     await page.locator('.orders-page .status-cards .status-card', { hasText: '发货中' }).click();
-    const card = page.locator('.orders-shipping-card', { hasText: orderNo });
-    await expect(card).toBeVisible();
+    const row = page.locator('.orders-shipping-table tbody tr', { hasText: orderNo });
+    await expect(row).toBeVisible();
     page.once('dialog', (dialog) => void dialog.accept());
-    await card.getByRole('button', { name: '回退', exact: true }).click();
+    await row.getByRole('button', { name: '回退', exact: true }).click();
     await expect(page.getByText(`订单 ${orderNo} 已回退到待发货`)).toBeVisible();
-    await expect(card).toHaveCount(0);
+    await expect(row).toHaveCount(0);
     const detail = await (await page.request.get(`/api/orders/${orderId}`)).json();
     expect(detail.data.status).toBe('ship_pending');
+  } finally {
+    await cleanupOrders(page, [orderId]);
+  }
+});
+
+test('手机端发货中卡片直接编辑本次数量并回填单号', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const stamp = Date.now();
+  const orderNo = `E2E-SHIP-MOBILE-INLINE-${stamp}`;
+  const orderId = await seedOrder(page, {
+    orderNo,
+    recipientName: '手机发货卡片',
+    recipientInfo: `杭州市西湖区手机发货卡片${stamp}号`,
+    items: [{ name: '手机发货产品', sku: `MOBILE-INLINE-${stamp}`, packCount: 10, quantity: 10 }],
+  });
+  try {
+    await advanceToShipping(page, orderId);
+    await page.goto('/');
+    await page.locator('.mobile-tab-item[aria-label="更多模块"]').click();
+    await page.locator('.sidebar-nav').getByRole('button', { name: '订单', exact: true }).click();
+    await page.locator('.orders-channel-tabs').getByRole('tab', { name: /线上订单/ }).click();
+    await page.locator('.orders-page .status-cards .status-card', { hasText: '发货中' }).click();
+    const card = page.locator('.orders-shipping-mobile-card', { hasText: orderNo });
+    await expect(card).toBeVisible();
+    await expect(card).not.toContainText('¥');
+    await expect(card).not.toContainText('备注');
+    await expect(card).not.toContainText('附件');
+    await expect(card.getByLabel(`${orderNo}-手机发货产品-本次发货数量`)).toHaveValue('10');
+    await card.getByLabel(`${orderNo}-手机发货产品-本次发货数量`).fill('4');
+    await card.getByLabel(`${orderNo}物流单号`).fill(`SF-MOBILE-INLINE-${stamp}`);
+    await card.getByRole('button', { name: '确认发货', exact: true }).click();
+    await expect(page.getByText('已确认 1 单本次发货')).toBeVisible();
+    await expect(card).toContainText('已发 4/10 件 · 剩余 6 件');
+    await expect(card.getByLabel(`${orderNo}-手机发货产品-本次发货数量`)).toHaveValue('6');
+    const detail = await (await page.request.get(`/api/orders/${orderId}`)).json();
+    expect(detail.data.status).toBe('shipping');
+    expect(detail.data.items[0].shipped_quantity).toBe(4);
   } finally {
     await cleanupOrders(page, [orderId]);
   }
