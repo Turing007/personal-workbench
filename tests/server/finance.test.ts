@@ -33,11 +33,11 @@ async function setup() {
   return { database, app, fileStore, companyId };
 }
 
-function insertOrder(database: DatabaseSync, amountCents = 10000, companyId: number | null = null, channel = 'offline'): number {
+function insertOrder(database: DatabaseSync, amountCents = 10000, companyId: number | null = null, channel = 'offline', orderedAt = '2026-08-20'): number {
   const result = database.prepare(`
     INSERT INTO orders (order_no, ordered_at, recipient_name, amount, amount_cents, shipping_cents, company_id, status, channel, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, 0, ?, 'pending_stock', ?, ?, ?)
-  `).run(`FIN-${Date.now()}-${Math.random()}`, '2026-08-20', '客户', amountCents / 100, amountCents, companyId, channel, new Date().toISOString(), new Date().toISOString());
+  `).run(`FIN-${Date.now()}-${Math.random()}`, orderedAt, '客户', amountCents / 100, amountCents, companyId, channel, new Date().toISOString(), new Date().toISOString());
   const orderId = Number(result.lastInsertRowid);
   database.prepare(`INSERT INTO order_finance (order_id, receivable_cents, outstanding_cents, payment_status, proof_status, invoice_status, created_at, updated_at) VALUES (?, ?, ?, 'unpaid', 'none', 'not_requested', ?, ?)`).run(orderId, amountCents, amountCents, new Date().toISOString(), new Date().toISOString());
   return orderId;
@@ -341,6 +341,24 @@ describe('财务模块', () => {
     expect(service.listProofs({ companyIds: [companyId], includeUnassignedCompany: true }).map((proof) => proof.orderId).sort((a, b) => a - b)).toEqual([orderA, orderC].sort((a, b) => a - b));
     expect(service.listProofs({ limit: 2 })).toHaveLength(2);
 
+    database.close();
+  });
+});
+
+describe('财务列表按日期筛选', () => {
+  it('按订单日期筛出当天订单，日期和月份分别生效', async () => {
+    const { database, app } = await setup();
+    const day20 = insertOrder(database, 10000, null, 'offline', '2026-08-20');
+    const day21 = insertOrder(database, 20000, null, 'offline', '2026-08-21');
+    const orderIds = async (query: string) => {
+      const response = await authInject(app, { method: 'GET', url: `/api/finance/orders?${query}` });
+      expect(response.statusCode).toBe(200);
+      return (response.json().data.rows as Array<{ orderId: number }>).map((row) => row.orderId).sort((a, b) => a - b);
+    };
+    expect(await orderIds('date=2026-08-20')).toEqual([day20]);
+    expect(await orderIds('date=2026-08-21')).toEqual([day21]);
+    expect(await orderIds('date=2026-09-01')).toEqual([]);
+    expect(await orderIds('month=2026-08')).toEqual([day20, day21].sort((a, b) => a - b));
     database.close();
   });
 });

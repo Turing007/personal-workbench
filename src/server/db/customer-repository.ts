@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { Customer, CustomerSaveInput } from '../../shared/customers.js';
+import { normalizePaymentPolicy } from '../../shared/payment-policy.js';
 
 interface CustomerRow extends Record<string, unknown> {
   id: number;
@@ -9,6 +10,10 @@ interface CustomerRow extends Record<string, unknown> {
   shipping_info: string;
   invoice_title: string;
   tax_no: string;
+  payment_policy: string;
+  deposit_percent: number;
+  credit_days: number;
+  credit_limit_cents: number;
   is_active: number;
   product_count: number;
   incomplete_product_count: number;
@@ -34,6 +39,10 @@ const customerSelect = `
     c.shipping_info,
     c.invoice_title,
     c.tax_no,
+    c.payment_policy,
+    c.deposit_percent,
+    c.credit_days,
+    c.credit_limit_cents,
     c.is_active,
     c.created_at,
     c.updated_at,
@@ -67,6 +76,10 @@ function mapCustomer(row: CustomerRow | undefined): Customer | undefined {
     shippingInfo: String(row.shipping_info ?? ''),
     invoiceTitle: String(row.invoice_title ?? ''),
     taxNo: String(row.tax_no ?? ''),
+    paymentPolicy: normalizePaymentPolicy(row.payment_policy),
+    depositPercent: Math.max(0, Math.min(100, Number(row.deposit_percent ?? 0))),
+    creditDays: Math.max(0, Number(row.credit_days ?? 0)),
+    creditLimitCents: Math.max(0, Number(row.credit_limit_cents ?? 0)),
     isActive: Boolean(row.is_active),
     productCount: Number(row.product_count ?? 0),
     incompleteProductCount: Number(row.incomplete_product_count ?? 0),
@@ -137,8 +150,9 @@ export class CustomerRepository {
     const timestamp = new Date().toISOString();
     const result = this.database.prepare(`
       INSERT INTO customers
-        (name, contact_name, contact_phone, shipping_info, invoice_title, tax_no, is_active, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+        (name, contact_name, contact_phone, shipping_info, invoice_title, tax_no,
+         payment_policy, deposit_percent, credit_days, credit_limit_cents, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
     `).run(
       input.name,
       input.contactName,
@@ -146,6 +160,10 @@ export class CustomerRepository {
       input.shippingInfo,
       input.invoiceTitle,
       input.taxNo,
+      normalizePaymentPolicy(input.paymentPolicy),
+      Math.max(0, Math.min(100, Math.trunc(Number(input.depositPercent) || 0))),
+      Math.max(0, Math.trunc(Number(input.creditDays) || 0)),
+      Math.max(0, Math.trunc(Number(input.creditLimitCents) || 0)),
       timestamp,
       timestamp,
     );
@@ -155,7 +173,8 @@ export class CustomerRepository {
   update(id: number, input: CustomerSaveInput): Customer | undefined {
     const result = this.database.prepare(`
       UPDATE customers
-      SET name = ?, contact_name = ?, contact_phone = ?, shipping_info = ?, invoice_title = ?, tax_no = ?, updated_at = ?
+      SET name = ?, contact_name = ?, contact_phone = ?, shipping_info = ?, invoice_title = ?, tax_no = ?,
+        payment_policy = ?, deposit_percent = ?, credit_days = ?, credit_limit_cents = ?, updated_at = ?
       WHERE id = ?
     `).run(
       input.name,
@@ -164,6 +183,10 @@ export class CustomerRepository {
       input.shippingInfo,
       input.invoiceTitle,
       input.taxNo,
+      normalizePaymentPolicy(input.paymentPolicy),
+      Math.max(0, Math.min(100, Math.trunc(Number(input.depositPercent) || 0))),
+      Math.max(0, Math.trunc(Number(input.creditDays) || 0)),
+      Math.max(0, Math.trunc(Number(input.creditLimitCents) || 0)),
       new Date().toISOString(),
       id,
     );

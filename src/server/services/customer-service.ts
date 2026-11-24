@@ -1,4 +1,5 @@
 import type { Customer, CustomerSaveInput } from '../../shared/customers.js';
+import { normalizePaymentPolicy } from '../../shared/payment-policy.js';
 import {
   CustomerRepository,
   type CustomerDeleteResult,
@@ -72,8 +73,21 @@ function normalizeCustomerInput(input: CustomerSaveInput): CustomerSaveInput {
     shippingInfo: normalizeText(input.shippingInfo, 'shippingInfo', '常用收件信息'),
     invoiceTitle: normalizeText(input.invoiceTitle, 'invoiceTitle', '开票抬头'),
     taxNo: normalizeText(input.taxNo, 'taxNo', '税号'),
+    paymentPolicy: normalizePaymentPolicy(input.paymentPolicy),
+    depositPercent: normalizeNumber(input.depositPercent, 'depositPercent', '定金比例', 0, 100),
+    creditDays: normalizeNumber(input.creditDays, 'creditDays', '账期天数', 0, 365),
+    creditLimitCents: normalizeNumber(input.creditLimitCents, 'creditLimitCents', '账期额度', 0, Number.MAX_SAFE_INTEGER),
     confirmDuplicateName: input.confirmDuplicateName === true,
   };
+}
+
+function normalizeNumber(value: unknown, field: keyof CustomerSaveInput, label: string, min: number, max: number): number {
+  if (value === undefined || value === null || value === '') return 0;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < min || number > max) {
+    throw new CustomerValidationError(`${label}需在 ${min}–${max} 之间`, field);
+  }
+  return Math.trunc(number);
 }
 
 function normalizeText(

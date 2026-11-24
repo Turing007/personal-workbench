@@ -1,6 +1,7 @@
 import { Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { Customer, CustomerSaveInput } from '../../../shared/customers';
+import { PAYMENT_POLICY_OPTIONS, normalizePaymentPolicy, type PaymentPolicy } from '../../../shared/payment-policy';
 import Modal from '../Modal';
 import { useIsNarrow } from '../../use-is-narrow';
 
@@ -19,6 +20,10 @@ const blank: CustomerSaveInput = {
   shippingInfo: '',
   invoiceTitle: '',
   taxNo: '',
+  paymentPolicy: 'before_ship',
+  depositPercent: 0,
+  creditDays: 0,
+  creditLimitCents: 0,
 };
 
 export default function CustomerEditorModal({ open, customer, busy, onClose, onSave }: CustomerEditorModalProps) {
@@ -35,6 +40,10 @@ export default function CustomerEditorModal({ open, customer, busy, onClose, onS
       shippingInfo: customer.shippingInfo,
       invoiceTitle: customer.invoiceTitle,
       taxNo: customer.taxNo,
+      paymentPolicy: customer.paymentPolicy,
+      depositPercent: customer.depositPercent,
+      creditDays: customer.creditDays,
+      creditLimitCents: customer.creditLimitCents,
     } : blank);
     setError('');
   }, [customer, open]);
@@ -57,6 +66,10 @@ export default function CustomerEditorModal({ open, customer, busy, onClose, onS
         shippingInfo: draft.shippingInfo.trim(),
         invoiceTitle: draft.invoiceTitle.trim(),
         taxNo: draft.taxNo.trim(),
+        paymentPolicy: normalizePaymentPolicy(draft.paymentPolicy),
+        depositPercent: draft.depositPercent ?? 0,
+        creditDays: draft.creditDays ?? 0,
+        creditLimitCents: draft.creditLimitCents ?? 0,
       });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String((reason as { message?: string })?.message ?? '保存客户失败'));
@@ -86,6 +99,24 @@ export default function CustomerEditorModal({ open, customer, busy, onClose, onS
       <div className="customer-editor-row">
         <label className="customer-editor-field">开票抬头<input className="customer-editor-input" value={draft.invoiceTitle} onChange={(event) => update('invoiceTitle', event.target.value)} placeholder="开票时使用的单位抬头" /></label>
         <label className="customer-editor-field">税号<input className="customer-editor-input" value={draft.taxNo} onChange={(event) => update('taxNo', event.target.value)} placeholder="纳税人识别号" /></label>
+      </div>
+      <div className="customer-editor-row">
+        <label className="customer-editor-field">付款方式<select className="customer-editor-input" aria-label="付款方式" value={draft.paymentPolicy ?? 'before_ship'} onChange={(event) => update('paymentPolicy', event.target.value as PaymentPolicy)}>
+          {PAYMENT_POLICY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select></label>
+        {(draft.paymentPolicy ?? 'before_ship') === 'prepay'
+          ? <label className="customer-editor-field">定金比例（%）<input className="customer-editor-input" type="number" min="0" max="100" value={draft.depositPercent ?? 0} onChange={(event) => update('depositPercent', Math.max(0, Math.min(100, Math.trunc(Number(event.target.value) || 0))))} /></label>
+          : (draft.paymentPolicy ?? 'before_ship') === 'credit'
+            ? <label className="customer-editor-field">账期天数<input className="customer-editor-input" type="number" min="0" max="365" value={draft.creditDays ?? 0} onChange={(event) => update('creditDays', Math.max(0, Math.min(365, Math.trunc(Number(event.target.value) || 0))))} /></label>
+            : <span />}
+      </div>
+      {(draft.paymentPolicy ?? 'before_ship') === 'credit' && <label className="customer-editor-field">账期额度（元，0 = 不限额）<input className="customer-editor-input" type="number" min="0" step="0.01" value={(draft.creditLimitCents ?? 0) / 100} onChange={(event) => update('creditLimitCents', Math.max(0, Math.round((Number(event.target.value) || 0) * 100)))} /></label>}
+      <div className="customer-editor-hint">
+        {(draft.paymentPolicy ?? 'before_ship') === 'prepay'
+          ? '先款后货：收齐定金前订单只能存草稿；收齐全款后才能在订单里确认已备货。'
+          : (draft.paymentPolicy ?? 'before_ship') === 'credit'
+            ? '账期：可以先发货，按账期天数计算到期日；额度 0 表示不限额，超额时确认发货会被拦截。'
+            : '发货前付清：可以先备货打包，发货前必须收齐全款（默认）。'}
       </div>
     </div>
   </Modal>;

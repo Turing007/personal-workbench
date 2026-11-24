@@ -177,6 +177,7 @@ export async function registerFinanceRoutes(app: FastifyInstance, options: Finan
       orderNo: query.orderNo,
       customerName: query.customerName,
       month: query.month,
+      date: query.date,
       channel: parseChannel(query.channel) as FinanceListFilters['channel'],
       paymentStatus: query.paymentStatus as FinanceListFilters['paymentStatus'],
       proofStatus: query.proofStatus as FinanceListFilters['proofStatus'],

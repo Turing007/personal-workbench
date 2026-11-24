@@ -3,6 +3,10 @@ import { escapeHtml } from './quotation-template.js';
 
 export interface ShippingListTemplateOptions {
   generatedAt?: string;
+  /** 抬头公司名：优先用设置里的公司资料，缺省时退回发货记录上的公司。 */
+  companyName?: string;
+  /** 设置里公司资料的内联 logo（data URL）；没有时只出公司名。 */
+  logoDataUrl?: string;
 }
 
 /** 库里存的是 UTC 时间，直接截取会比北京时间少 8 小时。 */
@@ -15,7 +19,7 @@ function detail(label: string, value: string): string {
   return `<div class="detail"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || '—')}</strong></div>`;
 }
 
-function renderShipment(shipment: ShipmentRecord): string {
+function renderShipment(shipment: ShipmentRecord, companyName: string, logoDataUrl?: string): string {
   const totalQuantity = shipment.items.reduce((sum, item) => sum + item.quantity, 0);
   const rows = shipment.items.map((item, index) => `<tr>
     <td class="index">${index + 1}</td>
@@ -29,9 +33,12 @@ function renderShipment(shipment: ShipmentRecord): string {
   </tr>`).join('');
   return `<section class="sheet">
     <header>
-      <div>
-        <h1>${escapeHtml(shipment.companyName || '发货清单')}</h1>
-        <h2>发货清单</h2>
+      <div class="letterhead">
+        ${logoDataUrl ? `<img class="logo" src="${escapeHtml(logoDataUrl)}" alt="公司标志">` : ''}
+        <div>
+          <h1>${escapeHtml(companyName || '发货清单')}</h1>
+          ${companyName ? '<h2>发货清单</h2>' : ''}
+        </div>
       </div>
       <div class="document-no">${escapeHtml(shipment.shipmentNo)}</div>
     </header>
@@ -61,6 +68,8 @@ function renderShipment(shipment: ShipmentRecord): string {
 }
 
 export function renderShippingListHtml(shipments: ShipmentRecord[], options: ShippingListTemplateOptions = {}): string {
+  const profileName = String(options.companyName ?? '').trim();
+  const logoDataUrl = String(options.logoDataUrl ?? '').trim();
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -72,6 +81,8 @@ export function renderShippingListHtml(shipments: ShipmentRecord[], options: Shi
     body { margin: 0; color: #15181c; font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; font-size: 10.5pt; }
     .sheet + .sheet { break-before: page; }
     header { display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; padding-bottom: 4mm; border-bottom: 2px solid #1f2933; }
+    .letterhead { display: flex; align-items: center; gap: 5mm; min-width: 0; }
+    .logo { display: block; max-width: 30mm; max-height: 18mm; object-fit: contain; }
     h1 { margin: 0; font-size: 18pt; }
     h2 { margin: 1.5mm 0 0; font-size: 15pt; font-weight: 500; }
     .document-no { color: #45505b; font-size: 10pt; white-space: nowrap; }
@@ -94,7 +105,7 @@ export function renderShippingListHtml(shipments: ShipmentRecord[], options: Shi
   </style>
 </head>
 <body>
-  ${shipments.map(renderShipment).join('')}
+  ${shipments.map((shipment) => renderShipment(shipment, profileName || shipment.companyName.trim(), logoDataUrl)).join('')}
   <div class="generated">打印时间：${escapeHtml(formatDateTime(options.generatedAt ?? new Date().toISOString()))}</div>
 </body>
 </html>`;

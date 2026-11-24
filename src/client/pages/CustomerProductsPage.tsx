@@ -37,6 +37,7 @@ import {
 } from '../api';
 import Modal from '../components/Modal';
 import CustomerEditorModal from '../components/customers/CustomerEditorModal';
+import { paymentPolicySummary } from '../../shared/payment-policy';
 import CustomerProductEditorModal, { type CustomerProductAttachmentDraft } from '../components/customer-products/CustomerProductEditorModal';
 import { cloneCustomerProductForNew } from '../customer-product-copy';
 import { thumbUrl } from '../image-urls';
@@ -321,7 +322,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
         <div className="section-box-header customer-list-header"><span className="section-box-title">客户档案</span></div>
         <div className="customer-list-scroll">
           {filteredCustomers.map((customer) => <button key={customer.id} className={`customer-list-item${customer.id === selectedCustomerId ? ' is-selected' : ''}`} type="button" onClick={() => setSelectedCustomerId(customer.id)}>
-            <div className="customer-list-item-heading"><strong>{customer.name}</strong><span className={`badge ${customer.isActive ? 'badge-success' : 'badge-neutral'}`}>{customer.isActive ? '启用' : '停用'}</span></div>
+            <div className="customer-list-item-heading"><strong>{customer.name}</strong><span className={`badge ${customer.isActive ? 'badge-success' : 'badge-neutral'}`}>{customer.isActive ? '启用' : '停用'}</span>{customer.paymentPolicy !== 'before_ship' && <span className={`badge ${customer.paymentPolicy === 'credit' ? 'badge-info' : 'badge-neutral'}`}>{paymentPolicySummary(customer.paymentPolicy, customer.depositPercent, customer.creditDays)}</span>}</div>
             <small className="customer-list-meta">{[customer.contactName, customer.contactPhone].filter(Boolean).join(' · ') || '暂无联系人信息'}</small>
             <small className={`customer-list-count${customer.incompleteProductCount ? ' is-incomplete' : ''}`}>{customer.productCount} 个产品 · {customer.incompleteProductCount} 个待完善</small>
           </button>)}

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { FINANCE_PAYMENT_STATUS_LABELS, INVOICE_STATUS_LABELS, PAYMENT_PROOF_STATUS_LABELS } from '../../shared/finance';
 import { ORDER_SETTLEMENT_LABELS, invoiceDisplayLabel } from '../../shared/settlement';
 import { getOrderFulfillmentProgress } from '../../shared/shipping';
+import { normalizePaymentPolicy, paymentPolicySummary } from '../../shared/payment-policy';
 import { ORDER_STATUS_LABELS_WITH_DRAFT } from '../../shared/domain';
 import { formatDateTime } from '../../shared/formatters';
 import { thumbUrl } from '../image-urls';
@@ -122,6 +123,7 @@ export default function OrderDetailModal({
           <div style={detailStyle}><span style={labelStyle}>下单时间</span><strong style={{ fontSize: 13 }}>{formatDate(order.orderedAt)}</strong>{order.createdBy && <span style={{ color: 'var(--tone-text-soft)', fontSize: 11 }}>创建人 · {order.createdBy}</span>}</div>
           <div style={detailStyle}><span style={labelStyle}>订单金额</span><strong style={{ fontSize: 13 }}>¥ {order.amount || '0.00'}</strong></div>
           <div style={detailStyle}><span style={labelStyle}>运费</span><strong style={{ fontSize: 13 }}>¥ {((order.shippingCents ?? 0) / 100).toFixed(2)}</strong></div>
+          <div style={detailStyle}><span style={labelStyle}>付款方式</span><strong style={{ fontSize: 13 }}>{paymentPolicySummary(normalizePaymentPolicy(order.paymentPolicy), order.depositPercent ?? 0, order.creditDays ?? 0)}</strong></div>
           <div style={detailStyle}><span style={labelStyle}>总箱数</span><strong style={{ fontSize: 13 }}>{order.totalBoxes ?? order.items.reduce((sum, item) => sum + item.boxes, 0)}</strong></div>
           <div style={detailStyle}><span style={labelStyle}>物流单号</span><strong style={{ fontSize: 13 }}>{order.trackingNo || '未填写'}</strong></div>
         </div>

@@ -7,6 +7,7 @@ import { FileStore } from '../files/file-store.js';
 import { calculateLineAmountCents } from '../../shared/money.js';
 import { calculateOrderAmountCents } from '../../shared/order-prices.js';
 import { isOrderPaymentCleared } from '../../shared/finance.js';
+import { depositCents, normalizePaymentPolicy } from '../../shared/payment-policy.js';
 import type { CustomerProduct, CustomerSaveInput } from '../../shared/customers.js';
 
 import {
@@ -365,6 +366,18 @@ export class OrderService {
     if (!order) return undefined;
     if (!isDraftStatus(order.status)) throw new Error('只有草稿订单可以发布');
 
+    // 先款后货：收齐定金前不能发布，订单只能留在草稿里。
+    if (normalizePaymentPolicy(order.payment_policy) === 'prepay') {
+      const receivableCents = Number(order.amount_cents ?? 0);
+      const receivedCents = Number(this.repositories.getOrderFinanceSummary(orderId)?.received_cents ?? 0);
+      const percent = Math.max(0, Math.min(100, Number(order.deposit_percent ?? 0)));
+      const requiredCents = percent > 0 ? depositCents(receivableCents, percent) : receivableCents;
+      if (receivedCents < requiredCents) {
+        const target = percent > 0 ? `定金 ¥${(requiredCents / 100).toFixed(2)}（${percent}%）` : `全款 ¥${(requiredCents / 100).toFixed(2)}`;
+        throw new Error(`该客户先款后货：需先收到${target}，已收 ¥${(receivedCents / 100).toFixed(2)}，暂不能发布`);
+      }
+    }
+
     // 以库内数据重建完整输入做正式校验，确保发布后的订单信息完整。
     const input = this.buildInputFromDetail(order);
     const normalized = this.normalizeInput(input);
@@ -405,6 +418,9 @@ export class OrderService {
       channel: String(detail.channel ?? 'offline'),
       settlementType: String(detail.settlement_type ?? 'corporate'),
       companyId: detail.company_id == null ? null : Number(detail.company_id),
+      paymentPolicy: normalizePaymentPolicy(detail.payment_policy),
+      depositPercent: Number(detail.deposit_percent ?? 0),
+      creditDays: Number(detail.credit_days ?? 0),
       items: items.map((item) => ({
         customerProductId: item.customer_product_id == null ? null : Number(item.customer_product_id),
         name: String(item.name ?? ''),
@@ -445,11 +461,22 @@ export class OrderService {
     if (reason === 'rollback' && this.repositories.hasOrderShipments(orderId)) {
       throw new Error('订单已有发货记录，不能回退状态；请先在订单详情中撤销发货记录');
     }
-    if (to === 'shipped') {
+    // 先款后货：收齐全款才能确认已备货。
+    if (to === 'stock_reported' && normalizePaymentPolicy(order.payment_policy) === 'prepay') {
       const finance = this.repositories.getOrderFinanceSummary(orderId);
       const receivableCents = Number(finance?.receivable_cents ?? order.amount_cents ?? 0);
       const receivedCents = Number(finance?.received_cents ?? 0);
       if (!isOrderPaymentCleared(receivableCents, receivedCents)) {
+        throw new Error(`该客户先款后货：已收 ¥${(receivedCents / 100).toFixed(2)} / 应收 ¥${(receivableCents / 100).toFixed(2)}，收齐全款后才能备货`);
+      }
+    }
+    if (to === 'shipped') {
+      const finance = this.repositories.getOrderFinanceSummary(orderId);
+      const receivableCents = Number(finance?.receivable_cents ?? order.amount_cents ?? 0);
+      const receivedCents = Number(finance?.received_cents ?? 0);
+      if (normalizePaymentPolicy(order.payment_policy) === 'credit') {
+        this.repositories.assertCreditLimitAvailable(orderId);
+      } else if (!isOrderPaymentCleared(receivableCents, receivedCents)) {
         throw new Error(`订单尚未确认收到货款（已收 ¥${(receivedCents / 100).toFixed(2)} / 应收 ¥${(receivableCents / 100).toFixed(2)}），不能发货`);
       }
       const items = Array.isArray(order.items) ? order.items as Array<Record<string, unknown>> : [];

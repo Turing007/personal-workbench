@@ -545,6 +545,9 @@ export function draftToInput(draft: OrderDraft) {
     channel: draft.channel ?? 'offline',
     settlementType: draft.settlementType === 'personal' ? 'personal' : 'corporate',
     companyId: draft.companyId ?? null,
+    paymentPolicy: draft.paymentPolicy ?? 'before_ship',
+    depositPercent: Math.max(0, Math.min(100, Math.trunc(draft.depositPercent ?? 0))),
+    creditDays: Math.max(0, Math.trunc(draft.creditDays ?? 0)),
     items: draft.items.map((item) => ({ customerProductId: item.customerProductId ?? null, productId: item.productId ? Number(item.productId) : null, name: item.name.trim(), sku: item.sku.trim(), specification: item.specification.trim(), packCount: Math.max(1, Math.trunc(item.packSize)), quantity: Math.max(1, Math.trunc(item.quantity)), unitPriceCents: Math.max(0, Math.trunc(item.unitPriceCents ?? 0)), freightPerBoxCents: Math.max(0, Math.trunc(item.freightPerBoxCents ?? 0)), machineCostCents: item.machineCostCents ?? null, batteryCostCents: item.batteryCostCents ?? null, chargerCostCents: item.chargerCostCents ?? null, packagingCostCents: item.packagingCostCents ?? null, accessoryCostCents: item.accessoryCostCents ?? null, otherCostCents: item.otherCostCents ?? null, costConfirmed: Boolean(item.costConfirmed), packaging: item.packaging?.length ? item.packaging.map((pack) => ({ name: pack.name, innerSize: pack.innerSize, innerWeight: Number(pack.innerWeight) || 0, outerSize: pack.outerSize, outerWeight: Number(pack.outerWeight) || 0, packCount: Math.max(1, Math.trunc(pack.packSize)) })) : [{ name: '', packCount: Math.max(1, Math.trunc(item.packSize)) }], remark: item.remark, labelRequirement: (item.labelRequirement ?? '').trim() }))
     , orderAttachments: draft.items.flatMap((item) => (item.customerProductAttachments ?? []).map((attachment) => ({ category: attachment.category, sourceCustomerProductId: item.customerProductId ?? null, relativePath: attachment.relativePath, originalName: attachment.originalName, mimeType: attachment.mimeType, size: attachment.size })))
   };
@@ -1294,6 +1297,58 @@ export function listFinanceProofs(filters: FinanceProofListFilters = {}) {
   if (filters.query?.trim()) query.set('q', filters.query.trim());
   if (filters.limit != null) query.set('limit', String(filters.limit));
   return request<{ items: FinanceProofListRow[] }>(`/api/finance/proofs?${query.toString()}`);
+}
+
+export interface ReconciliationAging {
+  notDueCents: number;
+  overdue30Cents: number;
+  overdue60Cents: number;
+  overdue90Cents: number;
+  overdue90PlusCents: number;
+}
+
+export interface ReconciliationCustomer extends ReconciliationAging {
+  customerId: number | null;
+  customerName: string;
+  creditLimitCents: number;
+  outstandingCents: number;
+  overdueCents: number;
+  oldestOverdueDays: number;
+  lastReceiptAt: string;
+  orderCount: number;
+}
+
+export interface ReconciliationSummary extends ReconciliationAging {
+  outstandingCents: number;
+  overdueCents: number;
+  oldestOverdueDays: number;
+}
+
+export interface CustomerStatement extends ReconciliationAging {
+  customerId: number;
+  customerName: string;
+  creditLimitCents: number;
+  from: string;
+  to: string;
+  openingCents: number;
+  periodReceivableCents: number;
+  periodReceiptCents: number;
+  closingCents: number;
+  overdueCents: number;
+  orders: Array<{ orderId: number; orderNo: string; lastShippedAt: string; dueDate: string; overdueDays: number; receivableCents: number; receivedCents: number; outstandingCents: number }>;
+  receipts: Array<{ orderId: number; orderNo: string; receivedAt: string; amountCents: number; paymentMethod: string; note: string }>;
+}
+
+export function getReconciliation() {
+  return request<{ items: ReconciliationCustomer[]; totals: ReconciliationSummary }>('/api/finance/reconciliation');
+}
+
+export function getCustomerStatement(customerId: number | string, from: string, to: string) {
+  return request<CustomerStatement>(`/api/finance/reconciliation/${customerId}?from=${from}&to=${to}`);
+}
+
+export function downloadReconciliationPdf(customerId: number | string, from: string, to: string) {
+  return requestBlob(`/api/finance/reconciliation/${customerId}/pdf?from=${from}&to=${to}`);
 }
 
 export function listFinanceOrders(params: FinanceListParams = {}) {

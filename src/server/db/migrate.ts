@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 47;
+const CURRENT_SCHEMA_VERSION = 48;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -1670,6 +1670,24 @@ function migrateVersionFortySeven(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '47', now);
 }
 
+/** 客户付款方式（先款后货/发货前付清/账期）与账期对账：客户档案加设置列，订单加快照列。 */
+function migrateVersionFortyEight(database: DatabaseSync, now: string): void {
+  const customerColumns: Array<[string, string]> = [
+    ['payment_policy', "TEXT NOT NULL DEFAULT 'before_ship'"],
+    ['deposit_percent', 'INTEGER NOT NULL DEFAULT 0'],
+    ['credit_days', 'INTEGER NOT NULL DEFAULT 0'],
+    ['credit_limit_cents', 'INTEGER NOT NULL DEFAULT 0'],
+  ];
+  for (const [name, definition] of customerColumns) addColumnIfMissing(database, 'customers', name, definition);
+  const orderColumns: Array<[string, string]> = [
+    ['payment_policy', "TEXT NOT NULL DEFAULT 'before_ship'"],
+    ['deposit_percent', 'INTEGER NOT NULL DEFAULT 0'],
+    ['credit_days', 'INTEGER NOT NULL DEFAULT 0'],
+  ];
+  for (const [name, definition] of orderColumns) addColumnIfMissing(database, 'orders', name, definition);
+  upsertSetting(database, 'schema_version', '48', now);
+}
+
 function migrateVersionFortyFour(database: DatabaseSync, now: string): void {
   const orderColumns: Array<[string, string]> = [
     ['logistics_cost_cents', 'INTEGER CHECK (logistics_cost_cents IS NULL OR logistics_cost_cents >= 0)'],
@@ -1815,6 +1833,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionFortyFive(transactionDatabase, now);
     migrateVersionFortySix(transactionDatabase, now);
     migrateVersionFortySeven(transactionDatabase, now);
+    migrateVersionFortyEight(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

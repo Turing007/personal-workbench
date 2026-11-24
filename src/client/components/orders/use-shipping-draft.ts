@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { isOrderPaymentCleared } from '../../../shared/finance';
 import { boxesForQuantity, remainingQuantity, type PartialShipmentEntryInput } from '../../../shared/shipping';
+import { normalizePaymentPolicy } from '../../../shared/payment-policy';
 import type { OrderDraft, OrderItemDraft } from '../OrderForm';
 
 export interface UseShippingDraftOptions {
@@ -29,6 +30,8 @@ export function useShippingDraft({ order, onConfirmShipping, onSaveTracking, onR
   // 只在订单或剩余数量变化时重置，避免输入过程中被父级刷新打断。
   }, [order.id, signature]);
 
+  // 账期客户可以先发货；其余付款方式确认发货前必须收齐全款。
+  const requiresPayment = normalizePaymentPolicy(order.paymentPolicy) !== 'credit';
   const payableCents = order.financeSummary?.receivableCents ?? Math.round(Number(order.amount || 0) * 100);
   const receivedCents = order.financeSummary?.receivedCents ?? 0;
   const paid = isOrderPaymentCleared(payableCents, receivedCents);
@@ -42,7 +45,7 @@ export function useShippingDraft({ order, onConfirmShipping, onSaveTracking, onR
     ? '本次未选数量'
     : !trackingNo.trim()
       ? '缺物流单号'
-      : !paid
+      : requiresPayment && !paid
         ? '未收齐全款，暂不能发货'
         : '';
   const disabled = submitting || Boolean(reason);

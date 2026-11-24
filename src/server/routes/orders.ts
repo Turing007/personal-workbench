@@ -20,6 +20,7 @@ import {
 import { normalizeOrderStatus, OrderCustomerError, OrderService } from '../services/order-service.js';
 import { orderDateKey } from '../services/order-number-service.js';
 import { isSettlementType } from '../../shared/settlement.js';
+import { normalizePaymentPolicy } from '../../shared/payment-policy.js';
 import { assertMultipartFileNotTruncated, contractPartsOptions, imagePartsOptions } from './multipart-limits.js';
 import { PdfRenderer, PdfRendererError } from '../documents/pdf-renderer.js';
 import { renderContractHtml } from '../documents/contract-template.js';
@@ -70,6 +71,14 @@ function optionalId(value: unknown, field: string): number | null | undefined {
 function optionalPositiveInteger(value: unknown, field: string, label: string): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   return positiveInteger(value, field, label);
+}
+
+function optionalNonNegativeInteger(value: unknown, field: string, label: string): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new ApiError(400, 'VALIDATION_ERROR', `${label}必须是非负整数`, field);
+  }
+  return value;
 }
 
 function optionalCents(value: unknown, field: string, label: string): number | undefined {
@@ -171,6 +180,9 @@ function parseOrderInput(value: unknown, options: { allowEmptyOrderNo?: boolean 
     channel: parseOrderChannel(body.channel ?? body.order_channel),
     settlementType: parseSettlementType(body.settlementType ?? body.settlement_type),
     companyId: optionalId(body.companyId ?? body.company_id, 'companyId'),
+    paymentPolicy: normalizePaymentPolicy(body.paymentPolicy ?? body.payment_policy),
+    depositPercent: optionalNonNegativeInteger(body.depositPercent ?? body.deposit_percent, 'depositPercent', '定金比例'),
+    creditDays: optionalNonNegativeInteger(body.creditDays ?? body.credit_days, 'creditDays', '账期天数'),
     orderAttachments: parseRequirementAttachments(body.orderAttachments, 'orderAttachments'),
     items: body.items.map((raw, index) => {
       const item = asRecord(raw);

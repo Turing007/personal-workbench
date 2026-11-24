@@ -59,7 +59,7 @@ export default function ShippingOrderMobileCard({ order, selected = false, onTog
             : order.recipientName || '未填收件人'}
         </span>
       </div>
-      <span className="badge badge-info">发货中</span>
+      <span className="badge badge-info">发货中</span>{order.paymentPolicy === 'credit' && <span className="badge badge-neutral">账期</span>}
     </div>
 
     <div className="orders-shipping-mobile-meta">

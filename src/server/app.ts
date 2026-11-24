@@ -37,6 +37,7 @@ import { CustomerRepository } from './db/customer-repository.js';
 import { CustomerProductRepository } from './db/customer-product-repository.js';
 import { registerLabelRoutes } from './routes/labels.js';
 import { registerShippingRoutes } from './routes/shipping.js';
+import { registerReconciliationRoutes } from './routes/reconciliation.js';
 import { registerBackupRoutes } from './routes/backups.js';
 import { registerDocumentCustomerRoutes } from './routes/document-customers.js';
 import { registerQuotationRoutes } from './routes/quotations.js';
@@ -222,8 +223,9 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
     fileStore: options.fileStore,
   });
   await registerCompanyRoutes(app, { repository: companyRepository });
+  await registerReconciliationRoutes(app, { repositories, settingsRepository, fileStore: options.fileStore });
   await registerLabelRoutes(app, { repositories });
-  await registerShippingRoutes(app, { repositories });
+  await registerShippingRoutes(app, { repositories, settingsRepository, fileStore: options.fileStore });
   await registerStockRoutes(app, {
     service: new StockPreparationService(new StockRepository(options.database)),
   });

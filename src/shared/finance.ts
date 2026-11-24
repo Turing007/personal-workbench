@@ -133,6 +133,8 @@ export interface FinanceListFilters {
   customerName?: string;
   /** 按订单月份筛选，格式 YYYY-MM；为空表示不限 */
   month?: string;
+  /** 按订单日期筛选，格式 YYYY-MM-DD；有值时优先于月份 */
+  date?: string;
   /** 订单渠道；为空表示不限 */
   channel?: OrderChannel;
   paymentStatus?: FinancePaymentStatus;

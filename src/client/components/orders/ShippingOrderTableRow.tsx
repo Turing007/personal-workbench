@@ -59,7 +59,7 @@ export default function ShippingOrderTableRow({ order, selected = false, onToggl
     <td className="order-product-cell"><ShippingProductEditor orderNo={order.orderNo} items={draft.remainingItems} quantities={draft.quantities} onQuantityChange={draft.setQuantity} /></td>
     <td className="order-box-cell"><button type="button" className="order-box-link" title="编辑/打印箱唛" onClick={() => onEditLabels?.(order)}>{boxCount}</button></td>
     <td className="order-status-cell">
-      <span className="badge badge-info">发货中</span>
+      <span className="badge badge-info">发货中</span>{order.paymentPolicy === 'credit' && <span className="badge badge-neutral">账期</span>}
       {!draft.paid && <span className="badge badge-danger">{draft.paymentStatus === 'partial' ? '部分收款' : '未收款'}</span>}
     </td>
     <td className="order-tracking-cell">

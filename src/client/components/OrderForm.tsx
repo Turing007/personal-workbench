@@ -12,6 +12,7 @@ import { calculateFreightCents, calculateOrderLineAmountCents, calculateOrderTot
 import { dateInputValue, dateOnlyValue } from '../../shared/date-input';
 import { extractRecipientName } from '../order-recipient';
 import { ORDER_SETTLEMENT_LABELS, isSettlementType, type OrderSettlementType } from '../../shared/settlement';
+import { PAYMENT_POLICY_LABELS, PAYMENT_POLICY_OPTIONS, depositCents, normalizePaymentPolicy, paymentPolicySummary, type PaymentPolicy } from '../../shared/payment-policy';
 import { ORDER_CHANNEL_LABELS, type AnyOrderStatus, type OrderChannel } from '../../shared/domain';
 import type { Company } from '../../shared/companies';
 import type { Customer, CustomerProduct as CustomerProductRecord, CustomerProductAttachment, CustomerProductSaveInput, CustomerSaveInput } from '../../shared/customers';
@@ -125,6 +126,12 @@ export interface OrderDraft {
   /** 收款/开票公司；对公订单必选，历史订单可能为空。 */
   companyId?: number | null;
   companyName?: string;
+  /** 付款方式快照：先款后货 / 发货前付清 / 账期；选客户时自动带出，可本次覆盖。 */
+  paymentPolicy?: PaymentPolicy;
+  /** 先款后货的定金比例（%），0 表示收全款才能发布。 */
+  depositPercent?: number;
+  /** 账期天数。 */
+  creditDays?: number;
   orderDetail: string;
   orderDetailImages: OrderDetailImageDraft[];
   recipientName: string;
@@ -186,7 +193,7 @@ function makeItem(product?: CustomerProductRecord): OrderItemDraft {
 
 function defaultDraft(value: Partial<OrderDraft> | undefined, defaultChannel: OrderChannel): OrderDraft {
   return {
-    orderNo: value?.orderNo ?? '', orderNoAuto: value?.orderNoAuto ?? (!value?.id && !value?.orderNo), orderedAt: dateOnlyValue(value?.orderedAt ?? dateInputValue()), customerId: value?.customerId ?? null, customerName: value?.customerName ?? '', customerContactName: value?.customerContactName ?? '', customerContactPhone: value?.customerContactPhone ?? '', customerShippingInfo: value?.customerShippingInfo ?? '', channel: value?.channel ?? defaultChannel, settlementType: isSettlementType(value?.settlementType) ? value.settlementType : 'personal', companyId: value?.companyId ?? null, companyName: value?.companyName ?? '', orderDetail: value?.orderDetail ?? '', orderDetailImages: value?.orderDetailImages ?? [], recipientName: value?.recipientName ?? '', recipientInfo: value?.recipientInfo ?? '', amount: value?.amount ?? '', shippingCents: value?.shippingCents ?? 0, logisticsCostCents: value?.logisticsCostCents ?? null, labelCostCents: value?.labelCostCents ?? null, otherCostCents: value?.otherCostCents ?? null, otherCostNote: value?.otherCostNote ?? '', costConfirmed: value?.costConfirmed ?? false, trackingNo: value?.trackingNo ?? '', paymentNote: value?.paymentNote ?? '', paymentProofs: value?.paymentProofs ?? [], remark: value?.remark ?? '', items: value?.items ?? [], contracts: value?.contracts ?? [], deletedContractIds: value?.deletedContractIds ?? [], status: value?.status ?? 'pending_stock', id: value?.id,
+    orderNo: value?.orderNo ?? '', orderNoAuto: value?.orderNoAuto ?? (!value?.id && !value?.orderNo), orderedAt: dateOnlyValue(value?.orderedAt ?? dateInputValue()), customerId: value?.customerId ?? null, customerName: value?.customerName ?? '', customerContactName: value?.customerContactName ?? '', customerContactPhone: value?.customerContactPhone ?? '', customerShippingInfo: value?.customerShippingInfo ?? '', channel: value?.channel ?? defaultChannel, settlementType: isSettlementType(value?.settlementType) ? value.settlementType : 'personal', companyId: value?.companyId ?? null, companyName: value?.companyName ?? '', paymentPolicy: normalizePaymentPolicy(value?.paymentPolicy), depositPercent: value?.depositPercent ?? 0, creditDays: value?.creditDays ?? 0, orderDetail: value?.orderDetail ?? '', orderDetailImages: value?.orderDetailImages ?? [], recipientName: value?.recipientName ?? '', recipientInfo: value?.recipientInfo ?? '', amount: value?.amount ?? '', shippingCents: value?.shippingCents ?? 0, logisticsCostCents: value?.logisticsCostCents ?? null, labelCostCents: value?.labelCostCents ?? null, otherCostCents: value?.otherCostCents ?? null, otherCostNote: value?.otherCostNote ?? '', costConfirmed: value?.costConfirmed ?? false, trackingNo: value?.trackingNo ?? '', paymentNote: value?.paymentNote ?? '', paymentProofs: value?.paymentProofs ?? [], remark: value?.remark ?? '', items: value?.items ?? [], contracts: value?.contracts ?? [], deletedContractIds: value?.deletedContractIds ?? [], status: value?.status ?? 'pending_stock', id: value?.id,
   };
 }
 
@@ -343,6 +350,10 @@ export default function OrderForm({ value, defaultChannel = 'offline', customers
       customerShippingInfo: shippingInfo,
       recipientInfo,
       recipientName: parsed && canReplace ? parsed : current.recipientName,
+      // 付款方式跟随客户档案，换客户时重新带出；之后仍可在本单里改。
+      paymentPolicy: customer ? customer.paymentPolicy : 'before_ship',
+      depositPercent: customer ? customer.depositPercent : 0,
+      creditDays: customer ? customer.creditDays : 0,
       items: customerId && customerId !== current.customerId
         ? current.items.map((item) => ({ ...item, customerProductId: null }))
         : current.items,
@@ -566,6 +577,17 @@ export default function OrderForm({ value, defaultChannel = 'offline', customers
             <option value="">请选择公司</option>
             {companies.filter((company) => company.isActive || company.id === draft.companyId).map((company) => <option key={company.id} value={company.id}>{company.shortName}{company.isActive ? '' : '（已停用）'}</option>)}
           </select></label>}
+          <label style={labelStyle}>付款方式<select aria-label="付款方式" style={controlStyle} value={draft.paymentPolicy ?? 'before_ship'} onChange={(event) => update('paymentPolicy', event.target.value as PaymentPolicy)}>
+            {PAYMENT_POLICY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select></label>
+          {(draft.paymentPolicy ?? 'before_ship') === 'prepay' && <label style={labelStyle}>定金比例（%）<input type="number" min="0" max="100" inputMode="numeric" aria-label="定金比例" style={controlStyle} value={draft.depositPercent ?? 0} onChange={(event) => update('depositPercent', Math.max(0, Math.min(100, Math.trunc(Number(event.target.value) || 0))))} /></label>}
+          {(draft.paymentPolicy ?? 'before_ship') === 'credit' && <label style={labelStyle}>账期天数<input type="number" min="0" max="365" inputMode="numeric" aria-label="账期天数" style={controlStyle} value={draft.creditDays ?? 0} onChange={(event) => update('creditDays', Math.max(0, Math.min(365, Math.trunc(Number(event.target.value) || 0))))} /></label>}
+          <div style={{ gridColumn: '1 / -1', color: 'var(--color-text-muted)', fontSize: 11 }}>
+            {paymentPolicySummary(normalizePaymentPolicy(draft.paymentPolicy), draft.depositPercent ?? 0, draft.creditDays ?? 0)}
+            {(draft.paymentPolicy ?? 'before_ship') === 'prepay'
+              ? ` · 定金 ¥${(depositCents(calculatedTotalCents + shippingCents, draft.depositPercent ?? 0) / 100).toFixed(2)}；收齐定金前只能存草稿，收齐全款后才能确认已备货`
+              : (draft.paymentPolicy ?? 'before_ship') === 'credit' ? ' · 可先发货，按账期在财务「对账」里收款' : ' · 可先备货打包，发货前必须收齐全款'}
+          </div>
         </div>
         <div className="order-form-grid order-form-grid-recipient">
           <label style={labelStyle}>收件人名称<input style={controlStyle} value={draft.recipientName} onChange={(event) => { autoRecipientNameRef.current = ''; update('recipientName', event.target.value); }} placeholder="从收件信息自动提取，可修改" /></label>
@@ -598,7 +620,7 @@ export default function OrderForm({ value, defaultChannel = 'offline', customers
       </div>
       <label style={labelStyle}>订单备注<textarea rows={2} style={{ ...controlStyle, resize: 'vertical' }} value={draft.remark} onChange={(event) => update('remark', event.target.value)} placeholder="付款阶段、特殊要求等" /></label>
       {draft.id && draft.status !== 'draft' && <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: 11, lineHeight: 1.5 }}>修改产品明细、数量、装箱数、箱唛要求或详情说明会按新明细重排箱唛；只改附件、金额不影响现有箱唛。</p>}
-      <div className="order-form-actions">{onSaveDraft && <button type="button" className="button button-secondary" onClick={submitDraft} title="保存为草稿，信息可暂不完整，稍后继续编辑">存草稿</button>}<button type="button" className="button button-secondary" onClick={onCancel}>取消</button><button type="button" className="button button-primary" onClick={submit}>{submitLabel}</button></div>
+      <div className="order-form-actions">{onSaveDraft && <button type="button" className="button button-secondary" onClick={submitDraft} title="保存为草稿，信息可暂不完整，稍后继续编辑">存草稿</button>}<button type="button" className="button button-secondary" onClick={onCancel}>取消</button><button type="button" className="button button-primary" onClick={(draft.paymentPolicy ?? 'before_ship') === 'prepay' && onSaveDraft ? submitDraft : submit}>{(draft.paymentPolicy ?? 'before_ship') === 'prepay' ? '存草稿（先款后货）' : submitLabel}</button></div>
       <CustomerProductEditorModal open={newProductOpen} product={null} layer={40} onClose={() => setNewProductOpen(false)} onSave={saveNewProduct} />
       <Modal open={detailOpen} title="填写订单详情" onClose={() => setDetailOpen(false)} width={980}>
         <div style={{ display: 'grid', gap: 12 }}>

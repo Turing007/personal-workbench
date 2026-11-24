@@ -1,6 +1,8 @@
 export type CustomerProductCompletionStatus = 'incomplete' | 'complete';
 export type CustomerProductAttachmentCategory = 'label' | 'instruction' | 'packaging' | 'other';
 
+import type { PaymentPolicy } from './payment-policy.js';
+
 export interface Customer {
   id: number;
   name: string;
@@ -9,6 +11,14 @@ export interface Customer {
   shippingInfo: string;
   invoiceTitle: string;
   taxNo: string;
+  /** 付款方式：先款后货 / 发货前付清 / 账期。 */
+  paymentPolicy: PaymentPolicy;
+  /** 先款后货的定金比例（%），0 表示收全款才能发布。 */
+  depositPercent: number;
+  /** 账期天数，账期客户必填。 */
+  creditDays: number;
+  /** 账期额度（分），0 表示不限额。 */
+  creditLimitCents: number;
   isActive: boolean;
   productCount: number;
   incompleteProductCount: number;
@@ -23,6 +33,10 @@ export interface CustomerSaveInput {
   shippingInfo: string;
   invoiceTitle: string;
   taxNo: string;
+  paymentPolicy?: PaymentPolicy;
+  depositPercent?: number;
+  creditDays?: number;
+  creditLimitCents?: number;
   confirmDuplicateName?: boolean;
 }
 

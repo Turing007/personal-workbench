@@ -42,6 +42,10 @@ function parseCustomerInput(value: unknown): CustomerSaveInput {
     shippingInfo: body.shippingInfo as string,
     invoiceTitle: body.invoiceTitle as string,
     taxNo: body.taxNo as string,
+    paymentPolicy: body.paymentPolicy as CustomerSaveInput['paymentPolicy'],
+    depositPercent: body.depositPercent as number | undefined,
+    creditDays: body.creditDays as number | undefined,
+    creditLimitCents: body.creditLimitCents as number | undefined,
     confirmDuplicateName: body.confirmDuplicateName as boolean | undefined,
   };
 }

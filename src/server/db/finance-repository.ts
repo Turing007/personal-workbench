@@ -323,6 +323,11 @@ export class FinanceRepository {
       conditions.push("substr(o.ordered_at, 1, 7) = ?");
       values.push(month);
     }
+    const date = filters.date?.trim();
+    if (date) {
+      conditions.push("substr(o.ordered_at, 1, 10) = ?");
+      values.push(date);
+    }
     if (filters.channel) {
       conditions.push('o.channel = ?');
       values.push(filters.channel);

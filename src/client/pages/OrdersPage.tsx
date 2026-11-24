@@ -23,6 +23,7 @@ import { badgeClass, errorText, money } from '../components/finance/finance-form
 import { calculateOrderProfit } from '../../shared/order-profit';
 import { boxesForQuantity, buildShippingSheetLine, getOrderFulfillmentProgress, groupShippingOrders, remainingQuantity, type PartialShipmentEntryInput } from '../../shared/shipping';
 import { formatDateTime } from '../../shared/formatters';
+import { depositCents, normalizePaymentPolicy } from '../../shared/payment-policy';
 import type { Company } from '../../shared/companies';
 import type { Customer, CustomerSaveInput } from '../../shared/customers';
 import { cartonLabelRequirement } from '../../shared/customers';
@@ -98,6 +99,25 @@ const paymentStatusColor: Record<FinancePaymentStatus, string> = {
   paid: 'var(--color-success)',
   overpaid: 'var(--color-info)',
 };
+
+/** 先款后货的付款门槛：未达门槛时返回拦截原因，用于按钮置灰和提示。 */
+function paymentGateReason(order: OrderDraft, target: OrderStatus): string {
+  if (normalizePaymentPolicy(order.paymentPolicy) !== 'prepay') return '';
+  const receivableCents = order.financeSummary?.receivableCents ?? Math.round(Number(order.amount || 0) * 100);
+  const receivedCents = order.financeSummary?.receivedCents ?? 0;
+  if (target === 'pending_stock') {
+    const percent = Math.max(0, Math.min(100, order.depositPercent ?? 0));
+    const requiredCents = percent > 0 ? depositCents(receivableCents, percent) : receivableCents;
+    if (receivedCents >= requiredCents) return '';
+    return percent > 0
+      ? `先款后货：收齐定金 ¥${(requiredCents / 100).toFixed(2)}（已收 ¥${(receivedCents / 100).toFixed(2)}）才能发布`
+      : `先款后货：收齐全款 ¥${(requiredCents / 100).toFixed(2)}（已收 ¥${(receivedCents / 100).toFixed(2)}）才能发布`;
+  }
+  if (target === 'stock_reported' && receivedCents < receivableCents) {
+    return `先款后货：已收 ¥${(receivedCents / 100).toFixed(2)} / 应收 ¥${(receivableCents / 100).toFixed(2)}，收齐全款才能确认已备货`;
+  }
+  return '';
+}
 
 function orderBoxCount(order: OrderDraft): number {
   return order.totalBoxes && order.totalBoxes > 0
@@ -448,7 +468,8 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
     const progressText = order.status === 'shipping' ? `已发 ${progress.shippedQuantity}/${progress.totalQuantity} 件 · 剩余 ${progress.remainingQuantity} 件` : undefined;
     if (!nextAction) return <span className={statusBadgeClass(order.status)} title={progressText}>{label}</span>;
     const nextLabel = nextAction.label;
-    return <button type="button" className={`status-action-pill tone-${(order.status ?? 'draft').replace(/_/g, '-')}`} aria-label={`${label}，一键${nextLabel}`} title={`一键${nextLabel}${progressText ? ` · ${progressText}` : ''}`} onClick={() => runCardStatusAction(order, nextAction)}><span className="status-action-pill-next">{nextLabel}</span></button>;
+    const gate = nextAction.kind === 'advance' ? paymentGateReason(order, nextAction.target) : nextAction.kind === 'shipping-view' ? '' : paymentGateReason(order, 'pending_stock');
+    return <button type="button" className={`status-action-pill tone-${(order.status ?? 'draft').replace(/_/g, '-')}`} aria-label={`${label}，一键${nextLabel}`} title={gate || `一键${nextLabel}${progressText ? ` · ${progressText}` : ''}`} disabled={Boolean(gate)} onClick={() => runCardStatusAction(order, nextAction)}><span className="status-action-pill-next">{nextLabel}</span></button>;
   };
 
   // 桌面表格行与手机卡片共用的操作按钮。草稿订单不显示箱唛/流程推进，改为发布入口。
@@ -460,12 +481,14 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
     const detailButton = <button type="button" className="link-button" onClick={() => setDetailOrder(order)}>详情</button>;
     const editButton = <button type="button" className="link-button" onClick={() => openEdit(order)}>编辑</button>;
     const labelButton = <button type="button" className="link-button" onClick={() => openLabels(order)}>箱唛</button>;
+    const publishGate = paymentGateReason(order, 'pending_stock');
     const publishButton = order.status === 'draft' && showNextAction && onPublishOrder
-      ? <button type="button" className="link-button muted" title="校验并发布草稿订单，进入正式流程" onClick={() => publishOrder(order)}>发布</button>
+      ? <button type="button" className="link-button muted" disabled={Boolean(publishGate)} title={publishGate || '校验并发布草稿订单，进入正式流程'} onClick={() => publishOrder(order)}>发布</button>
       : null;
+    const advanceGate = nextAction?.kind === 'advance' ? paymentGateReason(order, nextAction.target) : '';
     const advanceButton = order.status !== 'draft' && showNextAction
       ? nextAction?.kind === 'advance' && onAdvanceStatus
-        ? <button type="button" className="link-button muted" title={nextAction.label} onClick={() => onAdvanceStatus(order, nextAction.target)}>{nextAction.label}</button>
+        ? <button type="button" className="link-button muted" disabled={Boolean(advanceGate)} title={advanceGate || nextAction.label} onClick={() => onAdvanceStatus(order, nextAction.target)}>{nextAction.label}</button>
         : nextAction?.kind === 'shipping-view'
           ? <button type="button" className="link-button muted" title="切到发货中页签直接填写本次发货" onClick={() => openShippingView()}>{nextAction.label}</button>
           : null

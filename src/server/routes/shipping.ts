@@ -13,10 +13,15 @@ import { ShippingService } from '../services/shipping-service.js';
 import { PdfRenderer, PdfRendererError } from '../documents/pdf-renderer.js';
 import { renderShippingListHtml } from '../documents/shipping-list-template.js';
 import type { PartialShipmentEntryInput, ShipmentRecord } from '../../shared/shipping.js';
+import type { CompanySnapshot } from '../../shared/documents.js';
+import type { FileStore } from '../files/file-store.js';
 
 interface ShippingRouteOptions {
   repositories: DatabaseRepositories;
   pdfRenderer?: Pick<PdfRenderer, 'render'>;
+  /** 设置里的公司资料：发货清单抬头用公司名 + logo。 */
+  settingsRepository?: { getCompanyProfile(): CompanySnapshot };
+  fileStore?: Pick<FileStore, 'readFile'>;
 }
 
 interface IdParams {
@@ -97,8 +102,7 @@ function parsePreviewItems(value: unknown): Array<{ orderItemId: number; quantit
   });
 }
 
-function mapShipment(shipment: ShipmentRecord) {
-  return {
+function mapShipment(shipment: ShipmentRecord) {  return {
     id: shipment.id,
     shipmentNo: shipment.shipmentNo,
     orderId: shipment.orderId,
@@ -155,6 +159,23 @@ function mapBatch(batch: ReturnType<ShippingService['getBatch']>) {
       sortOrder: Number(order.sort_order),
     })),
   };
+}
+
+/** 发货清单抬头：公司名和 logo 都来自设置里的公司资料；logo 文件缺失时照常出清单。 */
+async function loadLetterhead(options: ShippingRouteOptions): Promise<{ companyName?: string; logoDataUrl?: string }> {
+  const profile = options.settingsRepository?.getCompanyProfile();
+  const relativePath = String(profile?.logoRelativePath ?? '');
+  let logoDataUrl: string | undefined;
+  if (options.fileStore && relativePath) {
+    try {
+      const buffer = await options.fileStore.readFile(relativePath);
+      const mime = /\.jpe?g$/i.test(relativePath) ? 'image/jpeg' : /\.webp$/i.test(relativePath) ? 'image/webp' : 'image/png';
+      logoDataUrl = `data:${mime};base64,${buffer.toString('base64')}`;
+    } catch {
+      logoDataUrl = undefined;
+    }
+  }
+  return { companyName: profile?.name, logoDataUrl };
 }
 
 export async function registerShippingRoutes(app: FastifyInstance, options: ShippingRouteOptions): Promise<void> {
@@ -238,7 +259,8 @@ export async function registerShippingRoutes(app: FastifyInstance, options: Ship
       optionalText(body.trackingNo, 'trackingNo', '物流单号'),
     );
     if (!shipment) throw new ApiError(404, 'NOT_FOUND', '订单不存在');
-    const pdf = await pdfRenderer.render(renderShippingListHtml([shipment], { generatedAt: new Date().toISOString() }));
+    const letterhead = await loadLetterhead(options);
+    const pdf = await pdfRenderer.render(renderShippingListHtml([shipment], { generatedAt: new Date().toISOString(), ...letterhead }));
     const filename = `${shipment.orderNo}-发货清单.pdf`;
     return reply
       .header('Content-Type', 'application/pdf')
@@ -257,7 +279,8 @@ export async function registerShippingRoutes(app: FastifyInstance, options: Ship
   app.get('/api/shipping/shipments/:shipmentId/pdf', async (request: FastifyRequest<{ Params: { shipmentId: string } }>, reply) => safeRoute(async () => {
     const shipment = service.getShipment(parseId(request.params.shipmentId, 'shipmentId'));
     if (!shipment) throw new ApiError(404, 'NOT_FOUND', '发货记录不存在');
-    const pdf = await pdfRenderer.render(renderShippingListHtml([shipment], { generatedAt: new Date().toISOString() }));
+    const letterhead = await loadLetterhead(options);
+    const pdf = await pdfRenderer.render(renderShippingListHtml([shipment], { generatedAt: new Date().toISOString(), ...letterhead }));
     const filename = `${shipment.shipmentNo || shipment.orderNo}-发货清单.pdf`;
     return reply
       .header('Content-Type', 'application/pdf')
@@ -269,7 +292,8 @@ export async function registerShippingRoutes(app: FastifyInstance, options: Ship
     const batchId = parseId(request.params.batchId, 'batchId');
     const shipments = service.listBatchShipments(batchId);
     if (!shipments.length) throw new ApiError(404, 'NOT_FOUND', '该批次没有发货记录');
-    const pdf = await pdfRenderer.render(renderShippingListHtml(shipments, { generatedAt: new Date().toISOString() }));
+    const letterhead = await loadLetterhead(options);
+    const pdf = await pdfRenderer.render(renderShippingListHtml(shipments, { generatedAt: new Date().toISOString(), ...letterhead }));
     const filename = `发货清单-${shipments[0]!.batchNo || batchId}.pdf`;
     return reply
       .header('Content-Type', 'application/pdf')

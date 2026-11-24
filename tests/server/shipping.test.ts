@@ -36,6 +36,10 @@ async function makeContext() {
   const pdfCalls: string[] = [];
   await registerShippingRoutes(app, {
     repositories,
+    settingsRepository: {
+      getCompanyProfile: () => ({ name: '杭州维高工具', phone: '0571-88888888', address: '杭州市余杭区', logoRelativePath: 'company-logos/logo.png', defaultIssuer: '', wechatQrRelativePath: null }),
+    },
+    fileStore: { readFile: async () => Buffer.from('LOGO') },
     pdfRenderer: {
       render: async (html: string) => {
         pdfCalls.push(html);
@@ -362,6 +366,9 @@ describe('发货确认事务', () => {
     expect(pdfCalls[0]).toContain('SF-LIST-1');
     expect(pdfCalls[0]).toContain('本次合计数量：<strong>4</strong>');
     expect(pdfCalls[0]).toContain('本次合计箱数：<strong>1</strong>');
+    // 抬头：设置里的公司名 + 公司 logo（内联 data URL）
+    expect(pdfCalls[0]).toContain('杭州维高工具');
+    expect(pdfCalls[0]).toContain('data:image/png;base64,');
 
     expect(database.prepare('SELECT status, tracking_no FROM orders WHERE id = ?').get(orderId)).toEqual({ status: 'shipping', tracking_no: '' });
     expect(database.prepare('SELECT COUNT(*) AS n FROM shipments WHERE order_id = ?').get(orderId)).toEqual({ n: 0 });

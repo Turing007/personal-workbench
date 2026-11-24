@@ -7,6 +7,7 @@ import type { PackagingSourceRow } from '../../shared/packaging-presets.js';
 import { OrderNumberService } from '../services/order-number-service.js';
 import { autoPack, type PackedBox } from '../../shared/packing.js';
 import { calculateOutstandingCents, deriveFinancePaymentStatus, isOrderPaymentCleared } from '../../shared/finance.js';
+import { normalizePaymentPolicy } from '../../shared/payment-policy.js';
 import { DEFAULT_PRODUCT_IMAGE_CATEGORY } from '../../shared/product-image-categories.js';
 import { normalizeProductStatus, type ProductStatus } from '../../shared/product-status.js';
 import { mapStoredPurchaseQuotes, normalizePurchaseQuotes, purchaseQuoteMirror } from '../../shared/product-purchase-quotes.js';
@@ -141,6 +142,12 @@ export interface CreateOrderInput {
   sourceSalesDocumentId?: number | null;
   /** 草稿订单：宽松校验，status 存为 draft，发布后回到正式流程。 */
   isDraft?: boolean;
+  /** 付款方式快照：prepay 先款后货 / before_ship 发货前付清 / credit 账期。 */
+  paymentPolicy?: string;
+  /** 先款后货的定金比例（%）。 */
+  depositPercent?: number;
+  /** 账期天数。 */
+  creditDays?: number;
   /** 创建人用户名，由服务端从会话注入，不接受客户端提交。 */
   createdBy?: string;
   items: OrderItemInput[];
@@ -857,7 +864,9 @@ export class DatabaseRepositories {
 
   createOrder(input: CreateOrderInput) {
     const timestamp = now();
-    const status = input.isDraft ? 'draft' : 'pending_stock';
+    const paymentPolicy = normalizePaymentPolicy(input.paymentPolicy);
+    // 先款后货订单在收到定金前只能是草稿，不能进入待备货。
+    const status = input.isDraft || paymentPolicy === 'prepay' ? 'draft' : 'pending_stock';
     const settlementType = input.settlementType === 'personal' ? 'personal' : 'corporate';
     return withTransaction(this.database, (database) => {
       const orderNo = input.orderNo.trim() || this.orderNumbers.next();
@@ -870,8 +879,8 @@ export class DatabaseRepositories {
            order_no, ordered_at, recipient_name, recipient_info, amount, amount_cents, shipping_cents,
            logistics_cost_cents, label_cost_cents, other_cost_cents, other_cost_note, cost_confirmed,
            tracking_no, payment_note, order_detail, remark, status, channel, source_sales_document_id, settlement_type,
-           company_id, created_at, updated_at, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           company_id, payment_policy, deposit_percent, credit_days, created_at, updated_at, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
           .run(
             input.customerId ?? null,
@@ -900,6 +909,9 @@ export class DatabaseRepositories {
             input.sourceSalesDocumentId ?? null,
             settlementType,
             input.companyId ?? null,
+            paymentPolicy,
+            Math.max(0, Math.min(100, Math.trunc(Number(input.depositPercent) || 0))),
+            Math.max(0, Math.trunc(Number(input.creditDays) || 0)),
             timestamp,
             timestamp,
             input.createdBy ?? '',
@@ -1017,7 +1029,8 @@ export class DatabaseRepositories {
             customer_shipping_info = ?, order_no = ?, ordered_at = ?,
             recipient_name = ?, recipient_info = ?, amount = ?, amount_cents = ?, shipping_cents = ?,
             logistics_cost_cents = ?, label_cost_cents = ?, other_cost_cents = ?, other_cost_note = ?, cost_confirmed = ?,
-            tracking_no = ?, payment_note = ?, order_detail = ?, remark = ?, channel = ?, settlement_type = ?, company_id = ?, updated_at = ? WHERE id = ?`,
+            tracking_no = ?, payment_note = ?, order_detail = ?, remark = ?, channel = ?, settlement_type = ?, company_id = ?,
+            payment_policy = ?, deposit_percent = ?, credit_days = ?, updated_at = ? WHERE id = ?`,
         )
         .run(
           input.customerId ?? null,
@@ -1044,6 +1057,9 @@ export class DatabaseRepositories {
           input.channel ?? String(existing.channel ?? 'offline'),
           settlementType,
           input.companyId ?? null,
+          normalizePaymentPolicy(input.paymentPolicy),
+          Math.max(0, Math.min(100, Math.trunc(Number(input.depositPercent) || 0))),
+          Math.max(0, Math.trunc(Number(input.creditDays) || 0)),
           timestamp,
           orderId,
         );
@@ -1786,6 +1802,110 @@ export class DatabaseRepositories {
     }
   }
 
+  /** 发货前的收款规则：账期客户跳过全额收款、改校验账期额度；其余付款方式维持全额收款门槛。 */
+  private assertShipmentAllowed(database: DatabaseSync, order: Record<string, unknown>): void {
+    if (normalizePaymentPolicy(order.payment_policy) === 'credit') {
+      this.assertCreditLimit(database, Number(order.id ?? order.order_id));
+      return;
+    }
+    this.assertShipmentPaymentCleared(order);
+  }
+
+  /** 账期额度：该客户已有发货中/已发货账期订单的未收 + 本单应收不能超过额度；额度 0 表示不限额。 */
+  private assertCreditLimit(database: DatabaseSync, orderId: number): void {
+    const order = database.prepare(`
+      SELECT o.id, o.order_no, o.customer_id, o.amount_cents, o.payment_policy, f.receivable_cents
+      FROM orders o LEFT JOIN order_finance f ON f.order_id = o.id WHERE o.id = ?
+    `).get(orderId) as Record<string, unknown> | undefined;
+    if (!order || normalizePaymentPolicy(order.payment_policy) !== 'credit') return;
+    const customerId = order.customer_id == null ? null : Number(order.customer_id);
+    if (customerId == null) return;
+    const customer = database.prepare('SELECT credit_limit_cents FROM customers WHERE id = ?').get(customerId) as { credit_limit_cents?: unknown } | undefined;
+    const limitCents = Math.max(0, Number(customer?.credit_limit_cents ?? 0));
+    if (!limitCents) return;
+    const usedCents = Number((database.prepare(`
+      SELECT COALESCE(SUM(f.outstanding_cents), 0) AS used
+      FROM orders o JOIN order_finance f ON f.order_id = o.id
+      WHERE o.customer_id = ? AND o.id <> ? AND o.payment_policy = 'credit' AND o.status IN ('shipping', 'shipped')
+    `).get(customerId, orderId) as { used?: unknown } | undefined)?.used ?? 0);
+    const receivableCents = Number(order.finance_receivable_cents ?? order.amount_cents ?? 0);
+    if (usedCents + receivableCents > limitCents) {
+      throw new Error(`客户账期额度不足：已用 ¥${(usedCents / 100).toFixed(2)} + 本单 ¥${(receivableCents / 100).toFixed(2)}，超过额度 ¥${(limitCents / 100).toFixed(2)}；请先收款或调整额度`);
+    }
+  }
+
+  assertCreditLimitAvailable(orderId: number): void {
+    this.assertCreditLimit(this.database, orderId);
+  }
+
+  /** 账期对账：所有已发货/发货中的账期订单余额（含最后发货日、最近收款日、客户额度）。 */
+  listCreditOrderBalances(): Array<{
+    orderId: number;
+    orderNo: string;
+    customerId: number | null;
+    customerName: string;
+    creditLimitCents: number;
+    receivableCents: number;
+    receivedCents: number;
+    outstandingCents: number;
+    creditDays: number;
+    lastShippedAt: string;
+    lastReceiptAt: string;
+  }> {
+    const rows = this.database.prepare(`
+      SELECT o.id, o.order_no, o.customer_id, COALESCE(NULLIF(c.name, ''), NULLIF(o.customer_name, ''), '临时客户') AS customer_name,
+        COALESCE(c.credit_limit_cents, 0) AS credit_limit_cents,
+        f.receivable_cents, f.received_cents, f.outstanding_cents, o.credit_days,
+        COALESCE((SELECT MAX(s.shipped_at) FROM shipments s WHERE s.order_id = o.id), '') AS last_shipped_at,
+        COALESCE((SELECT MAX(fr.received_at) FROM finance_receipts fr WHERE fr.order_id = o.id), '') AS last_receipt_at
+      FROM orders o
+      JOIN order_finance f ON f.order_id = o.id
+      LEFT JOIN customers c ON c.id = o.customer_id
+      WHERE o.payment_policy = 'credit' AND o.status IN ('shipping', 'shipped')
+      ORDER BY o.id
+    `).all() as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      orderId: Number(row.id),
+      orderNo: String(row.order_no ?? ''),
+      customerId: row.customer_id == null ? null : Number(row.customer_id),
+      customerName: String(row.customer_name ?? ''),
+      creditLimitCents: Math.max(0, Number(row.credit_limit_cents ?? 0)),
+      receivableCents: Number(row.receivable_cents ?? 0),
+      receivedCents: Number(row.received_cents ?? 0),
+      outstandingCents: Number(row.outstanding_cents ?? 0),
+      creditDays: Math.max(0, Number(row.credit_days ?? 0)),
+      lastShippedAt: String(row.last_shipped_at ?? ''),
+      lastReceiptAt: String(row.last_receipt_at ?? ''),
+    }));
+  }
+
+  /** 账期对账：某客户在日期区间内的收款明细（只统计账期订单）。 */
+  listCreditReceipts(customerId: number, from: string, to: string): Array<{
+    orderId: number;
+    orderNo: string;
+    receivedAt: string;
+    amountCents: number;
+    paymentMethod: string;
+    note: string;
+  }> {
+    const rows = this.database.prepare(`
+      SELECT fr.order_id, o.order_no, fr.received_at, fr.amount_cents, fr.payment_method, fr.note
+      FROM finance_receipts fr
+      JOIN orders o ON o.id = fr.order_id
+      WHERE o.payment_policy = 'credit' AND o.customer_id = ?
+        AND fr.received_at >= ? AND fr.received_at <= ?
+      ORDER BY fr.received_at, fr.id
+    `).all(customerId, from, to) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      orderId: Number(row.order_id),
+      orderNo: String(row.order_no ?? ''),
+      receivedAt: String(row.received_at ?? ''),
+      amountCents: Number(row.amount_cents ?? 0),
+      paymentMethod: String(row.payment_method ?? ''),
+      note: String(row.note ?? ''),
+    }));
+  }
+
   confirmShipment(batchId: number): void {
     const timestamp = now();
     withTransaction(this.database, (database) => {
@@ -1793,7 +1913,7 @@ export class DatabaseRepositories {
       if (!batch) throw new Error('发货批次不存在');
       const orders = database
         .prepare(
-          `SELECT sbo.*, o.order_no, o.status, o.recipient_info, o.amount_cents,
+          `SELECT sbo.*, o.id, o.order_no, o.status, o.recipient_info, o.amount_cents, o.payment_policy, o.customer_id,
             f.receivable_cents AS finance_receivable_cents, f.received_cents AS finance_received_cents,
             COALESCE((SELECT MAX(cl.total_boxes) FROM carton_labels cl WHERE cl.order_id = o.id), 0) AS total_boxes
            FROM shipment_batch_orders sbo JOIN orders o ON o.id = sbo.order_id
@@ -1809,7 +1929,7 @@ export class DatabaseRepositories {
       );
       orders.forEach((order) => {
         if (order.status !== 'ship_pending') throw new Error(`订单 ${order.order_no} 当前不可发货`);
-        this.assertShipmentPaymentCleared(order);
+        this.assertShipmentAllowed(database, order);
         const shipmentId = Number(insertShipment.run(order.order_id, String(order.tracking_no), timestamp, Math.max(1, Number(order.total_boxes)), String(order.recipient_info ?? '')).lastInsertRowid);
         this.addFullRemainingShipmentItems(database, shipmentId, Number(order.order_id), timestamp);
         database.prepare('UPDATE orders SET tracking_no = ?, status = \'shipped\', updated_at = ? WHERE id = ?').run(order.tracking_no, timestamp, order.order_id);
@@ -1829,7 +1949,7 @@ export class DatabaseRepositories {
           .run(`BATCH-${timestamp.replace(/[-:TZ.]/g, '').slice(0, 14)}-${randomUUID().slice(0, 8)}`, timestamp),
       );
       const selectOrder = database.prepare(
-        `SELECT o.id, o.order_no, o.status, o.recipient_info, o.amount_cents,
+        `SELECT o.id, o.order_no, o.status, o.recipient_info, o.amount_cents, o.payment_policy, o.customer_id,
           f.receivable_cents AS finance_receivable_cents, f.received_cents AS finance_received_cents,
           COALESCE((SELECT MAX(cl.total_boxes) FROM carton_labels cl WHERE cl.order_id = o.id), 0) AS total_boxes
          FROM orders o LEFT JOIN order_finance f ON f.order_id = o.id WHERE o.id = ?`,
@@ -1845,7 +1965,7 @@ export class DatabaseRepositories {
         if (order.status !== 'ship_pending') throw new Error(`订单 ${order.order_no} 当前不可发货`);
         const trackingNo = entry.trackingNo.trim();
         if (!trackingNo) throw new Error(`订单 ${order.order_no} 缺少物流单号`);
-        this.assertShipmentPaymentCleared(order);
+        this.assertShipmentAllowed(database, order);
         insertBatchOrder.run(batchId, entry.orderId, trackingNo, index);
         const shipmentId = Number(insertShipment.run(entry.orderId, trackingNo, timestamp, Math.max(1, Number(order.total_boxes)), String(order.recipient_info ?? '')).lastInsertRowid);
         this.addFullRemainingShipmentItems(database, shipmentId, entry.orderId, timestamp);
@@ -2020,6 +2140,7 @@ export class DatabaseRepositories {
       );
       const selectOrder = database.prepare(`
         SELECT o.id, o.order_no, o.status, o.customer_name, o.recipient_name, o.recipient_info, o.amount_cents,
+          o.payment_policy, o.customer_id,
           f.receivable_cents AS finance_receivable_cents, f.received_cents AS finance_received_cents
         FROM orders o LEFT JOIN order_finance f ON f.order_id = o.id WHERE o.id = ?
       `);
@@ -2046,7 +2167,7 @@ export class DatabaseRepositories {
         if (!order) throw new Error(`订单不存在：${entry.orderId}`);
         // 新流程在发货中确认；旧的待发货直接确认保留兼容，避免缓存页面整批失败。
         if (order.status !== 'shipping' && order.status !== 'ship_pending') throw new Error(`订单 ${order.order_no} 当前不可发货`);
-        this.assertShipmentPaymentCleared(order);
+        this.assertShipmentAllowed(database, order);
         const trackingNo = String(entry.trackingNo ?? '').trim();
         if (!trackingNo) throw new Error(`订单 ${order.order_no} 缺少物流单号`);
         const available = new Map((selectItems.all(entry.orderId) as Array<Record<string, unknown>>).map((item) => [Number(item.id), item]));

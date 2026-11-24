@@ -5516,6 +5516,8 @@ select {
 .finance-toolbar .search-control { flex: 1 1 240px; min-width: 180px; }
 .finance-status-row { display: flex; align-items: center; gap: var(--space-3); }
 .month-control { display: inline-flex; align-items: center; gap: 4px; }
+.date-control { display: inline-flex; align-items: center; gap: 4px; }
+.date-control .date-input { min-width: 132px; }
 .month-control .month-input { width: auto; min-width: 118px; }
 /* 「全部 / 本月」「全部 / 按日期」这类时间范围切换按钮。
    原来是 28×28 的方块图标按钮：没有边框、两个字挤在一起，看不出是个可点的按钮。
@@ -5612,6 +5614,13 @@ select {
 
 @media (max-width: 640px) {
   .finance-detail-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* 手机弹窗窄：金额和状态文字在格子里换行，不再撑出卡片边界。 */
+  .finance-detail-summary strong,
+  .finance-detail-summary b,
+  .finance-detail-summary small { overflow-wrap: anywhere; }
+  .finance-detail-summary strong { font-size: 15px; }
+  .finance-company-copy-row { flex-wrap: wrap; }
+  .order-profit-metrics strong { overflow-wrap: anywhere; }
   .finance-proof-row { grid-template-columns: 42px minmax(0, 1fr); }
   .finance-proof-row > .badge, .finance-proof-row > .row-actions { grid-column: 2; justify-self: start; }
 }
@@ -6917,12 +6926,18 @@ select {
      这里必须显式指定行列：靠自动排布的话，占满整行的状态筛选会把刷新按钮挤到第三行。 */
   .finance-toolbar {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: center;
-    gap: var(--space-3);
+    gap: 6px 8px;
   }
+  /* 第一行：月份 + 渠道筛选 + 刷新，三者同高；第二行只放「公司档案」，铺满一行。 */
   .finance-toolbar .month-control { grid-row: 1; grid-column: 1; min-width: 0; }
-  .finance-toolbar > .icon-button { grid-row: 1; grid-column: 2; }
+  .finance-toolbar > select.toolbar-select { grid-row: 1; grid-column: 2; height: 32px; min-height: 32px; padding: 0 6px; font-size: 11.5px; }
+  .finance-toolbar > .icon-button { grid-row: 1; grid-column: 3; }
+  .finance-toolbar > .finance-month-hint { display: none; }
+  .finance-toolbar > .date-control { grid-row: 2; grid-column: 1 / -1; min-width: 0; }
+  .finance-toolbar > .date-control .date-input { flex: 1; min-width: 0; height: 32px; font-size: 11.5px; }
+  .finance-toolbar > .finance-company-mobile-button { grid-row: 3; grid-column: 1 / -1; width: 100%; height: 30px; min-height: 30px; margin: 0; }
 
   /* 悬浮搜索框脱离工具条固定在视口顶部：连续下滑收起、回滑展开，输入时锁住展开。 */
   .finance-toolbar .search-control {
@@ -7623,3 +7638,33 @@ select {
     background: transparent;
   }
 }
+
+/* ===== 财务：客户对账 ===== */
+.finance-view-tabs { display: flex; align-items: center; gap: 16px; padding: 4px 12px 0; border-bottom: 1px solid var(--color-divider); }
+.finance-view-tabs button { border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 7px 2px; color: var(--color-text-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.finance-view-tabs button.is-active { border-bottom-color: var(--color-accent); color: var(--color-accent); font-weight: 600; }
+.finance-recon { display: grid; gap: 10px; padding: 10px 12px 16px; }
+.finance-recon-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.finance-recon-summary > div { display: grid; gap: 2px; min-width: 0; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: var(--radius-ui); background: var(--color-surface); }
+.finance-recon-summary span { color: var(--color-text-muted); font-size: 10.5px; }
+.finance-recon-summary strong { overflow-wrap: anywhere; font-size: 15px; font-variant-numeric: tabular-nums; }
+.finance-recon-list { display: grid; gap: 6px; }
+.finance-recon-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-ui); background: var(--color-surface); color: inherit; text-align: left; cursor: pointer; }
+.finance-recon-row:hover { border-color: var(--color-accent); }
+.finance-recon-main { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.finance-recon-main strong { overflow: hidden; color: var(--color-text); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.finance-recon-main span { color: var(--color-text-muted); font-size: 10.5px; }
+.finance-recon-amount { display: grid; flex: none; justify-items: end; gap: 2px; text-align: right; }
+.finance-recon-amount strong { font-size: 14px; font-variant-numeric: tabular-nums; }
+.finance-recon-amount span { color: var(--color-text-muted); font-size: 10.5px; }
+.finance-statement { display: grid; gap: 10px; }
+.finance-statement-range { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.finance-statement-range label { display: grid; gap: 4px; color: var(--color-text-muted); font-size: 10.5px; }
+.finance-statement-range .toolbar-select { height: 30px; font-size: 12px; }
+.finance-statement-section { margin-top: 4px; color: var(--color-text); font-size: 12px; font-weight: 600; }
+.finance-statement-table-wrap { overflow-x: auto; }
+.finance-statement-table { width: 100%; min-width: 640px; font-size: 11.5px; }
+.finance-statement-table .table-state { padding: 10px; text-align: center; }
+.customer-editor-hint { color: var(--color-text-muted); font-size: 11px; line-height: 1.5; }
+.status-action-pill:disabled { opacity: .5; cursor: not-allowed; }
+.link-button:disabled { opacity: .45; cursor: not-allowed; }
