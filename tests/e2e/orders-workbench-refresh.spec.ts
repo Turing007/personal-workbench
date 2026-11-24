@@ -19,7 +19,7 @@ interface SeedOptions {
   recipientInfo?: string;
   amount?: number;
   isDraft?: boolean;
-  items?: Array<{ name: string; sku: string; packCount: number; quantity: number }>;
+  items?: Array<{ name: string; sku: string; packCount: number; quantity: number; unitPriceCents?: number }>;
 }
 
 async function seedOrder(page: Page, options: SeedOptions) {
@@ -36,7 +36,7 @@ async function seedOrder(page: Page, options: SeedOptions) {
         ...item,
         specification: '标准',
         packagingName: '纸箱',
-        unitPriceCents: 0,
+        unitPriceCents: item.unitPriceCents ?? 0,
       })),
     },
   });
@@ -183,7 +183,7 @@ test('手机端点击收件人姓名打开编辑窗', async ({ page }) => {
   }
 });
 
-test('发货中详情可改本次数量并回填单号，未发完留在发货中', async ({ page }) => {
+test('发货中页签卡片直接编辑本次数量并回填单号，不显示金额附件备注', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const stamp = Date.now();
   const orderNo = `E2E-DETAIL-SHIP-${stamp}`;
@@ -191,6 +191,7 @@ test('发货中详情可改本次数量并回填单号，未发完留在发货�
     orderNo,
     recipientName: '详情发货收件人',
     recipientInfo: `杭州市西湖区详情发货${stamp}号`,
+    amount: 8800,
     items: [
       { name: '圆砂机', sku: `DETAIL-A-${stamp}`, packCount: 10, quantity: 10 },
       { name: '水枪', sku: `DETAIL-B-${stamp}`, packCount: 5, quantity: 5 },
@@ -200,32 +201,78 @@ test('发货中详情可改本次数量并回填单号，未发完留在发货�
     await advanceToShipping(page, orderId);
     await openOrders(page);
     await page.locator('.orders-page .status-cards .status-card', { hasText: '发货中' }).click();
-    const row = page.locator('.orders-table-desktop tbody tr', { hasText: orderNo }).first();
-    await expect(row).toBeVisible();
-    await row.getByRole('button', { name: '详情', exact: true }).click();
-    const drawer = page.getByRole('dialog', { name: /订单详情/ });
-    await expect(drawer).toBeVisible();
-    await expect(drawer.getByRole('region', { name: '本次发货' })).toBeVisible();
-    await drawer.getByLabel(`${orderNo}-圆砂机-本次发货数量`).fill('4');
-    await drawer.getByLabel(`${orderNo}-水枪-本次发货数量`).fill('0');
-    await drawer.getByLabel(`${orderNo}-本次物流单号`).fill(`SF-DETAIL-1-${stamp}`);
-    await drawer.getByRole('button', { name: '确认本次发货' }).click();
+    const card = page.locator('.orders-shipping-card', { hasText: orderNo });
+    await expect(card).toBeVisible();
+    await expect(card).not.toContainText('¥');
+    await expect(card).not.toContainText('备注');
+    await expect(card).not.toContainText('附件');
+    await expect(card.getByRole('region', { name: '本次发货' })).toBeVisible();
+    const cardLayout = await card.evaluate((element) => {
+      const items = element.querySelector('.order-shipping-items')!;
+      const input = element.querySelector('.orders-shipping-ship-box input')!;
+      const confirm = element.querySelector('.orders-shipping-ship-box button')!;
+      const form = element.querySelector('.order-shipping-form')!;
+      const shipBox = element.querySelector('.orders-shipping-ship-box')!;
+      return {
+        columns: getComputedStyle(items).gridTemplateColumns.split(' ').length,
+        inputBottom: input.getBoundingClientRect().bottom,
+        confirmTop: confirm.getBoundingClientRect().top,
+        shipTop: shipBox.getBoundingClientRect().top,
+        formTop: form.getBoundingClientRect().top,
+        cardTop: element.getBoundingClientRect().top,
+      };
+    });
+    expect(cardLayout.columns).toBe(3);
+    expect(cardLayout.confirmTop).toBeGreaterThanOrEqual(cardLayout.inputBottom - 1);
+    expect(cardLayout.shipTop - cardLayout.cardTop).toBeLessThan(120);
+    expect(cardLayout.shipTop).toBeLessThan(cardLayout.formTop);
+
+    await card.getByLabel(`${orderNo}-圆砂机-本次发货数量`).fill('4');
+    await card.getByLabel(`${orderNo}-水枪-本次发货数量`).fill('0');
+    await card.getByLabel(`${orderNo}-本次物流单号`).fill(`SF-DETAIL-1-${stamp}`);
+    await card.getByRole('button', { name: '确认本次发货' }).click();
     await expect(page.getByText('已确认 1 单本次发货')).toBeVisible();
-    await expect(drawer.getByText('已发 4/15 件 · 剩余 11 件')).toBeVisible();
-    await expect(drawer.getByLabel(`${orderNo}-圆砂机-本次发货数量`)).toHaveValue('6');
+    await expect(card).toContainText('已发 4/15 件 · 剩余 11 件');
+    await expect(card.getByLabel(`${orderNo}-圆砂机-本次发货数量`)).toHaveValue('6');
     const partial = await (await page.request.get(`/api/orders/${orderId}`)).json();
     expect(partial.data.status).toBe('shipping');
     expect(partial.data.items.find((item: { sku: string }) => item.sku === `DETAIL-A-${stamp}`).shipped_quantity).toBe(4);
     expect(partial.data.items.find((item: { sku: string }) => item.sku === `DETAIL-B-${stamp}`).shipped_quantity).toBe(0);
 
-    await drawer.getByLabel(`${orderNo}-圆砂机-本次发货数量`).fill('6');
-    await drawer.getByLabel(`${orderNo}-水枪-本次发货数量`).fill('5');
-    await drawer.getByLabel(`${orderNo}-本次物流单号`).fill(`SF-DETAIL-2-${stamp}`);
-    await drawer.getByRole('button', { name: '确认本次发货' }).click();
-    await expect(page.getByText('已确认 1 单本次发货')).toBeVisible();
-    await expect(drawer.getByRole('region', { name: '本次发货' })).toHaveCount(0);
+    await card.getByLabel(`${orderNo}-圆砂机-本次发货数量`).fill('6');
+    await card.getByLabel(`${orderNo}-水枪-本次发货数量`).fill('5');
+    await card.getByLabel(`${orderNo}-本次物流单号`).fill(`SF-DETAIL-2-${stamp}`);
+    await card.getByRole('button', { name: '确认本次发货' }).click();
+    await expect(card).toHaveCount(0);
     const completed = await (await page.request.get(`/api/orders/${orderId}`)).json();
     expect(completed.data.status).toBe('shipped');
+  } finally {
+    await cleanupOrders(page, [orderId]);
+  }
+});
+
+test('发货中卡片显示未收款并禁用确认发货', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const stamp = Date.now();
+  const orderNo = `E2E-SHIP-UNPAID-CARD-${stamp}`;
+  const orderId = await seedOrder(page, {
+    orderNo,
+    recipientName: '未收款卡片',
+    recipientInfo: `杭州市西湖区未收款卡片${stamp}号`,
+    items: [{ name: '未收款产品', sku: `UNPAID-CARD-${stamp}`, packCount: 10, quantity: 10, unitPriceCents: 1000 }],
+  });
+  try {
+    await advanceToShipping(page, orderId);
+    await openOrders(page);
+    await page.locator('.orders-page .status-cards .status-card', { hasText: '发货中' }).click();
+    const card = page.locator('.orders-shipping-card', { hasText: orderNo });
+    await expect(card).toBeVisible();
+    await expect(card).toContainText('未收款');
+    const confirm = card.getByRole('button', { name: '确认本次发货' });
+    await expect(confirm).toBeDisabled();
+    await card.getByLabel(`${orderNo}-本次物流单号`).fill(`SF-UNPAID-CARD-${stamp}`);
+    await expect(confirm).toBeDisabled();
+    await expect(card).toContainText('未收齐全款，暂不能发货');
   } finally {
     await cleanupOrders(page, [orderId]);
   }
@@ -244,11 +291,12 @@ test('发货中可回退到待发货，有发货记录时不显示回退', async
     await advanceToShipping(page, orderId);
     await openOrders(page);
     await page.locator('.orders-page .status-cards .status-card', { hasText: '发货中' }).click();
-    const row = page.locator('.orders-table-desktop tbody tr', { hasText: orderNo }).first();
-    await expect(row).toBeVisible();
+    const card = page.locator('.orders-shipping-card', { hasText: orderNo });
+    await expect(card).toBeVisible();
     page.once('dialog', (dialog) => void dialog.accept());
-    await row.getByRole('button', { name: '回退', exact: true }).click();
+    await card.getByRole('button', { name: '回退', exact: true }).click();
     await expect(page.getByText(`订单 ${orderNo} 已回退到待发货`)).toBeVisible();
+    await expect(card).toHaveCount(0);
     const detail = await (await page.request.get(`/api/orders/${orderId}`)).json();
     expect(detail.data.status).toBe('ship_pending');
   } finally {

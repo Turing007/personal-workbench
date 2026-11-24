@@ -12,8 +12,6 @@ import type { OrderContractDraft, OrderDraft, OrderStatus } from './OrderForm';
 import { getOrderNextAction, getOrderRollbackAction } from '../order-workflow';
 import { OrderProfitSummaryCard } from './orders/OrderProfitEditor';
 import OrderShipmentsPanel from './orders/OrderShipmentsPanel';
-import OrderShippingForm from './orders/OrderShippingForm';
-import type { PartialShipmentEntryInput } from '../../shared/shipping';
 
 export interface OrderDetailModalProps {
   open: boolean;
@@ -28,8 +26,6 @@ export interface OrderDetailModalProps {
   onAdvanceStatus?: (order: OrderDraft, status: OrderStatus) => void;
   onRollbackStatus?: (order: OrderDraft, status: OrderStatus) => void;
   onPublishOrder?: (order: OrderDraft) => void;
-  /** 发货中：在详情内确认本次发货。 */
-  onConfirmShipping?: (entries: PartialShipmentEntryInput[]) => Promise<{ batchId: number } | undefined>;
   onOpenFinance?: (order: OrderDraft) => void;
   onPromoteCustomer?: (order: OrderDraft) => void;
   onShipmentChanged?: () => Promise<void> | void;
@@ -76,7 +72,6 @@ export default function OrderDetailModal({
   onAdvanceStatus,
   onRollbackStatus,
   onPublishOrder,
-  onConfirmShipping,
   onOpenFinance,
   onPromoteCustomer,
   onShipmentChanged,
@@ -130,8 +125,6 @@ export default function OrderDetailModal({
           <div style={detailStyle}><span style={labelStyle}>总箱数</span><strong style={{ fontSize: 13 }}>{order.totalBoxes ?? order.items.reduce((sum, item) => sum + item.boxes, 0)}</strong></div>
           <div style={detailStyle}><span style={labelStyle}>物流单号</span><strong style={{ fontSize: 13 }}>{order.trackingNo || '未填写'}</strong></div>
         </div>
-
-        <OrderShippingForm order={order} onConfirmShipping={onConfirmShipping} onChanged={onShipmentChanged} onNotify={onNotify} />
 
         {order.financeSummary && <section style={{ display: 'grid', gap: 8, padding: 12, background: 'linear-gradient(135deg, var(--color-accent-soft), var(--color-surface) 62%)', border: '1px solid var(--color-accent-border)', borderRadius: 'var(--radius-ui)' }}>
           <div className="order-detail-finance-head">

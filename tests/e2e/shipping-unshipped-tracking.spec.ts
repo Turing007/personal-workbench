@@ -125,10 +125,10 @@ test.describe('发货中状态', () => {
       await page.getByPlaceholder('搜索订单号、客户、收件人、品名、SKU、规格').fill(online.orderNo);
 
       await row.getByRole('button', { name: '继续发货', exact: true }).click();
-      const detail = page.getByRole('dialog', { name: /订单详情/ });
-      await expect(detail).toBeVisible();
-      await expect(detail.getByRole('region', { name: '本次发货' })).toBeVisible();
-      await detail.getByRole('button', { name: '关闭' }).click();
+      await expect(page.locator('.orders-page .status-cards .status-card', { hasText: '发货中' })).toHaveAttribute('aria-pressed', 'true');
+      const shippingCard = page.locator('.orders-shipping-card', { hasText: online.orderNo });
+      await expect(shippingCard).toBeVisible();
+      await expect(shippingCard.getByRole('region', { name: '本次发货' })).toBeVisible();
 
       const batch = await openShippingBatch(page);
       await expect(batch.locator('.shipping-address-group', { hasText: online.orderNo })).toBeVisible();
