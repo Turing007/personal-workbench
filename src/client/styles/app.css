@@ -2895,11 +2895,7 @@ select {
   transition: transform var(--ease-standard), box-shadow var(--ease-standard);
 }
 
-.status-action-pill-current { opacity: .75; }
-
 .status-action-pill-next { display: inline-flex; align-items: center; gap: 3px; }
-/* 小箭头提示「可点、会推进」，纯装饰，交给屏幕阅读器读 aria-label 即可 */
-.status-action-pill-next::before { font-size: 11px; opacity: .65; content: '→'; }
 
 .status-action-pill:hover { box-shadow: var(--shadow-card); }
 .status-action-pill:active { transform: scale(.96); }
@@ -5741,7 +5737,6 @@ select {
 
   /* 胶囊在卡片里是主操作，比桌面徽章再高一点更好点中 */
   .order-card .status-action-pill { min-height: 36px; padding: 6px 14px; }
-  .order-card .status-action-pill-current { font-size: var(--text-xs); }
   .order-card .status-action-pill-next { font-size: var(--text-xs); }
 }
 

@@ -105,6 +105,21 @@ function orderBoxCount(order: OrderDraft): number {
     : order.items.reduce((sum, item) => sum + item.boxes, 0);
 }
 
+/** 手机端悬浮搜索框：下滑收起、回滑展开。收起状态只重渲染这个小组件，不牵动整页订单列表。 */
+function OrdersSearchBar({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const narrow = useIsNarrow();
+  const [focused, setFocused] = useState(false);
+  const hidden = useHideOnScroll(narrow && !focused);
+  return <SearchInput
+    value={value}
+    onChange={onChange}
+    className={hidden ? 'is-scroll-hidden' : undefined}
+    onFocus={() => setFocused(true)}
+    onBlur={() => setFocused(false)}
+    placeholder="搜索订单号、客户、收件人、品名、SKU、规格"
+  />;
+}
+
 export function fallbackLabels(order: OrderDraft): CartonLabel[] {
   const productTotals = new Map<string, number>();
   order.items.forEach((item) => {
@@ -211,9 +226,6 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
     onStartCreateConsumed?.();
   }, [startCreate, onStartCreateConsumed]);
   const narrow = useIsNarrow();
-  const [searchFocused, setSearchFocused] = useState(false);
-  // 手机端搜索框悬浮在顶部：连续下滑收起，回滑展开；输入时锁住展开避免打字途中消失。
-  const searchHidden = useHideOnScroll(narrow && !searchFocused);
 
   useEffect(() => {
     if (!detailOrder) return;
@@ -436,7 +448,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
     const progressText = order.status === 'shipping' ? `已发 ${progress.shippedQuantity}/${progress.totalQuantity} 件 · 剩余 ${progress.remainingQuantity} 件` : undefined;
     if (!nextAction) return <span className={statusBadgeClass(order.status)} title={progressText}>{label}</span>;
     const nextLabel = nextAction.label;
-    return <button type="button" className={`status-action-pill tone-${(order.status ?? 'draft').replace(/_/g, '-')}`} aria-label={`${label}，一键${nextLabel}`} title={`一键${nextLabel}${progressText ? ` · ${progressText}` : ''}`} onClick={() => runCardStatusAction(order, nextAction)}><span className="status-action-pill-current">{label}</span><span className="status-action-pill-next">{nextLabel}</span></button>;
+    return <button type="button" className={`status-action-pill tone-${(order.status ?? 'draft').replace(/_/g, '-')}`} aria-label={`${label}，一键${nextLabel}`} title={`一键${nextLabel}${progressText ? ` · ${progressText}` : ''}`} onClick={() => runCardStatusAction(order, nextAction)}><span className="status-action-pill-next">{nextLabel}</span></button>;
   };
 
   // 桌面表格行与手机卡片共用的操作按钮。草稿订单不显示箱唛/流程推进，改为发布入口。
@@ -482,13 +494,13 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
     return <div className="row-actions">{detailButton}{editButton}{order.status === 'draft' ? publishButton : <>{labelButton}{advanceButton}{rollbackButton}</>}{deleteButton}</div>;
   };
 
-  return <div className={`page-shell orders-page${searchHidden ? ' is-search-hidden' : ''}`}>
+  return <div className={`page-shell orders-page${(shippingViewActive ? selectedShippingOrders.length : selectedOrders.length) > 0 ? ' has-bulk-bar' : ''}`}>
     <div className="orders-channel-tabs" role="tablist" aria-label="订单渠道">
       {ORDER_CHANNELS.map((channel) => <button key={channel} type="button" role="tab" aria-selected={activeChannel === channel} className={activeChannel === channel ? 'is-active' : undefined} onClick={() => selectChannel(channel)}>{ORDER_CHANNEL_LABELS[channel]}订单<b>{channelCounts[channel]}</b></button>)}
     </div>
     <section className="table-panel orders-panel">
       <div className="page-toolbar table-toolbar orders-table-toolbar">
-        <SearchInput value={query} onChange={setQuery} className={searchHidden ? 'is-scroll-hidden' : undefined} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索订单号、客户、收件人、品名、SKU、规格" />
+        <OrdersSearchBar value={query} onChange={setQuery} />
         <StatusCards activeKey={activeStatusKey} counts={counts} onSelect={(key) => setStatusFilters(key === 'all' ? [] : [key])} />
         <span className="toolbar-count"><ListFilter size={14} />{visibleOrders.length} 条订单</span>
         {showCreateOrder && <button type="button" className="button button-primary orders-create-button" onClick={() => setCreating(true)}><Plus size={15} />新建订单</button>}

@@ -392,7 +392,7 @@
   align-content: center;
   gap: 2px;
   min-width: 0;
-  padding: 4px 6px 4px 7px;
+  padding: 2px 4px 2px 6px;
   line-height: 1.25;
 }
 
@@ -638,8 +638,8 @@
 }
 .order-shipping-item input {
   width: 100%;
-  height: 30px;
-  padding: 0 6px;
+  height: 26px;
+  padding: 0 5px;
   border: 1px solid var(--color-border-control);
   border-radius: var(--radius-ui);
   background: var(--color-surface);
@@ -791,10 +791,10 @@
 /* 发货中页签：沿用订单表格/卡片，产品行内直接改本次数量 */
 .shipping-product-editor { display: grid; gap: 6px; min-width: 0; }
 .shipping-product-editor .order-shipping-item {
-  grid-template-columns: 52px minmax(0, 1fr) 64px 44px;
+  grid-template-columns: 52px minmax(0, 1fr) 52px 38px;
   align-items: stretch;
-  gap: 6px;
-  padding: 0 7px 0 0;
+  gap: 4px;
+  padding: 0 5px 0 0;
   overflow: hidden;
 }
 .shipping-product-editor .order-shipping-item-thumb {
@@ -803,7 +803,7 @@
   min-height: 52px;
   border-radius: 0;
 }
-.shipping-product-editor .order-shipping-item-copy { align-content: center; padding: 4px 0; }
+.shipping-product-editor .order-shipping-item-copy { align-content: center; padding: 2px 0; }
 .shipping-product-editor .order-shipping-item input { align-self: center; }
 .shipping-product-editor .order-shipping-item-boxes { align-self: center; }
 .shipping-product-editor .order-shipping-item-copy strong {
@@ -820,15 +820,16 @@
   white-space: nowrap;
 }
 
-.orders-shipping-table .order-product-cell { width: 380px; vertical-align: top; }
-.orders-shipping-table .order-status-cell { width: 120px; vertical-align: top; }
+.orders-shipping-table .order-product-cell { width: 380px; }
+.orders-shipping-table .order-status-cell { width: 120px; }
 /* 普通订单表会按宽度隐藏第 4/5 列（产品/箱数）或第 5 列（金额）；发货中必须保留产品与箱数。 */
 .orders-page .orders-data-table.orders-shipping-table th:nth-child(4),
 .orders-page .orders-data-table.orders-shipping-table td:nth-child(4),
 .orders-page .orders-data-table.orders-shipping-table th:nth-child(5),
 .orders-page .orders-data-table.orders-shipping-table td:nth-child(5) { display: table-cell; }
-.orders-shipping-table .order-tracking-cell { width: 180px; vertical-align: top; }
-.orders-shipping-table .order-ops-cell { width: 150px; vertical-align: top; }
+.orders-shipping-table .order-tracking-cell { width: 180px; }
+.orders-shipping-table .order-ops-cell { width: 150px; }
+/* 只让数据行顶端对齐；表头保持统一垂直居中，避免四列表头比其他列高半行。 */
 .orders-shipping-table td { vertical-align: top; }
 .orders-shipping-tracking-input {
   width: 100%;
@@ -869,8 +870,8 @@
 @media (max-width: 900px) {
   .order-shipping-item { grid-template-columns: 40px minmax(0, 1fr) 60px 38px; gap: 6px; padding: 6px 7px; }
   .order-shipping-item-copy strong { font-size: 12.5px; }
-  .order-shipping-item input { height: 32px; font-size: 13px; }
-  .shipping-product-editor .order-shipping-item { grid-template-columns: 52px minmax(0, 1fr) 60px 38px; padding: 0 7px 0 0; }
+  .order-shipping-item input { height: 28px; font-size: 13px; }
+  .shipping-product-editor .order-shipping-item { grid-template-columns: 52px minmax(0, 1fr) 50px 34px; padding: 0 5px 0 0; }
   .orders-shipping-mobile-actions .button { min-height: 36px; }
   .orders-shipping-sheet-drawer .textarea { font-size: 13px; }
 }
@@ -1334,7 +1335,6 @@
 
   /* 搜索框下滑收起后同步收回顶部预留空白，把高度还给订单列表。 */
   .page-shell.orders-page { gap: 0; transition: padding-top 160ms var(--ease-standard); }
-  .page-shell.orders-page.is-search-hidden { padding-top: calc(8px + env(safe-area-inset-top, 0px)); }
   /* 渠道页签与状态胶囊之间不再留空白，直接衔接。 */
   .orders-page .orders-channel-tabs { margin-bottom: 0; }
 
@@ -1465,6 +1465,9 @@
     box-shadow: 0 -4px 14px rgba(16, 32, 51, .1);
   }
 
+  /* 批量条浮在底部时给列表垫出空间，最后一张单的操作行能滚到批量条上方。 */
+  .orders-page.has-bulk-bar .orders-card-list { padding-bottom: 64px; }
+
   .orders-page .orders-card-list {
     display: grid;
     gap: 10px;
@@ -1520,7 +1523,6 @@
     font-size: 10.5px;
   }
 
-  .orders-page .order-card .status-action-pill-current,
   .orders-page .order-card .status-action-pill-next { font-size: 10.5px; }
 
   .orders-page .order-card-mid {

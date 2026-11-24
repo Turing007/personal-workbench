@@ -23,7 +23,7 @@ describe('nextScrollHideState', () => {
   });
 
   it('accumulates slow scrolling until the threshold is crossed', () => {
-    const state = scrollTo([0, 10, 20, 30]);
+    const state = scrollTo([0, 20, 40, 70]);
     expect(state.hidden).toBe(true);
   });
 

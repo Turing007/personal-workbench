@@ -90,8 +90,8 @@ test('手机端订单卡片：状态胶囊一键推进，刷新后仍保持新�
     await expect(pill).toBeVisible();
     // 用 aria-label 精确断言：'已备货' 是 '确认已备货' 的子串，用子串匹配会假通过
     await expect(pill).toHaveAttribute('aria-label', '待备货，一键确认已备货');
-    await expect(pill.locator('.status-action-pill-current')).toHaveText('待备货');
-    await expect(pill.locator('.status-action-pill-next')).toHaveText('确认已备货');
+    // 胶囊只显示下一步动作，不再写「当前 → 下一步」。
+    await expect(pill).toHaveText('确认已备货');
 
     // 未打印箱唛时，流程会先弹一次确认（沿用桌面端行为）。Playwright 默认自动取消弹窗，
     // 不处理的话点击会被静默吞掉 —— 这里显式接受，才等于真人点掉「确定」。
@@ -102,7 +102,7 @@ test('手机端订单卡片：状态胶囊一键推进，刷新后仍保持新�
 
     const advanced = page.locator('.order-card', { hasText: orderNo }).locator('.status-action-pill');
     await expect(advanced).toHaveAttribute('aria-label', '已备货，一键开始打包');
-    await expect(advanced.locator('.status-action-pill-current')).toHaveText('已备货');
+    await expect(advanced).toHaveText('开始打包');
 
     // 刷新后重新进入模块：状态来自服务端，说明是真的落地了
     await page.reload();

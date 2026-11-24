@@ -30,14 +30,22 @@ export function useHideOnScroll(enabled: boolean, containerSelector = DEFAULT_OF
     const inner = container instanceof HTMLElement ? container : null;
 
     let state: ScrollHideState = { lastY: readScrollTop(inner), hidden: false };
-    const handleScroll = () => {
+    // 滚动事件按帧合并：一帧最多读一次位置、最多触发一次状态更新。
+    let frame = 0;
+    const update = () => {
+      frame = 0;
       state = nextScrollHideState(state, readScrollTop(inner));
       setHidden(state.hidden);
+    };
+    const handleScroll = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(update);
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     inner?.addEventListener('scroll', handleScroll, { passive: true });
     handleScroll();
     return () => {
+      if (frame) window.cancelAnimationFrame(frame);
       window.removeEventListener('scroll', handleScroll);
       inner?.removeEventListener('scroll', handleScroll);
     };
