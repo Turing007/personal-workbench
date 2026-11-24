@@ -5,6 +5,7 @@ import Modal from '../components/Modal';
 import SupplierCatalogEditorModal, { formatFileSize } from '../components/SupplierCatalogEditorModal';
 import {
   createCatalog,
+  deleteCatalog,
   deleteSupplierCatalog,
   deleteSupplierCatalogFile,
   generateProductCatalog,
@@ -170,6 +171,20 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
       await refresh();
     } catch (error) {
       onNotify(errorText(error, '操作失败'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeCatalog = async (catalog: CatalogSummary) => {
+    if (!window.confirm(`确定删除图册「${catalog.name}」吗？公开链接立即失效，删除后不能恢复；产品本身不受影响。`)) return;
+    setBusy(true);
+    try {
+      await deleteCatalog(catalog.id);
+      onNotify('图册已删除', 'success');
+      await refresh();
+    } catch (error) {
+      onNotify(errorText(error, '删除失败'), 'error');
     } finally {
       setBusy(false);
     }
@@ -419,6 +434,7 @@ export default function CatalogPage({ products, loading: productsLoading, onNoti
           <button className="button button-secondary button-sm" type="button" disabled={busy} onClick={() => void openEditor(catalog)}><Images size={14} />选品编辑</button>
           <button className="button button-secondary button-sm" type="button" disabled={busy} onClick={() => setExportTarget(catalog)}><FileDown size={14} />导出 PDF</button>
           <button className="button button-secondary button-sm" type="button" disabled={busy} onClick={() => void toggleEnabled(catalog)}><Power size={14} />{catalog.enabled ? '停用' : '启用'}</button>
+          <button className="button button-danger button-sm" type="button" disabled={busy} onClick={() => void removeCatalog(catalog)}><Trash2 size={14} />删除</button>
         </div>
       </article>)}
     </section> : <section className="table-panel supplier-catalog-panel">

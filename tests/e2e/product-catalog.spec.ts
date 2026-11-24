@@ -93,6 +93,32 @@ test('图册模块：建图册 → 未登录打开链接可见 → 加品刷新�
   }
 });
 
+test('图册列表可删除不用的图册，链接立即失效', async ({ page }) => {
+  const stamp = Date.now();
+  const product = await seedProduct(page, `E2E删除图册产品${stamp}`, stamp);
+  let catalogId: number | null = null;
+  try {
+    const created = await page.request.post('/api/catalogs', { data: { name: `E2E删除图册${stamp}`, productIds: [product.id] } });
+    expect(created.ok()).toBeTruthy();
+    const summary = (await created.json()).data as { id: number };
+    catalogId = summary.id;
+
+    await page.goto('/');
+    await page.locator('.sidebar-nav').getByRole('button', { name: '产品图册', exact: true }).click();
+    const card = page.locator('.catalog-page article', { hasText: `E2E删除图册${stamp}` });
+    await expect(card).toBeVisible();
+    page.once('dialog', (dialog) => void dialog.accept());
+    await card.getByRole('button', { name: '删除', exact: true }).click();
+    await expect(page.getByText('图册已删除')).toBeVisible();
+    await expect(card).toHaveCount(0);
+    expect((await page.request.get(`/api/catalogs/${summary.id}`)).status()).toBe(404);
+    catalogId = null;
+  } finally {
+    if (catalogId) await page.request.delete(`/api/catalogs/${catalogId}`);
+    await page.request.delete(`/api/products/${product.id}`);
+  }
+});
+
 test('选品编辑：产品大图平铺，已选/未选三档筛选', async ({ page }) => {
   const stamp = Date.now();
   const prefix = `E2E选品平铺${stamp}`;
