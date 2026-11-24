@@ -424,17 +424,14 @@
   font-size: 10.5px;
 }
 
-/* 已发/剩余信息贴在卡片最下面，跨满整卡宽度，窄卡片也能一行放下。 */
+/* 已发/剩余跟在规格数量下面；两段各自不折行，窄卡片只在段间换行，不会把数字拆开。 */
 .orders-page .order-product-quick-shipped {
-  grid-column: 1 / -1;
-  padding: 0 6px 4px 7px;
-  overflow: hidden;
   color: var(--color-accent);
   font-size: 10.5px;
   line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
+
+.orders-page .order-product-quick-shipped span { white-space: nowrap; }
 
 /* 订单产品明细卡片：桌面两列、手机一列；图片左、信息右，图片完整显示不裁切。 */
 .order-detail-cards {

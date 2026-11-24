@@ -39,8 +39,8 @@ export default function OrderProductQuickList({ order, onOpen, className }: Orde
         <span className="order-product-quick-copy">
           <strong>{item.name || '未填产品'}</strong>
           <span className="order-product-quick-spec" title={`${item.specification || '—'} * ${item.quantity}`}>{item.specification || '—'} * {item.quantity}</span>
+          {shipped > 0 && <span className="order-product-quick-shipped"><span>已发 {shipped}/{item.quantity}</span>{' '}<span>{remainingQuantity(item) > 0 ? `· 剩 ${remainingQuantity(item)}` : '· 已发完'}</span></span>}
         </span>
-        {shipped > 0 && <span className="order-product-quick-shipped">已发 {shipped}/{item.quantity}{remainingQuantity(item) > 0 ? ` · 剩 ${remainingQuantity(item)}` : ' · 已发完'}</span>}
       </span>;
     }) : <span className="order-product-quick-empty">查看产品明细</span>}
   </button>;
