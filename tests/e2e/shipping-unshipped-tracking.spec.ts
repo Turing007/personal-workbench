@@ -156,7 +156,7 @@ test.describe('发货中状态', () => {
       const drawer = page.getByRole('dialog', { name: '发货表' });
       await expect(drawer).toBeVisible();
       const sheet = drawer.getByRole('textbox', { name: '发货表' });
-      await expect.poll(async () => sheet.inputValue()).toContain(`2箱 + 3箱 + 5箱 ${recipientInfo}`);
+      await expect.poll(async () => sheet.inputValue()).toContain(`2+3+5=10箱 ${recipientInfo}`);
       await drawer.getByRole('button', { name: '复制发货表' }).click();
       await expect(page.getByText('已复制发货表（1 个地址）')).toBeVisible();
       await drawer.getByRole('button', { name: '关闭' }).click();

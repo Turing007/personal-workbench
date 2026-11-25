@@ -1,10 +1,10 @@
-import { ChevronLeft, ChevronRight, Package, ZoomIn } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Package, ZoomIn } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { calculateOrderLineAmountCents } from '../../shared/order-prices';
 import { getOrderItemImages } from '../api';
 import { thumbUrl } from '../image-urls';
-import Modal from './Modal';
-import type { OrderDraft, OrderItemDraft } from './OrderForm';
+import { useProductPreview } from './ProductPreview';
+import type { OrderDraft } from './OrderForm';
 
 export interface OrderItemCardsProps {
   order: OrderDraft;
@@ -29,8 +29,7 @@ function money(cents = 0) {
 
 export default function OrderItemCards({ order, showPackaging = true }: OrderItemCardsProps) {
   const [itemImages, setItemImages] = useState<Record<number, ItemImage[]>>({});
-  const [viewerItemId, setViewerItemId] = useState<string>();
-  const [viewerIndex, setViewerIndex] = useState(0);
+  const { bind, previewElement } = useProductPreview();
 
   useEffect(() => {
     if (!order.id) return undefined;
@@ -41,23 +40,8 @@ export default function OrderItemCards({ order, showPackaging = true }: OrderIte
     return () => { cancelled = true; };
   }, [order.id]);
 
-  const viewerItem = useMemo(
-    () => order.items.find((item) => item.id === viewerItemId),
-    [order.items, viewerItemId],
-  );
-  const viewerImages = viewerItem ? itemImages[Number(viewerItem.id)] ?? [] : [];
-  const viewerImage = viewerImages[Math.min(viewerIndex, viewerImages.length - 1)];
-
-  const openViewer = (item: OrderItemDraft, index: number) => {
-    setViewerItemId(item.id);
-    setViewerIndex(index);
-  };
-
-  const stepViewer = (offset: number) => {
-    setViewerIndex((index) => Math.min(Math.max(index + offset, 0), viewerImages.length - 1));
-  };
-
   return <>
+    {previewElement}
     <div className="order-detail-cards">
       {order.items.length ? order.items.map((item) => {
         const unitPriceCents = item.unitPriceCents ?? 0;
@@ -68,10 +52,10 @@ export default function OrderItemCards({ order, showPackaging = true }: OrderIte
         const freightCents = freightPerBoxCents * item.boxes;
         return <article className="order-detail-card" key={item.id}>
           {firstImage ? (
-            <button type="button" className="order-detail-card-media" title="放大查看产品图片" aria-label={`放大查看${item.name || '产品'}图片`} onClick={() => openViewer(item, 0)}>
+            <span className="order-detail-card-media" title="悬停查看产品大图" {...bind(firstImage.url, item.name || '产品')}>
               <img src={thumbUrl(firstImage.url, 480)} alt={firstImage.name} loading="lazy" decoding="async" />
-              <span className="order-detail-card-media-zoom" aria-hidden="true"><ZoomIn size={13} />{images.length > 1 ? `${images.length} 图` : '查看'}</span>
-            </button>
+              <span className="order-detail-card-media-zoom" aria-hidden="true"><ZoomIn size={13} />{images.length > 1 ? `${images.length} 图` : '悬停看大图'}</span>
+            </span>
           ) : (
             <span className="order-detail-card-media is-empty" aria-hidden="true"><Package size={22} /></span>
           )}
@@ -97,25 +81,5 @@ export default function OrderItemCards({ order, showPackaging = true }: OrderIte
         </article>;
       }) : <div className="table-state order-detail-cards-empty">暂无产品明细</div>}
     </div>
-    <Modal
-      open={Boolean(viewerItem && viewerImage)}
-      title={viewerItem ? `${viewerItem.name || '产品'} · 产品图片` : '产品图片'}
-      onClose={() => setViewerItemId(undefined)}
-      width={960}
-      layer={30}
-      className="order-item-image-modal"
-    >
-      {viewerImage && <div className="order-item-image-viewer">
-        <div className="order-item-image-stage">
-          <img src={thumbUrl(viewerImage.url, 960)} alt={viewerImage.name} decoding="async" />
-        </div>
-        <div className="order-item-image-bar">
-          <span className="order-item-image-counter">{Math.min(viewerIndex, viewerImages.length - 1) + 1} / {viewerImages.length}</span>
-          <span className="order-item-image-name" title={viewerImage.name}>{viewerImage.name}</span>
-          <button type="button" className="button button-secondary button-sm" disabled={viewerIndex <= 0} onClick={() => stepViewer(-1)}><ChevronLeft size={15} />上一张</button>
-          <button type="button" className="button button-secondary button-sm" disabled={viewerIndex >= viewerImages.length - 1} onClick={() => stepViewer(1)}>下一张<ChevronRight size={15} /></button>
-        </div>
-      </div>}
-    </Modal>
   </>;
 }

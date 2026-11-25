@@ -165,17 +165,17 @@ export interface ShippingSheetEntry {
 }
 
 /**
- * 发货表一行：箱数按订单拆解，不合并成总数；只带箱数和收件信息。
- * 例：2箱 + 3箱 + 5箱 张三 13800000000 广东省深圳市
+ * 发货表一行：箱数按订单拆解，单位只写在最后，并附合计。
+ * 例：2+3+5=10箱 张三 13800000000 广东省深圳市；单订单直接写 2箱。
  */
 export function buildShippingSheetLine(input: {
   recipientName?: string;
   recipientInfo?: string;
   entries: ShippingSheetEntry[];
 }): string {
-  const active = input.entries.filter((entry) => entry.boxes > 0);
-  if (!active.length) return '';
-  const boxText = active.map((entry) => `${Math.max(1, Math.trunc(entry.boxes))}箱`).join(' + ');
+  const counts = input.entries.filter((entry) => entry.boxes > 0).map((entry) => Math.max(1, Math.trunc(entry.boxes)));
+  if (!counts.length) return '';
+  const boxText = counts.length === 1 ? `${counts[0]}箱` : `${counts.join('+')}=${counts.reduce((sum, count) => sum + count, 0)}箱`;
   const recipient = String(input.recipientInfo ?? '').trim() || String(input.recipientName ?? '').trim();
   return `${boxText}${recipient ? ` ${recipient}` : ''}`;
 }

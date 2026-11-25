@@ -84,12 +84,12 @@ describe('发货中同地址合并', () => {
 });
 
 describe('发货表行', () => {
-  it('箱数保留每单拆解，只带箱数和收件信息，不带订单号', () => {
+  it('箱数保留每单拆解，单位只写在最后并附合计', () => {
     expect(buildShippingSheetLine({
       recipientName: '张三',
       recipientInfo: '深圳市宝安区 A 栋',
       entries: [{ boxes: 2 }, { boxes: 3 }, { boxes: 5 }],
-    })).toBe('2箱 + 3箱 + 5箱 深圳市宝安区 A 栋');
+    })).toBe('2+3+5=10箱 深圳市宝安区 A 栋');
   });
 
   it('单订单只显示自身箱数，0 箱不发一行', () => {
