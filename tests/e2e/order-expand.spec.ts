@@ -270,7 +270,8 @@ test('单产品卡片占满整行，长标题最多两行', async ({ page }) => 
         titleScrollHeight: title.scrollHeight,
         titleClientHeight: title.clientHeight,
         titleWhiteSpace: style.whiteSpace,
-        blankBelowThumb: quickCard.getBoundingClientRect().bottom - thumb.getBoundingClientRect().bottom,
+        thumbWidth: thumb.getBoundingClientRect().width,
+        thumbHeight: thumb.getBoundingClientRect().height,
       };
     });
     expect(Math.abs(layout.cardWidth - layout.listWidth)).toBeLessThan(1.5);
@@ -278,7 +279,9 @@ test('单产品卡片占满整行，长标题最多两行', async ({ page }) => 
     expect(layout.titleHeight).toBeGreaterThan(layout.titleLineHeight);
     expect(layout.titleHeight).toBeLessThanOrEqual(layout.titleLineHeight * 2 + 1);
     expect(layout.titleScrollHeight).toBeLessThanOrEqual(layout.titleClientHeight + 1);
-    expect(layout.blankBelowThumb).toBeLessThanOrEqual(2.5);
+    // 缩略图固定 1:1，不随卡片文字高度拉伸。
+    expect(layout.thumbWidth).toBeGreaterThanOrEqual(48);
+    expect(Math.abs(layout.thumbWidth - layout.thumbHeight)).toBeLessThanOrEqual(0.5);
   } finally {
     await page.request.delete(`/api/orders/${orderId}`);
   }

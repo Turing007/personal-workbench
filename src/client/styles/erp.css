@@ -354,7 +354,7 @@
   display: grid;
   flex: 1 1 116px;
   grid-template-columns: 52px minmax(0, 1fr);
-  align-items: stretch;
+  align-items: start;
   gap: 0;
   min-width: 0;
   max-width: 100%;
@@ -365,22 +365,22 @@
   background: var(--erp-surface);
 }
 
-/* 标题换行后卡片会变高，小图跟着拉伸铺满，避免图片下方留白。 */
+/* 缩略图固定 1:1 方框：非方图完整缩进方框（不裁切、不拉伸），卡片高度只由右侧文字决定。 */
 .orders-page .order-product-quick-thumb {
   display: grid;
   place-items: center;
+  align-self: start;
   width: 52px;
-  height: 100%;
-  min-height: 52px;
+  height: 52px;
   overflow: hidden;
-  background: var(--erp-surface-muted);
+  background: var(--erp-surface);
   color: var(--erp-muted);
 }
 
 .orders-page .order-product-quick-thumb img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .orders-page .order-product-quick-thumb.is-empty { background: var(--erp-surface-muted); }
@@ -752,7 +752,7 @@
   color: var(--erp-muted);
 }
 .orders-shipping-summary-thumb img,
-.order-shipping-item-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.order-shipping-item-thumb img { width: 100%; height: 100%; object-fit: contain; }
 .orders-shipping-summary-copy { display: grid; gap: 1px; min-width: 0; }
 .orders-shipping-summary-copy strong {
   overflow: hidden;
@@ -798,9 +798,9 @@
   overflow: hidden;
 }
 .shipping-product-editor .order-shipping-item-thumb {
+  align-self: start;
   width: 52px;
-  height: 100%;
-  min-height: 52px;
+  height: 52px;
   border-radius: 0;
 }
 .shipping-product-editor .order-shipping-item-copy { align-content: center; padding: 2px 0; }
@@ -4366,8 +4366,8 @@
   .finance-columns-button { display: none; }
 }
 
-/* 客户产品选品缩略图的桌面悬停大图；触屏不显示，避免点选时浮层残留。 */
-.customer-product-picker-preview {
+/* 产品缩略图的桌面悬停大图（订单/发货/产品库/客户产品等共用）；触屏不显示，避免浮层残留。 */
+.product-hover-preview {
   position: fixed;
   z-index: 50;
   box-sizing: border-box;
@@ -4379,7 +4379,7 @@
   pointer-events: none;
 }
 
-.customer-product-picker-preview img {
+.product-hover-preview img {
   display: block;
   width: 100%;
   height: 100%;
@@ -4387,7 +4387,7 @@
 }
 
 @media (hover: none) {
-  .customer-product-picker-preview { display: none; }
+  .product-hover-preview { display: none; }
 }
 
 /* 部分发货：批次订单内按产品选择本次发货数量。 */

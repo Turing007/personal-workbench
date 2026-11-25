@@ -44,6 +44,7 @@ import { thumbUrl } from '../image-urls';
 import type { ToastKind } from '../components/OrderForm';
 import { useIsNarrow } from '../use-is-narrow';
 import { useHideOnScroll } from '../use-hide-on-scroll';
+import { useProductPreview } from '../components/ProductPreview';
 
 export interface CustomerProductsPageProps {
   customers: Customer[];
@@ -77,6 +78,7 @@ function customerProductKey(product: CustomerProduct): string {
 }
 
 export default function CustomerProductsPage({ customers, systemProducts, initialCustomerId, loading, onCustomersChanged, onNotify }: CustomerProductsPageProps) {
+  const { bind, previewElement } = useProductPreview();
   const [customerQuery, setCustomerQuery] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(initialCustomerId ?? customers.find((customer) => customer.isActive)?.id ?? customers[0]?.id ?? null);
   // 客户列表走左侧抽屉：点「N 个客户」滑出，选中客户后自动收起。
@@ -301,7 +303,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
   const activeCustomer = Boolean(selectedCustomer?.isActive);
   const allVisibleSelected = products.length > 0 && products.every((product) => selectedProductIds.includes(product.id));
 
-  return <div className="page-shell customer-products-page">
+  return <div className="page-shell customer-products-page">{previewElement}
     <div className="customer-products-page-head">
       <div className="customer-products-heading-copy">
         <span className="page-breadcrumb">资料 / 客户</span>
@@ -346,7 +348,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
           {products.map((product) => <tr key={product.id}>
             <td><input type="checkbox" checked={selectedProductIds.includes(product.id)} onChange={() => setSelectedProductIds((current) => current.includes(product.id) ? current.filter((id) => id !== product.id) : [...current, product.id])} aria-label={`选择${product.name}`} /></td>
             <td><span style={{ display: 'inline-block', padding: '3px 6px', borderRadius: 'var(--radius-ui)', background: product.completionStatus === 'complete' ? 'var(--color-success-soft)' : 'var(--color-warning-soft)', color: product.completionStatus === 'complete' ? 'var(--color-success)' : 'var(--color-warning-text)', whiteSpace: 'nowrap' }}>{product.completionStatus === 'complete' ? '已完善' : '待完善'}</span></td>
-            <td>{product.imageRelativePath ? <img src={thumbnailUrl(product.imageRelativePath)} alt={product.name} loading="lazy" decoding="async" style={{ width: 42, height: 36, objectFit: 'contain', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)' }} /> : <span style={{ color: 'var(--color-text-muted)' }}>-</span>}</td>
+            <td>{product.imageRelativePath ? <img {...bind(imageUrl(product.imageRelativePath), product.name)} src={thumbnailUrl(product.imageRelativePath)} alt={product.name} loading="lazy" decoding="async" style={{ width: 42, height: 36, objectFit: 'contain', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)' }} /> : <span style={{ color: 'var(--color-text-muted)' }}>-</span>}</td>
             <td className="strong-cell" title={product.name || undefined}>{product.name || '-'}</td><td>{product.specification || '-'}</td><td>{product.sku || <span style={{ color: 'var(--color-warning-text)' }}>待完善</span>}</td><td>{product.packaging.length ? product.packaging[0].name || `${product.packaging.length} 种` : '-'}</td><td>{product.packCount == null ? <span style={{ color: 'var(--color-warning-text)' }}>待完善</span> : `${product.packCount} 个/箱`}</td>{showCostPrice && <td>{product.costConfirmed ? money(customerProductStandardCostCents(product)) : <span style={{ color: 'var(--color-warning-text)' }}>未核对成本</span>}</td>}<td>{money(product.latestQuoteCents)}</td><td className="strong-cell">{money(product.finalPriceCents)}</td><td>{product.freightPerBoxCents == null ? <span style={{ color: 'var(--color-warning-text)' }}>未设置</span> : `¥${(product.freightPerBoxCents / 100).toFixed(2)}/箱`}</td><td className="customer-product-remark-cell" title={product.remark}>{product.remark || '-'}</td><td>{product.attachments.length ? `${product.attachments.length} 个` : '-'}</td><td><span style={{ color: product.systemProductId == null ? 'var(--color-text-secondary)' : 'var(--color-accent)' }}>{product.systemProductId == null ? '临时添加' : '系统产品库'}</span></td><td style={{ color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{formatTime(product.updatedAt)}</td>
             <td><div className="row-actions"><button className="icon-button" type="button" title="编辑客户产品" onClick={() => openEditProduct(product)}><Edit3 size={14} /></button><button className="icon-button" type="button" title={activeCustomer ? '复制为客户新品' : '客户已停用，不能复制新品'} disabled={!activeCustomer} onClick={() => openCopyProduct(product)}><Copy size={14} /></button><button className="icon-button danger" type="button" title="删除客户产品" onClick={() => { void removeProduct(product); }}><Trash2 size={14} /></button></div></td>
           </tr>)}
@@ -355,7 +357,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
           {products.map((product) => <article key={product.id} className="customer-product-card">
             <div className="customer-product-card-head">
               <input type="checkbox" checked={selectedProductIds.includes(product.id)} onChange={() => setSelectedProductIds((current) => current.includes(product.id) ? current.filter((id) => id !== product.id) : [...current, product.id])} aria-label={`选择${product.name}`} />
-              {product.imageRelativePath ? <img className="customer-product-card-image" src={thumbnailUrl(product.imageRelativePath)} alt={product.name} loading="lazy" decoding="async" /> : <span className="product-no-image">—</span>}
+              {product.imageRelativePath ? <img className="customer-product-card-image" {...bind(imageUrl(product.imageRelativePath), product.name)} src={thumbnailUrl(product.imageRelativePath)} alt={product.name} loading="lazy" decoding="async" /> : <span className="product-no-image">—</span>}
               <div className="customer-product-card-title">
                 <strong>{product.name || '-'}</strong>
                 <span>{product.specification || '-'}</span>

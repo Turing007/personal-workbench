@@ -1,3 +1,4 @@
+import { useProductPreview } from './ProductPreview';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { BatteryCharging, Check, ChevronDown, Eye, EyeOff, Image as ImageIcon, Save, Trash2 } from 'lucide-react';
 import Modal from './Modal';
@@ -83,6 +84,7 @@ export interface PriceCalculatorModalProps {
  * 下方保存方案（记下参数快照，可载入回显）；保存即新增一条历史，不覆盖。
  */
 export default function PriceCalculatorModal({ open, product, onClose }: PriceCalculatorModalProps) {
+  const { bind, previewElement } = useProductPreview();
   const [baseCost, setBaseCost] = useState('');
   /** 其他费用：包材费按所选包装自动取采购价，这里只填额外摊进去的费用。 */
   const [otherFees, setOtherFees] = useState('0');
@@ -453,11 +455,12 @@ export default function PriceCalculatorModal({ open, product, onClose }: PriceCa
   };
 
   return <>
+    {previewElement}
     <Modal open={open} title={`售价计算 · ${product.name || product.sku || '产品'}`} onClose={onClose} width={1100}>
     {/* 产品图 + 名称：截图发客户时一眼看清是哪个产品；右侧小眼睛隐藏全部成本。 */}
     <div className="price-calc2-head">
       {image
-        ? <img className="price-calc2-thumb" src={thumbUrl(image.url, 240)} alt="" loading="lazy" decoding="async" />
+        ? <img className="price-calc2-thumb" {...bind(image.url, product.name || product.sku)} src={thumbUrl(image.url, 240)} alt="" loading="lazy" decoding="async" />
         : <span className="price-calc2-thumb is-empty" aria-hidden="true"><ImageIcon size={18} /></span>}
       <span className="price-calc2-title">
         <strong>{product.name || product.sku || '未命名产品'}</strong>

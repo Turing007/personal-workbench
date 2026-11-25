@@ -1,9 +1,10 @@
 import { Check, Package, Plus, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+
 import { customerProductStandardCostCents, type CustomerProduct } from '../../../shared/customers';
 import { getCustomerProducts } from '../../api';
 import { thumbUrl } from '../../image-urls';
+import { useProductPreview } from '../ProductPreview';
 
 export interface CustomerProductPickerProps {
   customerId: number | null;
@@ -19,7 +20,7 @@ export default function CustomerProductPicker({ customerId, value, onSelect, onA
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [preview, setPreview] = useState<{ url: string; name: string; left: number; top: number; size: number } | null>(null);
+  const { bind, previewElement } = useProductPreview();
 
   useEffect(() => {
     if (!customerId) {
@@ -42,28 +43,6 @@ export default function CustomerProductPicker({ customerId, value, onSelect, onA
     return needle ? products.filter((product) => [product.name, product.sku, product.specification].join(' ').toLowerCase().includes(needle)) : products;
   }, [products, query]);
 
-  useEffect(() => {
-    if (!preview) return undefined;
-    const close = () => setPreview(null);
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
-    return () => {
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('resize', close);
-    };
-  }, [preview]);
-
-  const showPreview = (target: HTMLElement, product: CustomerProduct, url: string) => {
-    const rect = target.getBoundingClientRect();
-    const size = Math.min(340, window.innerWidth - 24, window.innerHeight - 24);
-    const gap = 12;
-    const left = rect.right + gap + size <= window.innerWidth - gap
-      ? rect.right + gap
-      : Math.max(gap, rect.left - size - gap);
-    const top = Math.min(Math.max(gap, rect.top), window.innerHeight - size - gap);
-    setPreview({ url, name: product.name, left, top, size });
-  };
-
   if (!customerId) return <div style={{ padding: 18, border: '1px dashed var(--color-border-control)', borderRadius: 'var(--radius-ui)', color: 'var(--color-text-muted)', textAlign: 'center', fontSize: 12 }}>请先选择客户，再调用对应的客户产品。</div>;
 
   return <>
@@ -80,8 +59,7 @@ export default function CustomerProductPicker({ customerId, value, onSelect, onA
             <span
               style={{ display: 'grid', width: 44, height: 44, placeItems: 'center', overflow: 'hidden', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface-subtle)', color: 'var(--color-text-muted)' }}
               title={image ? '悬停查看大图' : undefined}
-              onMouseEnter={image ? (event) => showPreview(event.currentTarget, product, imagePath) : undefined}
-              onMouseLeave={image ? () => setPreview(null) : undefined}
+              {...bind(imagePath, product.name)}
             >
               {image ? <img src={image} alt={`${product.name}图片`} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Package size={18} aria-hidden="true" />}
             </span>
@@ -97,11 +75,6 @@ export default function CustomerProductPicker({ customerId, value, onSelect, onA
         {!loading && !filtered.length && <div style={{ display: 'grid', gap: 7, padding: 18, border: '1px dashed var(--color-border-control)', borderRadius: 'var(--radius-ui)', color: error ? 'var(--color-danger)' : 'var(--color-text-muted)', textAlign: 'center', fontSize: 12 }}><span>{error || '没有匹配的客户产品'}</span>{onAddNew && <button type="button" className="button button-secondary" onClick={onAddNew}>添加新品</button>}</div>}
       </div>
     </div>
-    {preview && createPortal(
-      <div className="customer-product-picker-preview" role="tooltip" style={{ left: preview.left, top: preview.top, width: preview.size, height: preview.size }}>
-        <img src={thumbUrl(preview.url, 960)} alt={`${preview.name}大图`} decoding="async" />
-      </div>,
-      document.body,
-    )}
+    {previewElement}
   </>;
 }

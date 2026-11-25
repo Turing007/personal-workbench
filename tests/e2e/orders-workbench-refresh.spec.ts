@@ -220,12 +220,14 @@ test('发货中表格行直接编辑本次数量并回填单号，不显示金�
       return {
         left: thumbRect.left - itemRect.left,
         top: thumbRect.top - itemRect.top,
-        bottom: itemRect.bottom - thumbRect.bottom,
+        width: thumbRect.width,
+        height: thumbRect.height,
       };
     });
     expect(thumbLayout.left).toBeLessThanOrEqual(1.5);
     expect(thumbLayout.top).toBeLessThanOrEqual(1.5);
-    expect(thumbLayout.bottom).toBeLessThanOrEqual(1.5);
+    // 产品图固定 1:1 方框，不跟随机行高度拉伸。
+    expect(Math.abs(thumbLayout.width - thumbLayout.height)).toBeLessThanOrEqual(0.5);
     await expect(row.getByLabel(`${orderNo}-圆砂机-本次发货数量`)).toHaveValue('10');
 
     // 确认发货前就能按当前填写的本次数量打印清单，随包使用；打印不产生发货记录。

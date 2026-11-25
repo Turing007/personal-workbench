@@ -24,6 +24,7 @@ import { packagingDisplay } from '../packaging-display';
 import { copyText } from '../copy-text';
 import { useIsNarrow } from '../use-is-narrow';
 import { useHideOnScroll } from '../use-hide-on-scroll';
+import { useProductPreview } from '../components/ProductPreview';
 
 type StatusFilter = 'all' | ProductStatus;
 
@@ -94,6 +95,7 @@ function extraQuoteCount(product: ProductRecord) {
 }
 
 export default function ProductsPage({ products, loading, onSave, saving, onDelete, onUpdateSaleStatus, onExport, onOpenCatalog, onDownloadTemplate, onImport, onRefresh, onReloadProducts, onManagePresets, onManageProductOptions, uploadingProductIds, uploadFiles, onRetryUploadFile, startCreate, onStartCreateConsumed }: ProductsPageProps) {
+  const { bind, previewElement } = useProductPreview();
   const uploadingIds = new Set(uploadingProductIds ?? []);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -242,7 +244,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
   const closeDetail = () => setDetailProductId(undefined);
   const closeImages = () => setImagesProductId(undefined);
 
-  return <div className="page-shell products-page">
+  return <div className="page-shell products-page">{previewElement}
     <div className="products-page-head">
       <span className="page-breadcrumb">资料 / 产品库</span>
       <div className="products-page-head-title"><strong className="page-title">产品库</strong><span className="page-subtitle">维护产品资料、图片、包装与价格</span></div>
@@ -289,7 +291,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
           {/* 图片看图片、名称和 SKU 看详情：两件事分开，大图模式下想直接看图就不用先开弹窗再点图片。
               视频入口只在产品详情里，列表缩略图上不再压角标（会挡住产品图）。 */}
           {product.images.length
-            ? <button className="product-gallery-image-button" type="button" onClick={() => setImagesProductId(String(product.id))} title="查看全部图片"><span className="product-gallery-image"><img src={thumbUrl(product.images[0].url, 480)} alt={product.images[0].name} loading="lazy" decoding="async" /></span></button>
+            ? <button className="product-gallery-image-button" type="button" onClick={() => setImagesProductId(String(product.id))} title="查看全部图片"><span className="product-gallery-image" {...bind(product.images[0].url, product.name || product.sku)}><img src={thumbUrl(product.images[0].url, 480)} alt={product.images[0].name} loading="lazy" decoding="async" /></span></button>
             : pending.length
               ? <button className="product-gallery-image-button" type="button" onClick={() => setImagesProductId(String(product.id))} title="图片正在上传，点开看逐张进度"><span className="product-gallery-image"><PendingImageTile item={pending[0]} compact /></span></button>
               : <span className="product-gallery-image"><span className="product-gallery-placeholder"><ImageIcon size={22} /><span>无图片</span></span></span>}
@@ -316,7 +318,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
       {view === 'list' && <div className="table-scroll products-table-desktop"><table className="data-table products-data-table"><thead><tr>{['SKU', '图片', '品名', '颜色', '插脚', '参数', '包装信息', '备注', ...(showSensitive ? ['供应商', '价格'] : []), '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
         <tbody>{visible.map((product) => <tr key={product.id}>
           <td className="strong-cell"><div className="product-sku-cell"><button className="product-sku-button" type="button" onClick={() => setDetailProductId(String(product.id))} title="查看产品详情">{product.sku || '查看详情'}</button>{product.sku && <button className="icon-button product-sku-copy-button" type="button" aria-label={`复制 SKU ${product.sku}`} title={copiedSkuId === String(product.id) ? '已复制 SKU' : '复制 SKU'} onClick={() => void copySku(product)}>{copiedSkuId === String(product.id) ? <Check size={12} /> : <Copy size={12} />}</button>}</div></td>
-          <td>{product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProductId(String(product.id))} title="查看全部图片"><span className="product-image-thumb"><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}</td>
+          <td>{product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProductId(String(product.id))} title="查看全部图片"><span className="product-image-thumb" {...bind(product.images[0].url, product.name || product.sku)}><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}</td>
           <td className="product-name-cell"><span className="product-name-text" title={product.name || undefined}>{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}</span>{statusBadge(product)}{uploadBadge(product, uploadingIds)}</td><td>{product.colors.join('、') || '—'}</td><td>{product.batteryPlugs.join('、') || '—'}</td>
           <td className="product-parameters-cell">{product.parameters?.trim() ? <button className="product-parameters-trigger" type="button" onClick={() => setParametersProduct(product)} title="查看完整参数"><span>查看详情</span><Copy size={13} /></button> : <span>—</span>}</td>
           <td className="product-packaging-cell"><div className="product-packaging-lines">{product.packaging.length ? <>
@@ -336,7 +338,7 @@ export default function ProductsPage({ products, loading, onSave, saving, onDele
       {view === 'list' && <div className="products-card-list">
         {visible.map((product) => <article key={product.id} className="product-card">
           <div className="product-card-head">
-            {product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProductId(String(product.id))} title="查看全部图片"><span className="product-image-thumb"><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}
+            {product.images.length ? <button className="product-image-button" type="button" onClick={() => setImagesProductId(String(product.id))} title="查看全部图片"><span className="product-image-thumb" {...bind(product.images[0].url, product.name || product.sku)}><img src={thumbUrl(product.images[0].url, 240)} alt={product.images[0].name} loading="lazy" decoding="async" /></span><span className="image-count"><ImageIcon size={13} />{product.images.length}</span></button> : <span className="product-no-image">—</span>}
             <div className="product-card-title">
               <strong>{product.name || (product.status === 'draft' ? '（未命名草稿）' : '—')}{statusBadge(product)}{uploadBadge(product, uploadingIds)}</strong>
               <div className="product-card-sku-row">

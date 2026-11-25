@@ -2,6 +2,7 @@ import { Check, Image as ImageIcon, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { thumbUrl } from '../../image-urls';
 import { formatPurchasePrice } from '../SystemProductOptionRow';
+import { useProductPreview } from '../ProductPreview';
 
 export interface LibraryProductImage {
   id: number | string;
@@ -54,6 +55,7 @@ async function defaultLoadProducts(filters: { name: string; sku: string; specifi
 }
 
 export default function LibraryProductPicker({ onSelect, selectedProductId, loadProducts = defaultLoadProducts, disabled }: LibraryProductPickerProps) {
+  const { bind, previewElement } = useProductPreview();
   const [filters, setFilters] = useState({ name: '', sku: '', specification: '' });
   const [products, setProducts] = useState<LibraryProductOption[]>([]);
   const [selectedImages, setSelectedImages] = useState<Record<number, number | string>>({});
@@ -93,7 +95,7 @@ export default function LibraryProductPicker({ onSelect, selectedProductId, load
     onSelect({ product, image });
   };
 
-  return <div style={{ display: 'grid', gap: 9 }}>
+  return <div style={{ display: 'grid', gap: 9 }}>{previewElement}
     <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1.2fr', gap: 8 }}>
       {([['name', '品名'], ['sku', 'SKU'], ['specification', '规格']] as const).map(([key, label]) => <label key={key} style={{ display: 'grid', gap: 4, fontSize: 11, color: 'var(--color-text-secondary)' }}>{label}<span style={{ position: 'relative' }}>{key === 'name' && <Search size={13} style={{ position: 'absolute', left: 8, top: 9, color: 'var(--color-text-muted)' }} />}<input disabled={disabled} value={filters[key]} onChange={(event) => setFilter(key, event.target.value)} placeholder={`筛选${label}`} style={{ ...fieldStyle, ...(key === 'name' ? { paddingLeft: 27 } : {}) }} /></span></label>)}
     </div>
@@ -103,7 +105,7 @@ export default function LibraryProductPicker({ onSelect, selectedProductId, load
         const selectedImage = product.images.find((image) => image.id === selectedImageId) ?? product.images[0];
         const priceText = formatPurchasePrice(product.purchasePrice);
         return <div key={product.id} style={{ display: 'grid', gridTemplateColumns: '58px minmax(0,1fr) auto', gap: 9, alignItems: 'start', padding: 8, borderBottom: '1px solid var(--color-border)', background: selectedProductId === product.id ? 'var(--color-accent-soft)' : 'var(--color-surface)' }}>
-          <div style={{ width: 58, height: 48, display: 'grid', placeItems: 'center', overflow: 'hidden', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface-subtle)' }}>{selectedImage ? <img src={imageUrl(selectedImage)} alt={selectedImage.originalName ?? product.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <ImageIcon size={18} color="var(--color-text-muted)" />}</div>
+          <div style={{ width: 58, height: 48, display: 'grid', placeItems: 'center', overflow: 'hidden', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface-subtle)' }} {...bind(selectedImage ? imageUrl(selectedImage) : '', product.name)}>{selectedImage ? <img src={imageUrl(selectedImage)} alt={selectedImage.originalName ?? product.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <ImageIcon size={18} color="var(--color-text-muted)" />}</div>
           <div style={{ minWidth: 0 }}><strong style={{ display: 'block', fontSize: 12, color: 'var(--color-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.name}</strong><span style={{ display: 'block', marginTop: 3, fontSize: 11, color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.sku || '无 SKU'} · {product.specification || '无规格'}{product.supplier?.trim() ? ` · ${product.supplier.trim()}` : ''}{priceText && <> · <span style={{ color: 'var(--color-accent)', fontWeight: 600 }}>{priceText}</span></>}</span>{product.images.length > 1 && <div className="library-product-image-list" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5, width: '100%', minWidth: 0 }}>{product.images.map((image) => <button key={image.id} type="button" title={`选择图片：${image.originalName ?? image.id}`} aria-label={`选择图片：${image.originalName ?? image.id}`} onClick={() => setSelectedImages((current) => ({ ...current, [product.id]: image.id }))} style={{ flex: '0 0 28px', width: 28, height: 24, padding: 1, border: `1px solid ${selectedImageId === image.id ? 'var(--color-accent)' : 'var(--color-border-control)'}`, borderRadius: 'var(--radius-ui)', background: 'var(--color-surface)', cursor: 'pointer' }}><img src={imageUrl(image)} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /></button>)}</div>}</div>
           <button disabled={disabled} type="button" title="选择产品" onClick={() => chooseProduct(product)} style={{ width: 32, height: 32, display: 'grid', placeItems: 'center', border: `1px solid ${selectedProductId === product.id ? 'var(--color-accent)' : 'var(--color-border-control)'}`, borderRadius: 'var(--radius-ui)', color: selectedProductId === product.id ? 'var(--color-accent)' : 'var(--color-text-secondary)', background: 'var(--color-surface)', cursor: disabled ? 'not-allowed' : 'pointer' }}><Check size={15} /></button>
         </div>;

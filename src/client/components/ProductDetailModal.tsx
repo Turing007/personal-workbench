@@ -14,6 +14,7 @@ import { groupPurchaseQuotesBySupplier } from '../../shared/product-purchase-quo
 import { copyText } from '../copy-text';
 import { saveFileOrDownload } from '../file-save';
 import { thumbUrl } from '../image-urls';
+import { useProductPreview } from './ProductPreview';
 import {
   PRODUCT_IMAGE_CATEGORY_LABELS,
   PRODUCT_IMAGE_CATEGORY_SEQUENCE,
@@ -64,6 +65,7 @@ function DetailItem({ label, children, fullWidth = false }: { label: string; chi
 }
 
 export default function ProductDetailModal({ open, product, showSensitive = false, pendingImages = [], onClose, onOpenImages, onEdit, onOpenCalculator, onUpdateSaleStatus, onDelete }: ProductDetailModalProps) {
+  const { bind, previewElement } = useProductPreview();
   const [copied, setCopied] = useState(false);
   const [copiedSku, setCopiedSku] = useState(false);
   const [copiedPackagingId, setCopiedPackagingId] = useState<string>();
@@ -162,7 +164,7 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
 
   return (
     <Modal open={open} className="product-detail-modal product-detail-drawer" title={`产品详情 · ${product.sku || product.name || '未命名产品'}`} onClose={onClose} width={640} variant="drawer" footer={footer}>
-      <div className="product-detail-content">
+      <div className="product-detail-content">{previewElement}
         <div className="product-detail-grid kv-grid">
           <DetailItem label="SKU">
             <span className="product-detail-sku">
@@ -196,7 +198,7 @@ export default function ProductDetailModal({ open, product, showSensitive = fals
           <DetailItem label="图片" fullWidth>
             {image || pendingImages.length ? (
               <div className="product-detail-images">
-                <button className="product-detail-images-button" type="button" onClick={() => onOpenImages(product)}>
+                <button className="product-detail-images-button" type="button" {...bind(image?.url ?? '', product.name || product.sku)} onClick={() => onOpenImages(product)}>
                   {image
                     ? <img src={thumbUrl(image.url, 240)} alt={image.name} loading="lazy" decoding="async" />
                     : <PendingImageTile item={pendingImages[0]} compact />}

@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
 import { thumbUrl } from '../image-urls';
+import { useProductPreview } from './ProductPreview';
 
 /**
  * 系统产品选择列表里的统一行：缩略图 + 品名 + 「规格 · SKU · 供应商 · 采购价」。
@@ -33,12 +34,15 @@ export function formatPurchasePrice(value: SystemProductOptionData['purchasePric
 }
 
 export default function SystemProductOptionRow({ product, thumbSize = 40 }: { product: SystemProductOptionData; thumbSize?: number }) {
+  const { bind, previewElement } = useProductPreview();
   const imageUrl = systemProductImageUrl(product.images);
+  const rawImage = product.images?.[0];
+  const rawImageUrl = rawImage ? (rawImage.url ?? (rawImage.relativePath ? `/files/${rawImage.relativePath}` : '')) : '';
   const pieces = [product.specification, product.sku, product.supplier].map((part) => part?.trim()).filter(Boolean) as string[];
   const price = formatPurchasePrice(product.purchasePrice);
   return (
-    <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>
-      <span style={{ width: thumbSize, height: thumbSize, flexShrink: 0, display: 'grid', placeItems: 'center', overflow: 'hidden', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface-subtle)' }}>
+    <span style={{ display: 'flex', gap: 8, alignItems: 'center', minWidth: 0 }}>{previewElement}
+      <span style={{ width: thumbSize, height: thumbSize, flexShrink: 0, display: 'grid', placeItems: 'center', overflow: 'hidden', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface-subtle)' }} {...bind(rawImageUrl, product.name || '产品')}>
         {imageUrl ? <img src={imageUrl} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : <ImageIcon size={16} color="var(--color-text-muted)" />}
       </span>
       <span style={{ minWidth: 0, flex: 1, display: 'grid', gap: 2 }}>
