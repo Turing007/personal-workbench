@@ -4,11 +4,13 @@ import type {
   CustomerProductListFilters,
   CustomerProductSaveInput,
 } from '../../shared/customers.js';
+import { normalizeCustomerProductTaxMode, type CustomerProductTaxMode } from '../../shared/customers.js';
 import {
   CustomerProductRepository,
   SystemProductNotFoundError,
 } from '../db/customer-product-repository.js';
 import { CustomerRepository } from '../db/customer-repository.js';
+import type { SettingsRepository } from '../db/settings-repository.js';
 
 type CustomerProductField = keyof CustomerProductSaveInput | keyof CustomerProductBatchSaveInput | 'ids' | 'status';
 
@@ -55,7 +57,22 @@ export class CustomerProductService {
     private readonly repository: CustomerProductRepository,
     private readonly customerRepository: CustomerRepository,
     private readonly systemProductExists: (systemProductId: number) => boolean = () => true,
+    private readonly settingsRepository?: SettingsRepository,
   ) {}
+
+  private taxFlags(): Record<string, CustomerProductTaxMode> {
+    return this.settingsRepository?.getCustomerProductTaxFlags() ?? {};
+  }
+
+  private withTaxFlag(product: CustomerProduct, flags: Record<string, CustomerProductTaxMode> = this.taxFlags()): CustomerProduct {
+    return { ...product, finalPriceIncludesTax: flags[String(product.id)] ?? null };
+  }
+
+  /** undefined = 老客户端没传，保持原值；null = 清空标记；inc/exc = 设置标记。 */
+  private saveTaxFlag(productId: number, value: unknown): void {
+    if (!this.settingsRepository || value === undefined) return;
+    this.settingsRepository.setCustomerProductTaxFlag(productId, normalizeCustomerProductTaxMode(value));
+  }
 
   list(customerId: number, filters: CustomerProductListFilters = {}): CustomerProduct[] {
     this.assertCustomer(customerId);
@@ -63,14 +80,17 @@ export class CustomerProductService {
     if (!['all', 'incomplete', 'complete'].includes(status)) {
       throw new CustomerProductValidationError('完善状态无效', 'status');
     }
-    return this.repository.list(customerId, {
+    const products = this.repository.list(customerId, {
       search: filters.search?.trim(),
       status,
     });
+    const flags = this.taxFlags();
+    return products.map((product) => this.withTaxFlag(product, flags));
   }
 
   get(id: number): CustomerProduct | undefined {
-    return this.repository.getById(id);
+    const product = this.repository.getById(id);
+    return product ? this.withTaxFlag(product) : undefined;
   }
 
   create(customerId: number, input: CustomerProductSaveInput): CustomerProduct {
@@ -82,21 +102,25 @@ export class CustomerProductService {
     if (this.repository.findTemporary(customerId, normalized.name, normalized.specification)) {
       throw new CustomerProductExistsError();
     }
-    return this.repository.create(customerId, normalized);
+    const product = this.repository.create(customerId, normalized);
+    this.saveTaxFlag(product.id, input.finalPriceIncludesTax);
+    return this.withTaxFlag(product);
   }
 
   createFromSystemProduct(customerId: number, systemProductId: unknown): CustomerProduct {
     this.assertActiveCustomer(customerId);
     const normalizedId = normalizePositiveId(systemProductId, 'systemProductId');
     // 同一客户可以多次导入同一个系统产品：系统 SKU 有多个规格，客户会按规格各建一条。
-    return this.repository.createFromSystemProduct(customerId, normalizedId);
+    return this.withTaxFlag(this.repository.createFromSystemProduct(customerId, normalizedId));
   }
 
   createFromSystemProductWithInput(customerId: number, systemProductId: unknown, input: CustomerProductSaveInput): CustomerProduct {
     this.assertActiveCustomer(customerId);
     const normalizedId = normalizePositiveId(systemProductId, 'systemProductId');
     const normalized = normalizeInput({ ...input, systemProductId: normalizedId });
-    return this.repository.createFromSystemProduct(customerId, normalizedId, normalized);
+    const product = this.repository.createFromSystemProduct(customerId, normalizedId, normalized);
+    this.saveTaxFlag(product.id, input.finalPriceIncludesTax);
+    return this.withTaxFlag(product);
   }
 
   createMany(customerId: number, input: CustomerProductBatchSaveInput): CustomerProduct[] {
@@ -125,12 +149,15 @@ export class CustomerProductService {
     if (conflicts.length) {
       throw new CustomerProductExistsError(`该客户已存在相同产品：${conflicts.map((item) => item.name).join('、')}`);
     }
-    return this.repository.createMany(customerId, items.map((item) => ({
+    const products = this.repository.createMany(customerId, items.map((item) => ({
       ...template,
       name: item.name,
       specification: item.specification,
       sku: item.sku,
     })));
+    for (const product of products) this.saveTaxFlag(product.id, input.finalPriceIncludesTax);
+    const flags = this.taxFlags();
+    return products.map((product) => this.withTaxFlag(product, flags));
   }
 
   update(id: number, input: CustomerProductSaveInput): CustomerProduct | undefined {
@@ -145,7 +172,10 @@ export class CustomerProductService {
       );
       if (duplicate && duplicate.id !== id) throw new CustomerProductExistsError();
     }
-    return this.repository.update(id, normalized);
+    const updated = this.repository.update(id, normalized);
+    if (!updated) return undefined;
+    this.saveTaxFlag(id, input.finalPriceIncludesTax);
+    return this.withTaxFlag(updated);
   }
 
   remove(id: number): boolean {
@@ -157,7 +187,7 @@ export class CustomerProductService {
     const existing = this.repository.getById(id);
     if (!existing) throw new CustomerProductNotFoundError();
     if (input.systemProductId === null || input.systemProductId === '') {
-      return this.repository.setSystemProduct(id, null, '')!;
+      return this.withTaxFlag(this.repository.setSystemProduct(id, null, '')!);
     }
     const systemProductId = normalizePositiveId(input.systemProductId, 'systemProductId');
     if (!this.systemProductExists(systemProductId)) throw new SystemProductNotFoundError();
@@ -167,11 +197,12 @@ export class CustomerProductService {
       : normalizeText(input.supplierProductName, 'supplierProductName', '供应商产品名称');
     const updated = this.repository.setSystemProduct(id, systemProductId, supplierProductName);
     if (!updated) throw new CustomerProductNotFoundError();
-    return updated;
+    return this.withTaxFlag(updated);
   }
 
   setImagePath(id: number, imageRelativePath: string | null): CustomerProduct | undefined {
-    return this.repository.setImagePath(id, imageRelativePath);
+    const updated = this.repository.setImagePath(id, imageRelativePath);
+    return updated ? this.withTaxFlag(updated) : undefined;
   }
 
   addAttachment(

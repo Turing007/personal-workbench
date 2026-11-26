@@ -757,4 +757,31 @@ describe('批量创建客户产品', () => {
     expect(inactive.statusCode).toBe(409);
     expect(inactive.json().error.code).toBe('CUSTOMER_INACTIVE');
   });
+
+  it('最终价格口径只做标记：可设置、可保留、可清空，不换算金额', async () => {
+    const { app } = await testApp();
+    const customer = await createCustomer(app, '口径客户');
+    const created = await createCustomerProduct(app, customer.id, productInput('含税产品', '标准', {
+      sku: 'TAX-1',
+      packCount: 10,
+      finalPriceCents: 12345,
+      finalPriceIncludesTax: 'inc',
+    }));
+    expect(created.finalPriceIncludesTax).toBe('inc');
+    expect(created.finalPriceCents).toBe(12345);
+
+    const list = await authInject(app, { method: 'GET', url: `/api/customers/${customer.id}/products` });
+    expect(list.json().data.items[0].finalPriceIncludesTax).toBe('inc');
+
+    const update = async (payload: Record<string, unknown>) => {
+      const response = await authInject(app, { method: 'PUT', url: `/api/customer-products/${created.id}`, payload });
+      expect(response.statusCode).toBe(200);
+      return response.json().data as Record<string, unknown>;
+    };
+    const base = productInput('含税产品', '标准', { sku: 'TAX-1', packCount: 10, finalPriceCents: 12345 });
+    expect((await update({ ...base, finalPriceIncludesTax: 'exc' })).finalPriceIncludesTax).toBe('exc');
+    // 老客户端不传这个字段时保持原口径，不会因为保存一次被清空。
+    expect((await update(base)).finalPriceIncludesTax).toBe('exc');
+    expect((await update({ ...base, finalPriceIncludesTax: null })).finalPriceIncludesTax).toBeNull();
+  });
 });

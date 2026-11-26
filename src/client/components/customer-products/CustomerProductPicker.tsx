@@ -65,7 +65,7 @@ export default function CustomerProductPicker({ customerId, value, onSelect, onA
             </span>
             <span style={{ minWidth: 0 }}>
               <strong className="customer-product-picker-name" title={product.name}>{product.name}</strong>
-              <small style={{ display: 'block', marginTop: 3, color: 'var(--color-text-secondary)' }}>{product.sku || '无客户 SKU'} · {product.specification || '无规格'} · {product.packCount ? `${product.packCount} 个/箱` : '装箱数待完善'}{product.finalPriceCents != null ? ` · ¥${(product.finalPriceCents / 100).toFixed(2)}` : ' · 价格待完善'}{product.remark.trim() || product.attachments.length ? ' · 已配置备注/附件' : ''}</small>
+              <small style={{ display: 'block', marginTop: 3, color: 'var(--color-text-secondary)' }}>{product.sku || '无客户 SKU'} · {product.specification || '无规格'} · {product.packCount ? `${product.packCount} 个/箱` : '装箱数待完善'}{product.finalPriceCents != null ? ` · ¥${(product.finalPriceCents / 100).toFixed(2)}${product.finalPriceIncludesTax === 'inc' ? '（含税）' : product.finalPriceIncludesTax === 'exc' ? '（不含税）' : ''}` : ' · 价格待完善'}{product.remark.trim() || product.attachments.length ? ' · 已配置备注/附件' : ''}</small>
               <small style={{ display: 'block', marginTop: 2, color: 'var(--color-text-secondary)' }}>供应商：{product.supplier?.trim() || '未填'} · 成本价：{standardCost == null ? '未核对成本' : `¥${(standardCost / 100).toFixed(2)}`}</small>
             </span>
             {value === product.id ? <Check size={16} color="var(--color-accent)" /> : <span style={{ color: product.completionStatus === 'complete' ? 'var(--color-accent)' : 'var(--color-warning-text)', fontSize: 11 }}>{product.completionStatus === 'complete' ? '已完善' : '待完善'}</span>}

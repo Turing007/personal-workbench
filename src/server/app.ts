@@ -200,6 +200,7 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
       customerProductRepository,
       customerRepository,
       (systemProductId) => Boolean(repositories.getProduct(systemProductId)),
+      settingsRepository,
     ),
     fileStore: options.fileStore,
   });

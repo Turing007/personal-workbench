@@ -22,6 +22,7 @@ import {
   normalizeProductOptionPresets,
   type ProductOptionPresets,
 } from '../../shared/product-options.js';
+import type { CustomerProductTaxMode } from '../../shared/customers.js';
 
 const COMPANY_PROFILE_KEY = 'company_profile';
 const CONTRACT_TEMPLATE_KEY = 'contract_template';
@@ -33,6 +34,7 @@ const CHARGER_PRICES_KEY = 'charger_prices';
 const CATEGORY_ACCESSORY_PRICES_KEY = 'category_accessory_prices';
 const PRODUCT_OPTION_PRESETS_KEY = 'product_option_presets';
 const VOLUME_DIVISOR_KEY = 'volume_divisor';
+const CUSTOMER_PRODUCT_TAX_FLAGS_KEY = 'customer_product_tax_flags';
 
 export interface AutoBackupSettingsRecord {
   /** 自定义备份目录；空字符串 = 默认目录（数据目录/backups）。 */
@@ -157,6 +159,36 @@ export class SettingsRepository {
       )
       .run(TUNNEL_URL_KEY, normalized, new Date().toISOString());
     return normalized;
+  }
+
+  /** 客户产品最终价格口径：按产品 ID 存 inc/exc，未标记的产品不出现；不建表、不需要迁移。 */
+  getCustomerProductTaxFlags(): Record<string, CustomerProductTaxMode> {
+    const row = this.database.prepare('SELECT value FROM settings WHERE key = ?').get(CUSTOMER_PRODUCT_TAX_FLAGS_KEY) as { value?: string } | undefined;
+    if (!row?.value) return {};
+    try {
+      const parsed = JSON.parse(row.value) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+      const flags: Record<string, CustomerProductTaxMode> = {};
+      for (const [key, value] of Object.entries(parsed)) {
+        const id = Number(key);
+        if (Number.isSafeInteger(id) && id > 0 && (value === 'inc' || value === 'exc')) flags[String(id)] = value;
+      }
+      return flags;
+    } catch {
+      return {};
+    }
+  }
+
+  setCustomerProductTaxFlag(productId: number, mode: CustomerProductTaxMode | null): void {
+    const flags = this.getCustomerProductTaxFlags();
+    if (mode) flags[String(productId)] = mode;
+    else delete flags[String(productId)];
+    this.database
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(CUSTOMER_PRODUCT_TAX_FLAGS_KEY, JSON.stringify(flags), new Date().toISOString());
   }
 
   /** null = 从未写入过，由服务层触发一次自动统计；空数组是用户自己清空的，不再重算。 */

@@ -53,6 +53,8 @@ export interface CustomerProduct {
   packCount: number | null;
   latestQuoteCents: number | null;
   finalPriceCents: number | null;
+  /** 最终价格口径：inc 含税 / exc 不含税 / null 未标记；只做标记，不改数字。 */
+  finalPriceIncludesTax?: CustomerProductTaxMode | null;
   /** 机头/基础成本；历史数据沿用 cost_price_cents。 */
   costPriceCents: number | null;
   batteryCostCents: number | null;
@@ -87,6 +89,8 @@ export interface CustomerProductSaveInput {
   sku: string;
   packCount: number | null;
   finalPriceCents: number | null;
+  /** 最终价格口径：inc 含税 / exc 不含税 / null 清除；不传表示保持原值。 */
+  finalPriceIncludesTax?: CustomerProductTaxMode | null;
   costPriceCents?: number | null;
   batteryCostCents?: number | null;
   chargerCostCents?: number | null;
@@ -112,11 +116,19 @@ export interface CustomerProductBatchSaveInput {
   items: CustomerProductBatchItemInput[];
   packCount: number | null;
   finalPriceCents: number | null;
+  finalPriceIncludesTax?: CustomerProductTaxMode | null;
   costPriceCents?: number | null;
   freightPerBoxCents?: number | null;
   remark?: string;
   labelRequirement?: string;
   packaging?: CustomerProductPackaging[];
+}
+
+/** 最终价格口径：只标记，不做含税/不含税数字换算。 */
+export type CustomerProductTaxMode = 'inc' | 'exc';
+
+export function normalizeCustomerProductTaxMode(value: unknown): CustomerProductTaxMode | null {
+  return value === 'inc' || value === 'exc' ? value : null;
 }
 
 export interface CustomerProductAttachment {

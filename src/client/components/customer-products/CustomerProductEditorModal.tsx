@@ -1,7 +1,7 @@
 import { Check, Download, ExternalLink, FilePlus2, ImagePlus, Plus, Save, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent } from 'react';
-import type { CustomerProduct, CustomerProductAttachmentCategory, CustomerProductBatchItemInput, CustomerProductBatchSaveInput, CustomerProductPackaging, CustomerProductSaveInput } from '../../../shared/customers';
+import type { CustomerProduct, CustomerProductAttachmentCategory, CustomerProductBatchItemInput, CustomerProductBatchSaveInput, CustomerProductPackaging, CustomerProductSaveInput, CustomerProductTaxMode } from '../../../shared/customers';
 import type { ProductRecord } from '../ProductEditor';
 import { CUSTOMER_PRODUCT_BATCH_LIMIT, parseBatchLines } from '../../customer-product-batch';
 import { ATTACHMENT_ACCEPT, attachmentFilesFromClipboard, normalizeUploadAttachment, SUPPORTED_ATTACHMENT_HINT } from '../../attachment-mime';
@@ -111,6 +111,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const [finalPrice, setFinalPrice] = useState('');
+  const [finalPriceIncludesTax, setFinalPriceIncludesTax] = useState<CustomerProductTaxMode | null>(null);
   const [costPrice, setCostPrice] = useState('');
   const [batteryCost, setBatteryCost] = useState('');
   const [chargerCost, setChargerCost] = useState('');
@@ -161,6 +162,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
     setPasteOpen(false);
     setPasteText('');
     setFinalPrice(product?.finalPriceCents == null ? '' : (product.finalPriceCents / 100).toFixed(2));
+    setFinalPriceIncludesTax(product?.finalPriceIncludesTax ?? null);
     setCostPrice(product?.costPriceCents == null ? '' : (product.costPriceCents / 100).toFixed(2));
     setBatteryCost(product?.batteryCostCents == null ? '' : (product.batteryCostCents / 100).toFixed(2));
     setChargerCost(product?.chargerCostCents == null ? '' : (product.chargerCostCents / 100).toFixed(2));
@@ -327,6 +329,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
           items: batch.items,
           packCount: count,
           finalPriceCents: price,
+          finalPriceIncludesTax,
           costPriceCents: cost,
           freightPerBoxCents: freight,
           remark: remark.trim(), labelRequirement: labelRequirement.trim(),
@@ -341,6 +344,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
           sku: sku.trim(),
           packCount: count,
           finalPriceCents: price,
+          finalPriceIncludesTax,
           costPriceCents: cost,
           batteryCostCents,
           chargerCostCents,
@@ -435,7 +439,10 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
       </label>}
       <div className="cpe-form-grid is-price">
         <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>机头/基础成本（元）<input type="number" min={0} step="0.01" value={costPrice} onChange={(event) => setCostPrice(event.target.value)} style={inputStyle} placeholder="待完善" /></label>
-        <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>最终价格（元）<input type="number" min={0} step="0.01" value={finalPrice} onChange={(event) => setFinalPrice(event.target.value)} style={inputStyle} placeholder="待完善" /></label>
+        <div style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>
+          <span className="cpe-price-label-row">最终价格（元）<span className="cpe-tax-toggle"><button type="button" className={`chip${finalPriceIncludesTax === 'inc' ? ' is-selected' : ''}`} aria-pressed={finalPriceIncludesTax === 'inc'} onClick={() => setFinalPriceIncludesTax((current) => current === 'inc' ? null : 'inc')}>含税价</button><button type="button" className={`chip${finalPriceIncludesTax === 'exc' ? ' is-selected' : ''}`} aria-pressed={finalPriceIncludesTax === 'exc'} onClick={() => setFinalPriceIncludesTax((current) => current === 'exc' ? null : 'exc')}>不含税价</button></span></span>
+          <input type="number" min={0} step="0.01" aria-label="最终价格（元）" value={finalPrice} onChange={(event) => setFinalPrice(event.target.value)} style={inputStyle} placeholder="待完善" />
+        </div>
         <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>运费（元/箱）<input type="number" min={0} step="0.01" value={freightPerBox} onChange={(event) => setFreightPerBox(event.target.value)} style={inputStyle} placeholder="可选" /></label>
       </div>
       {!batchMode && <details className="cpe-cost-breakdown" open={!costConfirmed}>
