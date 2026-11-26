@@ -74,6 +74,10 @@ const customerProductSelect = `
     cp.packaging_json,
     cp.remark,
     cp.label_requirement,
+    cp.sticker_enabled,
+    cp.sticker_file_relative_path,
+    cp.sticker_per_sheet,
+    COALESCE((SELECT SUM(st.quantity) FROM sticker_transactions st WHERE st.customer_product_id = cp.id), 0) AS sticker_remaining,
     cp.source_quotation_id,
     cp.image_relative_path,
     cp.image_cleared,
@@ -128,6 +132,10 @@ function mapCustomerProduct(row: CustomerProductRow | undefined): CustomerProduc
     freightPerBoxCents: row.freight_per_box_cents == null ? null : Number(row.freight_per_box_cents),
     remark: String(row.remark ?? ''),
     labelRequirement: String(row.label_requirement ?? ''),
+    stickerEnabled: Number(row.sticker_enabled ?? 0) === 1,
+    stickerFileRelativePath: row.sticker_file_relative_path == null ? null : String(row.sticker_file_relative_path),
+    stickerPerSheet: Math.max(0, Number(row.sticker_per_sheet ?? 0)),
+    stickerRemaining: Number(row.sticker_remaining ?? 0),
     packaging: parsePackaging(row.packaging_json),
     attachments: parseAttachments(row.attachments_json, Number(row.id)),
     completionStatus: 'incomplete',
@@ -248,7 +256,12 @@ export class CustomerProductRepository {
       timestamp,
       timestamp,
     );
-    return this.getById(Number(result.lastInsertRowid))!;
+    const createdId = Number(result.lastInsertRowid);
+    if (input.stickerEnabled || input.stickerPerSheet) {
+      this.database.prepare('UPDATE customer_products SET sticker_enabled = ?, sticker_per_sheet = ? WHERE id = ?')
+        .run(input.stickerEnabled ? 1 : 0, Math.max(0, Math.trunc(Number(input.stickerPerSheet) || 0)), createdId);
+    }
+    return this.getById(createdId)!;
   }
 
   /** 在单个事务里创建多条客户产品，任一条失败则整体回滚。 */
@@ -315,7 +328,8 @@ export class CustomerProductRepository {
       SET name = ?, supplier_product_name = ?, specification = ?, sku = ?, pack_count = ?, final_price_cents = ?,
           cost_price_cents = ?, battery_cost_cents = ?, charger_cost_cents = ?, packaging_cost_cents = ?,
           accessory_cost_cents = ?, other_cost_cents = ?, cost_confirmed = ?,
-          freight_per_box_cents = ?, packaging_json = ?, image_relative_path = ?, image_cleared = ?, remark = ?, label_requirement = ?, updated_at = ?
+          freight_per_box_cents = ?, packaging_json = ?, image_relative_path = ?, image_cleared = ?, remark = ?, label_requirement = ?,
+          sticker_enabled = ?, sticker_per_sheet = ?, updated_at = ?
       WHERE id = ?
     `).run(
       input.name,
@@ -337,6 +351,8 @@ export class CustomerProductRepository {
       nextImageCleared,
       input.remark ?? existing?.remark ?? '',
       input.labelRequirement ?? existing?.labelRequirement ?? '',
+      input.stickerEnabled === undefined ? (existing?.stickerEnabled ? 1 : 0) : input.stickerEnabled ? 1 : 0,
+      input.stickerPerSheet === undefined ? existing?.stickerPerSheet ?? 0 : Math.max(0, Math.trunc(Number(input.stickerPerSheet) || 0)),
       new Date().toISOString(),
       id,
     );
@@ -355,6 +371,25 @@ export class CustomerProductRepository {
       WHERE id = ?
     `).run(systemProductId, supplierProductName, new Date().toISOString(), id);
     return result.changes ? this.getById(id) : undefined;
+  }
+
+  setStickerFile(id: number, relativePath: string | null): CustomerProduct | undefined {
+    const result = this.database.prepare('UPDATE customer_products SET sticker_file_relative_path = ?, updated_at = ? WHERE id = ?')
+      .run(relativePath, new Date().toISOString(), id);
+    return result.changes ? this.getById(id) : undefined;
+  }
+
+  listStickerTransactions(customerProductId: number, limit = 100): Array<Record<string, unknown>> {
+    return this.database.prepare('SELECT * FROM sticker_transactions WHERE customer_product_id = ? ORDER BY id DESC LIMIT ?')
+      .all(customerProductId, limit) as Array<Record<string, unknown>>;
+  }
+
+  addStickerTransaction(customerProductId: number, input: { kind: 'print' | 'adjust'; quantity: number; sheets?: number | null; perSheet?: number | null; note?: string }): number {
+    const result = this.database.prepare(
+      `INSERT INTO sticker_transactions (customer_product_id, kind, quantity, sheets, per_sheet, note, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(customerProductId, input.kind, input.quantity, input.sheets ?? null, input.perSheet ?? null, input.note ?? '', new Date().toISOString());
+    return Number(result.lastInsertRowid);
   }
 
   createFromSystemProduct(customerId: number, systemProductId: number, overrides?: CustomerProductSaveInput): CustomerProduct {

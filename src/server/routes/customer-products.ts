@@ -111,6 +111,8 @@ function parseProductInput(value: unknown): CustomerProductSaveInput {
     freightPerBoxCents: body.freightPerBoxCents as number | null,
     remark: body.remark as string | undefined,
     labelRequirement: body.labelRequirement as string | undefined,
+    stickerEnabled: body.stickerEnabled as boolean | undefined,
+    stickerPerSheet: body.stickerPerSheet as number | undefined,
     packaging: body.packaging as CustomerProductSaveInput['packaging'],
     imageRelativePath: body.imageRelativePath as string | null | undefined,
   };
@@ -371,6 +373,70 @@ export async function registerCustomerProductRoutes(
     }
     const attachment = options.service.get(id)?.attachments.find((item) => item.id === attachmentId);
     return sendSuccess(reply, attachment ?? null);
+  }, reply));
+
+  app.post('/api/customer-products/:id/sticker-file', async (
+    request: FastifyRequest<{ Params: { id: string } }>,
+    reply,
+  ) => safeRoute(async () => {
+    if (!options.fileStore) throw new ApiError(503, 'FILE_STORE_UNAVAILABLE', '附件存储尚未配置');
+    const id = parseId(request.params.id);
+    const existing = options.service.get(id);
+    if (!existing) throw new ApiError(404, 'NOT_FOUND', '客户产品不存在');
+    const file = await request.file(contractFileOptions);
+    if (!file) throw new ApiError(400, 'FILE_REQUIRED', '请选择标贴 PDF 文件', 'file');
+    if (file.mimetype !== 'application/pdf') throw new ApiError(400, 'VALIDATION_ERROR', '标贴文件必须是 PDF', 'file');
+    const stored = await options.fileStore.saveFile(file.file, 'customer-product-attachment', file.filename, file.mimetype);
+    try {
+      const saved = options.service.setStickerFile(id, stored.relativePath);
+      if (!saved) throw new ApiError(404, 'NOT_FOUND', '客户产品不存在');
+      if (existing.stickerFileRelativePath?.startsWith('customer-product-attachments/')) {
+        await options.fileStore.deleteFile(existing.stickerFileRelativePath);
+      }
+      return sendSuccess(reply, saved, 201);
+    } catch (error) {
+      await options.fileStore.deleteFile(stored.relativePath);
+      throw error;
+    }
+  }, reply));
+
+  app.delete('/api/customer-products/:id/sticker-file', async (
+    request: FastifyRequest<{ Params: { id: string } }>,
+    reply,
+  ) => safeRoute(async () => {
+    const id = parseId(request.params.id);
+    const existing = options.service.get(id);
+    if (!existing) throw new ApiError(404, 'NOT_FOUND', '客户产品不存在');
+    const saved = options.service.setStickerFile(id, null);
+    if (existing.stickerFileRelativePath?.startsWith('customer-product-attachments/') && options.fileStore) {
+      await options.fileStore.deleteFile(existing.stickerFileRelativePath);
+    }
+    return sendSuccess(reply, saved ?? null);
+  }, reply));
+
+  app.get('/api/customer-products/:id/sticker', async (
+    request: FastifyRequest<{ Params: { id: string } }>,
+    reply,
+  ) => safeRoute(() => {
+    const ledger = options.service.stickerLedger(parseId(request.params.id));
+    if (!ledger) throw new ApiError(404, 'NOT_FOUND', '客户产品不存在');
+    return sendSuccess(reply, ledger);
+  }, reply));
+
+  app.post('/api/customer-products/:id/sticker/transactions', async (
+    request: FastifyRequest<{ Params: { id: string } }>,
+    reply,
+  ) => safeRoute(() => {
+    const body = asRecord(request.body);
+    const kind = body.kind === 'adjust' ? 'adjust' : 'print';
+    const ledger = options.service.addStickerTransaction(parseId(request.params.id), {
+      kind,
+      sheets: body.sheets == null ? undefined : Number(body.sheets),
+      quantity: body.quantity == null ? undefined : Number(body.quantity),
+      note: typeof body.note === 'string' ? body.note.trim() : '',
+    });
+    if (!ledger) throw new ApiError(404, 'NOT_FOUND', '客户产品不存在');
+    return sendSuccess(reply, ledger, 201);
   }, reply));
 }
 

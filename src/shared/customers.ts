@@ -68,6 +68,13 @@ export interface CustomerProduct {
   remark: string;
   /** 箱唛要求：要印在箱面上的作业指令（贴条码箱唛、机器套气泡袋等），开单时带到订单行并出现在箱唛上。 */
   labelRequirement: string;
+  /** 是否需贴标：标贴贴在机器上，PDF 为打印店原始文件（存客户产品上）。 */
+  stickerEnabled: boolean;
+  stickerFileRelativePath: string | null;
+  /** 每张标贴上的小标数量（可贴台数）。 */
+  stickerPerSheet: number;
+  /** 标贴库存剩余可贴数量（入库 − 消耗 + 手动调整）。 */
+  stickerRemaining: number;
   packaging: CustomerProductPackaging[];
   attachments: CustomerProductAttachment[];
   completionStatus: CustomerProductCompletionStatus;
@@ -101,6 +108,8 @@ export interface CustomerProductSaveInput {
   freightPerBoxCents?: number | null;
   remark?: string;
   labelRequirement?: string;
+  stickerEnabled?: boolean;
+  stickerPerSheet?: number;
   packaging?: CustomerProductPackaging[];
   imageRelativePath?: string | null;
 }
@@ -121,6 +130,8 @@ export interface CustomerProductBatchSaveInput {
   freightPerBoxCents?: number | null;
   remark?: string;
   labelRequirement?: string;
+  stickerEnabled?: boolean;
+  stickerPerSheet?: number;
   packaging?: CustomerProductPackaging[];
 }
 

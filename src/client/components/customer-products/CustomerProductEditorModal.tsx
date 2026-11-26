@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent } from 'react';
 import type { CustomerProduct, CustomerProductAttachmentCategory, CustomerProductBatchItemInput, CustomerProductBatchSaveInput, CustomerProductPackaging, CustomerProductSaveInput, CustomerProductTaxMode } from '../../../shared/customers';
 import type { ProductRecord } from '../ProductEditor';
+import CustomerStickerSection from './CustomerStickerSection';
 import { CUSTOMER_PRODUCT_BATCH_LIMIT, parseBatchLines } from '../../customer-product-batch';
 import { ATTACHMENT_ACCEPT, attachmentFilesFromClipboard, normalizeUploadAttachment, SUPPORTED_ATTACHMENT_HINT } from '../../attachment-mime';
 import { useFileDrop } from '../../use-file-drop';
@@ -122,6 +123,8 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
   const [freightPerBox, setFreightPerBox] = useState('');
   const [remark, setRemark] = useState('');
   const [labelRequirement, setLabelRequirement] = useState('');
+  const [stickerEnabled, setStickerEnabled] = useState(false);
+  const [stickerPerSheet, setStickerPerSheet] = useState(0);
   const [packaging, setPackaging] = useState<ReturnType<typeof systemPackaging>>([]);
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [systemImagePickerOpen, setSystemImagePickerOpen] = useState(false);
@@ -173,6 +176,8 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
     setFreightPerBox(product?.freightPerBoxCents == null ? '' : (product.freightPerBoxCents / 100).toFixed(2));
     setRemark(product?.remark ?? '');
     setLabelRequirement(product?.labelRequirement ?? '');
+    setStickerEnabled(copyMode ? false : Boolean(product?.stickerEnabled));
+    setStickerPerSheet(copyMode ? 0 : product?.stickerPerSheet ?? 0);
     setPackaging(packagingToEditor(product?.packaging));
     setImages(product?.imageRelativePath ? [{ id: product.imageRelativePath, name: '客户产品图片', url: `/files/${product.imageRelativePath}` }] : []);
     setSystemImagePickerOpen(false);
@@ -333,6 +338,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
           costPriceCents: cost,
           freightPerBoxCents: freight,
           remark: remark.trim(), labelRequirement: labelRequirement.trim(),
+          stickerEnabled, stickerPerSheet,
           packaging: packagingPayloadInput(),
         }, batch.imageFiles);
       } else {
@@ -460,6 +466,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
         </div>
       </details>}
       <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>箱唛要求（会印在箱面上）<textarea rows={2} value={labelRequirement} onChange={(event) => setLabelRequirement(event.target.value)} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} placeholder="只写要让仓库/工厂照做并印上箱子的话，如：外箱贴条码箱唛、机器套气泡袋" /></label>
+      <CustomerStickerSection product={product} enabled={stickerEnabled} perSheet={stickerPerSheet} onEnabledChange={setStickerEnabled} onPerSheetChange={setStickerPerSheet} disabled={busy} />
       <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>备注（仅内部可见，不打印）<textarea rows={3} value={remark} onChange={(event) => setRemark(event.target.value)} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} placeholder="价格、税运、结算等内部信息写这里；要印到箱子上的请填上面的「箱唛要求」" /></label>
       {selectedSystemProduct && <div style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>已从系统产品库带入基础信息，可继续修改后保存。</div>}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>

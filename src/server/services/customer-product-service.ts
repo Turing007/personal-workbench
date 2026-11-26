@@ -88,6 +88,46 @@ export class CustomerProductService {
     return products.map((product) => this.withTaxFlag(product, flags));
   }
 
+  setStickerFile(id: number, relativePath: string | null): CustomerProduct | undefined {
+    return this.repository.setStickerFile(id, relativePath);
+  }
+
+  stickerLedger(id: number, limit = 100) {
+    const product = this.repository.getById(id);
+    if (!product) return undefined;
+    const transactions = this.repository.listStickerTransactions(id, limit).map((row) => ({
+      id: Number(row.id),
+      kind: String(row.kind),
+      quantity: Number(row.quantity ?? 0),
+      sheets: row.sheets == null ? null : Number(row.sheets),
+      perSheet: row.per_sheet == null ? null : Number(row.per_sheet),
+      orderId: row.order_id == null ? null : Number(row.order_id),
+      note: String(row.note ?? ''),
+      createdAt: String(row.created_at ?? ''),
+    }));
+    const printed = transactions.filter((row) => row.kind === 'print').reduce((sum, row) => sum + row.quantity, 0);
+    const consumed = -transactions.filter((row) => row.kind === 'consume').reduce((sum, row) => sum + row.quantity, 0);
+    return { remaining: product.stickerRemaining, printed, consumed, transactions };
+  }
+
+  addStickerTransaction(id: number, input: { kind: 'print' | 'adjust'; sheets?: number; quantity?: number; note?: string }) {
+    const product = this.repository.getById(id);
+    if (!product) return undefined;
+    if (!product.stickerEnabled) throw new CustomerProductValidationError('该产品还没有开启贴标', 'stickerEnabled');
+    if (input.kind === 'print') {
+      const sheets = Math.max(0, Math.trunc(Number(input.sheets) || 0));
+      if (sheets <= 0) throw new CustomerProductValidationError('打印张数必须是正整数', 'stickerPerSheet');
+      const perSheet = Math.max(0, product.stickerPerSheet);
+      if (perSheet <= 0) throw new CustomerProductValidationError('请先填写每张标贴数量', 'stickerPerSheet');
+      this.repository.addStickerTransaction(id, { kind: 'print', quantity: sheets * perSheet, sheets, perSheet, note: input.note });
+    } else {
+      const quantity = Math.trunc(Number(input.quantity) || 0);
+      if (quantity === 0) throw new CustomerProductValidationError('调整数量不能为 0', 'stickerPerSheet');
+      this.repository.addStickerTransaction(id, { kind: 'adjust', quantity, note: input.note });
+    }
+    return this.stickerLedger(id);
+  }
+
   get(id: number): CustomerProduct | undefined {
     const product = this.repository.getById(id);
     return product ? this.withTaxFlag(product) : undefined;
@@ -318,6 +358,10 @@ function normalizeInput(input: CustomerProductSaveInput): CustomerProductSaveInp
     labelRequirement: input.labelRequirement === undefined
       ? undefined
       : normalizeText(input.labelRequirement, 'labelRequirement', '箱唛要求'),
+    stickerEnabled: input.stickerEnabled === undefined ? undefined : Boolean(input.stickerEnabled),
+    stickerPerSheet: input.stickerPerSheet === undefined
+      ? undefined
+      : Math.max(0, Math.trunc(Number(input.stickerPerSheet) || 0)),
     imageRelativePath: normalizeOptionalImagePath(input.imageRelativePath),
   };
 }

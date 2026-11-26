@@ -7668,3 +7668,34 @@ select {
 .customer-editor-hint { color: var(--color-text-muted); font-size: 11px; line-height: 1.5; }
 .status-action-pill:disabled { opacity: .5; cursor: not-allowed; }
 .link-button:disabled { opacity: .45; cursor: not-allowed; }
+
+/* 客户产品：标贴设置与库存 */
+.cpe-sticker { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--color-border); border-radius: var(--radius-ui); background: var(--color-surface-subtle); }
+.cpe-sticker-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.cpe-sticker-head strong { font-size: 12.5px; }
+.cpe-sticker-switch { display: inline-flex; align-items: center; gap: 5px; color: var(--color-text-secondary); font-size: 12px; }
+.cpe-sticker-error { color: var(--color-danger); font-size: 11.5px; }
+.cpe-sticker-row { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; align-items: start; }
+.cpe-sticker-row > label { display: grid; gap: 4px; color: var(--color-text-secondary); font-size: 11.5px; }
+.cpe-sticker-file { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11.5px; color: var(--color-text-secondary); }
+.cpe-sticker-file a { display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; color: var(--color-accent); text-overflow: ellipsis; white-space: nowrap; }
+.cpe-sticker-upload { position: relative; overflow: hidden; }
+.cpe-sticker-stock { display: flex; align-items: baseline; gap: 6px; font-size: 12px; color: var(--color-text-secondary); }
+.cpe-sticker-stock strong { color: var(--color-accent); font-size: 16px; font-variant-numeric: tabular-nums; }
+.cpe-sticker-stock strong.is-negative { color: var(--color-danger); }
+.cpe-sticker-stock span { color: var(--color-text-muted); font-size: 11px; }
+.cpe-sticker-inline { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
+.cpe-sticker-inline label { display: grid; gap: 3px; color: var(--color-text-secondary); font-size: 11px; }
+.cpe-sticker-inline .input { width: 96px; height: 28px; font-size: 12px; }
+.cpe-sticker-history { display: grid; gap: 2px; color: var(--color-text-muted); font-size: 10.5px; }
+.cpe-sticker-history > div { display: grid; grid-template-columns: 108px 60px minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
+.cpe-sticker-history .is-negative { color: var(--color-danger); }
+.cpe-sticker-history .is-positive { color: var(--color-accent); }
+.cpe-sticker-badge { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 999px; background: var(--color-neutral-pill); color: var(--color-text-secondary); font-size: 10px; white-space: nowrap; }
+.cpe-sticker-badge.is-negative { background: var(--color-danger-soft); color: var(--color-danger); }
+@media (max-width: 900px) {
+  .cpe-sticker-row { grid-template-columns: 1fr; }
+}
+.stock-item-sticker { color: var(--color-text-muted); font-size: 10.5px; white-space: nowrap; }
+.stock-item-sticker.is-short { color: var(--color-danger); font-weight: 600; }
+.orders-page .order-extra-files a.is-short { color: var(--color-danger); }

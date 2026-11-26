@@ -626,7 +626,7 @@ export function generateOrderContractPdf(orderId: number | string) {
   return requestBlob(`/api/orders/${orderId}/contracts/generate`, { method: 'POST' });
 }
 
-export function advanceOrderStatus(id: number | string, to: OrderStatus, reason: 'manual' | 'rollback' = 'manual') { return request(`/api/orders/${id}/status`, { method: 'POST', body: JSON.stringify({ to, reason }) }); }
+export function advanceOrderStatus(id: number | string, to: OrderStatus, reason: 'manual' | 'rollback' = 'manual', options?: { deductStickers?: boolean }) { return request(`/api/orders/${id}/status`, { method: 'POST', body: JSON.stringify({ to, reason, ...(options?.deductStickers === false ? { deductStickers: false } : {}) }) }); }
 export function rollbackOrderStatus(id: number | string, to: OrderStatus) { return advanceOrderStatus(id, to, 'rollback'); }
 
 // 服务端单次最多返回 200 条，产品库列表要全量（页面自己做显示分页），按页循环取回直到 total。
@@ -909,6 +909,31 @@ export function setCustomerActive(id: number, isActive: boolean) {
 
 export function deleteCustomer(id: number) {
   return request<null>(`/api/customers/${id}`, { method: 'DELETE' });
+}
+
+export interface StickerLedger {
+  remaining: number;
+  printed: number;
+  consumed: number;
+  transactions: Array<{ id: number; kind: string; quantity: number; sheets: number | null; perSheet: number | null; orderId: number | null; note: string; createdAt: string }>;
+}
+
+export async function uploadCustomerProductSticker(productId: number | string, file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  return request<SharedCustomerProduct>(`/api/customer-products/${productId}/sticker-file`, { method: 'POST', body: form });
+}
+
+export function deleteCustomerProductSticker(productId: number | string) {
+  return request<SharedCustomerProduct>(`/api/customer-products/${productId}/sticker-file`, { method: 'DELETE' });
+}
+
+export function getStickerLedger(productId: number | string) {
+  return request<StickerLedger>(`/api/customer-products/${productId}/sticker`);
+}
+
+export function addStickerTransaction(productId: number | string, input: { kind: 'print' | 'adjust'; sheets?: number; quantity?: number; note?: string }) {
+  return request<StickerLedger>(`/api/customer-products/${productId}/sticker/transactions`, { method: 'POST', body: JSON.stringify(input) });
 }
 
 export function getCustomerProducts(customerId: number, filters: CustomerProductListFilters = {}) {

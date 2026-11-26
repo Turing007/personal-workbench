@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 48;
+const CURRENT_SCHEMA_VERSION = 49;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -1671,6 +1671,34 @@ function migrateVersionFortySeven(database: DatabaseSync, now: string): void {
 }
 
 /** 客户付款方式（先款后货/发货前付清/账期）与账期对账：客户档案加设置列，订单加快照列。 */
+
+/** 贴标库存：客户产品维护标贴 PDF、每张数量与入库/消耗台账。 */
+function migrateVersionFortyNine(database: DatabaseSync, now: string): void {
+  const columns: Array<[string, string]> = [
+    ['sticker_enabled', 'INTEGER NOT NULL DEFAULT 0'],
+    ['sticker_file_relative_path', 'TEXT'],
+    ['sticker_per_sheet', 'INTEGER NOT NULL DEFAULT 0'],
+  ];
+  for (const [name, definition] of columns) addColumnIfMissing(database, 'customer_products', name, definition);
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS sticker_transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_product_id INTEGER NOT NULL REFERENCES customer_products(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK (kind IN ('print', 'consume', 'adjust')),
+      quantity INTEGER NOT NULL,
+      sheets INTEGER,
+      per_sheet INTEGER,
+      order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+      order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sticker_transactions_product ON sticker_transactions (customer_product_id, id);
+    CREATE INDEX IF NOT EXISTS idx_sticker_transactions_order ON sticker_transactions (order_id);
+  `);
+  upsertSetting(database, 'schema_version', '49', now);
+}
+
 function migrateVersionFortyEight(database: DatabaseSync, now: string): void {
   const customerColumns: Array<[string, string]> = [
     ['payment_policy', "TEXT NOT NULL DEFAULT 'before_ship'"],
@@ -1834,6 +1862,7 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionFortySix(transactionDatabase, now);
     migrateVersionFortySeven(transactionDatabase, now);
     migrateVersionFortyEight(transactionDatabase, now);
+    migrateVersionFortyNine(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

@@ -476,6 +476,7 @@ export async function registerOrderRoutes(app: FastifyInstance, options: OrderRo
         normalizeOrderStatus(body.to),
         reason,
         body.trackingNo == null ? undefined : optionalText(body.trackingNo, 'trackingNo', '物流单号'),
+        { deductStickers: body.deductStickers === false ? false : undefined },
       );
       if (!order) throw new ApiError(404, 'NOT_FOUND', '订单不存在');
       return sendSuccess(reply, order);

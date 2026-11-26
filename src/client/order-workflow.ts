@@ -45,7 +45,7 @@ export function isDraftOrder(order: Pick<OrderDraft, 'status'>): boolean {
 export type BatchAdvanceAction = 'stock' | 'pack' | 'ship';
 
 export type BatchAdvanceOrder = Pick<OrderDraft, 'id' | 'orderNo' | 'status' | 'trackingNo' | 'labelPrintedAt'>
-  & Partial<Pick<OrderDraft, 'amount' | 'financeSummary'>>;
+  & Partial<Pick<OrderDraft, 'amount' | 'financeSummary' | 'stickerConsumedCount'>>;
 
 export interface BatchAdvanceTarget {
   order: BatchAdvanceOrder;

@@ -444,7 +444,7 @@ export class OrderService {
     };
   }
 
-  transition(orderId: number, toValue: unknown, reason: TransitionReason = 'manual', trackingNo?: string | null) {
+  transition(orderId: number, toValue: unknown, reason: TransitionReason = 'manual', trackingNo?: string | null, options: { deductStickers?: boolean } = {}) {
     const order = this.repositories.getOrderDetail(orderId) as (Record<string, unknown> & {
       status?: unknown;
       tracking_no?: unknown;
@@ -489,6 +489,10 @@ export class OrderService {
       ? this.repositories.updateOrderStatusWithTracking(orderId, to, nextTrackingNo)
       : this.repositories.updateOrderStatus(orderId, to);
     if (!changed) return undefined;
+    // 完成打包（进入待发货）时扣减标贴库存；回退不返还，重复打包由调用方决定是否跳过。
+    if (to === 'ship_pending' && options.deductStickers !== false) {
+      this.repositories.consumeStickersForOrder(orderId);
+    }
     return this.repositories.getOrderDetail(orderId);
   }
 
