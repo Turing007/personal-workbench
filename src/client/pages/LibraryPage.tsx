@@ -614,7 +614,7 @@ export default function LibraryPage({ customers, onNotify }: LibraryPageProps) {
       </div> : <>
         <div className="table-scroll library-table-desktop">
           <table className="data-table library-table">
-            <thead><tr>{['资料名称', '分类', '客户', '标签', '大小', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
+            <thead><tr>{['资料名称', '分类', '客户', '标签', '备注', '大小', '更新时间', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
             <tbody>{items.map((file) => <tr key={file.id}>
               <td className="library-name-cell">
                 <span className="library-file-icon"><FileGlyph file={file} /></span>
@@ -623,6 +623,7 @@ export default function LibraryPage({ customers, onNotify }: LibraryPageProps) {
               <td><span className={`library-category is-${file.category}`}>{libraryCategoryLabel(file.category)}</span></td>
               <td className="library-customer-cell">{file.customerName || '—'}</td>
               <td><div className="library-tags">{file.tags.length ? file.tags.slice(0, 3).map((tag) => <span key={tag}>{tag}</span>) : '—'}{file.tags.length > 3 && <em>+{file.tags.length - 3}</em>}</div></td>
+              <td className="library-note-cell" title={file.note || undefined}>{file.note || '—'}</td>
               <td className="library-size-cell">{formatSize(file.size)}</td>
               <td className="library-time-cell">{trash ? `删除于 ${formatTime(file.deletedAt ?? '')}` : formatTime(file.updatedAt)}</td>
               <td className="library-actions-cell">{actions(file)}</td>
@@ -641,6 +642,7 @@ export default function LibraryPage({ customers, onNotify }: LibraryPageProps) {
             <span>{trash ? `删除于 ${formatTime(file.deletedAt ?? '')}` : formatTime(file.updatedAt)}</span>
           </div>
           {file.tags.length > 0 && <div className="library-tags">{file.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
+          {file.note && <div className="library-card-note" title={file.note}>{file.note}</div>}
           {actions(file)}
         </article>)}</div>
       </>}

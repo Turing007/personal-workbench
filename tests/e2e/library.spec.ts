@@ -24,6 +24,7 @@ test('资料库：上传标贴 → 搜索/编辑 → 回收站恢复 → 彻底�
   const customer = (await createdCustomer.json()).data as { id: number };
   const fileName = `E2E客户标贴-${stamp}.pdf`;
   const title = `E2E资料标贴-${stamp}`;
+  const note = `给仓库打印用 ${stamp}`;
   page.on('dialog', (dialog) => { void dialog.accept(); });
 
   try {
@@ -40,6 +41,7 @@ test('资料库：上传标贴 → 搜索/编辑 → 回收站恢复 → 彻底�
     await uploadDialog.locator('input[aria-label="客户"]').fill(customerName);
     await uploadDialog.locator('[role="option"]').filter({ hasText: customerName }).first().click();
     await uploadDialog.locator('.library-pending-row .input').fill(title);
+    await uploadDialog.locator('label', { hasText: '备注' }).locator('textarea').fill(note);
     await uploadDialog.getByRole('button', { name: /上传（1）/ }).click();
     await expect(uploadDialog).toBeHidden({ timeout: 15_000 });
 
@@ -47,6 +49,7 @@ test('资料库：上传标贴 → 搜索/编辑 → 回收站恢复 → 彻底�
     await expect(row).toBeVisible();
     await expect(row).toContainText(customerName);
     await expect(row).toContainText('客户标贴');
+    await expect(row.locator('.library-note-cell')).toHaveText(note);
 
     // 搜索
     await page.locator('.library-toolbar .search-control input').fill(title);
