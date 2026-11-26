@@ -1,4 +1,5 @@
 import { ArrowDown, ArrowUp, Package, Plus, RotateCcw, Save, Trash2, X } from 'lucide-react';
+import NumberField from '../NumberField';
 import { useEffect, useState } from 'react';
 import { getPackagingCategories, getPackagingPresets, getVolumeDivisor, reseedPackagingPresets, savePackagingPresets, saveVolumeDivisor } from '../../api';
 import { PACKAGING_PRESET_LIMIT, type PackagingPreset } from '../../../shared/packaging-presets';
@@ -181,7 +182,7 @@ export default function PackagingPresetsSection() {
         <input className="input" aria-label={`包装${index + 1}包装名称`} value={item.name} disabled={busy} placeholder="牛皮纸盒-20台装" onChange={(event) => update(index, { name: event.target.value })} />
         <input className="input" aria-label={`包装${index + 1}内盒尺寸`} value={item.innerSize} disabled={busy} placeholder="45*9*9" onChange={(event) => update(index, { innerSize: event.target.value })} />
         <input className="input" aria-label={`包装${index + 1}外箱尺寸`} value={item.outerSize} disabled={busy} placeholder="47*48*36" onChange={(event) => update(index, { outerSize: event.target.value })} />
-        <input className="input" type="number" min={1} aria-label={`包装${index + 1}装箱数`} value={item.packSize} disabled={busy} onChange={(event) => update(index, { packSize: Math.max(1, Math.trunc(Number(event.target.value) || 1)) })} />
+        <NumberField className="input" min={1} integer disabled={busy} ariaLabel={`包装${index + 1}装箱数`} value={item.packSize} onChange={(next) => update(index, { packSize: next })} />
         <input className="input" type="number" min={0} step="0.01" aria-label={`包装${index + 1}包装采购价`} value={item.purchasePrice} disabled={busy} placeholder="元" onChange={(event) => update(index, { purchasePrice: event.target.value })} />
         <div className="packaging-preset-categories">
           {item.categories.map((category) => <span className="packaging-preset-category-chip" key={category}>

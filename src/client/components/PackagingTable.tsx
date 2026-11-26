@@ -5,6 +5,7 @@ import type { PackagingPreset } from '../../shared/packaging-presets';
 import { packagingPresetMatches, sortPackagingPresetsForProduct } from '../../shared/packaging-presets';
 import { applyPackagingPreset, blankPackagingRow } from '../packaging-preset';
 import PackagingImagesModal from './PackagingImagesModal';
+import NumberField from './NumberField';
 
 export interface PackagingTableProps {
   value: PackagingOption[];
@@ -76,7 +77,7 @@ export default function PackagingTable({ value, onChange, compact = false, showP
             <td className="packaging-table-col-number"><input className="input packaging-table-input" type="number" min={0} aria-label="内盒重量" value={row.innerWeight} onChange={(event) => update(row.id, { innerWeight: event.target.value })} placeholder="kg" /></td>
             <td className="packaging-table-col-size"><input className="input packaging-table-input" aria-label="外箱尺寸" value={row.outerSize} onChange={(event) => update(row.id, { outerSize: event.target.value })} placeholder="40×30×25cm" /></td>
             <td className="packaging-table-col-number"><input className="input packaging-table-input" type="number" min={0} aria-label="外箱重量" value={row.outerWeight} onChange={(event) => update(row.id, { outerWeight: event.target.value })} placeholder="kg" /></td>
-            <td className="packaging-table-col-number"><input className="input packaging-table-input" type="number" min={1} aria-label="外箱装箱数" value={row.packSize} onChange={(event) => update(row.id, { packSize: Math.max(1, Number(event.target.value) || 1) })} /></td>
+            <td className="packaging-table-col-number"><NumberField className="input packaging-table-input" min={1} integer ariaLabel="外箱装箱数" value={row.packSize} onChange={(next) => update(row.id, { packSize: next })} /></td>
             {showPurchasePrice && <td className="packaging-table-col-price"><input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label="包装采购价" value={row.purchasePrice} onChange={(event) => update(row.id, { purchasePrice: event.target.value })} placeholder="元" /></td>}
             {showImages && <td className="packaging-table-col-images"><button type="button" className="packaging-images-trigger" title="维护包装图片" onClick={() => setImagesRowId(row.id)}><ImageIcon size={14} />{row.images?.length ? <span>{row.images.length}张</span> : <span>添加</span>}</button></td>}
             <td className="packaging-table-col-actions"><button type="button" className="icon-button danger" title="删除包装" onClick={() => onChange(value.filter((entry) => entry.id !== row.id))}><Trash2 size={14} /></button></td>

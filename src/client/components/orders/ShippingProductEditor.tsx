@@ -2,6 +2,7 @@ import { Package } from 'lucide-react';
 import { thumbUrl } from '../../image-urls';
 import { boxesForQuantity, remainingQuantity } from '../../../shared/shipping';
 import { useProductPreview } from '../ProductPreview';
+import NumberField from '../NumberField';
 import type { OrderItemDraft } from '../OrderForm';
 
 export interface ShippingProductEditorProps {
@@ -35,7 +36,7 @@ export default function ShippingProductEditor({ orderNo, items, quantities, onQu
             <strong title={item.name}>{item.name || '未填产品'}</strong>
             <span title={`${item.specification || '—'} · 剩余 ${remaining} 件 · ${item.packSize} 件/箱`}>{item.specification || '—'} · 剩余 {remaining} 件 · {item.packSize} 件/箱</span>
           </span>
-          <input type="number" min={0} max={remaining} inputMode="numeric" aria-label={`${orderNo}-${item.name || '产品'}-本次发货数量`} value={quantity} onChange={(event) => onQuantityChange(item, Number(event.target.value))} />
+          <NumberField min={0} max={remaining} integer ariaLabel={`${orderNo}-${item.name || '产品'}-本次发货数量`} value={quantity} onChange={(next) => onQuantityChange(item, next)} />
           <span className="order-shipping-item-boxes">{quantity > 0 ? `${boxes} 箱` : '—'}</span>
         </div>;
       })}

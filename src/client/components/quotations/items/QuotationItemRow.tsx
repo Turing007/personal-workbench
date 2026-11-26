@@ -19,6 +19,7 @@ import {
   type QuotationConfigSettings,
 } from '../../../../shared/product-pricing';
 import type { ProductRecord } from '../../ProductEditor';
+import NumberField from '../../NumberField';
 import { formatCentsPlain, parseNonNegative, type QuotationLineDraft } from '../quotation-lines';
 import type { QuotationLineActions } from './use-line-actions';
 
@@ -149,7 +150,7 @@ function useCells(props: QuotationItemRowProps) {
   );
 
   const markupInput = (
-    <input type="number" min="0" step="0.01" aria-label="毛利率" value={item.configuration?.markupPercent ?? ''} disabled={!product || !item.configuration} onChange={(event) => actions.applySelection(item, { markupPercent: Number(event.target.value) || 0 })} style={fieldStyle} />
+    <NumberField min={0} step={0.01} ariaLabel="毛利率" value={item.configuration?.markupPercent ?? 0} disabled={!product || !item.configuration} onChange={(next) => actions.applySelection(item, { markupPercent: next })} style={fieldStyle} />
   );
 
   const tierCell = (

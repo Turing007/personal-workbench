@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import type { Customer, CustomerSaveInput } from '../../../shared/customers';
 import { PAYMENT_POLICY_OPTIONS, normalizePaymentPolicy, type PaymentPolicy } from '../../../shared/payment-policy';
 import Modal from '../Modal';
+import NumberField from '../NumberField';
 import { useIsNarrow } from '../../use-is-narrow';
 
 export interface CustomerEditorModalProps {
@@ -105,12 +106,12 @@ export default function CustomerEditorModal({ open, customer, busy, onClose, onS
           {PAYMENT_POLICY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select></label>
         {(draft.paymentPolicy ?? 'before_ship') === 'prepay'
-          ? <label className="customer-editor-field">定金比例（%）<input className="customer-editor-input" type="number" min="0" max="100" value={draft.depositPercent ?? 0} onChange={(event) => update('depositPercent', Math.max(0, Math.min(100, Math.trunc(Number(event.target.value) || 0))))} /></label>
+          ? <label className="customer-editor-field">定金比例（%）<NumberField className="customer-editor-input" min={0} max={100} integer ariaLabel="定金比例" value={draft.depositPercent ?? 0} onChange={(next) => update('depositPercent', next)} /></label>
           : (draft.paymentPolicy ?? 'before_ship') === 'credit'
-            ? <label className="customer-editor-field">账期天数<input className="customer-editor-input" type="number" min="0" max="365" value={draft.creditDays ?? 0} onChange={(event) => update('creditDays', Math.max(0, Math.min(365, Math.trunc(Number(event.target.value) || 0))))} /></label>
+            ? <label className="customer-editor-field">账期天数<NumberField className="customer-editor-input" min={0} max={365} integer ariaLabel="账期天数" value={draft.creditDays ?? 0} onChange={(next) => update('creditDays', next)} /></label>
             : <span />}
       </div>
-      {(draft.paymentPolicy ?? 'before_ship') === 'credit' && <label className="customer-editor-field">账期额度（元，0 = 不限额）<input className="customer-editor-input" type="number" min="0" step="0.01" value={(draft.creditLimitCents ?? 0) / 100} onChange={(event) => update('creditLimitCents', Math.max(0, Math.round((Number(event.target.value) || 0) * 100)))} /></label>}
+      {(draft.paymentPolicy ?? 'before_ship') === 'credit' && <label className="customer-editor-field">账期额度（元，0 = 不限额）<NumberField className="customer-editor-input" min={0} step={0.01} ariaLabel="账期额度" value={(draft.creditLimitCents ?? 0) / 100} onChange={(next) => update('creditLimitCents', Math.round(next * 100))} /></label>}
       <div className="customer-editor-hint">
         {(draft.paymentPolicy ?? 'before_ship') === 'prepay'
           ? '先款后货：收齐定金前订单只能存草稿；收齐全款后才能在订单里确认已备货。'

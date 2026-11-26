@@ -1,6 +1,7 @@
 import { Merge, RotateCcw, Save } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import Modal from './Modal';
+import NumberField from './NumberField';
 import type { OrderDraft } from './OrderForm';
 import CartonLabelView from './carton-label/CartonLabelView';
 import type { CartonLabel, LabelLine } from './carton-label/types';
@@ -62,7 +63,7 @@ export default function LabelEditorModal({ open, order, labels, onClose, onSave,
           <label>SKU<input value={line.sku} onChange={(event) => updateCurrent(nextLine(current, line, { sku: event.target.value }))} style={inputStyle} /></label>
           <label>品名<input value={line.name} onChange={(event) => updateCurrent(nextLine(current, line, { name: event.target.value }))} style={inputStyle} /></label>
           <label>规格<input value={line.specification} onChange={(event) => updateCurrent(nextLine(current, line, { specification: event.target.value }))} style={inputStyle} /></label>
-          <label>当前箱数量<input type="number" min="1" value={line.quantity} onChange={(event) => updateCurrent(nextLine(current, line, { quantity: Math.max(1, Number(event.target.value) || 1) }))} style={inputStyle} /></label>
+          <label>当前箱数量<NumberField min={1} integer value={line.quantity} onChange={(next) => updateCurrent(nextLine(current, line, { quantity: next }))} style={inputStyle} /></label>
           <label>箱唛要求<input value={line.remark ?? ''} onChange={(event) => updateCurrent(nextLine(current, line, { remark: event.target.value }))} style={inputStyle} /></label>
         </div>)}</div>
       </>}</div>

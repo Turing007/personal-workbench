@@ -1,4 +1,5 @@
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BatteryCharging, Plus, Save, Trash2 } from 'lucide-react';
+import NumberField from '../NumberField';
 import { Fragment, useEffect, useState } from 'react';
 import { getBatteryPriceMatrix, getChargerPrices, saveBatteryPriceMatrix, saveChargerPrices } from '../../api';
 import { ACCESSORY_PRICE_LIST_LIMIT, type AccessoryPrice } from '../../../shared/accessory-prices';
@@ -220,7 +221,7 @@ export default function AccessoryPricesSection() {
       {!!chargers.length && <div className="accessory-price-list">
         {chargers.map((item, index) => <div className="accessory-price-row" key={item.id || index}>
           <input className="input" aria-label={`充电器${index + 1}名称`} value={item.name} disabled={chargerBusy} placeholder="如：1.5A 充电器" onChange={(event) => updateCharger(index, { name: event.target.value })} />
-          <input className="input" type="number" min={0} step="0.01" aria-label={`充电器${index + 1}价格`} value={item.price} disabled={chargerBusy} placeholder="元" onChange={(event) => updateCharger(index, { price: Number(event.target.value) || 0 })} />
+          <NumberField className="input" min={0} step={0.01} disabled={chargerBusy} ariaLabel={`充电器${index + 1}价格`} value={item.price} placeholder="元" onChange={(next) => updateCharger(index, { price: next })} />
           <button className="icon-button danger" type="button" title="删除这条价格" aria-label={`删除第 ${index + 1} 条充电器价格`} disabled={chargerBusy} onClick={() => removeCharger(index)}><Trash2 size={14} /></button>
         </div>)}
       </div>}

@@ -1,3 +1,4 @@
+import NumberField from './NumberField';
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, ClipboardEvent as ReactClipboardEvent } from 'react';
 import { getCategoryAccessoryPrices, listCatalogs, saveCategoryAccessoryPrices, type CatalogSummary } from '../api';
@@ -330,10 +331,10 @@ function CategoryAccessoryDefaultsModal({ open, category, onClose, onSaved, adde
                 <input className="input packaging-table-input" aria-label={`类目配件${index + 1}名称`} value={item.name} placeholder="如：9 件套筒" onChange={(event) => update(item.id, { name: event.target.value })} />
               </td>
               <td className="packaging-table-col-price">
-                <input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label={`类目配件${index + 1}价格`} value={item.price} placeholder="元" onChange={(event) => update(item.id, { price: Number(event.target.value) || 0 })} />
+                <NumberField className="input packaging-table-input" min={0} step={0.01} ariaLabel={`类目配件${index + 1}价格`} value={item.price} placeholder="元" onChange={(next) => update(item.id, { price: next })} />
               </td>
               <td className="packaging-table-col-weight">
-                <input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label={`类目配件${index + 1}重量`} value={item.weight ?? ''} placeholder="kg" onChange={(event) => update(item.id, { weight: Number(event.target.value) || 0 })} />
+                <NumberField className="input packaging-table-input" min={0} step={0.01} ariaLabel={`类目配件${index + 1}重量`} value={item.weight ?? 0} placeholder="kg" onChange={(next) => update(item.id, { weight: next })} />
               </td>
               <td className="packaging-table-col-actions">
                 <span className="category-accessory-defaults-actions">
@@ -445,10 +446,10 @@ function CategoryAccessoryPricesEditor({ category, value, customized, onSeed, on
               <input className="input packaging-table-input" aria-label={`产品配件${index + 1}名称`} value={item.name} placeholder="如：9 件套筒" onChange={(event) => update(item.id, { name: event.target.value })} />
             </td>
             <td className="packaging-table-col-price">
-              <input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label={`产品配件${index + 1}价格`} value={item.price} placeholder="元" onChange={(event) => update(item.id, { price: Number(event.target.value) || 0 })} />
+              <NumberField className="input packaging-table-input" min={0} step={0.01} ariaLabel={`产品配件${index + 1}价格`} value={item.price} placeholder="元" onChange={(next) => update(item.id, { price: next })} />
             </td>
             <td className="packaging-table-col-weight">
-              <input className="input packaging-table-input" type="number" min={0} step="0.01" aria-label={`产品配件${index + 1}重量`} value={item.weight ?? ''} placeholder="kg" onChange={(event) => update(item.id, { weight: Number(event.target.value) || 0 })} />
+              <NumberField className="input packaging-table-input" min={0} step={0.01} ariaLabel={`产品配件${index + 1}重量`} value={item.weight ?? 0} placeholder="kg" onChange={(next) => update(item.id, { weight: next })} />
             </td>
             <td className="packaging-table-col-actions">
               <button className="icon-button danger" type="button" title="移除这条配件" aria-label={`移除第 ${index + 1} 条产品配件`} onClick={() => remove(item.id)}><Trash2 size={14} /></button>

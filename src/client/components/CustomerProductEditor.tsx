@@ -1,5 +1,6 @@
 import { Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import NumberField from './NumberField';
 import Modal from './Modal';
 import type { CustomerProduct } from './OrderForm';
 
@@ -53,7 +54,7 @@ export default function CustomerProductEditor({ open, product, onClose, onSave }
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 10 }}>
         <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>规格<input value={draft.specification} onChange={(event) => update('specification', event.target.value)} style={fieldStyle} /></label>
-        <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>装箱数<input type="number" min={1} step={1} value={draft.packCount} onChange={(event) => update('packCount', Math.max(1, Math.trunc(Number(event.target.value) || 1)))} style={fieldStyle} /></label>
+        <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>装箱数<NumberField min={1} integer value={draft.packCount} onChange={(next) => update('packCount', next)} style={fieldStyle} /></label>
       </div>
     </div>
   </Modal>;

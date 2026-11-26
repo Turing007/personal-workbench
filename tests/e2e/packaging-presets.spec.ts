@@ -171,3 +171,23 @@ test.describe('手机端', () => {
     }
   });
 });
+
+test('产品编辑的数字框可以先清空再改，不会自动弹回最小值', async ({ page }) => {
+  const product = await seedProduct(page);
+  try {
+    const dialog = await openEditor(page, product.sku, false, false);
+    const packSize = dialog.locator('input[aria-label="外箱装箱数"]');
+    await packSize.fill('');
+    await expect(packSize).toHaveValue('');
+    await packSize.press('2');
+    await expect(packSize).toHaveValue('2');
+    await packSize.blur();
+    await expect(packSize).toHaveValue('2');
+    // 清空后失焦才收敛回最小值，避免手机上删最后一位时被立刻填回。
+    await packSize.fill('');
+    await packSize.blur();
+    await expect(packSize).toHaveValue('1');
+  } finally {
+    await page.request.delete(`/api/products/${product.id}`);
+  }
+});
