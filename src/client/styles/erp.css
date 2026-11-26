@@ -2759,22 +2759,74 @@
   .customer-products-page .page-title { grid-column: 1; display: inline-flex; align-items: center; gap: 6px; font-size: 18px; font-weight: 650; line-height: 1.2; letter-spacing: -.015em; }
   .customer-products-page .page-subtitle { grid-column: 2; align-self: end; overflow: hidden; color: var(--erp-text-2); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
 
-  .customer-products-page > .customer-products-toolbar { flex: 0 0 auto; min-height: 40px; padding: 0; gap: 8px; border-bottom: 0; }
-  .customer-products-page > .customer-products-toolbar .search-control { width: 300px; flex: 0 1 300px; min-width: 220px; }
-  .customer-products-page > .customer-products-toolbar .search-control input { height: 32px; border-color: var(--erp-border); box-shadow: none; }
-  .customer-products-page > .customer-products-toolbar .customer-list-trigger { display: none; }
+  /* 客户搜索与新增都收进左侧客户面板，桌面端不再需要页级工具条（手机端另有入口）。 */
+  .customer-products-page > .customer-products-toolbar { display: none; }
 
   .customer-products-workspace {
+    position: relative;
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     overflow: hidden;
     border-radius: var(--erp-radius-surface);
     box-shadow: none;
   }
 
-  .customer-products-workspace > .customer-list-panel { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--erp-divider); background: var(--erp-surface); }
+  /* 客户档案浮在产品区上方：展开/收起都不改变产品表格宽度，不往右挤压。 */
+  .customer-products-workspace > .customer-list-panel {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    width: 300px;
+    min-height: 0;
+    border-right: 1px solid var(--erp-divider);
+    background: var(--erp-surface);
+    box-shadow: 12px 0 28px rgba(15, 23, 42, .16);
+    animation: customer-panel-slide-in 180ms cubic-bezier(.2, .6, .25, 1) both;
+  }
+
+  @keyframes customer-panel-slide-in {
+    from { opacity: .55; transform: translateX(-18px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .customer-panel-count { margin-left: auto; color: var(--erp-muted); font-size: 11px; white-space: nowrap; }
+  .customer-panel-tools { display: grid; gap: 7px; padding: 9px 12px 11px; border-bottom: 1px solid var(--erp-divider); }
+  .customer-panel-search { width: 100%; min-width: 0; }
+  .customer-panel-search input { height: 32px; border-color: var(--erp-border); box-shadow: none; }
+  .customer-panel-actions { display: flex; align-items: center; gap: 7px; }
+  .customer-panel-actions .button { flex: 1; height: 30px; min-height: 30px; padding: 0 10px; font-size: 12px; }
+
+  .customer-panel-tab {
+    position: absolute;
+    top: 12px;
+    left: 0;
+    z-index: 5;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 7px 10px;
+    border: 1px solid var(--erp-border);
+    border-left: 0;
+    border-radius: 0 var(--radius-ui) var(--radius-ui) 0;
+    background: var(--erp-surface);
+    color: var(--erp-muted);
+    box-shadow: 3px 3px 10px rgba(15, 23, 42, .12);
+    font: inherit;
+    font-size: 11.5px;
+    cursor: pointer;
+  }
+
+  .customer-panel-tab span { writing-mode: vertical-rl; letter-spacing: 2px; }
+  .customer-panel-tab:hover { color: var(--color-accent); border-color: var(--color-accent); }
+
+  /* 收起态给左侧标签让位：只挪客户头部与产品工具条，产品表格列宽保持不变。 */
+  .customer-products-workspace.is-customer-collapsed .customer-products-header,
+  .customer-products-workspace.is-customer-collapsed .customer-products-toolbar { padding-left: 46px; }
   .customer-products-workspace .customer-list-header { flex: none; height: 42px; padding: 0 12px; display: flex; align-items: center; border-bottom: 1px solid var(--erp-divider); }
   .customer-products-workspace .customer-list-scroll { flex: 1; min-height: 0; max-height: none !important; overflow: auto; }
   .customer-products-workspace .customer-list-item { width: 100%; display: grid; gap: 3px; padding: 9px 12px; border: 0; border-bottom: 1px solid var(--erp-divider); border-left: 3px solid transparent; background: transparent; text-align: left; cursor: pointer; }

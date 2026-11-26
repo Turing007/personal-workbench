@@ -1,4 +1,5 @@
 import {
+  ChevronLeft,
   Copy,
   Edit3,
   Eye,
@@ -39,12 +40,18 @@ import Modal from '../components/Modal';
 import CustomerEditorModal from '../components/customers/CustomerEditorModal';
 import { paymentPolicySummary } from '../../shared/payment-policy';
 import CustomerProductEditorModal, { type CustomerProductAttachmentDraft } from '../components/customer-products/CustomerProductEditorModal';
+import CustomerProductStickerModal from '../components/customer-products/CustomerProductStickerModal';
+import CustomerProductRemarkModal from '../components/customer-products/CustomerProductRemarkModal';
+import CustomerProductAttachmentsModal from '../components/customer-products/CustomerProductAttachmentsModal';
 import { cloneCustomerProductForNew } from '../customer-product-copy';
 import { thumbUrl } from '../image-urls';
 import type { ToastKind } from '../components/OrderForm';
-import { useIsNarrow } from '../use-is-narrow';
-import { useHideOnScroll } from '../use-hide-on-scroll';
 import { useProductPreview } from '../components/ProductPreview';
+
+/** 附件数量不含「备注图片」：备注里的截图单独在备注弹窗管理。 */
+function attachmentFileCount(product: CustomerProduct): number {
+  return product.attachments.filter((attachment) => attachment.category !== 'remark').length;
+}
 
 export interface CustomerProductsPageProps {
   customers: Customer[];
@@ -83,6 +90,8 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(initialCustomerId ?? customers.find((customer) => customer.isActive)?.id ?? customers[0]?.id ?? null);
   // 客户列表走左侧抽屉：点「N 个客户」滑出，选中客户后自动收起。
   const [customerDrawerOpen, setCustomerDrawerOpen] = useState(false);
+  // 桌面端客户档案是浮在产品区上方的可收起面板：默认展开，选中客户或点收起后留一个左侧标签。
+  const [customerPanelOpen, setCustomerPanelOpen] = useState(true);
   const [products, setProducts] = useState<CustomerProduct[]>([]);
   const [productQuery, setProductQuery] = useState('');
   const [productStatus, setProductStatus] = useState<'all' | 'complete' | 'incomplete'>('all');
@@ -96,15 +105,24 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
   const [customerBusy, setCustomerBusy] = useState(false);
   const [productEditorOpen, setProductEditorOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<CustomerProduct | null>(null);
+  const [stickerProduct, setStickerProduct] = useState<CustomerProduct>();
+  const [remarkProduct, setRemarkProduct] = useState<CustomerProduct>();
+  const [attachmentProduct, setAttachmentProduct] = useState<CustomerProduct>();
   const [copyDraft, setCopyDraft] = useState<CustomerProduct | null>(null);
   const [copySource, setCopySource] = useState<CustomerProduct | null>(null);
   const appliedInitialCustomerId = useRef<number | undefined>(undefined);
-  const narrow = useIsNarrow();
-  const [searchFocused, setSearchFocused] = useState(false);
-  // 手机端搜索框悬浮在顶部：连续下滑收起，回滑展开；输入时锁住展开避免打字途中消失。
-  const searchHidden = useHideOnScroll(narrow && !searchFocused);
 
   const selectedCustomer = customers.find((customer) => customer.id === selectedCustomerId) ?? null;
+
+  /** 弹窗保存后的静默刷新：不闪加载态、不清空勾选。 */
+  const refreshProductsSilently = async () => {
+    if (!selectedCustomerId) return;
+    try {
+      setProducts(await getCustomerProducts(selectedCustomerId, { search: productQuery, status: productStatus }));
+    } catch {
+      // 列表刷新失败不打断弹窗操作，下一次筛选/切换客户会重新拉取。
+    }
+  };
 
   const filteredCustomers = useMemo(() => {
     const needle = customerQuery.trim().toLowerCase();
@@ -312,25 +330,29 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
       </div>
     </div>
     <div className="page-toolbar customer-products-toolbar">
-      <SearchInput value={customerQuery} onChange={setCustomerQuery} className={`customer-search-control${searchHidden ? ' is-scroll-hidden' : ''}`} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} placeholder="搜索客户名称、联系人、电话" />
-      <span className="toolbar-count">{filteredCustomers.length} 个客户</span>
       <button className="customer-list-trigger" type="button" title="打开客户列表" aria-haspopup="dialog" aria-expanded={customerDrawerOpen} onClick={() => setCustomerDrawerOpen(true)}><Users size={15} />{filteredCustomers.length} 个客户</button>
       <button className="icon-button" type="button" title="刷新客户资料" disabled={loading} onClick={() => void onCustomersChanged()}><RefreshCw size={15} /></button>
-      <button className="button button-primary" type="button" title="新增客户" onClick={() => { setEditingCustomer(null); setCustomerEditorOpen(true); }}><Plus size={15} />新增客户</button>
     </div>
 
-    <section className="table-panel customer-products-workspace">
-      <div className="customer-list-panel">
-        <div className="section-box-header customer-list-header"><span className="section-box-title">客户档案</span></div>
+    <section className={`table-panel customer-products-workspace${customerPanelOpen ? '' : ' is-customer-collapsed'}`}>
+      {customerPanelOpen ? <div className="customer-list-panel" aria-label="客户档案">
+        <div className="section-box-header customer-list-header"><span className="section-box-title">客户档案</span><span className="customer-panel-count">{filteredCustomers.length} 个客户</span><button className="icon-button" type="button" title="收起客户列表" aria-label="收起客户列表" onClick={() => setCustomerPanelOpen(false)}><ChevronLeft size={16} /></button></div>
+        <div className="customer-panel-tools">
+          <SearchInput value={customerQuery} onChange={setCustomerQuery} className="customer-panel-search" placeholder="搜索客户名称、联系人、电话" />
+          <div className="customer-panel-actions">
+            <button className="button button-primary" type="button" title="新增客户" onClick={() => { setEditingCustomer(null); setCustomerEditorOpen(true); }}><Plus size={14} />新增客户</button>
+            <button className="icon-button" type="button" title="刷新客户资料" disabled={loading} onClick={() => void onCustomersChanged()}><RefreshCw size={15} /></button>
+          </div>
+        </div>
         <div className="customer-list-scroll">
-          {filteredCustomers.map((customer) => <button key={customer.id} className={`customer-list-item${customer.id === selectedCustomerId ? ' is-selected' : ''}`} type="button" onClick={() => setSelectedCustomerId(customer.id)}>
+          {filteredCustomers.map((customer) => <button key={customer.id} className={`customer-list-item${customer.id === selectedCustomerId ? ' is-selected' : ''}`} type="button" onClick={() => { setSelectedCustomerId(customer.id); setCustomerPanelOpen(false); }}>
             <div className="customer-list-item-heading"><strong>{customer.name}</strong><span className={`badge ${customer.isActive ? 'badge-success' : 'badge-neutral'}`}>{customer.isActive ? '启用' : '停用'}</span>{customer.paymentPolicy !== 'before_ship' && <span className={`badge ${customer.paymentPolicy === 'credit' ? 'badge-info' : 'badge-neutral'}`}>{paymentPolicySummary(customer.paymentPolicy, customer.depositPercent, customer.creditDays)}</span>}</div>
             <small className="customer-list-meta">{[customer.contactName, customer.contactPhone].filter(Boolean).join(' · ') || '暂无联系人信息'}</small>
             <small className={`customer-list-count${customer.incompleteProductCount ? ' is-incomplete' : ''}`}>{customer.productCount} 个产品 · {customer.incompleteProductCount} 个待完善</small>
           </button>)}
           {!filteredCustomers.length && <div className="empty-state">暂无匹配客户</div>}
         </div>
-      </div>
+      </div> : <button className="customer-panel-tab" type="button" title="展开客户列表" aria-label="展开客户列表" aria-expanded={false} onClick={() => setCustomerPanelOpen(true)}><Users size={14} /><span>客户</span></button>}
 
       <div className="customer-products-panel">
         <div className="customer-products-header">
@@ -349,7 +371,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
             <td><input type="checkbox" checked={selectedProductIds.includes(product.id)} onChange={() => setSelectedProductIds((current) => current.includes(product.id) ? current.filter((id) => id !== product.id) : [...current, product.id])} aria-label={`选择${product.name}`} /></td>
             <td><span style={{ display: 'inline-block', padding: '3px 6px', borderRadius: 'var(--radius-ui)', background: product.completionStatus === 'complete' ? 'var(--color-success-soft)' : 'var(--color-warning-soft)', color: product.completionStatus === 'complete' ? 'var(--color-success)' : 'var(--color-warning-text)', whiteSpace: 'nowrap' }}>{product.completionStatus === 'complete' ? '已完善' : '待完善'}</span></td>
             <td>{product.imageRelativePath ? <img {...bind(imageUrl(product.imageRelativePath), product.name)} src={thumbnailUrl(product.imageRelativePath)} alt={product.name} loading="lazy" decoding="async" style={{ width: 42, height: 36, objectFit: 'contain', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)' }} /> : <span style={{ color: 'var(--color-text-muted)' }}>-</span>}</td>
-            <td className="strong-cell" title={product.name || undefined}>{product.name || '-'}</td><td>{product.specification || '-'}</td><td>{product.sku || <span style={{ color: 'var(--color-warning-text)' }}>待完善</span>}</td><td>{product.packaging.length ? product.packaging[0].name || `${product.packaging.length} 种` : '-'}</td><td>{product.packCount == null ? <span style={{ color: 'var(--color-warning-text)' }}>待完善</span> : `${product.packCount} 个/箱`}</td>{showCostPrice && <td>{product.costConfirmed ? money(customerProductStandardCostCents(product)) : <span style={{ color: 'var(--color-warning-text)' }}>未核对成本</span>}</td>}<td>{product.stickerEnabled ? <strong className={product.stickerRemaining < 0 ? 'finance-warning' : undefined}>{product.stickerRemaining}</strong> : '-'}</td><td className="strong-cell">{money(product.finalPriceCents)}{product.finalPriceIncludesTax ? <small style={{ marginLeft: 4, color: 'var(--color-text-secondary)', fontWeight: 400 }}>{product.finalPriceIncludesTax === 'inc' ? '含税' : '不含税'}</small> : null}</td><td>{product.freightPerBoxCents == null ? <span style={{ color: 'var(--color-warning-text)' }}>未设置</span> : `¥${(product.freightPerBoxCents / 100).toFixed(2)}/箱`}</td><td className="customer-product-remark-cell" title={product.remark}>{product.remark || '-'}</td><td>{product.attachments.length ? `${product.attachments.length} 个` : '-'}</td><td><span style={{ color: product.systemProductId == null ? 'var(--color-text-secondary)' : 'var(--color-accent)' }}>{product.systemProductId == null ? '临时添加' : '系统产品库'}</span></td><td style={{ color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{formatTime(product.updatedAt)}</td>
+            <td className="strong-cell" title={product.name || undefined}>{product.name || '-'}</td><td>{product.specification || '-'}</td><td>{product.sku || <span style={{ color: 'var(--color-warning-text)' }}>待完善</span>}</td><td>{product.packaging.length ? product.packaging[0].name || `${product.packaging.length} 种` : '-'}</td><td>{product.packCount == null ? <span style={{ color: 'var(--color-warning-text)' }}>待完善</span> : `${product.packCount} 个/箱`}</td>{showCostPrice && <td>{product.costConfirmed ? money(customerProductStandardCostCents(product)) : <span style={{ color: 'var(--color-warning-text)' }}>未核对成本</span>}</td>}<td><button type="button" className="customer-sticker-link" title="管理标贴库存" aria-label={`管理标贴库存：${product.name}`} onClick={() => setStickerProduct(product)}>{product.stickerEnabled ? <strong className={product.stickerRemaining < 0 ? 'finance-warning' : undefined}>{product.stickerRemaining}</strong> : '-'}</button></td><td className="strong-cell">{money(product.finalPriceCents)}{product.finalPriceIncludesTax ? <small style={{ marginLeft: 4, color: 'var(--color-text-secondary)', fontWeight: 400 }}>{product.finalPriceIncludesTax === 'inc' ? '含税' : '不含税'}</small> : null}</td><td>{product.freightPerBoxCents == null ? <span style={{ color: 'var(--color-warning-text)' }}>未设置</span> : `¥${(product.freightPerBoxCents / 100).toFixed(2)}/箱`}</td><td className="customer-product-remark-cell"><button type="button" className={`customer-remark-link${product.remark?.trim() ? '' : ' is-empty'}`} title={product.remark?.trim() || '点击编辑备注'} aria-label={`编辑备注：${product.name}`} onClick={() => setRemarkProduct(product)}>{product.remark?.trim() || '点击添加'}</button></td><td><button type="button" className="customer-attachment-link" title="管理附件" aria-label={`管理附件：${product.name}`} onClick={() => setAttachmentProduct(product)}>{attachmentFileCount(product) ? `${attachmentFileCount(product)} 个` : '上传'}</button></td><td><span style={{ color: product.systemProductId == null ? 'var(--color-text-secondary)' : 'var(--color-accent)' }}>{product.systemProductId == null ? '临时添加' : '系统产品库'}</span></td><td style={{ color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>{formatTime(product.updatedAt)}</td>
             <td><div className="row-actions"><button className="icon-button" type="button" title="编辑客户产品" onClick={() => openEditProduct(product)}><Edit3 size={14} /></button><button className="icon-button" type="button" title={activeCustomer ? '复制为客户新品' : '客户已停用，不能复制新品'} disabled={!activeCustomer} onClick={() => openCopyProduct(product)}><Copy size={14} /></button><button className="icon-button danger" type="button" title="删除客户产品" onClick={() => { void removeProduct(product); }}><Trash2 size={14} /></button></div></td>
           </tr>)}
         </tbody></table></div>
@@ -368,16 +390,16 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
               <div className="customer-product-card-field"><span>客户 SKU</span><strong style={!product.sku ? { color: 'var(--color-warning-text)' } : undefined}>{product.sku || '待完善'}</strong></div>
               <div className="customer-product-card-field"><span>包装 / 装箱数</span><strong>{product.packaging.length ? product.packaging[0].name || `${product.packaging.length} 种` : '-'}{product.packCount == null ? <em style={{ color: 'var(--color-warning-text)' }}>待完善</em> : ` · ${product.packCount} 个/箱`}</strong></div>
               {showCostPrice && <div className="customer-product-card-field"><span>成本价</span><strong style={product.costConfirmed ? undefined : { color: 'var(--color-warning-text)' }}>{product.costConfirmed ? money(customerProductStandardCostCents(product)) : '未核对成本'}</strong></div>}
-              <div className="customer-product-card-field"><span>剩余标贴</span><strong className={product.stickerEnabled && product.stickerRemaining < 0 ? 'finance-warning' : undefined}>{product.stickerEnabled ? product.stickerRemaining : '-'}</strong></div>
+              <button type="button" className="customer-product-card-field customer-product-field-button" title="管理标贴库存" aria-label={`管理标贴库存：${product.name}`} onClick={() => setStickerProduct(product)}><span>剩余标贴</span><strong className={product.stickerEnabled && product.stickerRemaining < 0 ? 'finance-warning' : undefined}>{product.stickerEnabled ? product.stickerRemaining : '-'}</strong></button>
               <div className="customer-product-card-field"><span>最终价格</span><strong>{money(product.finalPriceCents)}{product.finalPriceIncludesTax ? <small style={{ marginLeft: 4, color: 'var(--color-text-secondary)', fontWeight: 400 }}>{product.finalPriceIncludesTax === 'inc' ? '含税' : '不含税'}</small> : null}</strong></div>
               <div className="customer-product-card-field"><span>运费/箱</span><strong style={product.freightPerBoxCents == null ? { color: 'var(--color-warning-text)' } : undefined}>{product.freightPerBoxCents == null ? '未设置' : `¥${(product.freightPerBoxCents / 100).toFixed(2)}`}</strong></div>
             </div>
             <div className="customer-product-card-meta">
               <span style={{ color: product.systemProductId == null ? 'var(--color-text-secondary)' : 'var(--color-accent)' }}>{product.systemProductId == null ? '临时添加' : '系统产品库'}</span>
-              {product.attachments.length > 0 && <span>{product.attachments.length} 个附件</span>}
+              <button type="button" className="customer-product-meta-link" title="管理附件" aria-label={`管理附件：${product.name}`} onClick={() => setAttachmentProduct(product)}>{attachmentFileCount(product) ? `${attachmentFileCount(product)} 个附件` : '添加附件'}</button>
               <span>{formatTime(product.updatedAt)}</span>
             </div>
-            {product.remark && <p className="customer-product-card-remark">{product.remark}</p>}
+            <button type="button" className={`customer-product-card-remark${product.remark?.trim() ? '' : ' is-empty'}`} title="编辑备注" aria-label={`编辑备注：${product.name}`} onClick={() => setRemarkProduct(product)}>{product.remark?.trim() || '点击添加备注'}</button>
             <div className="row-actions">
               <button className="icon-button" type="button" title="编辑客户产品" onClick={() => openEditProduct(product)}><Edit3 size={14} /></button>
               <button className="icon-button" type="button" title={activeCustomer ? '复制为客户新品' : '客户已停用，不能复制新品'} disabled={!activeCustomer} onClick={() => openCopyProduct(product)}><Copy size={14} /></button>
@@ -393,6 +415,7 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
     <Modal className="customer-list-drawer-panel" open={customerDrawerOpen} variant="drawer" drawerSide="left" title="客户档案" width={400} onClose={() => setCustomerDrawerOpen(false)}>
       <div className="customer-drawer">
         <SearchInput value={customerQuery} onChange={setCustomerQuery} className="customer-drawer-search" placeholder="搜索客户名称、联系人、电话" />
+        <div className="customer-drawer-actions"><span>{filteredCustomers.length} 个客户</span><button className="button button-primary" type="button" onClick={() => { setEditingCustomer(null); setCustomerEditorOpen(true); }}><Plus size={14} />新增客户</button></div>
         <div className="customer-list-scroll">
           {filteredCustomers.map((customer) => <button key={customer.id} className={`customer-list-item${customer.id === selectedCustomerId ? ' is-selected' : ''}`} type="button" onClick={() => { setSelectedCustomerId(customer.id); setCustomerDrawerOpen(false); }} style={{ width: '100%', display: 'grid', gap: 5, padding: '11px 12px', border: 0, borderBottom: '1px solid var(--color-border)', borderLeft: `3px solid ${customer.id === selectedCustomerId ? 'var(--color-accent)' : 'transparent'}`, background: customer.id === selectedCustomerId ? 'var(--color-accent-soft)' : 'var(--color-surface)', textAlign: 'left', cursor: 'pointer', opacity: customer.isActive ? 1 : .62 }}>
             <div className="customer-list-item-heading"><strong>{customer.name}</strong><span className={`badge ${customer.isActive ? 'badge-success' : 'badge-neutral'}`}>{customer.isActive ? '启用' : '停用'}</span></div>
@@ -404,6 +427,9 @@ export default function CustomerProductsPage({ customers, systemProducts, initia
       </div>
     </Modal>
 
+    <CustomerProductStickerModal open={Boolean(stickerProduct)} product={stickerProduct} onClose={() => setStickerProduct(undefined)} onChanged={() => { void refreshProductsSilently(); }} onNotify={onNotify} />
+    <CustomerProductRemarkModal open={Boolean(remarkProduct)} product={remarkProduct} onClose={() => setRemarkProduct(undefined)} onChanged={() => { void refreshProductsSilently(); }} onNotify={onNotify} />
+    <CustomerProductAttachmentsModal open={Boolean(attachmentProduct)} product={attachmentProduct} onClose={() => setAttachmentProduct(undefined)} onChanged={() => { void refreshProductsSilently(); }} onNotify={onNotify} />
     <CustomerEditorModal open={customerEditorOpen} customer={editingCustomer} busy={customerBusy} onClose={() => { setCustomerEditorOpen(false); setEditingCustomer(null); }} onSave={saveCustomerProfile} />
     <CustomerProductEditorModal open={productEditorOpen} product={editingProduct ?? copyDraft} copyMode={Boolean(copyDraft)} copyFromImageURL={copySource?.imageRelativePath ? `/files/${copySource.imageRelativePath}` : null} systemProducts={systemProducts} enableAttachments onClose={closeProductEditor} onSave={saveProduct} onBatchSave={saveProductsBatch} />
   </div>;

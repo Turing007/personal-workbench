@@ -465,6 +465,53 @@ describe('按客户维护的产品 API', () => {
     expect((await authInject(app, { method: 'GET', url: `/api/customer-products/${created.id}` })).json().data.attachments).toEqual([]);
   });
 
+  it('备注可单独更新，标贴开关/每张数量可单独保存，备注图片单独归类', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'personal-workbench-customer-product-quick-'));
+    temporaryDirectories.push(directory);
+    const fileStore = new FileStore(join(directory, 'files'));
+    const { app } = await testApp(fileStore);
+    const customer = await createCustomer(app, '快捷操作客户');
+    const created = await createCustomerProduct(app, customer.id, productInput('快捷产品', '标准'));
+
+    const remark = await authInject(app, {
+      method: 'PATCH',
+      url: `/api/customer-products/${created.id}/remark`,
+      payload: { remark: '  新备注\n第二行  ' },
+    });
+    expect(remark.statusCode).toBe(200);
+    expect(remark.json().data.remark).toBe('新备注\n第二行');
+
+    const sticker = await authInject(app, {
+      method: 'PATCH',
+      url: `/api/customer-products/${created.id}/sticker-settings`,
+      payload: { stickerEnabled: true, stickerPerSheet: 12 },
+    });
+    expect(sticker.statusCode).toBe(200);
+    expect(sticker.json().data).toMatchObject({ stickerEnabled: true, stickerPerSheet: 12, stickerRemaining: 0 });
+
+    const cleared = await authInject(app, {
+      method: 'PATCH',
+      url: `/api/customer-products/${created.id}/sticker-settings`,
+      payload: { stickerEnabled: false, stickerPerSheet: -5 },
+    });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json().data).toMatchObject({ stickerEnabled: false, stickerPerSheet: 0 });
+
+    const uploaded = await authInject(app, {
+      method: 'POST',
+      url: `/api/customer-products/${created.id}/attachments?category=remark`,
+      ...multipartAttachment('备注截图.png', Buffer.from('remark image')),
+    });
+    expect(uploaded.statusCode).toBe(201);
+    expect(uploaded.json().data).toMatchObject({ category: 'remark', originalName: '备注截图.png' });
+
+    const fetched = await authInject(app, { method: 'GET', url: `/api/customer-products/${created.id}` });
+    expect(fetched.json().data.attachments).toEqual([expect.objectContaining({ category: 'remark' })]);
+
+    const missing = await authInject(app, { method: 'PATCH', url: '/api/customer-products/999999/remark', payload: { remark: 'x' } });
+    expect(missing.statusCode).toBe(404);
+  });
+
   it('客户产品图片可上传、替换和清空，并且不会删除系统产品图片', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'personal-workbench-customer-products-'));
     temporaryDirectories.push(directory);

@@ -1,5 +1,6 @@
 export type CustomerProductCompletionStatus = 'incomplete' | 'complete';
-export type CustomerProductAttachmentCategory = 'label' | 'instruction' | 'packaging' | 'other';
+/** remark：备注弹窗里的图片，单独存放，不计入附件数量、不复制进订单快照。 */
+export type CustomerProductAttachmentCategory = 'label' | 'instruction' | 'packaging' | 'other' | 'remark';
 
 import type { PaymentPolicy } from './payment-policy.js';
 

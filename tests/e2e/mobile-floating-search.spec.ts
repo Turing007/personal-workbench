@@ -110,18 +110,4 @@ test('手机端订单管理：短距离回滑即可唤回悬浮搜索框，且�
   );
 });
 
-/**
- * 客户产品库的客户列表已改走左侧抽屉，页面里因此同时存在两个 .search-control：
- * 工具条上那个 fixed 的悬浮框（外层 .page-toolbar）和抽屉里 / 产品子工具条里的普通搜索框。
- * 选择器必须锁死在外层 .page-toolbar 上，否则会抓到产品筛选框——它不参与滚动隐藏，
- * is-scroll-hidden 断言会永远失败。
- */
-test('手机端客户产品库：短距离回滑即可唤回悬浮搜索框，且搜索框真的落在视口内', async ({ page, context }) => {
-  await expectFloatingSearchRevealsOnShortSlideBack(
-    page,
-    context,
-    '客户',
-    '.customer-products-page',
-    '.customer-products-page .page-toolbar .search-control',
-  );
-});
+// 客户产品库的客户搜索已收进「N 个客户」抽屉，页面不再有悬浮搜索框，故不参与本用例。

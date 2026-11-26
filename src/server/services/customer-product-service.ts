@@ -92,6 +92,20 @@ export class CustomerProductService {
     return this.repository.setStickerFile(id, relativePath);
   }
 
+  /** 备注弹窗保存文字：只改 remark，不动产品其他字段。 */
+  updateRemark(id: number, value: unknown): CustomerProduct | undefined {
+    const updated = this.repository.updateRemark(id, String(value ?? '').trim());
+    return updated ? this.withTaxFlag(updated) : undefined;
+  }
+
+  /** 标贴管理弹窗的开关与每张数量：独立保存，不经过整单产品校验。 */
+  updateStickerSettings(id: number, input: { enabled?: unknown; perSheet?: unknown }): CustomerProduct | undefined {
+    const enabled = Boolean(input.enabled);
+    const perSheet = Math.max(0, Math.trunc(Number(input.perSheet) || 0));
+    const updated = this.repository.updateStickerSettings(id, enabled, perSheet);
+    return updated ? this.withTaxFlag(updated) : undefined;
+  }
+
   stickerLedger(id: number, limit = 100) {
     const product = this.repository.getById(id);
     if (!product) return undefined;

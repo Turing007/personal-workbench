@@ -689,7 +689,7 @@ select {
 
 .customer-drawer {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -698,6 +698,17 @@ select {
   flex: none;
   margin: 12px 14px;
 }
+
+.customer-drawer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 14px 10px;
+}
+
+.customer-drawer-actions > span { color: var(--color-text-secondary); font-size: var(--text-xs); }
+.customer-drawer-actions .button { height: 32px; min-height: 32px; padding: 0 12px; font-size: var(--text-xs); }
 
 .customer-drawer .customer-list-scroll {
   min-height: 0;
@@ -7125,24 +7136,13 @@ select {
 
 /* ===== 客户产品库页：手机端悬浮搜索框 + 页头标题移除 ===== */
 @media (max-width: 900px) {
-  /* 与财务 / 报价单 / 销售单同理：page-enter 动画带 transform 会让 .page-shell 成为
-     fixed 的包含块，搜索框会退化成「相对页面」定位，滚动后回滑时看不见。关掉本页动画。 */
-  .page-shell.customer-products-page { animation: none; }
-  .customer-products-page { padding-top: calc(56px + env(safe-area-inset-top, 0px)); }
+  /* 页头标题是桌面端结构，手机上隐藏；客户搜索与新增都收进「N 个客户」抽屉。 */
+  .customer-products-title { display: none; }
 
-  /* 页头标题与「N 个客户」统计是桌面端的结构，手机上隐藏：
-     搜索框 fixed 悬浮在顶部，客户列表入口改用下面的 trigger 按钮 + 左侧抽屉。 */
-  .customer-products-title,
-  .page-toolbar.customer-products-toolbar > .toolbar-count,
-  .customer-products-layout > .customer-list-panel { display: none; }
-
-  .customer-products-layout { grid-template-columns: minmax(0, 1fr); }
-
-  /* 页头标题在窄屏已隐藏，这一行只剩「客户列表入口 + 刷新 + 新增客户」。
-     搜索框已 fixed 脱离文档流，不占用网格单元，所以这里只需给剩下三项定位。 */
+  /* 顶部只留「客户列表入口 + 刷新」，客户搜索框和新增客户都在抽屉里。 */
   .page-toolbar.customer-products-toolbar {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--space-3);
     /* 外层工具条与内层「产品工具条」共用了同一个类名，会顺带吃进它的
@@ -7153,7 +7153,6 @@ select {
   }
   .page-toolbar.customer-products-toolbar > .customer-list-trigger { display: inline-flex; grid-row: 1; grid-column: 1; justify-self: start; min-width: 0; }
   .page-toolbar.customer-products-toolbar > .icon-button { grid-row: 1; grid-column: 2; }
-  .page-toolbar.customer-products-toolbar > .button { grid-row: 1; grid-column: 3; }
 
   /* 内层产品工具条上的成本价小眼睛：默认 28px 手指点不准，与产品库一样补到 40px 触控区。 */
   /* 文件夹收起按钮在手机上也要好点 */
@@ -7163,29 +7162,6 @@ select {
     width: 40px;
     height: 40px;
     border-radius: var(--radius-control);
-  }
-
-  /* 悬浮搜索框脱离工具条固定在视口顶部：连续下滑收起、回滑展开，输入时锁住展开。 */
-  .page-toolbar.customer-products-toolbar .search-control {
-    position: fixed;
-    top: calc(var(--env-banner-h, 0px) + var(--space-4) + env(safe-area-inset-top, 0px));
-    right: var(--space-4);
-    left: var(--space-4);
-    z-index: var(--z-sidebar);
-    flex: none;
-    min-width: 0;
-    max-width: none;
-    transition: transform var(--ease-standard), opacity var(--ease-standard);
-  }
-  .page-toolbar.customer-products-toolbar .search-control input {
-    height: 40px;
-    background: var(--color-surface);
-    box-shadow: var(--shadow-popover);
-  }
-  .page-toolbar.customer-products-toolbar .search-control.is-scroll-hidden {
-    transform: translateY(calc(-100% - var(--space-6)));
-    opacity: 0;
-    pointer-events: none;
   }
 
   /* 抽屉表单：窄屏下单列铺开，「联系电话」「税号」才不会被压成几十像素。 */
@@ -7699,3 +7675,90 @@ select {
 .stock-item-sticker { color: var(--color-text-muted); font-size: 10.5px; white-space: nowrap; }
 .stock-item-sticker.is-short { color: var(--color-danger); font-weight: 600; }
 .orders-page .order-extra-files a.is-short { color: var(--color-danger); }
+
+/* ---------- 客户产品快捷操作：标贴 / 备注 / 附件弹窗 ---------- */
+.customer-sticker-link,
+.customer-attachment-link,
+.customer-remark-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.customer-sticker-link:hover,
+.customer-sticker-link:hover strong { color: var(--color-accent); }
+.customer-sticker-link strong { font-weight: var(--weight-medium); }
+
+.customer-attachment-link { color: var(--color-accent); white-space: nowrap; }
+.customer-attachment-link:hover { text-decoration: underline; }
+
+.customer-remark-link { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-secondary); }
+.customer-remark-link:hover { color: var(--color-accent); }
+.customer-remark-link.is-empty { color: var(--color-text-muted); }
+
+.customer-product-field-button { border: 0; background: transparent; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.customer-product-field-button:hover strong { color: var(--color-accent); }
+.customer-product-meta-link { border: 0; background: none; padding: 0; font: inherit; color: var(--color-accent); cursor: pointer; text-align: left; }
+.customer-product-meta-link:hover { text-decoration: underline; }
+
+.customer-product-card-remark { display: block; width: 100%; border: 0; text-align: left; font-family: inherit; cursor: pointer; }
+.customer-product-card-remark.is-empty { opacity: .75; }
+
+.cpe-quick-modal { display: grid; gap: 12px; }
+.cpe-quick-modal .cpe-sticker { padding: 12px; }
+.cpe-modal-hint { margin: 0; color: var(--color-text-muted); font-size: 11px; line-height: 1.5; }
+.cpe-quick-modal .is-disabled { opacity: .55; pointer-events: none; }
+
+.cpe-remark-text { display: grid; gap: 6px; color: var(--color-text-secondary); font-size: 12px; }
+.cpe-remark-text textarea {
+  width: 100%;
+  min-height: 110px;
+  resize: vertical;
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-ui);
+  padding: 9px 10px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.cpe-remark-text textarea:focus { outline: none; border-color: var(--color-accent); box-shadow: var(--control-focus-ring); }
+
+.cpe-remark-images { display: grid; gap: 8px; }
+.cpe-remark-images-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.cpe-remark-images-head strong { font-size: 12.5px; }
+.cpe-remark-image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.cpe-remark-image-grid figure { position: relative; margin: 0; }
+.cpe-remark-image-grid img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border: 1px solid var(--color-border); border-radius: var(--radius-ui); background: var(--color-surface-subtle); }
+.cpe-remark-image-grid figure > button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, .62);
+  color: #fff;
+  cursor: pointer;
+}
+.cpe-remark-image-grid figure > button:hover { background: rgba(15, 23, 42, .82); }
+.cpe-remark-empty { padding: 14px 12px; border: 1px dashed var(--color-border-control); border-radius: var(--radius-ui); color: var(--color-text-muted); font-size: 12px; }
+
+.cpe-attachment-upload { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cpe-attachment-upload select { height: 32px; border: 1px solid var(--color-border-control); border-radius: var(--radius-ui); padding: 0 8px; background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 12px; }
+.cpe-attachment-list { display: grid; gap: 6px; }
+.cpe-attachment-row { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: var(--radius-ui); background: var(--color-surface-subtle); }
+.cpe-attachment-icon { flex: none; color: var(--color-text-muted); }
+.cpe-attachment-main { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.cpe-attachment-main a { overflow: hidden; color: var(--color-text); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
+.cpe-attachment-main a:hover { color: var(--color-accent); }
+.cpe-attachment-main span { color: var(--color-text-muted); font-size: 10.5px; }
+.cpe-attachment-open { flex: none; color: var(--color-accent); }

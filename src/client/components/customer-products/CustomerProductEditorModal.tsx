@@ -554,6 +554,7 @@ const attachmentCategoryOptions: Array<{ value: CustomerProductAttachmentCategor
   { value: 'instruction', label: '说明书文件' },
   { value: 'packaging', label: '打包文件' },
   { value: 'other', label: '其他文件' },
+  { value: 'remark', label: '备注图片' },
 ];
 
 function CustomerProductAttachments({ value, onChange }: { value: CustomerProductAttachmentDraft[]; onChange: (next: CustomerProductAttachmentDraft[]) => void }) {

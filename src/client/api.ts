@@ -936,6 +936,14 @@ export function addStickerTransaction(productId: number | string, input: { kind:
   return request<StickerLedger>(`/api/customer-products/${productId}/sticker/transactions`, { method: 'POST', body: JSON.stringify(input) });
 }
 
+export function updateCustomerProductStickerSettings(productId: number | string, input: { stickerEnabled: boolean; stickerPerSheet: number }) {
+  return request<SharedCustomerProduct>(`/api/customer-products/${productId}/sticker-settings`, { method: 'PATCH', body: JSON.stringify(input) }).then(mapCustomerProduct);
+}
+
+export function updateCustomerProductRemark(productId: number | string, remark: string) {
+  return request<SharedCustomerProduct>(`/api/customer-products/${productId}/remark`, { method: 'PATCH', body: JSON.stringify({ remark }) }).then(mapCustomerProduct);
+}
+
 export function getCustomerProducts(customerId: number, filters: CustomerProductListFilters = {}) {
   const query = new URLSearchParams();
   if (filters.search?.trim()) query.set('q', filters.search.trim());

@@ -71,7 +71,7 @@ function mapAttachment(row: Record<string, unknown> | undefined): CustomerProduc
     size: Number(row.size_bytes ?? row.size ?? 0),
     createdAt: String(row.created_at ?? row.createdAt ?? ''),
     url: relativePath ? `/files/${relativePath}` : '',
-    category: ['label', 'instruction', 'packaging', 'other'].includes(String(row.category))
+    category: ['label', 'instruction', 'packaging', 'other', 'remark'].includes(String(row.category))
       ? String(row.category) as CustomerProductAttachmentCategory
       : 'other',
   };
@@ -330,7 +330,7 @@ export async function registerCustomerProductRoutes(
     const id = parseId(request.params.id);
     if (!options.service.get(id)) throw new ApiError(404, 'NOT_FOUND', '客户产品不存在');
     const category = String(request.query?.category ?? 'other').trim();
-    if (!['label', 'instruction', 'packaging', 'other'].includes(category)) {
+    if (!['label', 'instruction', 'packaging', 'other', 'remark'].includes(category)) {
       throw new ApiError(400, 'VALIDATION_ERROR', '客户产品附件类型无效', 'category');
     }
     const file = await request.file(contractFileOptions);
@@ -365,7 +365,7 @@ export async function registerCustomerProductRoutes(
     const id = parseId(request.params.id);
     const attachmentId = parseId(request.params.attachmentId, 'attachmentId');
     const category = String(asRecord(request.body).category ?? '').trim();
-    if (!['label', 'instruction', 'packaging', 'other'].includes(category)) {
+    if (!['label', 'instruction', 'packaging', 'other', 'remark'].includes(category)) {
       throw new ApiError(400, 'VALIDATION_ERROR', '客户产品附件类型无效', 'category');
     }
     if (!options.service.updateAttachmentCategory(id, attachmentId, category as CustomerProductAttachmentCategory)) {
@@ -437,6 +437,28 @@ export async function registerCustomerProductRoutes(
     });
     if (!ledger) throw new ApiError(404, 'NOT_FOUND', '客户产品不存在');
     return sendSuccess(reply, ledger, 201);
+  }, reply));
+
+  app.patch('/api/customer-products/:id/remark', async (
+    request: FastifyRequest<{ Params: { id: string } }>,
+    reply,
+  ) => safeRoute(() => {
+    const saved = options.service.updateRemark(parseId(request.params.id), asRecord(request.body).remark);
+    if (!saved) throw new ApiError(404, 'NOT_FOUND', '客户产品不存在');
+    return sendSuccess(reply, saved);
+  }, reply));
+
+  app.patch('/api/customer-products/:id/sticker-settings', async (
+    request: FastifyRequest<{ Params: { id: string } }>,
+    reply,
+  ) => safeRoute(() => {
+    const body = asRecord(request.body);
+    const saved = options.service.updateStickerSettings(parseId(request.params.id), {
+      enabled: body.stickerEnabled,
+      perSheet: body.stickerPerSheet,
+    });
+    if (!saved) throw new ApiError(404, 'NOT_FOUND', '客户产品不存在');
+    return sendSuccess(reply, saved);
   }, reply));
 }
 

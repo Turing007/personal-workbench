@@ -628,6 +628,40 @@ describe('订单号基础设施', () => {
     database.close();
   });
 
+  it('备注图片不随订单复制成附件快照', async () => {
+    const { app, database, fileStore } = await makeContext();
+    const customerId = insertCustomer(database, '备注图片客户');
+    const product = await app.inject({
+      method: 'POST',
+      url: `/api/customers/${customerId}/products`,
+      payload: { name: '备注图片产品', sku: 'RM-001', specification: '标准', packCount: 10, finalPriceCents: 1000 },
+    });
+    expect(product.statusCode).toBe(201);
+    const customerProductId = Number(product.json().data.id);
+    const sourcePath = 'customer-product-attachments/remark-shot.png';
+    const absoluteSourcePath = fileStore.resolvePublicPath(sourcePath);
+    await mkdir(dirname(absoluteSourcePath), { recursive: true });
+    await writeFile(absoluteSourcePath, Buffer.from('remark image'));
+    database.prepare(`
+      INSERT INTO customer_product_attachments
+        (customer_product_id, category, relative_path, original_name, mime_type, size_bytes, created_at)
+      VALUES (?, 'remark', ?, '备注截图.png', 'image/png', ?, ?)
+    `).run(customerProductId, sourcePath, Buffer.byteLength('remark image'), new Date().toISOString());
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      payload: orderInput({
+        customerId,
+        items: [{ customerProductId, name: '', sku: '', specification: '', quantity: 10, unitPriceCents: undefined }],
+      }),
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().data.contracts).toEqual([]);
+    expect(database.prepare('SELECT COUNT(*) AS n FROM order_contracts').get()).toEqual({ n: 0 });
+    database.close();
+  });
+
   it('订单金额由订单产品数量和单价自动汇总，不采用手工总额', async () => {
     const { app, database } = await makeContext();
     const response = await app.inject({

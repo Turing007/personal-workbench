@@ -379,6 +379,19 @@ export class CustomerProductRepository {
     return result.changes ? this.getById(id) : undefined;
   }
 
+  updateRemark(id: number, remark: string): CustomerProduct | undefined {
+    const result = this.database.prepare('UPDATE customer_products SET remark = ?, updated_at = ? WHERE id = ?')
+      .run(remark, new Date().toISOString(), id);
+    return result.changes ? this.getById(id) : undefined;
+  }
+
+  updateStickerSettings(id: number, enabled: boolean, perSheet: number): CustomerProduct | undefined {
+    // 贴标开关与每张数量属于辅助设置：不刷新 updated_at，避免列表按更新时间跳动。
+    const result = this.database.prepare('UPDATE customer_products SET sticker_enabled = ?, sticker_per_sheet = ? WHERE id = ?')
+      .run(enabled ? 1 : 0, perSheet, id);
+    return result.changes ? this.getById(id) : undefined;
+  }
+
   listStickerTransactions(customerProductId: number, limit = 100): Array<Record<string, unknown>> {
     return this.database.prepare('SELECT * FROM sticker_transactions WHERE customer_product_id = ? ORDER BY id DESC LIMIT ?')
       .all(customerProductId, limit) as Array<Record<string, unknown>>;
@@ -635,7 +648,7 @@ function parseAttachments(value: unknown, customerProductId: number): CustomerPr
         size: Number(row.size ?? row.size_bytes ?? 0),
         createdAt: String(row.createdAt ?? row.created_at ?? ''),
         url: relativePath ? `/files/${relativePath}` : '',
-        category: ['label', 'instruction', 'packaging', 'other'].includes(String(row.category))
+        category: ['label', 'instruction', 'packaging', 'other', 'remark'].includes(String(row.category))
           ? String(row.category) as CustomerProductAttachment['category']
           : 'other',
       };

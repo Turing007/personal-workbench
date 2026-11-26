@@ -776,10 +776,12 @@ export class OrderService {
   }
 
   private async copyCustomerProductAttachments(attachments: CustomerProduct['attachments'], customerProductId: number): Promise<RequirementAttachmentInput[]> {
-    if (!attachments.length || !this.fileStore) {
+    // 备注弹窗里的图片是内部记录，不随订单复制成附件快照。
+    const copyable = attachments.filter((attachment) => attachment.category !== 'remark');
+    if (!copyable.length || !this.fileStore) {
       if (!this.fileStore) return [];
-      return attachments.map((attachment) => ({
-        category: REQUIREMENT_CATEGORIES.has(attachment.category) ? attachment.category : 'other',
+      return copyable.map((attachment) => ({
+        category: (REQUIREMENT_CATEGORIES.has(attachment.category) ? attachment.category : 'other') as RequirementCategory,
         relativePath: attachment.relativePath,
         sourceCustomerProductId: customerProductId,
         originalName: attachment.originalName,
@@ -789,8 +791,8 @@ export class OrderService {
     }
     const copied: RequirementAttachmentInput[] = [];
     try {
-      for (const attachment of attachments) {
-        const category = REQUIREMENT_CATEGORIES.has(attachment.category) ? attachment.category : 'other';
+      for (const attachment of copyable) {
+        const category = (REQUIREMENT_CATEGORIES.has(attachment.category) ? attachment.category : 'other') as RequirementCategory;
         const stored = await this.fileStore.copyFile(
           attachment.relativePath,
           'order-item-requirement',
