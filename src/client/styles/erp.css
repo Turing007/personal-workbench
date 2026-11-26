@@ -4519,3 +4519,41 @@
   .shipping-batch-item-copy strong { font-size: 12.5px; }
   .shipping-batch-item-copy span { font-size: 11.5px; }
 }
+
+/* ---------- 订单页财务弹窗：水单上传与保存 ---------- */
+.finance-proof-source { display: grid; gap: 3px; min-width: 0; }
+.finance-proof-source-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.finance-proof-source-row .finance-proof-thumb { flex: none; }
+.finance-proof-source-row .finance-file-picker { flex: 1; min-width: 0; }
+.finance-proof-paste-hint { display: inline-flex; align-items: center; gap: 4px; color: var(--color-text-secondary); font-size: 11px; white-space: nowrap; }
+.finance-proof-upload.is-order-modal { grid-template-columns: minmax(180px, 1fr) 128px 120px 130px auto; align-items: start; }
+.finance-payee-presets { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.finance-payee-presets > span { color: var(--color-text-muted); font-size: 11px; }
+.finance-payee-presets .chip { padding: 4px 10px; font-size: 11px; }
+
+@media (max-width: 900px) {
+  .finance-proof-upload.is-order-modal { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .finance-proof-upload.is-order-modal .finance-proof-source { grid-column: 1 / -1; }
+  .finance-proof-paste-hint { font-size: 12px; }
+}
+
+/* 列顺序调整后，总箱数是唯一的箱唛入口，窄桌面不再隐藏；只压缩产品详情。 */
+@media (min-width: 1200px) and (max-width: 1419px) {
+  .orders-page .orders-data-table.orders-normal-table th:nth-child(5),
+  .orders-page .orders-data-table.orders-normal-table td:nth-child(5) { display: table-cell; }
+}
+
+@media (min-width: 1420px) and (max-width: 1599px) {
+  .orders-page .orders-data-table.orders-normal-table th:nth-child(5),
+  .orders-page .orders-data-table.orders-normal-table td:nth-child(5) { display: table-cell; }
+  .orders-page .orders-data-table.orders-normal-table .order-product-cell { width: 260px; }
+}
+
+/* 操作列表头与右侧按钮对齐，列宽收紧；按钮仍靠右。 */
+.orders-page .orders-data-table th.order-ops-cell { text-align: right; }
+.orders-page .orders-data-table.orders-normal-table .order-ops-cell { width: 92px; }
+
+/* ---------- 客户产品：最终价格口径标记 ---------- */
+.cpe-price-label-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.cpe-tax-toggle { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.cpe-tax-toggle .chip { padding: 3px 8px; font-size: 11px; line-height: 1.2; }

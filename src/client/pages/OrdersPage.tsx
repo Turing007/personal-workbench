@@ -1,4 +1,4 @@
-import { Clipboard, Package, PackageCheck, ListFilter, Paperclip, Plus, Printer, Trash2, Truck } from 'lucide-react';
+import { Clipboard, Package, PackageCheck, ListFilter, Paperclip, Plus, Printer, Save, Trash2, Truck } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { autoPack } from '../../shared/packing';
 import LabelEditorModal, { type CartonLabel } from '../components/LabelEditorModal';
@@ -17,7 +17,7 @@ import { ORDER_CHANNELS, ORDER_CHANNEL_LABELS, ORDER_STATUS_LABELS_WITH_DRAFT, t
 import { getOrderNextAction, getOrderRollbackAction, isDraftOrder, isUnshippedOrder, type BatchAdvanceAction, type OrderNextAction } from '../order-workflow';
 import { FINANCE_PAYMENT_STATUS_LABELS, isOrderPaymentCleared, type FinancePaymentStatus } from '../../shared/finance';
 import { getOrderFinance, type ApiFinanceDetail } from '../api';
-import PaymentProofEditor from '../components/finance/PaymentProofEditor';
+import PaymentProofEditor, { type PaymentProofEditorHandle } from '../components/finance/PaymentProofEditor';
 import { OrderCostEditor, OrderItemCostEditor, OrderProfitSummaryCard } from '../components/orders/OrderProfitEditor';
 import { badgeClass, errorText, money } from '../components/finance/finance-format';
 import { calculateOrderProfit } from '../../shared/order-profit';
@@ -91,13 +91,6 @@ const paymentBadgeClass: Record<FinancePaymentStatus, string> = {
   partial: 'badge badge-warning',
   paid: 'badge badge-success',
   overpaid: 'badge badge-info',
-};
-
-const paymentStatusColor: Record<FinancePaymentStatus, string> = {
-  unpaid: 'var(--color-danger)',
-  partial: 'var(--color-warning-text)',
-  paid: 'var(--color-success)',
-  overpaid: 'var(--color-info)',
 };
 
 /** 先款后货的付款门槛：未达门槛时返回拦截原因，用于按钮置灰和提示。 */
@@ -225,6 +218,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
   const [financeOrder, setFinanceOrder] = useState<OrderDraft>();
   const [financeDetail, setFinanceDetail] = useState<ApiFinanceDetail>();
   const [financeLoading, setFinanceLoading] = useState(false);
+  const financeEditorRef = useRef<PaymentProofEditorHandle>(null);
   const [costOrder, setCostOrder] = useState<OrderDraft>();
   const [remarkOrder, setRemarkOrder] = useState<OrderDraft>();
   const [remarkDraft, setRemarkDraft] = useState('');
@@ -383,6 +377,12 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
     setFinanceDetail(await getOrderFinance(financeOrder.id));
     await onRefreshOrders?.();
   };
+  const saveFinanceModal = async () => {
+    const shouldClose = await financeEditorRef.current?.savePending() ?? true;
+    if (!shouldClose) return;
+    setFinanceOrder(undefined);
+    setFinanceDetail(undefined);
+  };
   const openCostModal = (order: OrderDraft) => setCostOrder({ ...order, items: order.items.map((item) => ({ ...item })) });
   const updateCostItem = (id: string, patch: Partial<OrderDraft['items'][number]>) => {
     setCostOrder((current) => current ? { ...current, items: current.items.map((item) => item.id === id ? { ...item, ...patch } : item) } : current);
@@ -480,7 +480,6 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
     const showNextAction = !options?.hideNextAction;
     const detailButton = <button type="button" className="link-button" onClick={() => setDetailOrder(order)}>详情</button>;
     const editButton = <button type="button" className="link-button" onClick={() => openEdit(order)}>编辑</button>;
-    const labelButton = <button type="button" className="link-button" onClick={() => openLabels(order)}>箱唛</button>;
     const publishGate = paymentGateReason(order, 'pending_stock');
     const publishButton = order.status === 'draft' && showNextAction && onPublishOrder
       ? <button type="button" className="link-button muted" disabled={Boolean(publishGate)} title={publishGate || '校验并发布草稿订单，进入正式流程'} onClick={() => publishOrder(order)}>发布</button>
@@ -505,7 +504,6 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
         <div className="row-actions-row is-top">
           <div className="row-actions-cell is-top">{detailButton}</div>
           <div className="row-actions-cell is-top">{editButton}</div>
-          <div className="row-actions-cell is-top">{order.status !== 'draft' ? labelButton : null}</div>
         </div>
         <div className="row-actions-row is-bottom">
           <div className="row-actions-cell is-bottom">{publishButton ?? advanceButton}</div>
@@ -514,7 +512,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
         </div>
       </div>;
     }
-    return <div className="row-actions">{detailButton}{editButton}{order.status === 'draft' ? publishButton : <>{labelButton}{advanceButton}{rollbackButton}</>}{deleteButton}</div>;
+    return <div className="row-actions">{detailButton}{editButton}{order.status === 'draft' ? publishButton : <>{advanceButton}{rollbackButton}</>}{deleteButton}</div>;
   };
 
   return <div className={`page-shell orders-page${(shippingViewActive ? selectedShippingOrders.length : selectedOrders.length) > 0 ? ' has-bulk-bar' : ''}`}>
@@ -584,20 +582,23 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
       </div>}
       </> : <>
       <div className="table-scroll orders-table-desktop">
-        <table className="data-table orders-data-table">
+        <table className="data-table orders-data-table orders-normal-table">
           <thead><tr><th className="order-check-cell"><input type="checkbox" checked={allPrintableSelected} onChange={toggleAll} aria-label="选择当前列表待打印箱唛订单" /></th>{[
             ['订单号', 'order-no-cell'],
             ['客户 / 收件人', 'order-customer-cell'],
             ['产品详情', 'order-product-cell'],
             ['总箱数', 'order-box-cell'],
-            ['金额', 'order-amount-cell is-right'],
-            ['状态', 'order-status-cell'],
             ...(showAttachmentColumn ? [['附件', 'order-attachment-cell']] : []),
             ['备注', 'order-remark-cell'],
+            ['金额', 'order-amount-cell is-right'],
+            ['状态', 'order-status-cell'],
             ['操作', 'order-ops-cell'],
           ].map(([title, className]) => <th key={title} className={className}>{title}</th>)}</tr></thead>
           <tbody>{visibleOrders.map((order) => {
-            const id = orderKey(order); const boxCount = orderBoxCount(order); const paymentStatus = orderPaymentStatus(order);
+            const id = orderKey(order); const boxCount = orderBoxCount(order);
+            const receivableCents = order.financeSummary?.receivableCents ?? Math.round(Number(order.amount || 0) * 100);
+            const receivedCents = order.financeSummary?.receivedCents ?? 0;
+            const paymentCleared = isOrderPaymentCleared(receivableCents, receivedCents);
             const attachmentCount = order.contracts?.length ?? 0;
             const profit = calculateOrderProfit({
               amountCents: Math.round(Number(order.amount || 0) * 100),
@@ -613,10 +614,10 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
                 <td className="order-customer-cell"><div className="order-party"><strong className="order-party-customer" title={order.customerName || undefined}>{order.customerName || '未填客户'}{order.customerId == null && order.customerName?.trim() && <span className="badge badge-neutral" style={{ marginLeft: 5 }}>临时</span>}</strong>{order.status === 'shipped' ? <span className="order-party-recipient" title={order.recipientName || undefined}>收件人：{order.recipientName || '—'}</span> : <button type="button" className="order-party-recipient order-recipient-link" title="编辑收件人信息" onClick={() => openRecipientModal(order)}>收件人：{order.recipientName || '未填'}</button>}</div></td>
                 <td className="order-product-cell"><OrderProductQuickList order={order} onOpen={() => setProductsOrder(order)} /></td>
                 <td className="order-box-cell"><button type="button" className="order-box-link" title="编辑/打印箱唛" aria-label={`编辑或打印订单${order.orderNo}箱唛`} onClick={() => openLabels(order)}>{boxCount}</button></td>
-                <td className="amount order-amount-cell"><button type="button" className="order-amount-link" title="查看/编辑财务与水单" aria-label={`查看订单${order.orderNo}财务与水单`} onClick={() => void openFinanceModal(order)}>¥ {order.amount || '0.00'}</button><div className="payment-sub" style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</div><button type="button" className={`order-profit-sub ${profit.costComplete ? (profit.profitCents ?? 0) < 0 ? 'is-loss' : 'is-profit' : 'is-pending'}`} title={profit.costComplete ? `毛利 ${(profit.profitCents ?? 0) / 100} · 毛利率 ${profit.marginPercent ?? '—'}%（点击调整成本）` : `成本待补：${profit.missingItemCount} 行产品未确认（点击补录成本）`} aria-label={`补录或调整订单${order.orderNo}成本`} onClick={() => openCostModal(order)}>{profit.costComplete ? `毛利 ¥${((profit.profitCents ?? 0) / 100).toFixed(2)}` : '成本待补'}</button></td>
-                <td className="order-status-cell"><span className={statusBadgeClass(order.status)}>{order.status ? statusLabels[order.status] : '-'}</span>{order.status !== 'shipped' && <div className={`status-sub ${order.labelPrintedAt ? 'is-printed' : 'is-pending'}`} title={order.labelPrintedAt ? `箱唛打印时间：${formatDateTime(order.labelPrintedAt)}` : undefined}>{order.status === 'draft' ? '草稿订单，发布后进入流程' : order.labelPrintedAt ? '已打印箱唛' : '箱唛待打印'}</div>}</td>
                 {showAttachmentColumn && <td className="order-attachment-cell">{attachmentCount > 0 && <div className="order-extra-files">{(order.contracts ?? []).map((contract) => <a key={contract.id} href={contract.url} target="_blank" rel="noreferrer" title={contract.name}><span>{contract.name}</span><Printer size={10} /></a>)}</div>}</td>}
                 <td className="order-remark-cell"><button type="button" className={`order-remark-full order-remark-edit${order.remark?.trim() ? '' : ' is-empty'}`} title={order.remark?.trim() ? order.remark : '点击添加备注'} aria-label={`编辑订单${order.orderNo}备注`} onClick={() => openRemarkModal(order)}>{order.remark?.trim() || '点击添加'}</button></td>
+                <td className="amount order-amount-cell"><button type="button" className="order-amount-link" title="查看/编辑财务与水单" aria-label={`查看订单${order.orderNo}财务与水单`} onClick={() => void openFinanceModal(order)}>¥ {order.amount || '0.00'}</button><div className="payment-sub" style={{ color: paymentCleared ? 'var(--color-success)' : 'var(--color-danger)' }}>已收 {money(receivedCents)}</div><button type="button" className={`order-profit-sub ${profit.costComplete ? (profit.profitCents ?? 0) < 0 ? 'is-loss' : 'is-profit' : 'is-pending'}`} title={profit.costComplete ? `毛利 ${(profit.profitCents ?? 0) / 100} · 毛利率 ${profit.marginPercent ?? '—'}%（点击调整成本）` : `成本待补：${profit.missingItemCount} 行产品未确认（点击补录成本）`} aria-label={`补录或调整订单${order.orderNo}成本`} onClick={() => openCostModal(order)}>{profit.costComplete ? `毛利 ¥${((profit.profitCents ?? 0) / 100).toFixed(2)}` : '成本待补'}</button></td>
+                <td className="order-status-cell"><span className={statusBadgeClass(order.status)}>{order.status ? statusLabels[order.status] : '-'}</span>{order.status !== 'shipped' && <div className={`status-sub ${order.labelPrintedAt ? 'is-printed' : 'is-pending'}`} title={order.labelPrintedAt ? `箱唛打印时间：${formatDateTime(order.labelPrintedAt)}` : undefined}>{order.status === 'draft' ? '草稿订单，发布后进入流程' : order.labelPrintedAt ? '已打印箱唛' : '箱唛待打印'}</div>}</td>
                 <td className="order-ops-cell">{renderOrderActions(order, { twoLine: true })}</td>
               </tr>;
           })}</tbody>
@@ -624,7 +625,10 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
         {!visibleOrders.length && <div className="table-state">暂无符合条件的订单</div>}
       </div>
       <div className="orders-card-list" aria-label="订单卡片列表">{visibleOrders.map((order) => {
-        const boxCount = orderBoxCount(order); const paymentStatus = orderPaymentStatus(order);
+        const boxCount = orderBoxCount(order);
+        const receivableCents = order.financeSummary?.receivableCents ?? Math.round(Number(order.amount || 0) * 100);
+        const receivedCents = order.financeSummary?.receivedCents ?? 0;
+        const paymentCleared = isOrderPaymentCleared(receivableCents, receivedCents);
         const attachmentCount = order.contracts?.length ?? 0;
         const profit = calculateOrderProfit({
           amountCents: Math.round(Number(order.amount || 0) * 100),
@@ -644,7 +648,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
             <OrderProductQuickList order={order} className="order-card-products" onOpen={() => setProductsOrder(order)} />
             <div className="order-card-money">
               <button type="button" className="order-card-amount" title="查看/编辑财务与水单" aria-label={`查看订单${order.orderNo}财务与水单`} onClick={() => void openFinanceModal(order)}>¥ {order.amount || '0.00'}</button>
-              <span className="order-card-payment" style={{ color: paymentStatusColor[paymentStatus] }}>{FINANCE_PAYMENT_STATUS_LABELS[paymentStatus]}{paymentStatus === 'partial' && order.financeSummary ? ` · 已收 ¥${(order.financeSummary.receivedCents / 100).toFixed(2)}` : ''}</span>
+              <span className="order-card-payment" style={{ color: paymentCleared ? 'var(--color-success)' : 'var(--color-danger)' }}>已收 {money(receivedCents)}</span>
               <button type="button" className={`order-card-profit-link ${profit.costComplete ? (profit.profitCents ?? 0) < 0 ? 'finance-warning' : 'finance-positive' : 'finance-warning'}`} title={profit.costComplete ? '点击调整成本' : '点击补录成本'} aria-label={`补录或调整订单${order.orderNo}成本`} onClick={() => openCostModal(order)}>{profit.costComplete ? `毛利 ¥${((profit.profitCents ?? 0) / 100).toFixed(2)}` : '成本待补'}</button>
             </div>
           </div>
@@ -739,7 +743,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
         </div>
       </div>}
     </Modal>
-    <Modal open={Boolean(financeOrder)} title={financeOrder ? `财务与水单 · ${financeOrder.orderNo}` : '财务与水单'} onClose={() => { setFinanceOrder(undefined); setFinanceDetail(undefined); }} width={860}>
+    <Modal open={Boolean(financeOrder)} title={financeOrder ? `财务与水单 · ${financeOrder.orderNo}` : '财务与水单'} onClose={() => { setFinanceOrder(undefined); setFinanceDetail(undefined); }} width={860} footer={financeDetail ? <button type="button" className="button button-primary" onClick={() => { void saveFinanceModal(); }}><Save size={14} />保存</button> : undefined}>
       {financeLoading && <div className="table-state">正在加载财务数据...</div>}
       {financeDetail && <div className="finance-detail">
         <div className="finance-detail-summary">
@@ -749,7 +753,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
           <div><span>付款状态</span><b className={badgeClass(financeDetail.finance.paymentStatus)}>{FINANCE_PAYMENT_STATUS_LABELS[financeDetail.finance.paymentStatus]}</b></div>
         </div>
         {!isOrderPaymentCleared(financeDetail.finance.receivableCents, financeDetail.finance.receivedCents) && <div className="notice notice-warning">该订单尚未收齐全额货款；上传水单并审核通过后才能确认发货。</div>}
-        <PaymentProofEditor detail={financeDetail} onRefresh={refreshFinance} onNotify={onNotify} />
+        <PaymentProofEditor ref={financeEditorRef} mode="order-modal" detail={financeDetail} onRefresh={refreshFinance} onNotify={onNotify} />
         <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: 11 }}>发票编辑请从订单详情的“打开财务详情”进入财务页。</p>
       </div>}
     </Modal>

@@ -66,11 +66,11 @@ test.describe('订单对公/对私结算与开票状态', () => {
 
     // 订单页列表：开票状态与结算方式都不再展示（收进详情与财务模块），列表保持紧凑
     const personalRow = page.locator('tbody tr', { hasText: personalOrder.orderNo });
-    await expect(personalRow).toContainText('未付款');
+    await expect(personalRow).toContainText('已收 ¥0.00');
     await expect(personalRow).not.toContainText('无需开票');
     await expect(personalRow).not.toContainText('对私');
     const corporateRow = page.locator('tbody tr', { hasText: corporateOrder.orderNo });
-    await expect(corporateRow).toContainText('未付款');
+    await expect(corporateRow).toContainText('已收 ¥0.00');
     await expect(corporateRow).not.toContainText('未申请');
     await expect(corporateRow).not.toContainText('对公');
 

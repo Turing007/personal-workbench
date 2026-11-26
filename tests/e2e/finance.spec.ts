@@ -132,10 +132,11 @@ test.describe('财务管理工作台', () => {
       const dialog = page.getByRole('dialog', { name: new RegExp(`财务与水单.*${order.order_no}`) });
       await expect(dialog).toBeVisible();
       await expect(dialog.getByText('客户水单', { exact: true })).toBeVisible();
-      await expect(dialog.getByRole('button', { name: /上传水单/ })).toBeVisible();
+      await expect(dialog.getByPlaceholder('交易流水号（可选）')).toHaveCount(0);
+      await expect(dialog.getByRole('button', { name: '保存', exact: true })).toBeVisible();
       // 仍停留在订单页，不跳财务模块
       await expect(page.locator('.orders-channel-tabs')).toBeVisible();
-      await dialog.getByRole('button', { name: '关闭' }).click();
+      await dialog.getByRole('button', { name: '保存', exact: true }).click();
       await expect(dialog).toBeHidden();
     } finally {
       await page.request.delete(`/api/orders/${orderId}`);

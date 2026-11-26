@@ -1,5 +1,5 @@
-import { Check, ClipboardPaste, Pencil, Plus, ReceiptText, Trash2, Upload, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Check, ClipboardPaste, Pencil, Plus, ReceiptText, Save, Trash2, Upload, X } from 'lucide-react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {
   approveFinanceProof,
   deleteFinanceProof,
@@ -17,6 +17,13 @@ export interface PaymentProofEditorProps {
   detail: ApiFinanceDetail;
   onRefresh: () => Promise<void>;
   onNotify?: (message: string, tone?: 'success' | 'error' | 'info') => void;
+  /** 订单页财务弹窗：隐藏行内上传按钮/交易流水，由弹窗底部「保存」统一提交并关闭。 */
+  mode?: 'inline' | 'order-modal';
+}
+
+export interface PaymentProofEditorHandle {
+  /** 有选图/金额时上传并返回 true（页面保存后关闭）；无待上传内容时也返回 true；校验失败返回 false。 */
+  savePending: () => Promise<boolean>;
 }
 
 const proofStatusLabel: Record<PaymentProofRecord['status'], string> = {
@@ -43,9 +50,13 @@ interface ProofEditForm {
 }
 
 const paymentMethods = ['银行转账', '微信', '支付宝', '其他'];
+const payeePresets = ['张金赛', '高富耀'];
 
 /** 客户水单面板：每笔水单单独补录、单独审核，审核通过后自动逐笔生成收款记录。 */
-export default function PaymentProofEditor({ detail, onRefresh, onNotify }: PaymentProofEditorProps) {
+const PaymentProofEditor = forwardRef<PaymentProofEditorHandle, PaymentProofEditorProps>(function PaymentProofEditor(
+  { detail, onRefresh, onNotify, mode = 'inline' },
+  ref,
+) {
   const [file, setFile] = useState<File>();
   const [fileUrl, setFileUrl] = useState('');
   const [pasteHint, setPasteHint] = useState('');
@@ -64,6 +75,7 @@ export default function PaymentProofEditor({ detail, onRefresh, onNotify }: Paym
 
   const activeProof = action ? detail.proofs.find((proof) => proof.id === action.id) : undefined;
   const closeAction = () => setAction(undefined);
+  const isOrderModal = mode === 'order-modal';
 
   const setProofFile = (next: File | undefined) => {
     if (objectUrlRef.current) {
@@ -134,13 +146,42 @@ export default function PaymentProofEditor({ detail, onRefresh, onNotify }: Paym
     finally { setBusy(false); }
   };
 
-  const upload = async () => {
-    if (!file || !amount || busy) return;
-    await run(async () => {
-      await uploadFinanceProof(detail.finance.orderId, file, { paymentDate, amountCents: Math.round(Number(amount) * 100), paymentMethod, transactionNo });
-      setProofFile(undefined); setAmount(''); setTransactionNo('');
-    }, '水单已上传，等待财务审核', false);
+  const uploadProof = async (openApprove = false): Promise<boolean> => {
+    if (busy) return false;
+    if (!file || !amount.trim()) return false;
+    setBusy(true);
+    try {
+      const proof = await uploadFinanceProof(detail.finance.orderId, file, {
+        paymentDate,
+        amountCents: Math.round(Number(amount) * 100),
+        paymentMethod,
+        transactionNo: isOrderModal ? '' : transactionNo,
+      });
+      setProofFile(undefined);
+      setAmount('');
+      setTransactionNo('');
+      if (openApprove) setAction({ id: proof.id, mode: 'approve' });
+      onNotify?.('水单已上传，等待财务审核', 'success');
+      try { await onRefresh(); } catch (error) { onNotify?.(errorText(error, '财务数据刷新失败'), 'error'); }
+      return true;
+    } catch (error) {
+      onNotify?.(errorText(error, '水单上传失败'), 'error');
+      return false;
+    } finally {
+      setBusy(false);
+    }
   };
+
+  const savePending = async (): Promise<boolean> => {
+    if (busy) return false;
+    if (!file && !amount.trim()) return true;
+    if (!file) { onNotify?.('请选择水单图片', 'error'); return false; }
+    if (!amount.trim()) { onNotify?.('请填写付款金额', 'error'); amountRef.current?.focus(); return false; }
+    // 右下角页面保存：有未上传水单就上传后关闭；需要审核请用行内「保存水单」。
+    return uploadProof(false);
+  };
+
+  useImperativeHandle(ref, () => ({ savePending }), [busy, file, amount, paymentDate, paymentMethod, transactionNo, isOrderModal]);
 
   const saveEdit = (proof: PaymentProofRecord) => {
     const payload: Record<string, unknown> = {
@@ -174,20 +215,24 @@ export default function PaymentProofEditor({ detail, onRefresh, onNotify }: Paym
 
   return <section className="finance-section">
     <div className="finance-section-heading"><div><strong>客户水单</strong><span>收款公司：{String(detail.order.company_name ?? '') || '未分配公司'} · 上传凭证不等于到账，每笔水单单独审核通过后才计入已收</span></div><span className="finance-section-count">{detail.proofs.length} 张</span></div>
-    <div className="finance-proof-upload">
-      {file && fileUrl ? <a href={fileUrl} target="_blank" rel="noreferrer" className="finance-proof-thumb" title="查看待上传水单原图"><img src={fileUrl} alt={file.name} /></a> : null}
-      <label className="finance-file-picker"><Upload size={15} />{file ? file.name : '选择水单图片'}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setProofFile(event.target.files?.[0])} /></label>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--color-text-secondary)', fontSize: 12, whiteSpace: 'nowrap' }}><ClipboardPaste size={14} />支持 Ctrl+V 粘贴截图</span>
+    <div className={`finance-proof-upload${isOrderModal ? ' is-order-modal' : ''}`}>
+      <div className="finance-proof-source">
+        <div className="finance-proof-source-row">
+          {file && fileUrl ? <a href={fileUrl} target="_blank" rel="noreferrer" className="finance-proof-thumb" title="查看待上传水单原图"><img src={fileUrl} alt={file.name} /></a> : null}
+          <label className="finance-file-picker"><Upload size={15} />{file ? file.name : '选择水单图片'}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setProofFile(event.target.files?.[0])} /></label>
+        </div>
+        <span className="finance-proof-paste-hint"><ClipboardPaste size={13} />支持 Ctrl+V 粘贴截图</span>
+      </div>
       <input type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} aria-label="付款日期" />
       <input ref={amountRef} type="number" min="0.01" step="0.01" placeholder="付款金额" value={amount} onChange={(event) => setAmount(event.target.value)} />
       <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} aria-label="付款方式">{paymentMethods.map((method) => <option key={method}>{method}</option>)}</select>
-      <input placeholder="交易流水号（可选）" value={transactionNo} onChange={(event) => setTransactionNo(event.target.value)} />
-      <button className="button button-primary" type="button" disabled={!file || !amount || busy} onClick={() => void upload()}><Plus size={14} />上传水单</button>
+      {!isOrderModal && <input placeholder="交易流水号（可选）" value={transactionNo} onChange={(event) => setTransactionNo(event.target.value)} />}
+      <button className="button button-primary" type="button" disabled={!file || !amount || busy} onClick={() => { void uploadProof(isOrderModal); }}>{isOrderModal ? <Save size={14} /> : <Plus size={14} />}{isOrderModal ? '保存水单' : '上传水单'}</button>
     </div>
-    {(pasteHint || (file && !amount)) && <div style={{ color: 'var(--color-warning-text)', fontSize: 12, marginTop: 4 }}>{pasteHint || '已读取待上传水单图片，请填写付款金额后点击「上传水单」'}</div>}
+    {(pasteHint || (file && !amount)) && <div style={{ color: 'var(--color-warning-text)', fontSize: 12, marginTop: 4 }}>{pasteHint || `已读取待上传水单图片，请填写付款金额后点击「${isOrderModal ? '保存水单' : '上传水单'}」`}</div>}
     <div className="finance-proof-list">{detail.proofs.length ? detail.proofs.map((proof) => <div className="finance-proof-row" key={proof.id}>
       <a href={proof.url} target="_blank" rel="noreferrer" className="finance-proof-thumb"><img src={thumbUrl(proof.url, 240)} alt={proof.originalName} loading="lazy" decoding="async" /></a>
-      <div className="finance-proof-main"><strong>{proof.originalName}</strong><span>{proof.paymentDate || '未填日期'} · {proof.amountCents == null ? '待补金额' : money(proof.amountCents)} · {proof.paymentMethod || '未填方式'}</span>{proof.payerName && <small>付款人：{proof.payerName}</small>}{proof.transactionNo && <small>流水号：{proof.transactionNo}</small>}{proof.note && <small>备注：{proof.note}</small>}{proof.reviewNote && <small className="finance-error-text">审核备注：{proof.reviewNote}</small>}</div>
+      <div className="finance-proof-main"><strong>{proof.originalName}</strong><span>{proof.paymentDate || '未填日期'} · {proof.amountCents == null ? '待补金额' : money(proof.amountCents)} · {proof.paymentMethod || '未填方式'}</span>{proof.payerName && <small>付款人：{proof.payerName}</small>}{!isOrderModal && proof.transactionNo && <small>流水号：{proof.transactionNo}</small>}{proof.note && <small>备注：{proof.note}</small>}{proof.reviewNote && <small className="finance-error-text">审核备注：{proof.reviewNote}</small>}</div>
       <span className={badgeClass(proof.status)}>{proofStatusLabel[proof.status]}</span>
       <div className="row-actions">
         {(proof.status === 'pending' || proof.status === 'rejected') && <>
@@ -206,7 +251,7 @@ export default function PaymentProofEditor({ detail, onRefresh, onNotify }: Paym
             <input type="number" min="0.01" step="0.01" placeholder="付款金额（元）" value={editForm.amount} onChange={(event) => setEditForm((prev) => ({ ...prev, amount: event.target.value }))} />
             <select value={editForm.paymentMethod} aria-label="付款方式" onChange={(event) => setEditForm((prev) => ({ ...prev, paymentMethod: event.target.value }))}>{paymentMethods.map((method) => <option key={method}>{method}</option>)}</select>
             <input placeholder="付款人姓名（可选）" value={editForm.payerName} onChange={(event) => setEditForm((prev) => ({ ...prev, payerName: event.target.value }))} />
-            <input placeholder="交易流水号（可选）" value={editForm.transactionNo} onChange={(event) => setEditForm((prev) => ({ ...prev, transactionNo: event.target.value }))} />
+            {!isOrderModal && <input placeholder="交易流水号（可选）" value={editForm.transactionNo} onChange={(event) => setEditForm((prev) => ({ ...prev, transactionNo: event.target.value }))} />}
             <input placeholder="备注（可选）" value={editForm.note} onChange={(event) => setEditForm((prev) => ({ ...prev, note: event.target.value }))} />
           </div>
           <div className="finance-proof-actions"><button className="button button-ghost" type="button" disabled={busy} onClick={closeAction}>取消</button><button className="button button-primary" type="button" disabled={busy} onClick={() => saveEdit(proof)}>保存修改</button></div>
@@ -214,6 +259,10 @@ export default function PaymentProofEditor({ detail, onRefresh, onNotify }: Paym
         {action.mode === 'approve' && <>
           <p>确认通过这笔水单？将按金额 {money(activeProof.amountCents ?? 0)}、付款日 {activeProof.paymentDate ?? ''} 生成一条收款记录并计入订单已收。</p>
           <input placeholder="收款人（可选，如：对公户 / 张会计）" value={payeeName} aria-label="收款人" onChange={(event) => setPayeeName(event.target.value)} />
+          <div className="finance-payee-presets">
+            <span>快速选择</span>
+            {payeePresets.map((name) => <button key={name} type="button" className={`chip${payeeName === name ? ' is-selected' : ''}`} onClick={() => setPayeeName(name)}>{name}</button>)}
+          </div>
           <div className="finance-proof-actions"><button className="button button-ghost" type="button" disabled={busy} onClick={closeAction}>取消</button><button className="button button-primary" type="button" disabled={busy} onClick={() => approve(proof)}>确认入账</button></div>
         </>}
         {action.mode === 'reject' && <>
@@ -238,4 +287,6 @@ export default function PaymentProofEditor({ detail, onRefresh, onNotify }: Paym
       <div className="finance-receipt-main"><strong>{money(receipt.amountCents)}</strong><span>{receipt.receivedAt} · {receipt.paymentMethod || '未填方式'}{receipt.payeeName ? ` · 收款人 ${receipt.payeeName}` : ''} · 来自水单 #{receipt.paymentProofId ?? '—'}{receipt.note ? ` · ${receipt.note}` : ''}</span></div>
     </div>) : <div className="finance-empty">暂无收款记录。每笔水单审核通过后会在这里自动记账。</div>}</div>
   </section>;
-}
+});
+
+export default PaymentProofEditor;

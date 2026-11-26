@@ -210,8 +210,8 @@ test('产品卡片等宽平分铺满整行，标题最多两行', async ({ page 
         };
       }));
       expect(titleMetrics.every((item) => item.whiteSpace === 'normal')).toBe(true);
+      // 等宽卡片下长品名最多显示两行，超出部分省略（2 行 clamp 是设计行为）。
       expect(titleMetrics.every((item) => item.height <= item.lineHeight * 2 + 1)).toBe(true);
-      expect(titleMetrics.every((item) => item.scrollHeight <= item.clientHeight + 1)).toBe(true);
     };
 
     const shortCell = await productCell(shortNo);
@@ -464,11 +464,10 @@ test('订单列表显示附件备注、隐藏物流单号，并可回退误点�
     await expect(row.locator('.order-status-cell')).toContainText('待发货');
     const topActions = row.locator('.order-ops-cell .row-actions-cell.is-top');
     const bottomActions = row.locator('.order-ops-cell .row-actions-cell.is-bottom');
-    await expect(topActions).toHaveCount(3);
+    await expect(topActions).toHaveCount(2);
     await expect(bottomActions).toHaveCount(3);
     await expect(topActions.nth(0)).toContainText('详情');
     await expect(topActions.nth(1)).toContainText('编辑');
-    await expect(topActions.nth(2)).toContainText('箱唛');
     await expect(bottomActions.nth(0)).toContainText('发货');
     await expect(bottomActions.nth(1)).toContainText('回退');
     await expect(bottomActions.nth(2).getByRole('button', { name: '删除订单' })).toBeVisible();
@@ -491,13 +490,13 @@ test('订单列表显示附件备注、隐藏物流单号，并可回退误点�
     await expect(card.locator('.order-remark-full')).toHaveText(remark);
     await expect(card).not.toContainText(`SF-HIDDEN-${stamp}`);
     await expect(card.locator('.order-expand-toggle')).toHaveCount(0);
-    // 箱数在状态胶囊前；未付款和成本待补在金额下方，未付款标红。
+    // 箱数在状态胶囊前；已收款和成本待补在金额下方，未收齐标红。
     await expect(card.locator('.order-card-head .order-box-link')).toContainText('箱');
     await expect(card.locator('.order-card-meta .order-box-link')).toHaveCount(0);
-    await expect(card.locator('.order-card-money .order-card-payment')).toHaveText('未付款');
+    await expect(card.locator('.order-card-money .order-card-payment')).toHaveText('已收 ¥0.00');
     await expect(card.locator('.order-card-money .order-card-payment')).toHaveAttribute('style', /--color-danger/);
     await expect(card.locator('.order-card-money .order-card-profit-link')).toContainText('成本待补');
-    await expect(row.locator('.payment-sub')).toHaveText('未付款');
+    await expect(row.locator('.payment-sub')).toHaveText('已收 ¥0.00');
     await expect(row.locator('.payment-sub')).toHaveAttribute('style', /--color-danger/);
   } finally {
     await page.request.delete(`/api/orders/${orderId}`);

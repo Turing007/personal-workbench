@@ -1,4 +1,4 @@
-import { Download, FileText, Printer, Undo2 } from 'lucide-react';
+import { Download, FileText, Undo2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { PartialShipmentEntryInput } from '../../../shared/shipping';
 import type { OrderDraft, OrderStatus } from '../OrderForm';
@@ -70,7 +70,6 @@ export default function ShippingOrderTableRow({ order, selected = false, onToggl
       <div className="orders-shipping-row-actions">
         <div className="orders-shipping-row-links">
           {onOpenDetail && <button type="button" className="link-button" onClick={() => onOpenDetail(order)}><FileText size={13} />详情</button>}
-          {onEditLabels && <button type="button" className="link-button" onClick={() => onEditLabels(order)}><Printer size={13} />箱唛</button>}
           <button type="button" className="link-button" disabled={sheetBusy || !draft.selections.length} title={draft.selections.length ? '按当前填写的本次数量生成发货清单，可随包打印' : '先填写本次发货数量'} onClick={() => { void downloadSheet(); }}><Download size={13} />{sheetBusy ? '生成中…' : '发货清单'}</button>
           {!hasShipments && onRollbackStatus && <button type="button" className="link-button muted" onClick={() => onRollbackStatus(order, 'ship_pending')}><Undo2 size={13} />回退</button>}
         </div>
