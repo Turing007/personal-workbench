@@ -2,12 +2,8 @@ import type { DatabaseSync } from 'node:sqlite';
 
 export interface StockPreparationRow extends Record<string, unknown> {
   order_id: number;
-  order_no: string;
-  customer_name: string;
-  ordered_at: string;
   order_item_id: number;
   quantity: number;
-  item_remark: string;
   item_name: string;
   item_specification: string;
   customer_product_id: number | null;
@@ -35,12 +31,8 @@ export class StockRepository {
     return this.database.prepare(`
       SELECT
         o.id AS order_id,
-        o.order_no AS order_no,
-        o.customer_name AS customer_name,
-        o.ordered_at AS ordered_at,
         oi.id AS order_item_id,
         oi.quantity AS quantity,
-        oi.remark AS item_remark,
         oi.name AS item_name,
         oi.specification AS item_specification,
         cp.id AS customer_product_id,

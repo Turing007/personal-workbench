@@ -1078,12 +1078,6 @@ export function getStockPreparation(date: string | 'all', channel?: string) {
   return request<StockPreparation>(`/api/stock/preparation?${query.toString()}`);
 }
 
-export function exportStockPreparation(date: string | 'all', channel?: string) {
-  const query = new URLSearchParams({ date });
-  if (channel) query.set('channel', channel);
-  return requestBlob(`/api/stock/preparation/export?${query.toString()}`);
-}
-
 function parseDimensionTriplet(value: string) {
   const values = value.match(/[0-9]+(?:\.[0-9]+)?/g)?.map(Number) ?? [];
   return values.length === 3 ? values : [0, 0, 0];

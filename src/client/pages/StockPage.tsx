@@ -1,14 +1,12 @@
-import { CalendarDays, ChevronDown, ChevronRight, Copy, Download, Link2, PackageOpen, RefreshCw, TriangleAlert, X } from 'lucide-react';
+import { CalendarDays, Copy, Link2, PackageOpen, RefreshCw, TriangleAlert, X } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   advanceOrderStatus,
-  exportStockPreparation,
   getStockPreparation,
   linkCustomerProductToSystem,
 } from '../api';
 import { errorText } from '../components/finance/finance-format';
 import { copyText } from '../copy-text';
-import { saveFileOrDownload } from '../file-save';
 import Modal from '../components/Modal';
 import SystemProductOptionRow from '../components/SystemProductOptionRow';
 import type { ProductRecord } from '../components/ProductEditor';
@@ -37,14 +35,15 @@ function scopeTitle(scope: string): string {
   return `${month}月${day}日`;
 }
 
-function itemKey(group: StockPreparationGroup, item: StockPreparationItem): string {
-  return `${group.kind}:${group.title}:${item.displayName}`;
-}
-
-/** 复制文本：首行日期，其后每个供应商一段，明细行与备货表一致。 */
-function buildCopyText(preparation: StockPreparation, groups: StockPreparationGroup[]): string {
+/** 复制全部：首行日期，其后每个供应商一段，保留供应商名便于区分。 */
+function buildCopyAllText(preparation: StockPreparation, groups: StockPreparationGroup[]): string {
   const blocks = groups.map((group) => `【${group.title}】\n${group.items.map(formatStockItemLine).join('\n')}`);
   return [scopeTitle(preparation.scope), ...blocks].filter(Boolean).join('\n');
+}
+
+/** 单个供应商复制：直接发给供应商，不带供应商名。 */
+function groupCopyText(group: StockPreparationGroup): string {
+  return group.items.map(formatStockItemLine).join('\n');
 }
 
 export default function StockPage({ onNotify, systemProducts = [] }: StockPageProps) {
@@ -57,14 +56,12 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
   const [confirmMarkOpen, setConfirmMarkOpen] = useState(false);
   const [confirmSupplier, setConfirmSupplier] = useState<StockPreparationGroup | null>(null);
   const [linkTarget, setLinkTarget] = useState<StockPreparationItem | null>(null);
-  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
   const scopeParam = scope === 'all' ? 'all' : (date || todayISO());
   const load = useCallback(async () => {
     setLoading(true);
     try {
       setPreparation(await getStockPreparation(scopeParam, channel === 'all' ? undefined : channel));
-      setExpandedKeys(new Set());
     } catch (error) {
       onNotify?.(errorText(error, '备货表加载失败'), 'error');
     } finally {
@@ -79,7 +76,7 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
     const ids = new Set<number>();
     for (const group of groups) {
       for (const item of group.items) {
-        for (const source of item.sources) ids.add(source.orderId);
+        for (const orderId of item.orderIds) ids.add(orderId);
       }
     }
     return [...ids];
@@ -95,16 +92,6 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
       return;
     }
     onNotify?.('已复制到剪贴板', 'success');
-  };
-
-  const exportExcel = async () => {
-    try {
-      const blob = await exportStockPreparation(scopeParam, channel === 'all' ? undefined : channel);
-      // App 壳里由原生写进手机「下载」并弹分享；浏览器里回退 blob 链接下载。
-      await saveFileOrDownload(blob, `备货表-${scopeParam === 'all' ? '全部待备货' : scopeParam}.xlsx`);
-    } catch (error) {
-      onNotify?.(errorText(error, '备货表导出失败'), 'error');
-    }
   };
 
   const markStocked = async () => {
@@ -146,21 +133,12 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
     await load();
   };
 
-  const toggleExpanded = (key: string) => {
-    setExpandedKeys((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
   return <div className="page-shell stock-page">
     <div className="stock-page-head">
       <div className="stock-heading-copy">
         <span className="page-breadcrumb">履约 / 备货</span>
         <strong className="page-title">备货工作台</strong>
-        <span className="page-subtitle">按供应商生成备货表，补齐关联后可分供应商或整页确认备货</span>
+        <span className="page-subtitle">按供应商生成备货卡片，补齐关联后可分供应商或整页确认备货</span>
       </div>
     </div>
     <section className="table-panel stock-panel">
@@ -188,8 +166,7 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
         <select className="toolbar-select" aria-label="订单渠道筛选" value={channel} onChange={(event) => setChannel(event.target.value as 'all' | import('../../shared/domain').OrderChannel)}><option value="all">全部渠道</option><option value="online">线上订单</option><option value="offline">线下订单</option></select>
         <button className="icon-button" type="button" title="刷新备货表" disabled={loading} onClick={() => void load()}><RefreshCw size={15} /></button>
         <div className="stock-action-row">
-          <button className="button button-secondary" type="button" disabled={loading || !groups.length} onClick={() => void exportExcel()}><Download size={14} />导出 Excel</button>
-          <button className="button button-secondary" type="button" disabled={!groups.length || !preparation} onClick={() => { if (preparation) void copyStockText(buildCopyText(preparation, groups)); }}><Copy size={14} />复制全部</button>
+          <button className="button button-secondary" type="button" disabled={!groups.length || !preparation} onClick={() => { if (preparation) void copyStockText(buildCopyAllText(preparation, groups)); }}><Copy size={14} />复制全部</button>
           <button className="button button-primary" type="button" disabled={marking || !orderIds.length} onClick={() => setConfirmMarkOpen(true)}><PackageOpen size={14} />标记已备货</button>
         </div>
       </div>
@@ -200,17 +177,17 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
       <div className="stock-groups-scroll">
         {loading && <div className="table-state">正在生成备货表...</div>}
         {!loading && !groups.length && <div className="table-state">当前范围没有待备货订单。订单发布后会自动出现在这里。</div>}
-        {!loading && groups.map((group) => <StockGroupCard
-          key={`${group.kind}:${group.title}`}
-          group={group}
-          expandedKeys={expandedKeys}
-          onToggleExpanded={toggleExpanded}
-          onCopyGroup={(text) => void copyStockText(text)}
-          onLink={(item) => setLinkTarget(item)}
-          onConfirmSupplier={(target) => setConfirmSupplier(target)}
-          marking={marking}
-          systemProductCount={systemProducts.length}
-        />)}
+        {!loading && groups.length > 0 && <div className="stock-groups-grid">
+          {groups.map((group) => <StockGroupCard
+            key={`${group.kind}:${group.title}`}
+            group={group}
+            onCopyGroup={(text) => void copyStockText(text)}
+            onLink={(item) => setLinkTarget(item)}
+            onConfirmSupplier={(target) => setConfirmSupplier(target)}
+            marking={marking}
+            systemProductCount={systemProducts.length}
+          />)}
+        </div>}
       </div>
     </section>
 
@@ -250,10 +227,8 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
   </div>;
 }
 
-function StockGroupCard({ group, expandedKeys, onToggleExpanded, onCopyGroup, onLink, onConfirmSupplier, marking, systemProductCount }: {
+function StockGroupCard({ group, onCopyGroup, onLink, onConfirmSupplier, marking, systemProductCount }: {
   group: StockPreparationGroup;
-  expandedKeys: Set<string>;
-  onToggleExpanded: (key: string) => void;
   onCopyGroup: (text: string) => void;
   onLink: (item: StockPreparationItem) => void;
   onConfirmSupplier: (group: StockPreparationGroup) => void;
@@ -261,49 +236,33 @@ function StockGroupCard({ group, expandedKeys, onToggleExpanded, onCopyGroup, on
   systemProductCount: number;
 }) {
   const warning = group.kind !== 'supplier';
+  const totalQuantity = group.items.reduce((sum, item) => sum + item.quantity, 0);
   return <section className={`stock-group${warning ? ' stock-group-warning' : ''}`}>
     <div className="stock-group-head">
       <strong className="stock-group-title">{group.title}</strong>
-      <span className="badge badge-neutral">{group.items.length} 项 / {group.items.reduce((sum, item) => sum + item.quantity, 0)} 件</span>
+      <span className="stock-group-count">{group.items.length} 项 · {totalQuantity} 件</span>
+      {warning && <span className="stock-group-hint">{group.kind === 'unlinked' ? '未关联系统产品' : '系统产品未填供应商'}</span>}
       <div className="row-actions">
-        {warning && <span className="stock-group-hint">{group.kind === 'unlinked' ? '未关联系统产品' : '系统产品未填供应商'}</span>}
         {group.kind === 'supplier' && <button className="button button-secondary button-sm stock-confirm-button" type="button" disabled={marking} onClick={() => onConfirmSupplier(group)}>确认备货</button>}
-        <button className="icon-button" type="button" title="复制该供应商备货明细" onClick={() => onCopyGroup(`【${group.title}】\n${group.items.map(formatStockItemLine).join('\n')}`)}><Copy size={14} /></button>
+        <button className="icon-button" type="button" title="复制备货明细" onClick={() => onCopyGroup(groupCopyText(group))}><Copy size={14} /></button>
       </div>
     </div>
-    <div className="table-scroll">
-      <table className="data-table stock-table">
-        <tbody>
-          {group.items.map((item) => {
-            const key = itemKey(group, item);
-            const expanded = expandedKeys.has(key);
-            return <Fragment key={key}>
-              <tr className={warning ? 'stock-row-warning' : undefined}>
-                <td className="stock-item-name">
-                  {item.sources.length > 1 && <button className="icon-button" type="button" title={expanded ? '收起订单构成' : '展开订单构成'} onClick={() => onToggleExpanded(key)}>{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>}
-                  <span className="stock-item-display">{item.displayName}</span>
-                  <span className="stock-item-spec">（{item.specs.length
-                    ? item.specs.map((spec, index) => <Fragment key={`${spec.specification}-${index}`}>{index > 0 ? '，' : ''}{spec.specification ? `${spec.specification} × ` : '× '}<strong className="stock-item-quantity">{spec.quantity}</strong></Fragment>)
-                    : <>× <strong className="stock-item-quantity">{item.quantity}</strong></>}）</span>
-                  {item.remarks.map((remark) => <span key={remark} className="stock-item-remark">{remark}</span>)}
-                </td>
-                <td className="stock-item-actions">
-                  {group.kind === 'unlinked' && <button className="button button-ghost" type="button"
-                    disabled={!systemProductCount || item.customerProductId == null}
-                    title={item.customerProductId == null
-                      ? '该明细未挂客户产品，请编辑订单选择客户产品后再来关联'
-                      : systemProductCount ? '关联系统产品并填写报供名称' : '产品库为空，请先添加系统产品'}
-                    onClick={() => onLink(item)}
-                  ><Link2 size={13} />关联产品</button>}
-                </td>
-              </tr>
-              {expanded && item.sources.map((source) => <tr key={`${key}:${source.orderId}`} className="stock-source-row">
-                <td colSpan={2}>{source.orderNo} · {source.customerName || '未填客户'} · {source.specification ? `${source.specification} · ` : ''}数量 {source.quantity}{source.remark ? ` · ${source.remark}` : ''}</td>
-              </tr>)}
-            </Fragment>;
-          })}
-        </tbody>
-      </table>
+    <div className="stock-group-items">
+      {group.items.map((item, index) => <div className="stock-item" key={`${item.systemProductId ?? item.customerProductId ?? item.displayName}-${index}`}>
+        <div className="stock-item-main">
+          <span className="stock-item-display">{item.displayName}</span>
+          <span className="stock-item-spec">（{item.specs.length
+            ? item.specs.map((spec, specIndex) => <Fragment key={`${spec.specification}-${specIndex}`}>{specIndex > 0 ? '，' : ''}{spec.specification ? `${spec.specification} × ` : '× '}<strong className="stock-item-quantity">{spec.quantity}</strong></Fragment>)
+            : <>× <strong className="stock-item-quantity">{item.quantity}</strong></>}）</span>
+        </div>
+        {group.kind === 'unlinked' && <button className="button button-ghost stock-item-link" type="button"
+          disabled={!systemProductCount || item.customerProductId == null}
+          title={item.customerProductId == null
+            ? '该明细未挂客户产品，请编辑订单选择客户产品后再来关联'
+            : systemProductCount ? '关联系统产品并填写报供名称' : '产品库为空，请先添加系统产品'}
+          onClick={() => onLink(item)}
+        ><Link2 size={13} />关联产品</button>}
+      </div>)}
     </div>
   </section>;
 }

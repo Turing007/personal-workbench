@@ -29,12 +29,8 @@ async function testApp(): Promise<{ app: FastifyInstance; database: DatabaseSync
 function row(overrides: Partial<StockPreparationRow>): StockPreparationRow {
   return {
     order_id: 1,
-    order_no: 'SO-260908-001',
-    customer_name: '张三',
-    ordered_at: '2026-09-08T08:00:00.000Z',
     order_item_id: 1,
     quantity: 5,
-    item_remark: '',
     item_name: '快照名',
     item_specification: '标准',
     customer_product_id: 11,
@@ -47,11 +43,11 @@ function row(overrides: Partial<StockPreparationRow>): StockPreparationRow {
 }
 
 describe('buildPreparation 聚合规则', () => {
-  it('按供应商分组、合并同产品数量并去重备注', () => {
+  it('按供应商分组并合并同产品数量', () => {
     const preparation = buildPreparation([
-      row({ order_id: 1, order_item_id: 1, quantity: 5, item_remark: '装一个外箱', supplier_product_name: '米沃奇脚58款' }),
-      row({ order_id: 2, order_no: 'SO-260908-002', order_item_id: 2, quantity: 7, item_remark: '装一个外箱', supplier_product_name: '米沃奇脚58款' }),
-      row({ order_id: 3, order_no: 'SO-260908-003', order_item_id: 3, quantity: 2, item_remark: '不要包装', product_id: 22, product_name: '另一产品' }),
+      row({ order_id: 1, order_item_id: 1, quantity: 5, supplier_product_name: '米沃奇脚58款' }),
+      row({ order_id: 2, order_item_id: 2, quantity: 7, supplier_product_name: '米沃奇脚58款' }),
+      row({ order_id: 3, order_item_id: 3, quantity: 2, product_id: 22, product_name: '另一产品' }),
     ], '2026-09-08');
 
     expect(preparation.scope).toBe('2026-09-08');
@@ -68,18 +64,17 @@ describe('buildPreparation 聚合规则', () => {
       displayName: '米沃奇脚58款',
       quantity: 12,
       specs: [{ specification: '标准', quantity: 12 }],
-      remarks: ['装一个外箱'],
+      orderIds: [1, 2],
     });
-    expect(group.items[0].sources).toHaveLength(2);
     expect(group.items[1]).toMatchObject({ displayName: '另一产品', quantity: 2, specs: [{ specification: '标准', quantity: 2 }] });
   });
 
   it('同供应商同品名的不同规格合并在同一行，括号里分别累加；品名不同才分行', () => {
     const preparation = buildPreparation([
       row({ order_id: 1, order_item_id: 1, quantity: 5, supplier_product_name: '米沃奇脚', item_specification: '58款' }),
-      row({ order_id: 2, order_no: 'SO-260908-002', order_item_id: 2, quantity: 7, supplier_product_name: '米沃奇脚', item_specification: '58款' }),
-      row({ order_id: 3, order_no: 'SO-260908-003', order_item_id: 3, quantity: 3, supplier_product_name: '米沃奇脚', item_specification: '30款' }),
-      row({ order_id: 4, order_no: 'SO-260908-004', order_item_id: 4, quantity: 2, supplier_product_name: '另一款', item_specification: '58款' }),
+      row({ order_id: 2, order_item_id: 2, quantity: 7, supplier_product_name: '米沃奇脚', item_specification: '58款' }),
+      row({ order_id: 3, order_item_id: 3, quantity: 3, supplier_product_name: '米沃奇脚', item_specification: '30款' }),
+      row({ order_id: 4, order_item_id: 4, quantity: 2, supplier_product_name: '另一款', item_specification: '58款' }),
     ], null);
 
     const items = preparation.groups[0].items;
@@ -141,8 +136,8 @@ describe('buildPreparation 聚合规则', () => {
 
   it('未挂客户产品的手填明细各占一行，不与其他订单的手填明细合并', () => {
     const preparation = buildPreparation([
-      row({ order_id: 1, order_no: 'SO-260908-001', order_item_id: 1, customer_product_id: null, product_id: null, product_name: null, supplier_product_name: null, item_name: '手填A', quantity: 2 }),
-      row({ order_id: 2, order_no: 'SO-260908-002', order_item_id: 2, customer_product_id: null, product_id: null, product_name: null, supplier_product_name: null, item_name: 'E2E产品', quantity: 10 }),
+      row({ order_id: 1, order_item_id: 1, customer_product_id: null, product_id: null, product_name: null, supplier_product_name: null, item_name: '手填A', quantity: 2 }),
+      row({ order_id: 2, order_item_id: 2, customer_product_id: null, product_id: null, product_name: null, supplier_product_name: null, item_name: 'E2E产品', quantity: 10 }),
     ], null);
 
     expect(preparation.groups).toHaveLength(1);
@@ -214,13 +209,13 @@ describe('备货表接口', () => {
     return Number(created.json().data.id);
   }
 
-  it('按下单日期生成供应商分组备货表，并支持导出与标记已备货', async () => {
+  it('按下单日期生成供应商分组备货表，并支持标记已备货', async () => {
     const { app } = await testApp();
     const { customerId, customerProductId } = await seedPreparationData(app);
     await createOrder(app, {
       customerId,
       orderedAt: '2026-09-08T08:00:00.000Z',
-      items: [{ name: '客户甲-A款冲压脚', sku: '', specification: '58款', quantity: 5, unitPriceCents: 1000, customerProductId, remark: '装一个外箱' }],
+      items: [{ name: '客户甲-A款冲压脚', sku: '', specification: '58款', quantity: 5, unitPriceCents: 1000, customerProductId }],
     });
     const secondOrderId = await createOrder(app, {
       customerId,
@@ -244,8 +239,8 @@ describe('备货表接口', () => {
       displayName: 'A款冲压米沃奇脚58款',
       quantity: 12,
       specs: [{ specification: '58款', quantity: 12 }],
-      remarks: ['装一个外箱'],
     });
+    expect(dayPreparation.groups[0].items[0].orderIds).toHaveLength(2);
 
     const otherDay = await authInject(app, { method: 'GET', url: '/api/stock/preparation?date=2026-09-09' });
     expect(otherDay.json().data.groups[0].items[0].quantity).toBe(3);
@@ -253,11 +248,6 @@ describe('备货表接口', () => {
     const all = await authInject(app, { method: 'GET', url: '/api/stock/preparation' });
     expect(all.json().data.scope).toBe('all');
     expect(all.json().data.orderCount).toBe(3);
-
-    const exported = await authInject(app, { method: 'GET', url: '/api/stock/preparation/export?date=2026-09-08' });
-    expect(exported.statusCode).toBe(200);
-    expect(exported.headers['content-type']).toContain('spreadsheetml');
-    expect(exported.body.length).toBeGreaterThan(0);
 
     const marked = await authInject(app, {
       method: 'POST',

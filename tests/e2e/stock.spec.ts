@@ -69,10 +69,9 @@ test.describe('备货模块', () => {
       await page.goto('/');
       await page.getByRole('button', { name: '备货', exact: true }).click();
       await expect(page.getByLabel('按下单日期筛选')).toBeVisible();
-      await expect(page.getByRole('button', { name: '导出 Excel' })).toBeVisible();
       await expect(page.getByRole('button', { name: '标记已备货' }).first()).toBeVisible();
       // 其他用例可能泄漏待备货订单，所有断言只作用于本用例自己的数据
-      const myRow = page.locator('.stock-group tr', { hasText: `E2E手填品${stamp}` });
+      const myRow = page.locator('.stock-group .stock-item', { hasText: `E2E手填品${stamp}` });
       await expect(myRow).toBeVisible();
       await expect(page.getByText('未关联产品', { exact: true })).toBeVisible();
 
@@ -187,7 +186,7 @@ test.describe('备货模块', () => {
     }
   });
 
-  test('备货表支持切换到全部待备货并导出 Excel', async ({ page }) => {
+  test('备货表支持切换到全部待备货', async ({ page }) => {
     const stamp = Date.now();
     const customerResponse = await page.request.post('/api/customers', {
       data: { name: `E2E导出客户${stamp}`, contactName: '', contactPhone: '', shippingInfo: '' },
@@ -220,10 +219,6 @@ test.describe('备货模块', () => {
       await page.getByRole('button', { name: '全部', exact: true }).click();
       await expect(page.getByLabel('按下单日期筛选')).toBeDisabled();
       await expect(page.getByText(`E2E导出品${stamp}`)).toBeVisible();
-
-      const exportResponse = await page.request.get('/api/stock/preparation/export?date=all');
-      expect(exportResponse.ok()).toBeTruthy();
-      expect(exportResponse.headers()['content-type']).toContain('spreadsheetml');
     } finally {
       await page.request.delete(`/api/orders/${orderId}`);
       await page.request.delete(`/api/customers/${customer.id}`);

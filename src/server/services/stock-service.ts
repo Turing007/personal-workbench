@@ -50,8 +50,7 @@ export function buildPreparation(rows: StockPreparationRow[], date: string | nul
         displayName,
         quantity: 0,
         specs: [],
-        sources: [],
-        remarks: [],
+        orderIds: [],
       };
       itemsByKey.set(itemKey, item);
       group.items.push(item);
@@ -63,16 +62,8 @@ export function buildPreparation(rows: StockPreparationRow[], date: string | nul
     const spec = item.specs.find((entry) => entry.specification === specification);
     if (spec) spec.quantity += quantity;
     else item.specs.push({ specification, quantity });
-    item.sources.push({
-      orderId: Number(row.order_id),
-      orderNo: String(row.order_no ?? ''),
-      customerName: String(row.customer_name ?? ''),
-      specification,
-      quantity,
-      remark: String(row.item_remark ?? '').trim(),
-    });
-    const remark = String(row.item_remark ?? '').trim();
-    if (remark && !item.remarks.includes(remark)) item.remarks.push(remark);
+    const orderId = Number(row.order_id);
+    if (!item.orderIds.includes(orderId)) item.orderIds.push(orderId);
   }
 
   const groups = [...groupsByKey.values()];
