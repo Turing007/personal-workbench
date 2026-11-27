@@ -6663,7 +6663,7 @@ select {
   .customer-product-card-head input[type='checkbox'] { flex: none; }
   .customer-product-card-image { width: 46px; height: 40px; object-fit: contain; border: 1px solid var(--color-border); border-radius: var(--radius-ui); flex: none; }
   .customer-product-card-title { display: grid; gap: 2px; min-width: 0; flex: 1; }
-  .customer-product-card-title strong { color: var(--color-text-strong); font-size: var(--text-sm); font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+  .customer-product-card-title strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; color: var(--color-text-strong); font-size: var(--text-sm); font-weight: var(--weight-semibold); overflow-wrap: anywhere; line-height: 1.35; }
   .customer-product-card-title span { color: var(--color-text-muted); font-size: var(--text-2xs); overflow-wrap: anywhere; }
   .customer-product-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4) var(--space-6); }
   .customer-product-card-field { display: grid; gap: 2px; min-width: 0; }

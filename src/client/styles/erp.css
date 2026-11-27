@@ -2851,7 +2851,8 @@
   .customer-products-workspace .customer-products-table { min-width: 1240px; font-size: 12.5px; }
   .customer-products-workspace .customer-products-table th { height: 32px; padding: 0 10px; background: var(--erp-surface-muted); font-size: 11px; }
   .customer-products-workspace .customer-products-table td { height: 44px; padding: 0 10px; border-top: 1px solid var(--erp-divider); }
-  .customer-products-workspace .customer-products-table td:nth-child(4) { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .customer-products-workspace .customer-products-table td:nth-child(4) { max-width: 190px; white-space: normal; }
+  .customer-products-workspace .customer-products-table .customer-product-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; line-height: 1.35; }
   .customer-products-workspace .customer-products-table td:last-child { width: 110px; }
 
   .customer-products-workspace .customer-products-table th:last-child,
