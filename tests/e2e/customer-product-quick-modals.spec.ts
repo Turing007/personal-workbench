@@ -24,7 +24,7 @@ async function seedProduct(page: Page, stamp: number) {
   })).json();
   const productName = `E2E快捷产品${stamp}`;
   const created = await page.request.post(`/api/customers/${customer.data.id}/products`, {
-    data: { name: productName, sku: `QA-${stamp}`, packCount: 10, finalPriceCents: 8800, costPriceCents: 5000, costConfirmed: true },
+    data: { name: productName, sku: `QA-${stamp}`, packCount: 10, finalPriceCents: 8800, finalPriceIncludesTax: 'exc', costPriceCents: 5000, costConfirmed: true },
   });
   expect(created.ok()).toBeTruthy();
   return { customerId: Number(customer.data.id), customerName, productName };
@@ -42,6 +42,13 @@ test('桌面端：标贴开关/每张数量即时保存，备注文字和图片�
   try {
     await openCustomer(page, customerName);
     const row = page.locator('.customer-products-table-desktop tbody tr', { hasText: productName }).first();
+
+    // 含税口径是金额上方的小胶囊，不跟金额挤在一行。
+    const priceStack = row.locator('.customer-price-stack');
+    await expect(priceStack.locator('.customer-tax-tag.is-exc')).toHaveText('不含税');
+    const tagBox = await priceStack.locator('.customer-tax-tag').boundingBox();
+    const amountBox = await priceStack.locator('span').last().boundingBox();
+    expect(tagBox && amountBox && tagBox.y + tagBox.height <= amountBox.y + 1).toBe(true);
 
     // 标贴：未开启也能点开管理，开启 + 改每张数量 + 打印入库
     await row.getByRole('button', { name: `管理标贴库存：${productName}` }).click();

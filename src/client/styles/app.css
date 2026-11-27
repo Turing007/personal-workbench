@@ -7763,3 +7763,22 @@ select {
 .cpe-attachment-main a:hover { color: var(--color-accent); }
 .cpe-attachment-main span { color: var(--color-text-muted); font-size: 10.5px; }
 .cpe-attachment-open { flex: none; color: var(--color-accent); }
+
+/* 客户产品最终价格：含税/不含税口径做成金额上方的小胶囊标签 */
+.customer-products-table th.customer-price-col,
+.customer-products-table td.customer-price-col { text-align: center; }
+.customer-price-stack { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; }
+.customer-price-label { display: inline-flex; align-items: center; gap: 4px; }
+.customer-tax-tag {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.customer-tax-tag.is-inc { color: var(--color-success); background: var(--color-success-soft); }
+.customer-tax-tag.is-exc { color: var(--color-warning-text); background: var(--color-warning-soft); }
