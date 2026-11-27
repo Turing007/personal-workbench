@@ -242,3 +242,73 @@ test('临时添加的客户产品保存后可关联系统产品，且不覆盖�
     await page.request.delete(`/api/products/${system.id}`);
   }
 });
+
+test('已关联系统产品的客户产品再次编辑时可改选另一个系统产品，客户资料不变', async ({ page }) => {
+  const stamp = Date.now();
+  const customer = await seedCustomer(page, stamp);
+  const createSystemProduct = async (name: string, supplier: string) => {
+    const created = await page.request.post('/api/products', {
+      data: {
+        name,
+        sku: '',
+        supplier,
+        status: 'active',
+        packaging: [{ name: '彩盒包装', innerSize: '', innerWeight: 0, outerSize: '', outerWeight: 0, packCount: 12 }],
+      },
+    });
+    if (!created.ok()) throw new Error(`创建系统产品失败：HTTP ${created.status()}`);
+    return (await created.json()).data as { id: string };
+  };
+  const systemA = await createSystemProduct(`E2E系统A${stamp}`, `E2E供A${stamp}`);
+  const systemB = await createSystemProduct(`E2E系统B${stamp}`, `E2E供B${stamp}`);
+  const productName = `客户品${stamp}`;
+  try {
+    const imported = await page.request.post(`/api/customers/${customer.id}/products/from-library/complete`, {
+      data: {
+        systemProductId: Number(systemA.id),
+        name: productName,
+        supplierProductName: `报供${stamp}`,
+        specification: '客户规格',
+        sku: `CP-${stamp}`,
+        packCount: 10,
+        finalPriceCents: 8800,
+      },
+    });
+    expect(imported.status(), await imported.text()).toBe(201);
+    const customerProductId = (await imported.json()).data.id as number;
+
+    await openCustomerProducts(page, `E2E图片删除客户${stamp}`);
+    const row = page.locator('.customer-products-table-desktop tbody tr', { hasText: productName }).first();
+    await row.getByRole('button', { name: '编辑客户产品' }).click();
+    const editor = page.getByRole('dialog');
+    const systemPicker = editor.getByRole('combobox', { name: '搜索系统产品' });
+    await expect(systemPicker).toBeVisible();
+    await expect(systemPicker).toHaveValue(new RegExp(`E2E系统A${stamp}`));
+
+    // 搜索另一款系统产品并选中；失焦不会把原关联清空。
+    await systemPicker.fill(`E2E系统B${stamp}`);
+    await expect(systemPicker).toHaveValue(`E2E系统B${stamp}`);
+    await editor.getByRole('option', { name: new RegExp(`E2E系统B${stamp}`) }).click();
+    await expect(systemPicker).toHaveValue(new RegExp(`E2E系统B${stamp}`));
+    await editor.getByRole('button', { name: '保存产品' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    const detail = await page.request.get(`/api/customer-products/${customerProductId}`);
+    expect((await detail.json()).data).toMatchObject({
+      systemProductId: Number(systemB.id),
+      name: productName,
+      supplierProductName: `报供${stamp}`,
+      specification: '客户规格',
+      sku: `CP-${stamp}`,
+      finalPriceCents: 8800,
+    });
+
+    // 再进编辑，选择框回显的是新的系统产品。
+    await row.getByRole('button', { name: '编辑客户产品' }).click();
+    await expect(page.getByRole('dialog').getByRole('combobox', { name: '搜索系统产品' })).toHaveValue(new RegExp(`E2E系统B${stamp}`));
+  } finally {
+    await page.request.delete(`/api/customers/${customer.id}`);
+    await page.request.delete(`/api/products/${systemB.id}`);
+    await page.request.delete(`/api/products/${systemA.id}`);
+  }
+});

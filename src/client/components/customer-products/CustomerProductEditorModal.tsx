@@ -163,7 +163,11 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
   useEffect(() => {
     if (!open) return;
     setSystemProductId(product?.systemProductId ?? null);
-    setSystemProductQuery('');
+    // 已关联的产品直接回显当前系统产品，编辑时可以搜索并更换。
+    const linkedSystemProduct = product?.systemProductId != null
+      ? systemProducts.find((item) => Number(item.id) === product.systemProductId)
+      : undefined;
+    setSystemProductQuery(linkedSystemProduct ? systemProductLabel(linkedSystemProduct) : '');
     setSystemProductPickerOpen(false);
     setSupplierProductName(product?.supplierProductName ?? '');
     setName(product?.name ?? '');
@@ -386,13 +390,19 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
       {error && <div role="alert" style={{ padding: '8px 10px', border: '1px solid var(--color-danger-border)', borderRadius: 'var(--radius-ui)', background: 'var(--color-danger-soft)', color: 'var(--color-danger)', fontSize: 12 }}>{error}</div>}
       {copyMode && <div style={{ padding: '8px 10px', borderRadius: 'var(--radius-ui)', background: 'var(--color-accent-soft)', color: 'var(--color-accent)', fontSize: 12 }}>已复制原产品的资料、包装信息和图片，保存后将创建为新的客户产品；附件不会复制。</div>}
       {onBatchSave && !product && !copyMode && <label style={{ justifySelf: 'start', display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--color-text-secondary)', fontSize: 12, cursor: 'pointer' }}><input type="checkbox" checked={batchMode} disabled={busy} onChange={toggleBatchMode} />批量添加：逐行填写品名、规格、SKU 与图片，其余信息共享</label>}
-      {selectableSystemProducts.length > 0 && !copyMode && !batchMode && (!product || product.systemProductId == null) && <label style={{ position: 'relative', display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>{product ? '关联系统产品（可选）' : '选择系统产品（可选）'}
-        {product && <small style={{ color: 'var(--color-text-muted)', fontSize: 10.5 }}>只建立产品关联，不会覆盖当前客户产品的规格、价格和备注。</small>}
+      {selectableSystemProducts.length > 0 && !copyMode && !batchMode && <label style={{ position: 'relative', display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>{product ? (product.systemProductId != null ? '系统产品' : '关联系统产品（可选）') : '选择系统产品（可选）'}
+        {product && <small style={{ color: 'var(--color-text-muted)', fontSize: 10.5 }}>{product.systemProductId != null ? '更换后只更新产品关联，不会覆盖当前客户产品的名称、规格、价格和备注。' : '只建立产品关联，不会覆盖当前客户产品的规格、价格和备注。'}</small>}
         <div style={{ position: 'relative' }}>
           <input
             value={systemProductQuery}
-            onChange={(event) => { setSystemProductQuery(event.target.value); setSystemProductId(null); setSystemProductPickerOpen(true); }}
+            onChange={(event) => { setSystemProductQuery(event.target.value); if (product?.systemProductId == null) setSystemProductId(null); setSystemProductPickerOpen(true); }}
             onFocus={() => setSystemProductPickerOpen(true)}
+            onBlur={() => {
+              // 已关联的产品即使只是搜索没选中，也不能把原关联清掉；失焦后恢复当前关联的名称。
+              if (systemProductId == null) return;
+              const current = systemProducts.find((item) => Number(item.id) === systemProductId);
+              if (current) setSystemProductQuery(systemProductLabel(current));
+            }}
             onKeyDown={(event) => { if (event.key === 'Escape') setSystemProductPickerOpen(false); }}
             style={{ ...inputStyle, paddingRight: systemProductId == null ? (systemProductQuery ? 30 : 9) : 72 }}
             placeholder="输入品名、规格、SKU或产品编号搜索"
@@ -404,8 +414,8 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
           {systemProductId == null && !!systemProductQuery && <button type="button" aria-label="清空搜索" title="清空" onMouseDown={(event) => event.preventDefault()} onClick={() => setSystemProductQuery('')} style={{ position: 'absolute', right: 5, top: '50%', transform: 'translateY(-50%)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, border: 0, borderRadius: '50%', padding: 0, color: 'var(--color-text-muted)', background: 'transparent', cursor: 'pointer' }}><X size={13} /></button>}
           {systemProductId != null && <button type="button" onClick={() => chooseSystemProduct('', Boolean(product))} disabled={busy} title={product ? '取消关联系统产品' : '改为临时添加'} style={{ position: 'absolute', right: 6, top: 5, height: 24, border: 0, color: 'var(--color-text-secondary)', background: 'transparent', cursor: 'pointer', fontSize: 11 }}>清除</button>}
           {systemProductPickerOpen && <div id="customer-product-system-picker" role="listbox" style={{ position: 'absolute', zIndex: 20, top: 'calc(100% + 4px)', left: 0, right: 0, maxHeight: 220, overflowY: 'auto', border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', background: 'var(--color-surface)', boxShadow: '0 8px 20px rgba(15, 23, 42, .12)' }}>
-            <button type="button" role="option" aria-selected={systemProductId == null} onClick={() => chooseSystemProduct('', Boolean(product))} disabled={busy} style={{ display: 'block', width: '100%', padding: '9px 10px', border: 0, borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', background: 'var(--color-surface)', cursor: 'pointer', textAlign: 'left', fontSize: 12 }}>{product ? '不关联系统产品' : '临时添加，不关联系统产品'}</button>
-            {filteredSystemProducts.map((item) => <button key={item.id} type="button" role="option" aria-selected={Number(item.id) === systemProductId} onClick={() => chooseSystemProduct(String(item.id), Boolean(product))} disabled={busy} style={{ display: 'block', width: '100%', padding: '8px 10px', border: 0, borderBottom: '1px solid var(--color-border)', color: 'var(--color-text)', background: Number(item.id) === systemProductId ? 'var(--color-accent-soft)' : 'var(--color-surface)', cursor: 'pointer', textAlign: 'left' }}><SystemProductOptionRow product={item} /></button>)}
+            <button type="button" role="option" aria-selected={systemProductId == null} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseSystemProduct('', Boolean(product))} disabled={busy} style={{ display: 'block', width: '100%', padding: '9px 10px', border: 0, borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)', background: 'var(--color-surface)', cursor: 'pointer', textAlign: 'left', fontSize: 12 }}>{product ? '不关联系统产品' : '临时添加，不关联系统产品'}</button>
+            {filteredSystemProducts.map((item) => <button key={item.id} type="button" role="option" aria-selected={Number(item.id) === systemProductId} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseSystemProduct(String(item.id), Boolean(product))} disabled={busy} style={{ display: 'block', width: '100%', padding: '8px 10px', border: 0, borderBottom: '1px solid var(--color-border)', color: 'var(--color-text)', background: Number(item.id) === systemProductId ? 'var(--color-accent-soft)' : 'var(--color-surface)', cursor: 'pointer', textAlign: 'left' }}><SystemProductOptionRow product={item} /></button>)}
             {!filteredSystemProducts.length && <div style={{ padding: 12, color: 'var(--color-text-muted)', textAlign: 'center', fontSize: 12 }}>没有匹配的系统产品</div>}
           </div>}
         </div>
