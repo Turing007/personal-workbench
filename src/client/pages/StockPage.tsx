@@ -14,6 +14,7 @@ import SystemProductOptionRow from '../components/SystemProductOptionRow';
 import type { ProductRecord } from '../components/ProductEditor';
 import {
   formatStockItemLine,
+  planSupplierStockConfirm,
   type StockPreparation,
   type StockPreparationGroup,
   type StockPreparationItem,
@@ -37,7 +38,7 @@ function scopeTitle(scope: string): string {
 }
 
 function itemKey(group: StockPreparationGroup, item: StockPreparationItem): string {
-  return `${group.kind}:${group.title}:${item.systemProductId ?? `cp${item.customerProductId}`}`;
+  return `${group.kind}:${group.title}:${item.displayName}`;
 }
 
 /** 复制文本：首行日期，其后每个供应商一段，明细行与备货表一致。 */
@@ -54,6 +55,7 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
   const [loading, setLoading] = useState(false);
   const [marking, setMarking] = useState(false);
   const [confirmMarkOpen, setConfirmMarkOpen] = useState(false);
+  const [confirmSupplier, setConfirmSupplier] = useState<StockPreparationGroup | null>(null);
   const [linkTarget, setLinkTarget] = useState<StockPreparationItem | null>(null);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
@@ -82,6 +84,10 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
     }
     return [...ids];
   }, [groups]);
+  const supplierPlan = useMemo(
+    () => confirmSupplier ? planSupplierStockConfirm(groups, confirmSupplier) : { advanceOrderIds: [], pendingOrderIds: [] },
+    [confirmSupplier, groups],
+  );
 
   const copyStockText = async (text: string) => {
     if (!await copyText(text)) {
@@ -118,6 +124,28 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
     await load();
   };
 
+  const markSupplierStocked = async () => {
+    if (!confirmSupplier) return;
+    const { advanceOrderIds, pendingOrderIds } = planSupplierStockConfirm(groups, confirmSupplier);
+    const supplierTitle = confirmSupplier.title;
+    setMarking(true);
+    setConfirmSupplier(null);
+    let failureCount = 0;
+    for (const orderId of advanceOrderIds) {
+      try {
+        await advanceOrderStatus(orderId, 'stock_reported');
+      } catch {
+        failureCount += 1;
+      }
+    }
+    setMarking(false);
+    const parts = [`已确认「${supplierTitle}」：${advanceOrderIds.length - failureCount} 张订单推进到已备货`];
+    if (pendingOrderIds.length) parts.push(`${pendingOrderIds.length} 张订单还涉及其他供应商，暂未推进`);
+    if (failureCount) parts.push(`${failureCount} 张推进失败，请重试`);
+    onNotify?.(parts.join('；'), failureCount ? 'error' : 'success');
+    await load();
+  };
+
   const toggleExpanded = (key: string) => {
     setExpandedKeys((current) => {
       const next = new Set(current);
@@ -132,7 +160,7 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
       <div className="stock-heading-copy">
         <span className="page-breadcrumb">履约 / 备货</span>
         <strong className="page-title">备货工作台</strong>
-        <span className="page-subtitle">按供应商生成备货表，补齐关联后标记已备货</span>
+        <span className="page-subtitle">按供应商生成备货表，补齐关联后可分供应商或整页确认备货</span>
       </div>
     </div>
     <section className="table-panel stock-panel">
@@ -179,6 +207,8 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
           onToggleExpanded={toggleExpanded}
           onCopyGroup={(text) => void copyStockText(text)}
           onLink={(item) => setLinkTarget(item)}
+          onConfirmSupplier={(target) => setConfirmSupplier(target)}
+          marking={marking}
           systemProductCount={systemProducts.length}
         />)}
       </div>
@@ -190,6 +220,19 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button className="button button-secondary" type="button" disabled={marking} onClick={() => setConfirmMarkOpen(false)}>取消</button>
           <button className="button button-primary" type="button" disabled={marking} onClick={() => void markStocked()}>{marking ? '处理中…' : '确认标记'}</button>
+        </div>
+      </div>
+    </Modal>
+
+    <Modal open={Boolean(confirmSupplier)} title="确认备货" onClose={() => setConfirmSupplier(null)} width={460} compact>
+      <div style={{ display: 'grid', gap: 12, fontSize: 13, color: 'var(--color-text)' }}>
+        <span>确认供应商「<strong>{confirmSupplier?.title}</strong>」的备货已完成？</span>
+        <span>将把 <strong>{supplierPlan.advanceOrderIds.length}</strong> 张只涉及该供应商的订单推进到「已备货」，这些订单会离开备货表。</span>
+        {supplierPlan.pendingOrderIds.length > 0 && <span style={{ color: 'var(--color-warning-text)' }}>{supplierPlan.pendingOrderIds.length} 张订单还涉及其他供应商，暂不推进；等其余供应商备齐后请点整页「标记已备货」。</span>}
+        {supplierPlan.advanceOrderIds.length === 0 && supplierPlan.pendingOrderIds.length > 0 && <span style={{ color: 'var(--color-warning-text)' }}>该供应商名下没有可单独推进的订单。</span>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button className="button button-secondary" type="button" disabled={marking} onClick={() => setConfirmSupplier(null)}>取消</button>
+          <button className="button button-primary" type="button" disabled={marking || supplierPlan.advanceOrderIds.length === 0} onClick={() => void markSupplierStocked()}>{marking ? '处理中…' : '确定'}</button>
         </div>
       </div>
     </Modal>
@@ -207,12 +250,14 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
   </div>;
 }
 
-function StockGroupCard({ group, expandedKeys, onToggleExpanded, onCopyGroup, onLink, systemProductCount }: {
+function StockGroupCard({ group, expandedKeys, onToggleExpanded, onCopyGroup, onLink, onConfirmSupplier, marking, systemProductCount }: {
   group: StockPreparationGroup;
   expandedKeys: Set<string>;
   onToggleExpanded: (key: string) => void;
   onCopyGroup: (text: string) => void;
   onLink: (item: StockPreparationItem) => void;
+  onConfirmSupplier: (group: StockPreparationGroup) => void;
+  marking: boolean;
   systemProductCount: number;
 }) {
   const warning = group.kind !== 'supplier';
@@ -222,6 +267,7 @@ function StockGroupCard({ group, expandedKeys, onToggleExpanded, onCopyGroup, on
       <span className="badge badge-neutral">{group.items.length} 项 / {group.items.reduce((sum, item) => sum + item.quantity, 0)} 件</span>
       <div className="row-actions">
         {warning && <span className="stock-group-hint">{group.kind === 'unlinked' ? '未关联系统产品' : '系统产品未填供应商'}</span>}
+        {group.kind === 'supplier' && <button className="button button-secondary button-sm stock-confirm-button" type="button" disabled={marking} onClick={() => onConfirmSupplier(group)}>确认备货</button>}
         <button className="icon-button" type="button" title="复制该供应商备货明细" onClick={() => onCopyGroup(`【${group.title}】\n${group.items.map(formatStockItemLine).join('\n')}`)}><Copy size={14} /></button>
       </div>
     </div>
@@ -236,7 +282,9 @@ function StockGroupCard({ group, expandedKeys, onToggleExpanded, onCopyGroup, on
                 <td className="stock-item-name">
                   {item.sources.length > 1 && <button className="icon-button" type="button" title={expanded ? '收起订单构成' : '展开订单构成'} onClick={() => onToggleExpanded(key)}>{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>}
                   <span className="stock-item-display">{item.displayName}</span>
-                  <strong className="stock-item-quantity">*{item.quantity}</strong>
+                  <span className="stock-item-spec">（{item.specs.length
+                    ? item.specs.map((spec, index) => <Fragment key={`${spec.specification}-${index}`}>{index > 0 ? '，' : ''}{spec.specification ? `${spec.specification} × ` : '× '}<strong className="stock-item-quantity">{spec.quantity}</strong></Fragment>)
+                    : <>× <strong className="stock-item-quantity">{item.quantity}</strong></>}）</span>
                   {item.remarks.map((remark) => <span key={remark} className="stock-item-remark">{remark}</span>)}
                 </td>
                 <td className="stock-item-actions">
@@ -250,7 +298,7 @@ function StockGroupCard({ group, expandedKeys, onToggleExpanded, onCopyGroup, on
                 </td>
               </tr>
               {expanded && item.sources.map((source) => <tr key={`${key}:${source.orderId}`} className="stock-source-row">
-                <td colSpan={2}>{source.orderNo} · {source.customerName || '未填客户'} · 数量 {source.quantity}{source.remark ? ` · ${source.remark}` : ''}</td>
+                <td colSpan={2}>{source.orderNo} · {source.customerName || '未填客户'} · {source.specification ? `${source.specification} · ` : ''}数量 {source.quantity}{source.remark ? ` · ${source.remark}` : ''}</td>
               </tr>)}
             </Fragment>;
           })}

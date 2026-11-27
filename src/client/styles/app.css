@@ -7782,3 +7782,8 @@ select {
 }
 .customer-tax-tag.is-inc { color: var(--color-success); background: var(--color-success-soft); }
 .customer-tax-tag.is-exc { color: var(--color-warning-text); background: var(--color-warning-soft); }
+
+/* 备货工作台：品名后的规格×数量括注与供应商确认按钮 */
+.stock-item-spec { color: var(--color-text-secondary); font-size: 12px; }
+.stock-item-spec .stock-item-quantity { font-size: 12.5px; }
+.stock-confirm-button { height: 26px; min-height: 26px; padding: 0 10px; font-size: 11.5px; }

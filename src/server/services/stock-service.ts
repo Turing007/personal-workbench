@@ -37,17 +37,19 @@ export function buildPreparation(rows: StockPreparationRow[], date: string | nul
       groupsByKey.set(groupKey, group);
     }
 
-    // 已关联按系统产品合并；临时客户产品按客户产品合并；完全未挂客户产品的明细（手填行）各占一行，避免把不相关的手填明细并到一起
-    const itemKey = `${groupKey}\u0000${linked
-      ? `p${row.product_id}`
-      : row.customer_product_id != null ? `cp${row.customer_product_id}` : `oi${row.order_item_id}`}`;
+    const displayName = pickDisplayName(row);
+    // 供应商分组内按品名合并（规格在括号里分行列出并累加）；未关联组保留按客户产品/手填行分开，便于逐条补关联。
+    const itemKey = `${groupKey}\u0000${kind === 'unlinked'
+      ? row.customer_product_id != null ? `cp${row.customer_product_id}` : `oi${row.order_item_id}`
+      : `name:${displayName}`}`;
     let item = itemsByKey.get(itemKey);
     if (!item) {
       item = {
         systemProductId: linked ? Number(row.product_id) : null,
         customerProductId: row.customer_product_id == null ? null : Number(row.customer_product_id),
-        displayName: pickDisplayName(row),
+        displayName,
         quantity: 0,
+        specs: [],
         sources: [],
         remarks: [],
       };
@@ -56,11 +58,16 @@ export function buildPreparation(rows: StockPreparationRow[], date: string | nul
     }
 
     const quantity = Math.max(0, Math.trunc(Number(row.quantity) || 0));
+    const specification = String(row.item_specification ?? '').trim();
     item.quantity += quantity;
+    const spec = item.specs.find((entry) => entry.specification === specification);
+    if (spec) spec.quantity += quantity;
+    else item.specs.push({ specification, quantity });
     item.sources.push({
       orderId: Number(row.order_id),
       orderNo: String(row.order_no ?? ''),
       customerName: String(row.customer_name ?? ''),
+      specification,
       quantity,
       remark: String(row.item_remark ?? '').trim(),
     });
@@ -89,14 +96,12 @@ export function buildPreparation(rows: StockPreparationRow[], date: string | nul
   };
 }
 
-/** 显示名回退链：客户产品报供名称 → 系统产品名 → 订单快照名（未关联时兜底）。 */
+/** 显示名回退链：客户产品报供名称 → 系统产品名 → 订单快照名（未关联时兜底；规格单独在括号里展示）。 */
 function pickDisplayName(row: StockPreparationRow): string {
   const supplierName = String(row.supplier_product_name ?? '').trim();
   if (supplierName) return supplierName;
   const productName = String(row.product_name ?? '').trim();
   if (productName) return productName;
-  const snapshot = [String(row.item_name ?? '').trim(), String(row.item_specification ?? '').trim()]
-    .filter(Boolean)
-    .join(' ');
+  const snapshot = String(row.item_name ?? '').trim();
   return snapshot || '未命名产品';
 }

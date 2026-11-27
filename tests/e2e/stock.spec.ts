@@ -92,6 +92,7 @@ test.describe('备货模块', () => {
 
       const supplierGroup = page.locator('.stock-group', { hasText: 'E2E大公2' });
       await expect(supplierGroup.getByText(`E2E报供名${stamp}`)).toBeVisible();
+      await expect(supplierGroup.locator('.stock-item-spec')).toContainText('黑色 × 4');
       await expect(page.getByText(`E2E手填品${stamp}`)).toHaveCount(0);
 
       // 标记已备货：本单离开备货表
@@ -105,6 +106,84 @@ test.describe('备货模块', () => {
       await page.request.delete(`/api/customer-products/${tempCustomerProduct.id}`);
       await page.request.delete(`/api/customers/${customer.id}`);
       await page.request.delete(`/api/products/${systemProduct.id}`);
+    }
+  });
+
+  test('供应商确认备货只推进只涉及该供应商的订单，跨供应商订单留给整页标记', async ({ page }) => {
+    const stamp = Date.now();
+    const today = localDateISO();
+    const supplierA = `E2E供应商A${stamp}`;
+    const supplierB = `E2E供应商B${stamp}`;
+    const createSystemProduct = async (name: string, supplier: string) => {
+      const response = await page.request.post('/api/products', {
+        data: {
+          name, specification: '58款', sku: '', supplier, status: 'active',
+          packaging: [{ name: '彩盒', innerSize: '', innerWeight: 0, outerSize: '', outerWeight: 0, packCount: 100 }],
+        },
+      });
+      expect(response.ok()).toBeTruthy();
+      return (await response.json()).data;
+    };
+    const productA = await createSystemProduct(`E2E产品A${stamp}`, supplierA);
+    const productB = await createSystemProduct(`E2E产品B${stamp}`, supplierB);
+    const customer = (await (await page.request.post('/api/customers', {
+      data: { name: `E2E确认客户${stamp}`, contactName: '', contactPhone: '', shippingInfo: '' },
+    })).json()).data;
+    const createCustomerProduct = async (systemProductId: number, supplierProductName: string, specification: string) => {
+      const response = await page.request.post(`/api/customers/${customer.id}/products/from-library/complete`, {
+        data: { systemProductId, name: supplierProductName, supplierProductName, specification, sku: '', packCount: null, finalPriceCents: null },
+      });
+      expect(response.ok()).toBeTruthy();
+      return (await response.json()).data;
+    };
+    const customerProductA = await createCustomerProduct(productA.id, `E2E报供A${stamp}`, '58款');
+    const customerProductB = await createCustomerProduct(productB.id, `E2E报供B${stamp}`, '30款');
+    const createOrder = async (items: Array<Record<string, unknown>>) => {
+      const response = await page.request.post('/api/orders', {
+        data: {
+          orderNo: '', customerId: customer.id, orderedAt: `${today}T08:00:00.000Z`,
+          recipientName: '张三', recipientInfo: '广州市', amount: 0, trackingNo: '', paymentNote: '', remark: '', items,
+        },
+      });
+      if (!response.ok()) throw new Error(`创建订单失败：${response.status()} ${await response.text()}`);
+      return Number((await response.json()).data.id);
+    };
+    // 订单一：只涉及供应商 A；订单二：同时涉及 A、B。
+    const orderAId = await createOrder([{ name: '', sku: '', specification: '58款', quantity: 4, unitPriceCents: 100, customerProductId: customerProductA.id }]);
+    const orderABId = await createOrder([
+      { name: '', sku: '', specification: '58款', quantity: 2, unitPriceCents: 100, customerProductId: customerProductA.id },
+      { name: '', sku: '', specification: '30款', quantity: 3, unitPriceCents: 100, customerProductId: customerProductB.id },
+    ]);
+
+    try {
+      await page.goto('/');
+      await page.getByRole('button', { name: '备货', exact: true }).click();
+      const groupA = page.locator('.stock-group', { hasText: supplierA });
+      await expect(groupA).toBeVisible();
+      // 同品名同规格合并数量：订单一 4 + 订单二 2
+      await expect(groupA.locator('.stock-item-spec')).toContainText('58款 × 6');
+
+      await groupA.getByRole('button', { name: '确认备货' }).click();
+      const dialog = page.getByRole('dialog', { name: '确认备货' });
+      await expect(dialog).toContainText('1 张只涉及该供应商的订单');
+      await expect(dialog).toContainText('1 张订单还涉及其他供应商');
+      await dialog.getByRole('button', { name: '确定' }).click();
+
+      // 只涉及 A 的订单推进到已备货；跨供应商订单留在备货表里（A 组剩 2 件）
+      await expect(groupA.locator('.stock-item-spec')).toContainText('58款 × 2');
+      const orderADetail = (await (await page.request.get(`/api/orders/${orderAId}/detail`)).json()).data;
+      expect(orderADetail.status).toBe('stock_reported');
+      const orderABDetail = (await (await page.request.get(`/api/orders/${orderABId}/detail`)).json()).data;
+      expect(orderABDetail.status).toBe('pending_stock');
+      await expect(page.locator('.stock-group', { hasText: supplierB }).locator('.stock-item-spec')).toContainText('30款 × 3');
+    } finally {
+      await page.request.delete(`/api/orders/${orderABId}`);
+      await page.request.delete(`/api/orders/${orderAId}`);
+      await page.request.delete(`/api/customer-products/${customerProductB.id}`);
+      await page.request.delete(`/api/customer-products/${customerProductA.id}`);
+      await page.request.delete(`/api/customers/${customer.id}`);
+      await page.request.delete(`/api/products/${productB.id}`);
+      await page.request.delete(`/api/products/${productA.id}`);
     }
   });
 

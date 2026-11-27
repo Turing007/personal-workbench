@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/server/app';
 import { migrateDatabase } from '../../src/server/db/migrate';
 import { buildPreparation } from '../../src/server/services/stock-service';
+import { planSupplierStockConfirm } from '../../src/shared/stock';
 import type { StockPreparationRow } from '../../src/server/db/stock-repository';
 import { authInject, setupAdmin } from './helpers/auth';
 
@@ -49,7 +50,7 @@ describe('buildPreparation 聚合规则', () => {
   it('按供应商分组、合并同产品数量并去重备注', () => {
     const preparation = buildPreparation([
       row({ order_id: 1, order_item_id: 1, quantity: 5, item_remark: '装一个外箱', supplier_product_name: '米沃奇脚58款' }),
-      row({ order_id: 2, order_no: 'SO-260908-002', order_item_id: 2, quantity: 7, item_remark: '装一个外箱' }),
+      row({ order_id: 2, order_no: 'SO-260908-002', order_item_id: 2, quantity: 7, item_remark: '装一个外箱', supplier_product_name: '米沃奇脚58款' }),
       row({ order_id: 3, order_no: 'SO-260908-003', order_item_id: 3, quantity: 2, item_remark: '不要包装', product_id: 22, product_name: '另一产品' }),
     ], '2026-09-08');
 
@@ -62,9 +63,47 @@ describe('buildPreparation 聚合规则', () => {
     const [group] = preparation.groups;
     expect(group.kind).toBe('supplier');
     expect(group.title).toBe('大公2');
-    expect(group.items[0]).toMatchObject({ systemProductId: 21, displayName: '米沃奇脚58款', quantity: 12, remarks: ['装一个外箱'] });
+    expect(group.items[0]).toMatchObject({
+      systemProductId: 21,
+      displayName: '米沃奇脚58款',
+      quantity: 12,
+      specs: [{ specification: '标准', quantity: 12 }],
+      remarks: ['装一个外箱'],
+    });
     expect(group.items[0].sources).toHaveLength(2);
-    expect(group.items[1]).toMatchObject({ displayName: '另一产品', quantity: 2 });
+    expect(group.items[1]).toMatchObject({ displayName: '另一产品', quantity: 2, specs: [{ specification: '标准', quantity: 2 }] });
+  });
+
+  it('同供应商同品名的不同规格合并在同一行，括号里分别累加；品名不同才分行', () => {
+    const preparation = buildPreparation([
+      row({ order_id: 1, order_item_id: 1, quantity: 5, supplier_product_name: '米沃奇脚', item_specification: '58款' }),
+      row({ order_id: 2, order_no: 'SO-260908-002', order_item_id: 2, quantity: 7, supplier_product_name: '米沃奇脚', item_specification: '58款' }),
+      row({ order_id: 3, order_no: 'SO-260908-003', order_item_id: 3, quantity: 3, supplier_product_name: '米沃奇脚', item_specification: '30款' }),
+      row({ order_id: 4, order_no: 'SO-260908-004', order_item_id: 4, quantity: 2, supplier_product_name: '另一款', item_specification: '58款' }),
+    ], null);
+
+    const items = preparation.groups[0].items;
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({
+      displayName: '米沃奇脚',
+      quantity: 15,
+      specs: [{ specification: '58款', quantity: 12 }, { specification: '30款', quantity: 3 }],
+    });
+    expect(items[1]).toMatchObject({ displayName: '另一款', quantity: 2 });
+  });
+
+  it('供应商确认备货只推进只涉及该供应商的订单', () => {
+    const preparation = buildPreparation([
+      row({ order_id: 1, order_item_id: 1, supplier_product_name: 'A款', product_supplier: '甲供' }),
+      row({ order_id: 2, order_item_id: 2, supplier_product_name: 'A款', product_supplier: '甲供' }),
+      row({ order_id: 2, order_item_id: 3, product_id: 22, supplier_product_name: 'B款', product_supplier: '乙供' }),
+    ], null);
+
+    const groupA = preparation.groups.find((group) => group.title === '甲供');
+    expect(groupA).toBeTruthy();
+    const plan = planSupplierStockConfirm(preparation.groups, groupA!);
+    expect(plan.advanceOrderIds).toEqual([1]);
+    expect(plan.pendingOrderIds).toEqual([2]);
   });
 
   it('显示名回退：无报供名称用系统产品名，未关联用订单快照名', () => {
@@ -76,7 +115,8 @@ describe('buildPreparation 聚合规则', () => {
     expect(preparation.groups.map((group) => group.kind)).toEqual(['supplier', 'unlinked']);
     expect(preparation.groups[0].items[0].displayName).toBe('系统产品');
     expect(preparation.groups[1].title).toBe('未关联产品');
-    expect(preparation.groups[1].items[0].displayName).toBe('临时产品 白色');
+    expect(preparation.groups[1].items[0].displayName).toBe('临时产品');
+    expect(preparation.groups[1].items[0].specs).toEqual([{ specification: '白色', quantity: 5 }]);
   });
 
   it('关联了系统产品但供应商为空时进入未填供应商警示组', () => {
@@ -108,8 +148,8 @@ describe('buildPreparation 聚合规则', () => {
     expect(preparation.groups).toHaveLength(1);
     expect(preparation.orderCount).toBe(2);
     expect(preparation.groups[0].items).toHaveLength(2);
-    expect(preparation.groups[0].items[0]).toMatchObject({ displayName: '手填A 标准', quantity: 2 });
-    expect(preparation.groups[0].items[1]).toMatchObject({ displayName: 'E2E产品 标准', quantity: 10 });
+    expect(preparation.groups[0].items[0]).toMatchObject({ displayName: '手填A', quantity: 2, specs: [{ specification: '标准', quantity: 2 }] });
+    expect(preparation.groups[0].items[1]).toMatchObject({ displayName: 'E2E产品', quantity: 10, specs: [{ specification: '标准', quantity: 10 }] });
   });
 });
 
@@ -203,6 +243,7 @@ describe('备货表接口', () => {
     expect(dayPreparation.groups[0].items[0]).toMatchObject({
       displayName: 'A款冲压米沃奇脚58款',
       quantity: 12,
+      specs: [{ specification: '58款', quantity: 12 }],
       remarks: ['装一个外箱'],
     });
 
@@ -263,7 +304,7 @@ describe('备货表接口', () => {
     const groups = list.json().data.groups;
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({ kind: 'unlinked', title: '未关联产品' });
-    expect(groups[0].items[0]).toMatchObject({ displayName: '手填产品 黑色', quantity: 4 });
+    expect(groups[0].items[0]).toMatchObject({ displayName: '手填产品', quantity: 4, specs: [{ specification: '黑色', quantity: 4 }] });
   });
 
   it('link 接口建立映射并写入报供名称，冲突时报 409', async () => {
