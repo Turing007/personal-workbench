@@ -84,6 +84,36 @@ function statusBadgeClass(status?: OrderStatus): string {
 
 function orderKey(order: OrderDraft): string { return order.id ?? order.orderNo; }
 
+/** 标贴 PDF 已随订单归档时，以归档附件为准，避免和标贴快捷入口重复；库存不足状态合并到该附件上。 */
+function orderAttachmentGroups(order: OrderDraft) {
+  const stickers = order.stickerAttachments ?? [];
+  const contracts = order.contracts ?? [];
+  const archivedStickerProductIds = new Set(
+    contracts
+      .filter((contract) => contract.category === 'label' && contract.sourceCustomerProductId != null)
+      .map((contract) => contract.sourceCustomerProductId as number),
+  );
+  const stickerByProductId = new Map(stickers.map((sticker) => [sticker.customerProductId, sticker]));
+  return {
+    stickers: stickers.filter((sticker) => !archivedStickerProductIds.has(sticker.customerProductId)),
+    contracts: contracts.map((contract) => ({
+      contract,
+      sticker: contract.category === 'label' && contract.sourceCustomerProductId != null
+        ? stickerByProductId.get(contract.sourceCustomerProductId)
+        : undefined,
+    })),
+  };
+}
+
+function OrderAttachmentLinks({ order }: { order: OrderDraft }) {
+  const { stickers, contracts } = orderAttachmentGroups(order);
+  if (!stickers.length && !contracts.length) return null;
+  return <div className="order-extra-files">
+    {stickers.map((sticker) => <a key={`sticker-${sticker.customerProductId}`} href={`/files/${sticker.file}`} target="_blank" rel="noreferrer" className={sticker.remaining < sticker.required ? 'is-short' : undefined} title={`标贴：${sticker.name}（剩 ${sticker.remaining}，本单需 ${sticker.required}）`}><span>标贴 · {sticker.name}</span><Printer size={10} /></a>)}
+    {contracts.map(({ contract, sticker }) => <a key={contract.id} href={contract.url} target="_blank" rel="noreferrer" className={sticker && sticker.remaining < sticker.required ? 'is-short' : undefined} title={sticker ? `标贴：${contract.name}（剩 ${sticker.remaining}，本单需 ${sticker.required}）` : contract.name}><span>{contract.name}</span><Printer size={10} /></a>)}
+  </div>;
+}
+
 function orderPaymentStatus(order: OrderDraft): FinancePaymentStatus { return order.financeSummary?.paymentStatus ?? 'unpaid'; }
 
 const paymentBadgeClass: Record<FinancePaymentStatus, string> = {
@@ -599,7 +629,6 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
             const receivableCents = order.financeSummary?.receivableCents ?? Math.round(Number(order.amount || 0) * 100);
             const receivedCents = order.financeSummary?.receivedCents ?? 0;
             const paymentCleared = isOrderPaymentCleared(receivableCents, receivedCents);
-            const attachmentCount = order.contracts?.length ?? 0;
             const profit = calculateOrderProfit({
               amountCents: Math.round(Number(order.amount || 0) * 100),
               items: order.items,
@@ -614,7 +643,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
                 <td className="order-customer-cell"><div className="order-party"><strong className="order-party-customer" title={order.customerName || undefined}>{order.customerName || '未填客户'}{order.customerId == null && order.customerName?.trim() && <span className="badge badge-neutral" style={{ marginLeft: 5 }}>临时</span>}</strong>{order.status === 'shipped' ? <span className="order-party-recipient" title={order.recipientName || undefined}>收件人：{order.recipientName || '—'}</span> : <button type="button" className="order-party-recipient order-recipient-link" title="编辑收件人信息" onClick={() => openRecipientModal(order)}>收件人：{order.recipientName || '未填'}</button>}</div></td>
                 <td className="order-product-cell"><OrderProductQuickList order={order} onOpen={() => setProductsOrder(order)} /></td>
                 <td className="order-box-cell"><button type="button" className="order-box-link" title="编辑/打印箱唛" aria-label={`编辑或打印订单${order.orderNo}箱唛`} onClick={() => openLabels(order)}>{boxCount}</button></td>
-                {showAttachmentColumn && <td className="order-attachment-cell">{(attachmentCount > 0 || (order.stickerAttachments?.length ?? 0) > 0) && <div className="order-extra-files">{(order.stickerAttachments ?? []).map((sticker) => <a key={`sticker-${sticker.customerProductId}`} href={`/files/${sticker.file}`} target="_blank" rel="noreferrer" className={sticker.remaining < sticker.required ? 'is-short' : undefined} title={`标贴：${sticker.name}（剩 ${sticker.remaining}，本单需 ${sticker.required}）`}><span>标贴 · {sticker.name}</span><Printer size={10} /></a>)}{(order.contracts ?? []).map((contract) => <a key={contract.id} href={contract.url} target="_blank" rel="noreferrer" title={contract.name}><span>{contract.name}</span><Printer size={10} /></a>)}</div>}</td>}
+                {showAttachmentColumn && <td className="order-attachment-cell">{((order.contracts?.length ?? 0) > 0 || (order.stickerAttachments?.length ?? 0) > 0) && <OrderAttachmentLinks order={order} />}</td>}
                 <td className="order-remark-cell"><button type="button" className={`order-remark-full order-remark-edit${order.remark?.trim() ? '' : ' is-empty'}`} title={order.remark?.trim() ? order.remark : '点击添加备注'} aria-label={`编辑订单${order.orderNo}备注`} onClick={() => openRemarkModal(order)}>{order.remark?.trim() || '点击添加'}</button></td>
                 <td className="amount order-amount-cell"><button type="button" className="order-amount-link" title="查看/编辑财务与水单" aria-label={`查看订单${order.orderNo}财务与水单`} onClick={() => void openFinanceModal(order)}>¥ {order.amount || '0.00'}</button><div className="payment-sub" style={{ color: paymentCleared ? 'var(--color-success)' : 'var(--color-danger)' }}>已收 {money(receivedCents)}</div><button type="button" className={`order-profit-sub ${profit.costComplete ? (profit.profitCents ?? 0) < 0 ? 'is-loss' : 'is-profit' : 'is-pending'}`} title={profit.costComplete ? `毛利 ${(profit.profitCents ?? 0) / 100} · 毛利率 ${profit.marginPercent ?? '—'}%（点击调整成本）` : `成本待补：${profit.missingItemCount} 行产品未确认（点击补录成本）`} aria-label={`补录或调整订单${order.orderNo}成本`} onClick={() => openCostModal(order)}>{profit.costComplete ? `毛利 ¥${((profit.profitCents ?? 0) / 100).toFixed(2)}` : '成本待补'}</button></td>
                 <td className="order-status-cell"><span className={statusBadgeClass(order.status)}>{order.status ? statusLabels[order.status] : '-'}</span>{order.status !== 'shipped' && <div className={`status-sub ${order.labelPrintedAt ? 'is-printed' : 'is-pending'}`} title={order.labelPrintedAt ? `箱唛打印时间：${formatDateTime(order.labelPrintedAt)}` : undefined}>{order.status === 'draft' ? '草稿订单，发布后进入流程' : order.labelPrintedAt ? '已打印箱唛' : '箱唛待打印'}</div>}</td>
@@ -629,7 +658,6 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
         const receivableCents = order.financeSummary?.receivableCents ?? Math.round(Number(order.amount || 0) * 100);
         const receivedCents = order.financeSummary?.receivedCents ?? 0;
         const paymentCleared = isOrderPaymentCleared(receivableCents, receivedCents);
-        const attachmentCount = order.contracts?.length ?? 0;
         const profit = calculateOrderProfit({
           amountCents: Math.round(Number(order.amount || 0) * 100),
           items: order.items,
@@ -656,9 +684,9 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
             <span>{order.status === 'draft' ? '草稿未发布' : order.labelPrintedAt ? '箱唛已打印' : '箱唛待打印'}</span>
           </div>}
           <div className="order-card-extra">
-            {(attachmentCount > 0 || (order.stickerAttachments?.length ?? 0) > 0) && <div className="order-extra-section">
+            {((order.contracts?.length ?? 0) > 0 || (order.stickerAttachments?.length ?? 0) > 0) && <div className="order-extra-section">
               <span className="order-extra-label"><Paperclip size={11} />附件</span>
-              <div className="order-extra-files">{(order.stickerAttachments ?? []).map((sticker) => <a key={`sticker-${sticker.customerProductId}`} href={`/files/${sticker.file}`} target="_blank" rel="noreferrer" className={sticker.remaining < sticker.required ? 'is-short' : undefined} title={`标贴：${sticker.name}（剩 ${sticker.remaining}，本单需 ${sticker.required}）`}><span>标贴 · {sticker.name}</span><Printer size={10} /></a>)}{(order.contracts ?? []).map((contract) => <a key={contract.id} href={contract.url} target="_blank" rel="noreferrer" title={contract.name}><span>{contract.name}</span><Printer size={10} /></a>)}</div>
+              <OrderAttachmentLinks order={order} />
             </div>}
             <div className="order-extra-section">
               <span className="order-extra-label">备注</span>
