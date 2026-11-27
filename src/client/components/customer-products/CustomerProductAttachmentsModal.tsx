@@ -1,8 +1,8 @@
 import { FileText, ExternalLink, Loader2, Upload, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { CustomerProduct, CustomerProductAttachment, CustomerProductAttachmentCategory } from '../../../shared/customers';
 import { deleteCustomerProductAttachment, uploadCustomerProductAttachment } from '../../api';
-import { ATTACHMENT_ACCEPT, isSupportedAttachmentName, SUPPORTED_ATTACHMENT_HINT } from '../../attachment-mime';
+import { ATTACHMENT_ACCEPT, attachmentFilesFromClipboard, isSupportedAttachmentName, normalizeUploadAttachment, SUPPORTED_ATTACHMENT_HINT } from '../../attachment-mime';
 import Modal from '../Modal';
 import type { ToastKind } from '../OrderForm';
 
@@ -45,12 +45,13 @@ export default function CustomerProductAttachmentsModal({ open, product, onClose
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, product?.id]);
 
-  const upload = async (files: FileList | File[]) => {
-    if (!product) return;
+  const upload = useCallback(async (files: FileList | File[]) => {
+    if (!product || busy) return;
     const list = Array.from(files);
     if (!list.length) return;
-    const allowed = list.filter((file) => isSupportedAttachmentName(file.name));
-    const rejected = list.filter((file) => !isSupportedAttachmentName(file.name));
+    const normalized = list.map((file) => normalizeUploadAttachment(file) ?? file);
+    const allowed = normalized.filter((file) => isSupportedAttachmentName(file.name));
+    const rejected = normalized.filter((file) => !isSupportedAttachmentName(file.name));
     setError(rejected.length ? `不支持的文件：${rejected.map((file) => file.name).join('、')}（${SUPPORTED_ATTACHMENT_HINT}）` : '');
     if (!allowed.length) return;
     setBusy(true);
@@ -65,7 +66,20 @@ export default function CustomerProductAttachmentsModal({ open, product, onClose
     } finally {
       setBusy(false);
     }
-  };
+  }, [busy, category, onChanged, product]);
+
+  // 弹窗里没有输入框，粘贴事件不一定落在内容区；打开期间挂到 window 上，Ctrl+V 随时可用。
+  useEffect(() => {
+    if (!open) return;
+    const handlePaste = (event: ClipboardEvent) => {
+      const files = attachmentFilesFromClipboard(event.clipboardData);
+      if (!files.length) return;
+      event.preventDefault();
+      void upload(files);
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [open, upload]);
 
   const remove = async (attachment: CustomerProductAttachment) => {
     if (!product || !window.confirm(`删除附件「${attachment.originalName}」？`)) return;
@@ -99,7 +113,7 @@ export default function CustomerProductAttachmentsModal({ open, product, onClose
           {busy ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}上传附件
           <input type="file" accept={ATTACHMENT_ACCEPT} multiple hidden disabled={busy} onChange={(event) => { void upload(event.target.files ?? []); event.target.value = ''; }} />
         </label>
-        <span className="cpe-modal-hint">{SUPPORTED_ATTACHMENT_HINT}</span>
+        <span className="cpe-modal-hint">{SUPPORTED_ATTACHMENT_HINT}；也可直接 Ctrl+V 粘贴文件（含 PDF / Excel）</span>
       </div>
       {items.length
         ? <div className="cpe-attachment-list">{items.map((attachment) => <div key={attachment.id} className="cpe-attachment-row">
@@ -111,7 +125,7 @@ export default function CustomerProductAttachmentsModal({ open, product, onClose
           <a href={attachment.url} target="_blank" rel="noreferrer" title="打开附件" className="cpe-attachment-open"><ExternalLink size={14} /></a>
           <button className="icon-button danger" type="button" title="删除附件" disabled={busy} onClick={() => void remove(attachment)}><Trash2 size={14} /></button>
         </div>)}</div>
-        : <div className="cpe-remark-empty">暂无附件，可上传说明书、打包文件或其他客户专用文件。</div>}
+        : <div className="cpe-remark-empty">暂无附件，可上传说明书、打包文件或其他客户专用文件，也可直接 Ctrl+V 粘贴。</div>}
       {error && <div className="cpe-sticker-error" role="alert">{error}</div>}
     </div>
   </Modal>;
