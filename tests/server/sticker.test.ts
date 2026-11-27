@@ -101,4 +101,41 @@ describe('贴标库存', () => {
     expect(customerProducts.getById(Number(product.id))?.stickerRemaining).toBe(25);
     database.close();
   });
+
+  it('标贴打印文件优先取附件中最新标贴 PDF，删除后回退并保留历史文件兜底', async () => {
+    const { database, repositories, customerProducts, app, product, customer } = await makeContext();
+    const productId = Number(product.id);
+    expect(customerProducts.getById(productId)?.stickerFileRelativePath).toBeNull();
+
+    const addAttachment = (originalName: string, category: 'label' | 'other', relativePath: string, mimeType = 'application/pdf') => Number(
+      customerProducts.addAttachment(productId, { relativePath, originalName, mimeType, size: 3, category }).id,
+    );
+
+    const firstId = addAttachment('标贴-v1.pdf', 'label', 'customer-product-attachments/v1.pdf');
+    expect(customerProducts.getById(productId)?.stickerFileRelativePath).toBe('customer-product-attachments/v1.pdf');
+
+    const secondId = addAttachment('标贴-v2.PDF', 'label', 'customer-product-attachments/v2.pdf');
+    expect(customerProducts.getById(productId)?.stickerFileRelativePath).toBe('customer-product-attachments/v2.pdf');
+
+    // 只有附件分类为标贴且扩展名是 PDF 时才参与
+    addAttachment('标贴图.png', 'label', 'customer-product-attachments/pic.png', 'image/png');
+    addAttachment('说明书.pdf', 'other', 'customer-product-attachments/manual.pdf');
+    expect(customerProducts.getById(productId)?.stickerFileRelativePath).toBe('customer-product-attachments/v2.pdf');
+
+    const orderId = await createOrder(app, productId, 5, 'SO-STICKER-FILE', customer.id);
+    const detail = repositories.getOrderDetail(orderId) as unknown as { sticker_json: string };
+    expect(JSON.parse(detail.sticker_json)[0].file).toBe('customer-product-attachments/v2.pdf');
+
+    customerProducts.deleteAttachment(productId, secondId);
+    expect(customerProducts.getById(productId)?.stickerFileRelativePath).toBe('customer-product-attachments/v1.pdf');
+
+    // 没有标贴附件时继续使用历史单独上传的文件
+    customerProducts.setStickerFile(productId, 'customer-product-attachments/legacy.pdf');
+    customerProducts.deleteAttachment(productId, firstId);
+    expect(customerProducts.getById(productId)?.stickerFileRelativePath).toBe('customer-product-attachments/legacy.pdf');
+
+    addAttachment('标贴-v3.pdf', 'label', 'customer-product-attachments/v3.pdf');
+    expect(customerProducts.getById(productId)?.stickerFileRelativePath).toBe('customer-product-attachments/v3.pdf');
+    database.close();
+  });
 });

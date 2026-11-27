@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
-import { FileDown, Loader2, Upload } from 'lucide-react';
+import { FileDown } from 'lucide-react';
 import {
   addStickerTransaction,
-  deleteCustomerProductSticker,
   getStickerLedger,
-  uploadCustomerProductSticker,
   type StickerLedger,
 } from '../../api';
 import type { CustomerProduct } from '../../../shared/customers';
@@ -17,18 +15,23 @@ export interface CustomerStickerSectionProps {
   onEnabledChange: (next: boolean) => void;
   onPerSheetChange: (next: number) => void;
   disabled?: boolean;
+  /** 尚未保存的标贴附件：新建产品时刚添加的「标贴文件」PDF。 */
+  pendingStickerFile?: { name: string; url: string } | null;
 }
 
-/** 客户产品的标贴设置：PDF 原始文件、每张数量、打印入库与手动调整；库存不足在备货页提醒。 */
-export default function CustomerStickerSection({ product, enabled, perSheet, onEnabledChange, onPerSheetChange, disabled = false }: CustomerStickerSectionProps) {
+/** 客户产品的标贴设置：打印文件取自附件，设置每张数量、打印入库与手动调整；库存不足在备货页提醒。 */
+export default function CustomerStickerSection({ product, enabled, perSheet, onEnabledChange, onPerSheetChange, disabled = false, pendingStickerFile = null }: CustomerStickerSectionProps) {
   const [ledger, setLedger] = useState<StickerLedger>();
-  const [filePath, setFilePath] = useState<string | null>(product?.stickerFileRelativePath ?? null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [sheets, setSheets] = useState('');
   const [adjust, setAdjust] = useState('');
   const [note, setNote] = useState('');
-  const productId = product?.id;
+  const productId = product?.id && product.id > 0 ? product.id : undefined;
+  const savedPath = productId ? product?.stickerFileRelativePath ?? null : null;
+  const savedAttachment = savedPath ? product?.attachments.find((attachment) => attachment.relativePath === savedPath) : undefined;
+  const savedFile = savedPath ? { name: savedAttachment?.originalName || savedPath.split('/').pop() || '标贴 PDF', url: `/files/${savedPath}` } : null;
+  const file = pendingStickerFile ?? savedFile;
 
   useEffect(() => {
     if (productId && enabled) void refreshLedger();
@@ -42,33 +45,6 @@ export default function CustomerStickerSection({ product, enabled, perSheet, onE
       setLedger(await getStickerLedger(productId));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '标贴库存加载失败');
-    }
-  };
-
-  const upload = async (file: File | undefined) => {
-    if (!file || !productId) return;
-    setBusy(true);
-    setError('');
-    try {
-      const saved = await uploadCustomerProductSticker(productId, file);
-      setFilePath(saved.stickerFileRelativePath);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '标贴 PDF 上传失败');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const removeFile = async () => {
-    if (!productId || !window.confirm('确定删除该产品的标贴 PDF 吗？库存记录会保留。')) return;
-    setBusy(true);
-    try {
-      const saved = await deleteCustomerProductSticker(productId);
-      setFilePath(saved.stickerFileRelativePath);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '删除失败');
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -102,14 +78,11 @@ export default function CustomerStickerSection({ product, enabled, perSheet, onE
         <label>每张标贴数量<NumberField min={0} integer ariaLabel="每张标贴数量" value={perSheet} onChange={onPerSheetChange} disabled={disabled} /></label>
         <div className="cpe-sticker-file">
           <span>标贴 PDF</span>
-          {filePath ? <a href={`/files/${filePath}`} target="_blank" rel="noreferrer" title="下载原始打印文件"><FileDown size={14} />下载 / {filePath.split('/').pop()}</a> : <em>未上传</em>}
-          {productId ? <label className="button button-secondary button-sm cpe-sticker-upload">
-            {busy ? <Loader2 size={13} className="spin" /> : <Upload size={13} />}{filePath ? '替换 PDF' : '上传 PDF'}
-            <input type="file" accept="application/pdf" hidden disabled={busy} onChange={(event) => { void upload(event.target.files?.[0]); event.target.value = ''; }} />
-          </label> : <em>保存产品后可上传</em>}
-          {filePath && productId && <button type="button" className="link-button muted" disabled={busy} onClick={() => void removeFile()}>删除 PDF</button>}
+          {file ? <a href={file.url} target="_blank" rel="noreferrer" title="查看/下载标贴 PDF"><FileDown size={14} />{file.name}</a> : <em>未找到标贴附件</em>}
+          {pendingStickerFile && <span className="cpe-sticker-badge">保存后生效</span>}
         </div>
       </div>
+      <p className="cpe-sticker-file-note">标贴打印使用附件中最新上传的「标贴文件」PDF；没有标贴附件时继续使用历史单独上传的文件，更换请到附件管理。</p>
       {productId && <>
         <div className="cpe-sticker-stock">
           库存剩余

@@ -151,6 +151,15 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
     return Number.isSafeInteger(count) && count > 0 ? count : null;
   }, [packaging]);
 
+  const pendingStickerFile = useMemo(() => {
+    if (batchMode) return null;
+    const latest = [...attachments].reverse().find((attachment) => attachment.category === 'label' && /\.pdf$/i.test(attachment.name));
+    if (!latest) return null;
+    // 已保存的标贴附件由产品接口带回；只有新建产品或这次新加的附件需要预览。
+    if (product?.id && !latest.file) return null;
+    return { name: latest.name, url: latest.url };
+  }, [attachments, batchMode, product?.id]);
+
   useEffect(() => {
     if (!open) return;
     setSystemProductId(product?.systemProductId ?? null);
@@ -360,6 +369,8 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
           costConfirmed,
           freightPerBoxCents: freight,
           remark: remark.trim(),
+          stickerEnabled,
+          stickerPerSheet,
           packaging: packagingPayloadInput(),
           imageRelativePath: selectedImagePath,
         }, images.find((item) => item.file)?.file, attachments);
@@ -466,7 +477,7 @@ export default function CustomerProductEditorModal({ open, product, copyMode = f
         </div>
       </details>}
       <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>箱唛要求（会印在箱面上）<textarea rows={2} value={labelRequirement} onChange={(event) => setLabelRequirement(event.target.value)} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} placeholder="只写要让仓库/工厂照做并印上箱子的话，如：外箱贴条码箱唛、机器套气泡袋" /></label>
-      <CustomerStickerSection product={product} enabled={stickerEnabled} perSheet={stickerPerSheet} onEnabledChange={setStickerEnabled} onPerSheetChange={setStickerPerSheet} disabled={busy} />
+      <CustomerStickerSection product={product} enabled={stickerEnabled} perSheet={stickerPerSheet} onEnabledChange={setStickerEnabled} onPerSheetChange={setStickerPerSheet} disabled={busy} pendingStickerFile={pendingStickerFile} />
       <label style={{ display: 'grid', gap: 5, color: 'var(--color-text-secondary)', fontSize: 12 }}>备注（仅内部可见，不打印）<textarea rows={3} value={remark} onChange={(event) => setRemark(event.target.value)} style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }} placeholder="价格、税运、结算等内部信息写这里；要印到箱子上的请填上面的「箱唛要求」" /></label>
       {selectedSystemProduct && <div style={{ color: 'var(--color-text-secondary)', fontSize: 11 }}>已从系统产品库带入基础信息，可继续修改后保存。</div>}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>

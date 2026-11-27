@@ -985,6 +985,8 @@ function customerProductInput(product: CustomerProductSaveInput) {
     freightPerBoxCents: product.freightPerBoxCents ?? null,
     remark: product.remark ?? '',
     labelRequirement: product.labelRequirement ?? '',
+    ...(product.stickerEnabled === undefined ? {} : { stickerEnabled: product.stickerEnabled }),
+    ...(product.stickerPerSheet === undefined ? {} : { stickerPerSheet: product.stickerPerSheet }),
     packaging: packagingPayload(product.packaging),
     ...(product.imageRelativePath === undefined ? {} : { imageRelativePath: product.imageRelativePath }),
   };

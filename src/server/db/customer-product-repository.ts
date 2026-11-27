@@ -75,7 +75,15 @@ const customerProductSelect = `
     cp.remark,
     cp.label_requirement,
     cp.sticker_enabled,
-    cp.sticker_file_relative_path,
+    COALESCE((
+      SELECT cpa.relative_path
+      FROM customer_product_attachments cpa
+      WHERE cpa.customer_product_id = cp.id
+        AND cpa.category = 'label'
+        AND lower(cpa.original_name) LIKE '%.pdf'
+      ORDER BY cpa.created_at DESC, cpa.id DESC
+      LIMIT 1
+    ), cp.sticker_file_relative_path) AS sticker_file_relative_path,
     cp.sticker_per_sheet,
     COALESCE((SELECT SUM(st.quantity) FROM sticker_transactions st WHERE st.customer_product_id = cp.id), 0) AS sticker_remaining,
     cp.source_quotation_id,

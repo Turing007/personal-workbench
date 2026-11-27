@@ -82,7 +82,12 @@ export default function CustomerProductAttachmentsModal({ open, product, onClose
   }, [open, upload]);
 
   const remove = async (attachment: CustomerProductAttachment) => {
-    if (!product || !window.confirm(`删除附件「${attachment.originalName}」？`)) return;
+    if (!product) return;
+    const stickerInUse = product.stickerEnabled && attachment.category === 'label' && /\.pdf$/i.test(attachment.originalName);
+    const prompt = stickerInUse
+      ? `删除标贴附件「${attachment.originalName}」？\n标贴打印会自动改用最新剩余的标贴 PDF；没有则显示未上传。`
+      : `删除附件「${attachment.originalName}」？`;
+    if (!window.confirm(prompt)) return;
     setBusy(true);
     setError('');
     try {

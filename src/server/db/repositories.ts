@@ -1415,7 +1415,7 @@ export class DatabaseRepositories {
           COALESCE((SELECT SUM(cli.total_count) FROM carton_labels cl JOIN carton_label_items cli ON cli.carton_label_id = cl.id WHERE cl.order_id = o.id), 0) AS total_quantity,
           COALESCE((SELECT MAX(cl.total_boxes) FROM carton_labels cl WHERE cl.order_id = o.id), 0) AS total_boxes,
           (SELECT COUNT(*) FROM sticker_transactions st WHERE st.order_id = o.id AND st.kind = 'consume') AS sticker_consumed_count,
-          (SELECT json_group_array(json_object('customerProductId', cp.id, 'name', cp.name, 'file', cp.sticker_file_relative_path, 'remaining', COALESCE((SELECT SUM(st.quantity) FROM sticker_transactions st WHERE st.customer_product_id = cp.id), 0), 'required', oi.quantity))
+          (SELECT json_group_array(json_object('customerProductId', cp.id, 'name', cp.name, 'file', COALESCE((SELECT cpa.relative_path FROM customer_product_attachments cpa WHERE cpa.customer_product_id = cp.id AND cpa.category = 'label' AND lower(cpa.original_name) LIKE '%.pdf' ORDER BY cpa.created_at DESC, cpa.id DESC LIMIT 1), cp.sticker_file_relative_path), 'remaining', COALESCE((SELECT SUM(st.quantity) FROM sticker_transactions st WHERE st.customer_product_id = cp.id), 0), 'required', oi.quantity))
             FROM order_items oi JOIN customer_products cp ON cp.id = oi.customer_product_id
             WHERE oi.order_id = o.id AND cp.sticker_enabled = 1) AS sticker_json
          FROM orders o LEFT JOIN companies c ON c.id = o.company_id ${where}
@@ -1429,7 +1429,7 @@ export class DatabaseRepositories {
     const order = this.database.prepare(`
       SELECT o.*, COALESCE(NULLIF(c.full_name, ''), c.short_name) AS company_name,
         (SELECT COUNT(*) FROM sticker_transactions st WHERE st.order_id = o.id AND st.kind = 'consume') AS sticker_consumed_count,
-        (SELECT json_group_array(json_object('customerProductId', cp.id, 'name', cp.name, 'file', cp.sticker_file_relative_path, 'remaining', COALESCE((SELECT SUM(st.quantity) FROM sticker_transactions st WHERE st.customer_product_id = cp.id), 0), 'required', oi.quantity))
+        (SELECT json_group_array(json_object('customerProductId', cp.id, 'name', cp.name, 'file', COALESCE((SELECT cpa.relative_path FROM customer_product_attachments cpa WHERE cpa.customer_product_id = cp.id AND cpa.category = 'label' AND lower(cpa.original_name) LIKE '%.pdf' ORDER BY cpa.created_at DESC, cpa.id DESC LIMIT 1), cp.sticker_file_relative_path), 'remaining', COALESCE((SELECT SUM(st.quantity) FROM sticker_transactions st WHERE st.customer_product_id = cp.id), 0), 'required', oi.quantity))
           FROM order_items oi JOIN customer_products cp ON cp.id = oi.customer_product_id
           WHERE oi.order_id = o.id AND cp.sticker_enabled = 1) AS sticker_json
       FROM orders o LEFT JOIN companies c ON c.id = o.company_id
