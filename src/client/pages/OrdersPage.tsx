@@ -1,4 +1,4 @@
-import { Clipboard, Package, PackageCheck, ListFilter, Paperclip, Plus, Printer, Save, Trash2, Truck } from 'lucide-react';
+import { Clipboard, Package, PackageCheck, ListFilter, Paperclip, Plus, Printer, RefreshCw, Save, Trash2, Truck } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { autoPack } from '../../shared/packing';
 import LabelEditorModal, { type CartonLabel } from '../components/LabelEditorModal';
@@ -80,6 +80,18 @@ function statusBadgeClass(status?: OrderStatus): string {
   if (status === 'shipping') return 'badge badge-info';
   if (status === 'ship_pending') return 'badge badge-warning';
   return 'badge badge-neutral';
+}
+
+function OrderRefreshButton({ className, refreshing, disabled, onClick }: { className: string; refreshing: boolean; disabled: boolean; onClick: () => void }) {
+  return <button
+    type="button"
+    className={`orders-refresh-button ${className}`}
+    title={refreshing ? '正在刷新订单数据' : '刷新订单数据'}
+    aria-label="刷新订单数据"
+    aria-busy={refreshing}
+    disabled={disabled || refreshing}
+    onClick={onClick}
+  ><RefreshCw size={13} className={refreshing ? 'spin' : undefined} /><span>刷新</span></button>;
 }
 
 function orderKey(order: OrderDraft): string { return order.id ?? order.orderNo; }
@@ -241,6 +253,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
   const [productsOrder, setProductsOrder] = useState<OrderDraft>();
   const [editingOrder, setEditingOrder] = useState<OrderDraft>();
   const [creating, setCreating] = useState(false);
+  const [refreshingOrders, setRefreshingOrders] = useState(false);
   const [labelOrder, setLabelOrder] = useState<OrderDraft>();
   const [labels, setLabels] = useState<CartonLabel[]>([]);
   const [printLabels, setPrintLabels] = useState<CartonLabel[]>([]);
@@ -270,6 +283,18 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
     onStartCreateConsumed?.();
   }, [startCreate, onStartCreateConsumed]);
   const narrow = useIsNarrow();
+
+  const refreshOrderList = async () => {
+    if (refreshingOrders || !onRefreshOrders) return;
+    setRefreshingOrders(true);
+    try {
+      await onRefreshOrders();
+    } catch (reason) {
+      onNotify?.(reason instanceof Error ? reason.message : '刷新订单失败', 'error');
+    } finally {
+      setRefreshingOrders(false);
+    }
+  };
 
   useEffect(() => {
     if (!detailOrder) return;
@@ -553,7 +578,9 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
       <div className="page-toolbar table-toolbar orders-table-toolbar">
         <OrdersSearchBar value={query} onChange={setQuery} />
         <StatusCards activeKey={activeStatusKey} counts={counts} onSelect={(key) => setStatusFilters(key === 'all' ? [] : [key])} />
+        <OrderRefreshButton className="orders-refresh-desktop" refreshing={refreshingOrders} disabled={!onRefreshOrders} onClick={() => { void refreshOrderList(); }} />
         <span className="toolbar-count"><ListFilter size={14} />{visibleOrders.length} 条订单</span>
+        <OrderRefreshButton className="orders-refresh-inline" refreshing={refreshingOrders} disabled={!onRefreshOrders} onClick={() => { void refreshOrderList(); }} />
         {showCreateOrder && <button type="button" className="button button-primary orders-create-button" onClick={() => setCreating(true)}><Plus size={15} />新建订单</button>}
       </div>
       {shippingViewActive ? <>

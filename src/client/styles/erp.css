@@ -936,6 +936,33 @@
   cursor: pointer;
 }
 .orders-page .order-box-link:hover { text-decoration: underline; }
+
+.orders-refresh-button {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--erp-border);
+  border-radius: 999px;
+  background: var(--erp-surface);
+  color: var(--erp-text-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.orders-refresh-button:hover:not(:disabled) { border-color: var(--color-accent); color: var(--color-accent); }
+.orders-refresh-button:disabled { opacity: .55; cursor: wait; }
+.orders-refresh-button .spin { animation: orders-refresh-spin .8s linear infinite; }
+@keyframes orders-refresh-spin { to { transform: rotate(360deg); } }
+.orders-refresh-inline { display: none; }
+@media (min-width: 1200px) { .orders-refresh-desktop { display: inline-flex; } }
+@media (max-width: 1199px) { .orders-refresh-inline { display: inline-flex; } }
+
 @media (min-width: 901px) {
   .orders-page {
     display: flex;
@@ -1328,7 +1355,7 @@
 
   .orders-page .orders-table-toolbar {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 6px 8px;
     padding: 0 0 8px;
     border-bottom: 0;
@@ -1410,6 +1437,13 @@
     margin: 0;
     color: var(--erp-muted);
     font-size: 11px;
+  }
+
+  .orders-page .orders-table-toolbar .orders-refresh-inline {
+    order: 2;
+    height: 30px;
+    min-height: 30px;
+    padding: 0 8px;
   }
 
   .orders-page .orders-create-button,
