@@ -119,20 +119,24 @@ function orderKey(order: OrderDraft): string { return order.id ?? order.orderNo;
 function orderAttachmentGroups(order: OrderDraft) {
   const stickers = order.stickerAttachments ?? [];
   const contracts = order.contracts ?? [];
-  const archivedStickerProductIds = new Set(
-    contracts
-      .filter((contract) => contract.category === 'label' && contract.sourceCustomerProductId != null)
-      .map((contract) => contract.sourceCustomerProductId as number),
-  );
   const stickerByProductId = new Map(stickers.map((sticker) => [sticker.customerProductId, sticker]));
+  const stickerByFileName = new Map(stickers.filter((sticker) => sticker.fileName).map((sticker) => [sticker.fileName, sticker]));
+  const matchingSticker = (contract: NonNullable<OrderDraft['contracts']>[number]) => {
+    const byProduct = contract.sourceCustomerProductId != null ? stickerByProductId.get(contract.sourceCustomerProductId) : undefined;
+    // 订单归档时的附件分类可能是「其他文件」，不能只靠 label 分类，原文件名也要能命中。
+    if (byProduct && (contract.category === 'label' || (byProduct.fileName && contract.name === byProduct.fileName))) return byProduct;
+    if (contract.sourceCustomerProductId == null && contract.name) return stickerByFileName.get(contract.name);
+    return undefined;
+  };
+  const archivedStickerProductIds = new Set(
+    contracts.flatMap((contract) => {
+      const sticker = matchingSticker(contract);
+      return sticker ? [sticker.customerProductId] : [];
+    }),
+  );
   return {
     stickers: stickers.filter((sticker) => !archivedStickerProductIds.has(sticker.customerProductId)),
-    contracts: contracts.map((contract) => ({
-      contract,
-      sticker: contract.category === 'label' && contract.sourceCustomerProductId != null
-        ? stickerByProductId.get(contract.sourceCustomerProductId)
-        : undefined,
-    })),
+    contracts: contracts.map((contract) => ({ contract, sticker: matchingSticker(contract) })),
   };
 }
 
@@ -140,7 +144,7 @@ function OrderAttachmentLinks({ order }: { order: OrderDraft }) {
   const { stickers, contracts } = orderAttachmentGroups(order);
   if (!stickers.length && !contracts.length) return null;
   return <div className="order-extra-files">
-    {stickers.map((sticker) => <a key={`sticker-${sticker.customerProductId}`} href={`/files/${sticker.file}`} target="_blank" rel="noreferrer" className={sticker.remaining < sticker.required ? 'is-short' : undefined} title={`标贴：${sticker.name}（剩 ${sticker.remaining}，本单需 ${sticker.required}）`}><span>标贴 · {sticker.name}</span><Printer size={10} /></a>)}
+    {stickers.map((sticker) => <a key={`sticker-${sticker.customerProductId}`} href={`/files/${sticker.file}`} target="_blank" rel="noreferrer" className={sticker.remaining < sticker.required ? 'is-short' : undefined} title={`标贴：${sticker.fileName || sticker.name}（剩 ${sticker.remaining}，本单需 ${sticker.required}）`}><span>标贴 · {sticker.fileName || sticker.name}</span><Printer size={10} /></a>)}
     {contracts.map(({ contract, sticker }) => <a key={contract.id} href={contract.url} target="_blank" rel="noreferrer" className={sticker && sticker.remaining < sticker.required ? 'is-short' : undefined} title={sticker ? `标贴：${contract.name}（剩 ${sticker.remaining}，本单需 ${sticker.required}）` : contract.name}><span>{contract.name}</span><Printer size={10} /></a>)}
   </div>;
 }

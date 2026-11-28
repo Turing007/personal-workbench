@@ -124,7 +124,9 @@ describe('贴标库存', () => {
 
     const orderId = await createOrder(app, productId, 5, 'SO-STICKER-FILE', customer.id);
     const detail = repositories.getOrderDetail(orderId) as unknown as { sticker_json: string };
-    expect(JSON.parse(detail.sticker_json)[0].file).toBe('customer-product-attachments/v2.pdf');
+    const stickerEntry = JSON.parse(detail.sticker_json)[0];
+    expect(stickerEntry.file).toBe('customer-product-attachments/v2.pdf');
+    expect(stickerEntry.fileName).toBe('标贴-v2.PDF');
 
     customerProducts.deleteAttachment(productId, secondId);
     expect(customerProducts.getById(productId)?.stickerFileRelativePath).toBe('customer-product-attachments/v1.pdf');

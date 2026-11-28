@@ -137,7 +137,7 @@ export interface OrderDraft {
   /** 该订单此前已完成过打包并扣减标贴（再次打包时询问是否重复扣减）。 */
   stickerConsumedCount?: number;
   /** 订单涉及的产品标贴（PDF 作为附件展示；库存不足时文字标红）。 */
-  stickerAttachments?: Array<{ customerProductId: number; name: string; file: string; remaining: number; required: number }>;
+  stickerAttachments?: Array<{ customerProductId: number; name: string; fileName?: string; file: string; remaining: number; required: number }>;
   orderDetail: string;
   orderDetailImages: OrderDetailImageDraft[];
   recipientName: string;
