@@ -5,6 +5,7 @@ import {
   CopyPlus,
   Download,
   Edit3,
+  History,
   PackageSearch,
   Plus,
   RefreshCw,
@@ -20,6 +21,7 @@ import { saveFileOrDownload } from '../file-save';
 import { pageWindow, totalPages } from '../pagination';
 import { quotationDetailToDraft, quotationDraftToFormData, type QuotationDraft } from '../documents/document-drafts';
 import Modal from '../components/Modal';
+import DocumentVersionModal from '../components/documents/DocumentVersionModal';
 import SearchInput from '../components/SearchInput';
 import QuotationForm, { createEmptyQuotationDraft } from '../components/quotations/QuotationForm';
 import QuotationProductDetailModal from '../components/quotations/QuotationProductDetailModal';
@@ -67,6 +69,7 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
   const [draft, setDraft] = useState<QuotationDraft>(() => createEmptyQuotationDraft());
   const [syncQuotationId, setSyncQuotationId] = useState<number | null>(null);
   const [productDetailId, setProductDetailId] = useState<number | null>(null);
+  const [versionQuotation, setVersionQuotation] = useState<QuotationSummary | null>(null);
   const narrow = useIsNarrow();
   const [searchFocused, setSearchFocused] = useState(false);
   // 手机端搜索框悬浮在顶部：连续下滑收起，回滑展开；输入时锁住展开避免打字途中消失。
@@ -259,6 +262,7 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
             <button className="icon-button" type="button" title="产品详情" disabled={busyId === row.id} onClick={() => setProductDetailId(row.id)}><PackageSearch size={14} /></button>
             <button className="icon-button" type="button" title="编辑报价单" disabled={busyId === row.id} onClick={() => void openEdit(row.id)}><Edit3 size={14} /></button>
             <button className="icon-button" type="button" title="导出报价 PDF" disabled={busyId === row.id} onClick={() => void exportPdf(row)}><Download size={14} /></button>
+            <button className="icon-button" type="button" title="查看版本记录" disabled={busyId === row.id} onClick={() => setVersionQuotation(row)}><History size={14} /></button>
             <button className="icon-button" type="button" title="同步到客户产品库" disabled={busyId === row.id} onClick={() => { if (!row.customerId) notify('这份报价单还没有选择正式客户，无法同步到客户产品库', 'error'); else setSyncQuotationId(row.id); }}><RefreshCw size={14} /></button>
             {row.status === 'draft' && <button className="icon-button" type="button" title="标记为已发送" disabled={busyId === row.id} onClick={() => void setStatus(row, 'sent')}><Send size={14} /></button>}
             {row.status === 'sent' && <button className="icon-button" type="button" title="标记为已成交" disabled={busyId === row.id} onClick={() => void setStatus(row, 'won')}><CheckCircle2 size={14} /></button>}
@@ -285,6 +289,7 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
             <button className="icon-button" type="button" title="产品详情" disabled={busyId === row.id} onClick={() => setProductDetailId(row.id)}><PackageSearch size={14} /></button>
             <button className="icon-button" type="button" title="编辑报价单" disabled={busyId === row.id} onClick={() => void openEdit(row.id)}><Edit3 size={14} /></button>
             <button className="icon-button" type="button" title="导出报价 PDF" disabled={busyId === row.id} onClick={() => void exportPdf(row)}><Download size={14} /></button>
+            <button className="icon-button" type="button" title="查看版本记录" disabled={busyId === row.id} onClick={() => setVersionQuotation(row)}><History size={14} /></button>
             <button className="icon-button" type="button" title="同步到客户产品库" disabled={busyId === row.id} onClick={() => { if (!row.customerId) notify('这份报价单还没有选择正式客户，无法同步到客户产品库', 'error'); else setSyncQuotationId(row.id); }}><RefreshCw size={14} /></button>
             {row.status === 'draft' && <button className="icon-button" type="button" title="标记为已发送" disabled={busyId === row.id} onClick={() => void setStatus(row, 'sent')}><Send size={14} /></button>}
             {row.status === 'sent' && <button className="icon-button" type="button" title="标记为已成交" disabled={busyId === row.id} onClick={() => void setStatus(row, 'won')}><CheckCircle2 size={14} /></button>}
@@ -328,5 +333,12 @@ export default function QuotationPage({ onNotify, onOpenSalesDocument, onOpenCus
       }}
     />
     <QuotationProductDetailModal open={productDetailId != null} quotationId={productDetailId} onClose={() => setProductDetailId(null)} />
+    <DocumentVersionModal
+      open={versionQuotation != null}
+      title={versionQuotation ? `报价单 ${versionQuotation.number} · 版本记录` : '版本记录'}
+      onClose={() => setVersionQuotation(null)}
+      loadVersions={() => api.listQuotationVersions(versionQuotation!.id)}
+      loadVersion={(versionNo) => api.getQuotationVersion(versionQuotation!.id, versionNo)}
+    />
   </div>;
 }

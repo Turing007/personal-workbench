@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BatteryCharging, Building2, CalendarClock, Copy, Database, Download, Ellipsis, ImageOff, KeyRound, LayoutGrid, Minus, Package, Palette, Pencil, Plus, RotateCcw, Save, ScrollText, Smartphone, Trash2, Upload, UserPlus, Users, Wifi } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, BatteryCharging, Building2, CalendarClock, Copy, Database, Download, Ellipsis, History, ImageOff, KeyRound, LayoutGrid, Minus, Package, Palette, Pencil, Plus, RotateCcw, Save, ScrollText, Smartphone, Trash2, Upload, UserPlus, Users, Wifi } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
@@ -27,6 +27,7 @@ import { useIsNarrow } from '../use-is-narrow';
 import PackagingPresetsSection from '../components/settings/PackagingPresetsSection';
 import AccessoryPricesSection from '../components/settings/AccessoryPricesSection';
 import ProductOptionsSection from '../components/settings/ProductOptionsSection';
+import AuditLogSection from '../components/settings/AuditLogSection';
 
 const EMPTY_PROFILE: CompanySnapshot = { name: '', logoRelativePath: null, phone: '', address: '', defaultIssuer: '', wechatQrRelativePath: null };
 
@@ -69,7 +70,7 @@ const defaultTemplateApi = {
   }),
 };
 
-type SettingsSectionKey = 'company' | 'contract' | 'packaging' | 'product-options' | 'accessory-prices' | 'storage' | 'backup' | 'account' | 'mobile' | 'mobile-nav';
+type SettingsSectionKey = 'company' | 'contract' | 'packaging' | 'product-options' | 'accessory-prices' | 'storage' | 'backup' | 'account' | 'audit' | 'mobile' | 'mobile-nav';
 export type { SettingsSectionKey };
 
 // 两级菜单：分组标题 → 菜单项，内容区一次只显示激活的板块。
@@ -84,7 +85,7 @@ const SETTINGS_MENU_GROUPS: Array<{ label: string; items: Array<{ key: SettingsS
       { key: 'backup', label: '备份与恢复', icon: Download },
     ],
   },
-  { label: '账号与安全', items: [{ key: 'account', label: '账号与安全', icon: Users }] },
+  { label: '账号与安全', items: [{ key: 'account', label: '账号与安全', icon: Users }, { key: 'audit', label: '操作日志', icon: History }] },
   {
     label: '移动端',
     items: [
@@ -136,7 +137,13 @@ export default function SettingsPage({
   };
   // 「底部导航」只对窄屏（手机 / App WebView）有意义，桌面端隐藏该入口。
   const menuGroups = SETTINGS_MENU_GROUPS
-    .map((group) => ({ ...group, items: group.items.filter((item) => item.key !== 'mobile-nav' || isNarrow) }))
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) =>
+        (item.key !== 'mobile-nav' || isNarrow)
+        && (item.key !== 'audit' || currentUser?.role === 'admin'),
+      ),
+    }))
     .filter((group) => group.items.length > 0);
   // 从手机切到桌面宽度时自动离开该板块，避免菜单项被隐藏后内容区留白。
   useEffect(() => {
@@ -399,6 +406,7 @@ export default function SettingsPage({
       {activeSection === 'product-options' && <ProductOptionsSection />}
       {activeSection === 'accessory-prices' && <AccessoryPricesSection />}
       {activeSection === 'account' && <AccountSection currentUser={currentUser ?? null} />}
+      {activeSection === 'audit' && currentUser?.role === 'admin' && <AuditLogSection />}
       {activeSection === 'mobile' && <MobileConnectCard />}
       {activeSection === 'mobile-nav' && isNarrow && <MobileNavCard tabs={mobileTabsValue} onChange={changeMobileTabs} />}
       {activeSection === 'storage' && <div className="settings-section card"><div className="settings-heading"><Database size={18} /><strong>运行环境</strong></div><p>数据保存在服务端（SQLite + 附件目录），所有设备登录后访问同一份数据。</p><div className="setting-row"><span>服务地址</span><code>{window.location.origin}</code></div><div className="setting-row"><span>当前环境</span><span>{serviceVersion ? (serviceVersion.environment === 'production' ? '线上（正式数据）' : '测试（本机数据，不会同步到线上）') : '读取中…'}</span></div><div className="setting-row"><span>存储方式</span><span>SQLite + 服务端附件目录</span></div></div>}

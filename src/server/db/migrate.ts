@@ -6,7 +6,7 @@ import { mergeAccessoryPrices, normalizeAccessoryPrices, parseLegacyAccessoriesT
 import { buildBatteryMatrixSeed } from '../../shared/battery-prices.js';
 
 /** 当前数据库结构版本：新增迁移时同步提升，preflight 校验与写入共用同一个值。 */
-const CURRENT_SCHEMA_VERSION = 49;
+const CURRENT_SCHEMA_VERSION = 53;
 
 const schemaSql = `
 CREATE TABLE IF NOT EXISTS products (
@@ -290,7 +290,8 @@ CREATE TABLE IF NOT EXISTS order_finance (
   invoice_requested_at TEXT,
   remark TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  refunded_cents INTEGER NOT NULL DEFAULT 0 CHECK (refunded_cents >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS finance_receipts (
@@ -302,6 +303,19 @@ CREATE TABLE IF NOT EXISTS finance_receipts (
   payment_method TEXT NOT NULL DEFAULT '',
   payee_name TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS finance_refunds (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  refunded_at TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+  payment_method TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -454,11 +468,65 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  occurred_at TEXT NOT NULL,
+  user_id INTEGER,
+  username TEXT NOT NULL DEFAULT '',
+  display_name TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL DEFAULT '',
+  method TEXT NOT NULL,
+  path TEXT NOT NULL,
+  route TEXT NOT NULL DEFAULT '',
+  status_code INTEGER NOT NULL,
+  action TEXT NOT NULL DEFAULT '',
+  entity_type TEXT NOT NULL DEFAULT '',
+  entity_id TEXT NOT NULL DEFAULT '',
+  entity_label TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL DEFAULT '',
+  ip TEXT NOT NULL DEFAULT '',
+  user_agent TEXT NOT NULL DEFAULT '',
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  detail_json TEXT NOT NULL DEFAULT '{}'
+);
+
 CREATE TABLE IF NOT EXISTS document_number_sequences (
   document_type TEXT NOT NULL CHECK (document_type IN ('quotation', 'sales')),
   sequence_date TEXT NOT NULL,
   last_value INTEGER NOT NULL CHECK (last_value > 0),
   PRIMARY KEY (document_type, sequence_date)
+);
+
+-- 单据版本：报价单/销售单保存或改状态时追加不可变快照，只增不改。
+CREATE TABLE IF NOT EXISTS document_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  document_type TEXT NOT NULL CHECK (document_type IN ('sales_document', 'quotation')),
+  document_id INTEGER NOT NULL,
+  version_no INTEGER NOT NULL CHECK (version_no > 0),
+  action TEXT NOT NULL CHECK (action IN ('create', 'update', 'status')),
+  document_status TEXT NOT NULL,
+  document_number TEXT NOT NULL,
+  document_date TEXT NOT NULL,
+  total_cents INTEGER NOT NULL,
+  snapshot_json TEXT NOT NULL,
+  created_by TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  UNIQUE (document_type, document_id, version_no)
+);
+
+-- 供应商备货确认留痕：记录谁在何时确认了哪个供应商、涉及哪些订单与产品。
+CREATE TABLE IF NOT EXISTS stock_confirmations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  supplier TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  channel TEXT NOT NULL DEFAULT '',
+  confirmed_at TEXT NOT NULL,
+  confirmed_by TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  item_count INTEGER NOT NULL DEFAULT 0,
+  total_quantity INTEGER NOT NULL DEFAULT 0,
+  detail_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS quotations (
@@ -610,6 +678,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_receipts_proof
   ON finance_receipts(payment_proof_id)
   WHERE payment_proof_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_finance_receipts_order ON finance_receipts(order_id, received_at, id);
+CREATE INDEX IF NOT EXISTS idx_finance_refunds_order ON finance_refunds(order_id, refunded_at, id);
 CREATE INDEX IF NOT EXISTS idx_finance_invoices_order ON finance_invoices(order_id, created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_finance_invoices_status ON finance_invoices(status, updated_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_finance_invoice_files_invoice ON finance_invoice_files(invoice_id, created_at, id);
@@ -632,6 +701,12 @@ CREATE INDEX IF NOT EXISTS idx_sales_receipts_document ON sales_receipts(sales_d
 CREATE INDEX IF NOT EXISTS idx_sales_receipt_files_receipt ON sales_receipt_files(receipt_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_occurred ON audit_logs(occurred_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id, occurred_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stock_confirmations_supplier ON stock_confirmations(supplier, confirmed_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_stock_confirmations_time ON stock_confirmations(confirmed_at DESC, id DESC);
 `;
 
 type MigratedTable =
@@ -650,6 +725,7 @@ type MigratedTable =
   | 'sales_document_items'
   | 'payment_proofs'
   | 'finance_receipts'
+  | 'order_finance'
   | 'catalogs'
   | 'companies'
   | 'shipments';
@@ -981,7 +1057,8 @@ function migrateVersionFourteen(database: DatabaseSync, now: string): void {
       invoice_requested_at TEXT,
       remark TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      refunded_cents INTEGER NOT NULL DEFAULT 0 CHECK (refunded_cents >= 0)
     );
     CREATE TABLE IF NOT EXISTS finance_receipts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1699,6 +1776,112 @@ function migrateVersionFortyNine(database: DatabaseSync, now: string): void {
   upsertSetting(database, 'schema_version', '49', now);
 }
 
+/** 订单退款：记录退给客户的款项；已收金额改为“收款合计 - 退款合计”的净额。 */
+function migrateVersionFifty(database: DatabaseSync, now: string): void {
+  addColumnIfMissing(database, 'order_finance', 'refunded_cents', 'INTEGER NOT NULL DEFAULT 0 CHECK (refunded_cents >= 0)');
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS finance_refunds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      refunded_at TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+      payment_method TEXT NOT NULL DEFAULT '',
+      reason TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      created_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_finance_refunds_order ON finance_refunds(order_id, refunded_at, id);
+  `);
+  upsertSetting(database, 'schema_version', '50', now);
+}
+
+/**
+ * 操作审计日志：记录关键写操作的用户、对象、请求摘要与来源 IP。
+ * 只追加不修改；user_id 故意不加外键，账号停用/改名后历史日志仍保留。
+ */
+function migrateVersionFiftyOne(database: DatabaseSync, now: string): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      occurred_at TEXT NOT NULL,
+      user_id INTEGER,
+      username TEXT NOT NULL DEFAULT '',
+      display_name TEXT NOT NULL DEFAULT '',
+      role TEXT NOT NULL DEFAULT '',
+      method TEXT NOT NULL,
+      path TEXT NOT NULL,
+      route TEXT NOT NULL DEFAULT '',
+      status_code INTEGER NOT NULL,
+      action TEXT NOT NULL DEFAULT '',
+      entity_type TEXT NOT NULL DEFAULT '',
+      entity_id TEXT NOT NULL DEFAULT '',
+      entity_label TEXT NOT NULL DEFAULT '',
+      summary TEXT NOT NULL DEFAULT '',
+      ip TEXT NOT NULL DEFAULT '',
+      user_agent TEXT NOT NULL DEFAULT '',
+      duration_ms INTEGER NOT NULL DEFAULT 0,
+      detail_json TEXT NOT NULL DEFAULT '{}'
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_occurred ON audit_logs(occurred_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id, occurred_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id, occurred_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action, occurred_at DESC);
+  `);
+  upsertSetting(database, 'schema_version', '51', now);
+}
+
+/**
+ * 单据版本：报价单/销售单每次创建、编辑保存、状态变更时追加一份不可变快照。
+ * 只追加不修改，便于回溯“当时开出去的单据长什么样”。
+ */
+function migrateVersionFiftyTwo(database: DatabaseSync, now: string): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS document_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      document_type TEXT NOT NULL CHECK (document_type IN ('sales_document', 'quotation')),
+      document_id INTEGER NOT NULL,
+      version_no INTEGER NOT NULL CHECK (version_no > 0),
+      action TEXT NOT NULL CHECK (action IN ('create', 'update', 'status')),
+      document_status TEXT NOT NULL,
+      document_number TEXT NOT NULL,
+      document_date TEXT NOT NULL,
+      total_cents INTEGER NOT NULL,
+      snapshot_json TEXT NOT NULL,
+      created_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      UNIQUE (document_type, document_id, version_no)
+    );
+  `);
+  upsertSetting(database, 'schema_version', '52', now);
+}
+
+/**
+ * 供应商备货确认记录：按供应商保存确认人、时间、范围、订单与产品数量快照，
+ * 订单推进到「已备货」离开备货表后仍可追溯。
+ */
+function migrateVersionFiftyThree(database: DatabaseSync, now: string): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS stock_confirmations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      supplier TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      channel TEXT NOT NULL DEFAULT '',
+      confirmed_at TEXT NOT NULL,
+      confirmed_by TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      item_count INTEGER NOT NULL DEFAULT 0,
+      total_quantity INTEGER NOT NULL DEFAULT 0,
+      detail_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_stock_confirmations_supplier ON stock_confirmations(supplier, confirmed_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_stock_confirmations_time ON stock_confirmations(confirmed_at DESC, id DESC);
+  `);
+  upsertSetting(database, 'schema_version', '53', now);
+}
+
 function migrateVersionFortyEight(database: DatabaseSync, now: string): void {
   const customerColumns: Array<[string, string]> = [
     ['payment_policy', "TEXT NOT NULL DEFAULT 'before_ship'"],
@@ -1863,6 +2046,10 @@ export function migrateDatabase(database: DatabaseSync): void {
     migrateVersionFortySeven(transactionDatabase, now);
     migrateVersionFortyEight(transactionDatabase, now);
     migrateVersionFortyNine(transactionDatabase, now);
+    migrateVersionFifty(transactionDatabase, now);
+    migrateVersionFiftyOne(transactionDatabase, now);
+    migrateVersionFiftyTwo(transactionDatabase, now);
+    migrateVersionFiftyThree(transactionDatabase, now);
     transactionDatabase
       .prepare(
         `INSERT INTO order_source_types (name, is_active, created_at, updated_at)

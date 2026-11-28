@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { withTransaction } from './connection.js';
 import {
   calculateOutstandingCents,
+  calculateOverpaidCents,
   deriveFinancePaymentStatus,
   deriveInvoiceStatus,
   deriveProofStatus,
@@ -15,6 +16,7 @@ import {
   type FinanceProofListFilters,
   type FinanceProofListRow,
   type FinanceReceipt,
+  type FinanceRefund,
   type OrderFinanceSummary,
   type PayeeBreakdownRow,
   type PaymentProofRecord,
@@ -96,12 +98,25 @@ export interface FinanceReceiptPersistenceInput {
   updatedAt: string;
 }
 
+export interface FinanceRefundPersistenceInput {
+  orderId: number;
+  refundedAt: string;
+  amountCents: number;
+  paymentMethod: string;
+  reason: string;
+  note: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface FinanceOrderDetail {
   order: SqlRow;
   finance: OrderFinanceSummary;
   profit: OrderProfitSummary;
   proofs: PaymentProofRecord[];
   receipts: FinanceReceipt[];
+  refunds: FinanceRefund[];
   invoices: FinanceInvoice[];
 }
 
@@ -138,6 +153,8 @@ function mapFinance(row: SqlRow | undefined): OrderFinanceSummary | undefined {
     receivableCents: numberValue(row, 'receivable_cents'),
     receivedCents: numberValue(row, 'received_cents'),
     outstandingCents: numberValue(row, 'outstanding_cents'),
+    refundedCents: numberValue(row, 'refunded_cents'),
+    overpaidCents: calculateOverpaidCents(numberValue(row, 'receivable_cents'), numberValue(row, 'received_cents')),
     paymentStatus: stringValue(row, 'payment_status') as OrderFinanceSummary['paymentStatus'],
     proofStatus: stringValue(row, 'proof_status') as OrderFinanceSummary['proofStatus'],
     invoiceStatus: stringValue(row, 'invoice_status') as OrderFinanceSummary['invoiceStatus'],
@@ -179,6 +196,21 @@ function mapReceipt(row: SqlRow): FinanceReceipt {
     paymentMethod: stringValue(row, 'payment_method'),
     payeeName: stringValue(row, 'payee_name'),
     note: stringValue(row, 'note'),
+    createdAt: stringValue(row, 'created_at'),
+    updatedAt: stringValue(row, 'updated_at'),
+  };
+}
+
+function mapRefund(row: SqlRow): FinanceRefund {
+  return {
+    id: numberValue(row, 'id'),
+    orderId: numberValue(row, 'order_id'),
+    refundedAt: stringValue(row, 'refunded_at'),
+    amountCents: numberValue(row, 'amount_cents'),
+    paymentMethod: stringValue(row, 'payment_method'),
+    reason: stringValue(row, 'reason'),
+    note: stringValue(row, 'note'),
+    createdBy: stringValue(row, 'created_by'),
     createdAt: stringValue(row, 'created_at'),
     updatedAt: stringValue(row, 'updated_at'),
   };
@@ -255,21 +287,27 @@ export class FinanceRepository {
     if (!order) throw new Error('订单不存在');
     const existing = database.prepare('SELECT * FROM order_finance WHERE order_id = ?').get(orderId) as SqlRow | undefined;
     if (!existing) this.ensureOrderFinance(orderId, numberValue(order, 'amount_cents'), database);
-    const receipts = database.prepare('SELECT * FROM finance_receipts WHERE order_id = ? ORDER BY received_at, id').all(orderId) as SqlRow[];
+    const receipts = database.prepare('SELECT amount_cents FROM finance_receipts WHERE order_id = ?').all(orderId) as SqlRow[];
+    const refunds = database.prepare('SELECT amount_cents FROM finance_refunds WHERE order_id = ?').all(orderId) as SqlRow[];
     const proofs = database.prepare('SELECT status FROM payment_proofs WHERE order_id = ?').all(orderId) as Array<{ status?: unknown }>;
     const invoices = database.prepare('SELECT status FROM finance_invoices WHERE order_id = ?').all(orderId) as Array<{ status?: unknown }>;
     const receivableCents = numberValue(order, 'amount_cents');
-    const receivedCents = receipts.reduce((sum, row) => sum + numberValue(row, 'amount_cents'), 0);
+    const grossReceivedCents = receipts.reduce((sum, row) => sum + numberValue(row, 'amount_cents'), 0);
+    const refundedCents = refunds.reduce((sum, row) => sum + numberValue(row, 'amount_cents'), 0);
+    // 已收存净额，所有既有付款门槛（备货/发货/账期）自动按退款后的实际到账判断。
+    const receivedCents = grossReceivedCents - refundedCents;
+    if (receivedCents < 0) throw new Error('退款金额不能超过订单已收金额');
     const proofStatus = deriveProofStatus(proofs.map((row) => ({ status: String(row.status ?? 'pending') as PaymentProofStatus })));
     const invoiceStatus = deriveInvoiceStatus(invoices.map((row) => ({ status: String(row.status) as Exclude<InvoiceStatus, 'not_requested'> })));
     const updatedAt = new Date().toISOString();
     database.prepare(`
-      UPDATE order_finance SET receivable_cents = ?, received_cents = ?, outstanding_cents = ?, payment_status = ?, proof_status = ?, invoice_status = ?, updated_at = ?
+      UPDATE order_finance SET receivable_cents = ?, received_cents = ?, outstanding_cents = ?, refunded_cents = ?, payment_status = ?, proof_status = ?, invoice_status = ?, updated_at = ?
       WHERE order_id = ?
     `).run(
       receivableCents,
       receivedCents,
       calculateOutstandingCents(receivableCents, receivedCents),
+      refundedCents,
       deriveFinancePaymentStatus(receivableCents, receivedCents),
       proofStatus,
       invoiceStatus,
@@ -342,7 +380,8 @@ export class FinanceRepository {
     const total = Number(this.database.prepare(`SELECT COUNT(*) AS count FROM order_finance f JOIN orders o ON o.id = f.order_id LEFT JOIN companies c ON c.id = o.company_id ${where}`).get(...values)?.count ?? 0);
     const rows = this.database.prepare(`
       SELECT o.id AS order_id, o.order_no, o.customer_name, o.ordered_at AS order_date,
-        f.receivable_cents, f.received_cents, f.outstanding_cents, f.payment_status,
+        f.receivable_cents, f.received_cents, f.outstanding_cents, f.refunded_cents, f.payment_status,
+        CASE WHEN f.received_cents > f.receivable_cents THEN f.received_cents - f.receivable_cents ELSE 0 END AS overpaid_cents,
         f.proof_status, f.invoice_status, o.status AS order_status, o.settlement_type,
         o.company_id, COALESCE(NULLIF(c.full_name, ''), c.short_name, '') AS company_name, f.updated_at,
         CASE WHEN ${ORDER_COST_COMPLETE_SQL} THEN ${ORDER_TOTAL_COST_SQL} END AS cost_cents,
@@ -358,6 +397,8 @@ export class FinanceRepository {
       SELECT COALESCE(SUM(f.receivable_cents), 0) AS receivable_cents,
         COALESCE(SUM(f.received_cents), 0) AS received_cents,
         COALESCE(SUM(f.outstanding_cents), 0) AS outstanding_cents,
+        COALESCE(SUM(f.refunded_cents), 0) AS refunded_cents,
+        COALESCE(SUM(CASE WHEN f.received_cents > f.receivable_cents THEN f.received_cents - f.receivable_cents ELSE 0 END), 0) AS overpaid_cents,
         COALESCE(SUM(CASE WHEN ${ORDER_COST_COMPLETE_SQL} THEN o.amount_cents - ${ORDER_TOTAL_COST_SQL} ELSE 0 END), 0) AS profit_cents,
         COALESCE(SUM(CASE WHEN ${ORDER_COST_COMPLETE_SQL} THEN 1 ELSE 0 END), 0) AS profit_order_count,
         COALESCE(SUM(CASE WHEN ${ORDER_COST_COMPLETE_SQL} THEN 0 ELSE 1 END), 0) AS cost_pending_order_count,
@@ -373,6 +414,8 @@ export class FinanceRepository {
       receivableCents: numberValue(statsRows, 'receivable_cents'),
       receivedCents: numberValue(statsRows, 'received_cents'),
       outstandingCents: numberValue(statsRows, 'outstanding_cents'),
+      refundedCents: numberValue(statsRows, 'refunded_cents'),
+      overpaidCents: numberValue(statsRows, 'overpaid_cents'),
       pendingProofCount: numberValue(statsRows, 'pending_proof_count'),
       pendingInvoiceCount: numberValue(statsRows, 'pending_invoice_count'),
       profitCents: numberValue(statsRows, 'profit_cents'),
@@ -382,7 +425,7 @@ export class FinanceRepository {
     return {
       rows: rows.map((row): FinanceListRow => ({
         orderId: numberValue(row, 'order_id'), orderNo: stringValue(row, 'order_no'), customerName: stringValue(row, 'customer_name'), orderDate: stringValue(row, 'order_date'),
-        receivableCents: numberValue(row, 'receivable_cents'), receivedCents: numberValue(row, 'received_cents'), outstandingCents: numberValue(row, 'outstanding_cents'),
+        receivableCents: numberValue(row, 'receivable_cents'), receivedCents: numberValue(row, 'received_cents'), outstandingCents: numberValue(row, 'outstanding_cents'), refundedCents: numberValue(row, 'refunded_cents'), overpaidCents: numberValue(row, 'overpaid_cents'),
         paymentStatus: stringValue(row, 'payment_status') as FinanceListRow['paymentStatus'], proofStatus: stringValue(row, 'proof_status') as FinanceListRow['proofStatus'], invoiceStatus: stringValue(row, 'invoice_status') as FinanceListRow['invoiceStatus'], orderStatus: stringValue(row, 'order_status'), settlementType: stringValue(row, 'settlement_type', 'corporate'), companyId: row.company_id == null ? null : numberValue(row, 'company_id'), companyName: stringValue(row, 'company_name'), updatedAt: stringValue(row, 'updated_at'),
         costCents: row.cost_cents == null ? null : numberValue(row, 'cost_cents'),
         profitCents: row.profit_cents == null ? null : numberValue(row, 'profit_cents'),
@@ -513,6 +556,53 @@ export class FinanceRepository {
     return (this.database.prepare('SELECT * FROM finance_receipts WHERE order_id = ? ORDER BY received_at DESC, id DESC').all(orderId) as SqlRow[]).map(mapReceipt);
   }
 
+  listRefunds(orderId: number): FinanceRefund[] {
+    return (this.database.prepare('SELECT * FROM finance_refunds WHERE order_id = ? ORDER BY refunded_at DESC, id DESC').all(orderId) as SqlRow[]).map(mapRefund);
+  }
+
+  getRefund(id: number, database = this.database): FinanceRefund | undefined {
+    const row = database.prepare('SELECT * FROM finance_refunds WHERE id = ?').get(id) as SqlRow | undefined;
+    return row ? mapRefund(row) : undefined;
+  }
+
+  insertRefund(database: DatabaseSync, input: FinanceRefundPersistenceInput): FinanceRefund {
+    const id = lastInsertId(database.prepare(`
+      INSERT INTO finance_refunds (order_id, refunded_at, amount_cents, payment_method, reason, note, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(input.orderId, input.refundedAt, input.amountCents, input.paymentMethod, input.reason, input.note, input.createdBy, input.createdAt, input.updatedAt));
+    return mapRefund(database.prepare('SELECT * FROM finance_refunds WHERE id = ?').get(id) as SqlRow);
+  }
+
+  updateRefund(database: DatabaseSync, id: number, input: Omit<FinanceRefundPersistenceInput, 'orderId' | 'createdBy' | 'createdAt'>): FinanceRefund | undefined {
+    const result = database.prepare(`
+      UPDATE finance_refunds SET refunded_at = ?, amount_cents = ?, payment_method = ?, reason = ?, note = ?, updated_at = ? WHERE id = ?
+    `).run(input.refundedAt, input.amountCents, input.paymentMethod, input.reason, input.note, input.updatedAt, id);
+    if (Number(result.changes ?? 0) === 0) return undefined;
+    return this.getRefund(id, database);
+  }
+
+  deleteRefund(database: DatabaseSync, id: number): FinanceRefund | undefined {
+    const refund = this.getRefund(id, database);
+    if (!refund) return undefined;
+    database.prepare('DELETE FROM finance_refunds WHERE id = ?').run(id);
+    return refund;
+  }
+
+  /** 订单收款合计（退款前），用于校验退款和作废水单不会把净已收冲成负数。 */
+  sumReceipts(database: DatabaseSync, orderId: number): number {
+    const row = database.prepare('SELECT COALESCE(SUM(amount_cents), 0) AS total FROM finance_receipts WHERE order_id = ?').get(orderId) as SqlRow | undefined;
+    return numberValue(row ?? {}, 'total');
+  }
+
+  sumRefunds(database: DatabaseSync, orderId: number): number {
+    const row = database.prepare('SELECT COALESCE(SUM(amount_cents), 0) AS total FROM finance_refunds WHERE order_id = ?').get(orderId) as SqlRow | undefined;
+    return numberValue(row ?? {}, 'total');
+  }
+
+  /**
+   * 按收款人汇总收款额。退款记录不填收款人，无法归属到人，
+   * 因此这里保持“收款合计”口径（净额请看公司汇总/订单财务）。
+   */
   listPayeeBreakdown(month?: string, channel?: string): PayeeBreakdownRow[] {
     const values: Array<string | number> = [];
     // 与统计卡片的“已收金额”口径一致：按订单下单月份过滤，而不是实际收款月份。
@@ -545,32 +635,51 @@ export class FinanceRepository {
     }));
   }
 
-  /** 财务台账“已收金额 → 按公司”，月份口径与台账一致（下单月份）。 */
+  /** 财务台账“已收金额 → 按公司”，月份口径与台账一致（下单月份）；退款按负数冲减。 */
   listCompanyBreakdown(month?: string, channel?: string): CompanyReceiptBreakdownRow[] {
-    const values: Array<string | number> = [UNASSIGNED_COMPANY_NAME];
-    const conditions: string[] = [];
+    const receiptConditions: string[] = [];
+    const refundConditions: string[] = [];
+    const receiptValues: Array<string | number> = [UNASSIGNED_COMPANY_NAME];
+    const refundValues: Array<string | number> = [UNASSIGNED_COMPANY_NAME];
     const trimmed = month?.trim();
     if (trimmed) {
-      conditions.push('substr(o.ordered_at, 1, 7) = ?');
-      values.push(trimmed);
+      receiptConditions.push('substr(o.ordered_at, 1, 7) = ?');
+      refundConditions.push('substr(o.ordered_at, 1, 7) = ?');
+      receiptValues.push(trimmed);
+      refundValues.push(trimmed);
     }
     if (channel) {
-      conditions.push('o.channel = ?');
-      values.push(channel);
+      receiptConditions.push('o.channel = ?');
+      refundConditions.push('o.channel = ?');
+      receiptValues.push(channel);
+      refundValues.push(channel);
     }
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const receiptWhere = receiptConditions.length ? `WHERE ${receiptConditions.join(' AND ')}` : '';
+    const refundWhere = refundConditions.length ? `WHERE ${refundConditions.join(' AND ')}` : '';
     const rows = this.database.prepare(`
-      SELECT o.company_id,
-        COALESCE(NULLIF(c.full_name, ''), NULLIF(c.short_name, ''), ?) AS company_name,
-        COUNT(*) AS receipt_count,
-        COALESCE(SUM(r.amount_cents), 0) AS amount_cents
-      FROM finance_receipts r
-      JOIN orders o ON o.id = r.order_id
-      LEFT JOIN companies c ON c.id = o.company_id
-      ${where}
-      GROUP BY o.company_id, c.full_name, c.short_name
+      SELECT company_id, company_name,
+        SUM(CASE WHEN kind = 'receipt' THEN 1 ELSE 0 END) AS receipt_count,
+        COALESCE(SUM(signed_amount), 0) AS amount_cents
+      FROM (
+        SELECT o.company_id,
+          COALESCE(NULLIF(c.full_name, ''), NULLIF(c.short_name, ''), ?) AS company_name,
+          r.amount_cents AS signed_amount, 'receipt' AS kind
+        FROM finance_receipts r
+        JOIN orders o ON o.id = r.order_id
+        LEFT JOIN companies c ON c.id = o.company_id
+        ${receiptWhere}
+        UNION ALL
+        SELECT o.company_id,
+          COALESCE(NULLIF(c.full_name, ''), NULLIF(c.short_name, ''), ?) AS company_name,
+          -rf.amount_cents AS signed_amount, 'refund' AS kind
+        FROM finance_refunds rf
+        JOIN orders o ON o.id = rf.order_id
+        LEFT JOIN companies c ON c.id = o.company_id
+        ${refundWhere}
+      ) combined
+      GROUP BY company_id, company_name
       ORDER BY amount_cents DESC, receipt_count DESC
-    `).all(...values) as SqlRow[];
+    `).all(...receiptValues, ...refundValues) as SqlRow[];
     return rows.map((row) => ({
       companyId: row.company_id == null ? null : numberValue(row, 'company_id'),
       companyName: stringValue(row, 'company_name', UNASSIGNED_COMPANY_NAME),
@@ -587,29 +696,43 @@ export class FinanceRepository {
   listCompanyStats(month?: string, channel?: string): CompanyStatsRow[] {
     const trimmed = month?.trim();
     const receivedValues: Array<string | number> = [];
+    const refundReceivedValues: Array<string | number> = [];
     const pendingValues: Array<string | number> = [];
     const invoiceValues: Array<string | number> = [];
     const receivedMonth = trimmed ? 'AND substr(r.received_at, 1, 7) = ?' : '';
+    const refundMonth = trimmed ? 'AND substr(rf.refunded_at, 1, 7) = ?' : '';
     const pendingMonth = trimmed ? 'AND substr(COALESCE(p.payment_date, p.created_at), 1, 7) = ?' : '';
     const invoiceMonth = trimmed ? 'AND substr(o.ordered_at, 1, 7) = ?' : '';
     const channelSql = channel ? 'AND o.channel = ?' : '';
     if (trimmed) {
       receivedValues.push(trimmed);
+      refundReceivedValues.push(trimmed);
       pendingValues.push(trimmed);
       invoiceValues.push(trimmed);
     }
     if (channel) {
       receivedValues.push(channel);
+      refundReceivedValues.push(channel);
       pendingValues.push(channel);
       invoiceValues.push(channel);
     }
     const receivedRows = this.database.prepare(`
-      SELECT o.company_id, COUNT(*) AS count, COALESCE(SUM(r.amount_cents), 0) AS amount_cents
-      FROM finance_receipts r
-      JOIN orders o ON o.id = r.order_id
-      WHERE 1 = 1 ${receivedMonth} ${channelSql}
-      GROUP BY o.company_id
-    `).all(...receivedValues) as SqlRow[];
+      SELECT company_id,
+        SUM(CASE WHEN kind = 'receipt' THEN 1 ELSE 0 END) AS count,
+        COALESCE(SUM(signed_amount), 0) AS amount_cents
+      FROM (
+        SELECT o.company_id, r.amount_cents AS signed_amount, 'receipt' AS kind
+        FROM finance_receipts r
+        JOIN orders o ON o.id = r.order_id
+        WHERE 1 = 1 ${receivedMonth} ${channelSql}
+        UNION ALL
+        SELECT o.company_id, -rf.amount_cents AS signed_amount, 'refund' AS kind
+        FROM finance_refunds rf
+        JOIN orders o ON o.id = rf.order_id
+        WHERE 1 = 1 ${refundMonth} ${channelSql}
+      ) combined
+      GROUP BY company_id
+    `).all(...receivedValues, ...refundReceivedValues) as SqlRow[];
     const pendingRows = this.database.prepare(`
       SELECT o.company_id, COUNT(*) AS count, COALESCE(SUM(p.amount_cents), 0) AS amount_cents
       FROM payment_proofs p
@@ -688,6 +811,9 @@ export class FinanceRepository {
         COALESCE(f.receivable_cents, o.amount_cents) AS receivable_cents,
         COALESCE(f.received_cents, 0) AS received_cents,
         COALESCE(f.outstanding_cents, o.amount_cents) AS outstanding_cents,
+        COALESCE(f.refunded_cents, 0) AS refunded_cents,
+        CASE WHEN COALESCE(f.received_cents, 0) > COALESCE(f.receivable_cents, o.amount_cents)
+          THEN COALESCE(f.received_cents, 0) - COALESCE(f.receivable_cents, o.amount_cents) ELSE 0 END AS overpaid_cents,
         COALESCE(f.payment_status, 'unpaid') AS payment_status,
         COALESCE(f.proof_status, 'none') AS proof_status,
         COALESCE(f.invoice_status, 'not_requested') AS invoice_status
@@ -718,6 +844,8 @@ export class FinanceRepository {
       receivableCents: numberValue(row, 'receivable_cents'),
       receivedCents: numberValue(row, 'received_cents'),
       outstandingCents: numberValue(row, 'outstanding_cents'),
+      refundedCents: numberValue(row, 'refunded_cents'),
+      overpaidCents: numberValue(row, 'overpaid_cents'),
       paymentStatus: stringValue(row, 'payment_status') as FinanceOrderLookupRow['paymentStatus'],
       proofStatus: stringValue(row, 'proof_status') as FinanceOrderLookupRow['proofStatus'],
       invoiceStatus: stringValue(row, 'invoice_status') as FinanceOrderLookupRow['invoiceStatus'],
@@ -803,6 +931,6 @@ export class FinanceRepository {
       otherCostCents: order.other_cost_cents == null ? null : numberValue(order, 'other_cost_cents'),
       costConfirmed: numberValue(order, 'cost_confirmed') === 1,
     });
-    return { order, finance, profit, proofs: this.listProofs(orderId), receipts: this.listReceipts(orderId), invoices: this.listInvoices(orderId) };
+    return { order, finance, profit, proofs: this.listProofs(orderId), receipts: this.listReceipts(orderId), refunds: this.listRefunds(orderId), invoices: this.listInvoices(orderId) };
   }
 }

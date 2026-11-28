@@ -32,8 +32,13 @@ export interface OrderFinanceSummary {
   id: number;
   orderId: number;
   receivableCents: number;
+  /** 已收金额为净额：收款记录合计减去退款记录合计。 */
   receivedCents: number;
   outstandingCents: number;
+  /** 已退金额（累计退款）。 */
+  refundedCents: number;
+  /** 超收金额，等于 max(0, 已收 - 应收)。 */
+  overpaidCents: number;
   paymentStatus: FinancePaymentStatus;
   proofStatus: FinanceProofStatus;
   invoiceStatus: InvoiceStatus;
@@ -49,6 +54,8 @@ export interface OrderFinanceLite {
   receivableCents: number;
   receivedCents: number;
   outstandingCents: number;
+  refundedCents: number;
+  overpaidCents: number;
   paymentStatus: FinancePaymentStatus;
   proofStatus: FinanceProofStatus;
   invoiceStatus: InvoiceStatus;
@@ -83,6 +90,20 @@ export interface FinanceReceipt {
   paymentMethod: string;
   payeeName: string;
   note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 退给客户的款项；退款会冲减订单已收，并重算未收/超收与付款状态。 */
+export interface FinanceRefund {
+  id: number;
+  orderId: number;
+  refundedAt: string;
+  amountCents: number;
+  paymentMethod: string;
+  reason: string;
+  note: string;
+  createdBy: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -161,6 +182,8 @@ export interface FinanceListRow {
   receivableCents: number;
   receivedCents: number;
   outstandingCents: number;
+  refundedCents: number;
+  overpaidCents: number;
   paymentStatus: FinancePaymentStatus;
   proofStatus: FinanceProofStatus;
   invoiceStatus: InvoiceStatus;
@@ -181,6 +204,8 @@ export interface FinanceListStats {
   receivableCents: number;
   receivedCents: number;
   outstandingCents: number;
+  refundedCents: number;
+  overpaidCents: number;
   pendingProofCount: number;
   pendingInvoiceCount: number;
   profitCents: number;
@@ -235,6 +260,8 @@ export interface FinanceOrderLookupRow {
   receivableCents: number;
   receivedCents: number;
   outstandingCents: number;
+  refundedCents: number;
+  overpaidCents: number;
   paymentStatus: FinancePaymentStatus;
   proofStatus: FinanceProofStatus;
   invoiceStatus: InvoiceStatus;
@@ -255,6 +282,13 @@ export function calculateOutstandingCents(receivableCents: number, receivedCents
   assertCents(receivableCents, '应收金额');
   assertCents(receivedCents, '已收金额');
   return receivableCents - receivedCents;
+}
+
+/** 超收金额：已收超过应收的部分；未超收为 0。未收金额仍允许为负数，兼容按客户汇总的账期抵扣。 */
+export function calculateOverpaidCents(receivableCents: number, receivedCents: number): number {
+  assertCents(receivableCents, '应收金额');
+  assertCents(receivedCents, '已收金额');
+  return Math.max(0, receivedCents - receivableCents);
 }
 
 export function deriveFinancePaymentStatus(receivableCents: number, receivedCents: number): FinancePaymentStatus {

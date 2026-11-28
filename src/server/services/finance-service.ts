@@ -7,6 +7,7 @@ import type {
   FinanceInvoiceFile,
   FinanceListFilters,
   FinanceListResult,
+  FinanceRefund,
   OrderFinanceSummary,
   PaymentProofRecord,
   PaymentProofStatus,
@@ -38,6 +39,12 @@ function cents(value: unknown, field: string, required = true): number | null {
   return result;
 }
 
+function positiveCents(value: unknown, field: string): number {
+  const result = cents(value, field)!;
+  if (result <= 0) throw new FinanceServiceError('VALIDATION_ERROR', `${field}必须大于 0`);
+  return result;
+}
+
 export class FinanceServiceError extends Error {
   constructor(
     public readonly code:
@@ -50,6 +57,9 @@ export class FinanceServiceError extends Error {
       | 'PROOF_ORDER_MISMATCH'
       | 'RECEIPT_EXISTS'
       | 'RECEIPT_EXCEEDS_ORDER'
+      | 'REFUND_NOT_FOUND'
+      | 'REFUND_EXCEEDS_RECEIVED'
+      | 'REFUND_PREVENTS_VOID'
       | 'INVOICE_NOT_FOUND'
       | 'INVOICE_AMOUNT_EXCEEDS_ORDER'
       | 'INVOICE_ALREADY_VOID'
@@ -70,6 +80,14 @@ export interface FinanceProofInput {
   paymentMethod?: unknown;
   payerName?: unknown;
   transactionNo?: unknown;
+  note?: unknown;
+}
+
+export interface FinanceRefundInput {
+  refundedAt?: unknown;
+  amountCents?: unknown;
+  paymentMethod?: unknown;
+  reason?: unknown;
   note?: unknown;
 }
 
@@ -101,6 +119,7 @@ export interface FinanceDetail {
   profit: OrderProfitSummary;
   proofs: Array<PaymentProofRecord & { url: string }>;
   receipts: ReturnType<FinanceRepository['listReceipts']>;
+  refunds: FinanceRefund[];
   invoices: Array<FinanceInvoice & { files: Array<FinanceInvoiceFile & { url: string }> }>;
 }
 
@@ -150,6 +169,7 @@ export class FinanceService {
       profit: detail.profit,
       proofs: detail.proofs.map((proof) => ({ ...proof, url: `/files/${proof.relativePath}` })),
       receipts: detail.receipts,
+      refunds: detail.refunds,
       invoices: detail.invoices.map((invoice) => ({
         ...invoice,
         files: invoice.files.map((file) => ({ ...file, url: `/files/${file.relativePath}` })),
@@ -251,11 +271,89 @@ export class FinanceService {
     if (!proof) throw new FinanceServiceError('PROOF_NOT_FOUND', '水单不存在');
     if (proof.status === 'void') return this.get(proof.orderId)!;
     withTransaction(this.options.database, (database) => {
+      const receipt = this.repository.findReceiptByProof(database, proofId);
+      if (receipt) {
+        const netAfterVoid = this.repository.sumReceipts(database, proof.orderId) - receipt.amountCents - this.repository.sumRefunds(database, proof.orderId);
+        if (netAfterVoid < 0) throw new FinanceServiceError('REFUND_PREVENTS_VOID', '该水单对应的收款已有退款，作废后已收会低于退款金额；请先删除或调整退款记录');
+      }
       this.repository.deleteReceiptByProof(database, proofId);
       this.repository.setProofReview(database, proofId, 'void', normalizeText(note), now());
       this.repository.recalculateOrderFinance(database, proof.orderId);
     });
     return this.get(proof.orderId)!;
+  }
+
+  listRefunds(orderId: number): FinanceRefund[] {
+    this.assertOrder(orderId);
+    return this.repository.listRefunds(orderId);
+  }
+
+  createRefund(orderId: number, input: FinanceRefundInput, createdBy = ''): FinanceRefund {
+    this.assertOrder(orderId);
+    const amountCents = positiveCents(input.amountCents, '退款金额');
+    if (input.refundedAt == null || input.refundedAt === '') throw new FinanceServiceError('VALIDATION_ERROR', '退款日期不能为空');
+    const refundedAt = validDate(input.refundedAt);
+    return withTransaction(this.options.database, (database) => {
+      const finance = this.repository.getOrderFinance(orderId);
+      const receivedCents = finance?.receivedCents ?? 0;
+      if (amountCents > receivedCents) {
+        throw new FinanceServiceError('REFUND_EXCEEDS_RECEIVED', `退款金额不能超过当前已收 ¥${(receivedCents / 100).toFixed(2)}`);
+      }
+      const timestamp = now();
+      const refund = this.repository.insertRefund(database, {
+        orderId,
+        refundedAt,
+        amountCents,
+        paymentMethod: normalizeText(input.paymentMethod),
+        reason: normalizeText(input.reason),
+        note: normalizeText(input.note),
+        createdBy: normalizeText(createdBy),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+      this.repository.recalculateOrderFinance(database, orderId);
+      return refund;
+    });
+  }
+
+  updateRefund(refundId: number, input: FinanceRefundInput): FinanceRefund {
+    const refund = this.repository.getRefund(refundId);
+    if (!refund) throw new FinanceServiceError('REFUND_NOT_FOUND', '退款记录不存在');
+    const amountCents = input.amountCents == null || input.amountCents === ''
+      ? refund.amountCents
+      : positiveCents(input.amountCents, '退款金额');
+    const refundedAt = input.refundedAt == null || input.refundedAt === ''
+      ? refund.refundedAt
+      : validDate(input.refundedAt);
+    return withTransaction(this.options.database, (database) => {
+      const receivedBeforeUpdate = this.repository.sumReceipts(database, refund.orderId)
+        - (this.repository.sumRefunds(database, refund.orderId) - refund.amountCents);
+      if (amountCents > receivedBeforeUpdate) {
+        throw new FinanceServiceError('REFUND_EXCEEDS_RECEIVED', `退款金额不能超过当前已收 ¥${(receivedBeforeUpdate / 100).toFixed(2)}`);
+      }
+      const updated = this.repository.updateRefund(database, refundId, {
+        refundedAt,
+        amountCents,
+        paymentMethod: input.paymentMethod === undefined ? refund.paymentMethod : normalizeText(input.paymentMethod),
+        reason: input.reason === undefined ? refund.reason : normalizeText(input.reason),
+        note: input.note === undefined ? refund.note : normalizeText(input.note),
+        updatedAt: now(),
+      });
+      if (!updated) throw new FinanceServiceError('REFUND_NOT_FOUND', '退款记录不存在');
+      this.repository.recalculateOrderFinance(database, refund.orderId);
+      return updated;
+    });
+  }
+
+  deleteRefund(refundId: number): FinanceRefund {
+    const refund = this.repository.getRefund(refundId);
+    if (!refund) throw new FinanceServiceError('REFUND_NOT_FOUND', '退款记录不存在');
+    return withTransaction(this.options.database, (database) => {
+      const deleted = this.repository.deleteRefund(database, refundId);
+      if (!deleted) throw new FinanceServiceError('REFUND_NOT_FOUND', '退款记录不存在');
+      this.repository.recalculateOrderFinance(database, refund.orderId);
+      return deleted;
+    });
   }
 
   async deleteProof(proofId: number): Promise<PaymentProofRecord> {
@@ -300,6 +398,9 @@ export class FinanceService {
   submitInvoice(invoiceId: number): FinanceInvoice {
     const invoice = this.requireInvoice(invoiceId);
     if (invoice.status === 'void') throw new FinanceServiceError('INVOICE_ALREADY_VOID', '已作废发票不能提交');
+    if (invoice.status !== 'incomplete' && invoice.status !== 'pending_issue') {
+      throw new FinanceServiceError('INVALID_FINANCE_STATUS', '只有未完成或待开票记录才能提交开票申请');
+    }
     if (!invoice.title || !invoice.taxNo || !invoice.invoiceType || invoice.amountCents <= 0) throw new FinanceServiceError('VALIDATION_ERROR', '请补齐发票类型、抬头、税号和开票金额');
     return this.changeInvoiceStatus(invoice, 'pending_issue');
   }

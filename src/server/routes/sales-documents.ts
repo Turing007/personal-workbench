@@ -17,7 +17,9 @@ import {
 import { DocumentValidationError } from '../../shared/document-validation.js';
 import { OrderCustomerError } from '../services/order-service.js';
 import type { PaymentStatus, SalesDocumentStatus } from '../../shared/documents.js';
+import type { DocumentVersionService } from '../services/document-version-service.js';
 import { ApiError, asRecord, parseId, sendFailure, sendSuccess } from './api-response.js';
+import { registerDocumentVersionRoutes } from './document-versions.js';
 import { assertMultipartFileNotTruncated, imageFileOptions, imagePartsOptions } from './multipart-limits.js';
 
 interface IdParams { id: string }
@@ -26,6 +28,7 @@ export interface SalesDocumentRouteOptions {
   service: SalesDocumentService;
   fileStore?: Pick<FileStore, 'readFile' | 'stageImage'>;
   pdfRenderer?: Pick<PdfRenderer, 'render'>;
+  versions?: DocumentVersionService;
 }
 
 interface BufferedUpload {
@@ -44,7 +47,7 @@ function salesError(error: unknown): ApiError {
   if (error instanceof SalesDocumentServiceError) {
     const statusCode = error.code === 'SALES_DOCUMENT_NOT_FOUND' || error.code === 'RECEIPT_NOT_FOUND' || error.code === 'QUOTATION_NOT_FOUND' || error.code === 'CUSTOMER_NOT_FOUND' || error.code === 'CUSTOMER_PRODUCT_NOT_FOUND'
       ? 404
-      : error.code === 'CONFIRMATION_REQUIRED' || error.code === 'QUOTATION_NOT_WON' || error.code === 'VOID_DOCUMENT_PRESERVED' || error.code === 'CUSTOMER_INACTIVE' || error.code === 'CUSTOMER_PRODUCT_CUSTOMER_MISMATCH' || error.code === 'SALES_DOCUMENT_NOT_ISSUED' || error.code === 'ORDER_ALREADY_GENERATED' || error.code === 'ORDER_QUANTITY_INVALID'
+      : error.code === 'CONFIRMATION_REQUIRED' || error.code === 'QUOTATION_NOT_WON' || error.code === 'VOID_DOCUMENT_PRESERVED' || error.code === 'CUSTOMER_INACTIVE' || error.code === 'CUSTOMER_PRODUCT_CUSTOMER_MISMATCH' || error.code === 'SALES_DOCUMENT_NOT_ISSUED' || error.code === 'ORDER_ALREADY_GENERATED' || error.code === 'ORDER_QUANTITY_INVALID' || error.code === 'INVALID_STATUS_TRANSITION' || error.code === 'ISSUED_DOCUMENT_PRESERVED' || error.code === 'DOCUMENT_HAS_RECEIPTS' || error.code === 'VOID_WITH_RECEIPTS' || error.code === 'VOID_WITH_ORDER'
         ? 409
         : error.code === 'ASSET_MANAGER_REQUIRED' || error.code === 'RECEIPT_FILE_STORE_REQUIRED' || error.code === 'ORDER_SERVICE_REQUIRED'
           ? 503
@@ -157,9 +160,10 @@ export async function registerSalesDocumentRoutes(app: FastifyInstance, options:
     }));
   }, reply));
 
-  app.post('/api/sales-documents', async (request, reply) => safeRoute(async () => (
-    sendSuccess(reply, await options.service.create(await parseSalesInput(request)), 201)
-  ), reply));
+  app.post('/api/sales-documents', async (request, reply) => safeRoute(async () => {
+    const detail = await options.service.create(await parseSalesInput(request), request.user?.username ?? '');
+    return sendSuccess(reply, detail, 201);
+  }, reply));
 
   app.get('/api/sales-documents/:id', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(() => {
     const detail = options.service.get(parseId(request.params.id));
@@ -168,13 +172,21 @@ export async function registerSalesDocumentRoutes(app: FastifyInstance, options:
   }, reply));
 
   app.put('/api/sales-documents/:id', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(async () => {
-    const detail = await options.service.update(parseId(request.params.id), await parseSalesInput(request));
+    const detail = await options.service.update(
+      parseId(request.params.id),
+      await parseSalesInput(request),
+      request.user?.username ?? '',
+    );
     if (!detail) throw new ApiError(404, 'NOT_FOUND', '销售单不存在');
     return sendSuccess(reply, detail);
   }, reply));
 
   app.patch('/api/sales-documents/:id/status', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(() => {
-    const detail = options.service.updateStatus(parseId(request.params.id), asRecord(request.body).status);
+    const detail = options.service.updateStatus(
+      parseId(request.params.id),
+      asRecord(request.body).status,
+      request.user?.username ?? '',
+    );
     if (!detail) throw new ApiError(404, 'NOT_FOUND', '销售单不存在');
     return sendSuccess(reply, detail);
   }, reply));
@@ -230,6 +242,16 @@ export async function registerSalesDocumentRoutes(app: FastifyInstance, options:
     if (!deleted) throw new ApiError(404, 'NOT_FOUND', '付款凭证不存在');
     return sendSuccess(reply, null);
   }, reply));
+
+  if (options.versions) {
+    await registerDocumentVersionRoutes(app, {
+      basePath: '/api/sales-documents',
+      documentType: 'sales_document',
+      notFoundMessage: '销售单不存在',
+      exists: (id) => Boolean(options.service.get(id)),
+      service: options.versions,
+    });
+  }
 }
 
 export const salesDocumentRoutes = registerSalesDocumentRoutes;

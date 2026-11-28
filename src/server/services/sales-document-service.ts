@@ -5,6 +5,7 @@ import { DocumentNumberRepository } from '../db/document-number-repository.js';
 import { QuotationRepository } from '../db/quotation-repository.js';
 import { CustomerRepository } from '../db/customer-repository.js';
 import { CustomerProductRepository } from '../db/customer-product-repository.js';
+import type { CompanyRepository } from '../db/company-repository.js';
 import {
   SalesDocumentRepository,
   type SalesDocumentListFilters,
@@ -16,6 +17,7 @@ import {
 import { EMPTY_COMPANY_PROFILE, SettingsRepository } from '../db/settings-repository.js';
 import type { CreateOrderInput } from '../db/repositories.js';
 import type { OrderService } from './order-service.js';
+import type { DocumentVersionService } from './document-version-service.js';
 import type {
   DocumentItemImageInput,
   PreparedDocumentAsset,
@@ -35,6 +37,7 @@ import {
   calculateDocumentTotalsForBasis,
   isQuotationPricingBasis,
   normalizeQuotationConfiguration,
+  pricingBasisIncludesTax,
   type QuotationItemConfiguration,
   type QuotationPricingBasis,
 } from '../../shared/quotation-config.js';
@@ -55,6 +58,12 @@ import {
 } from '../../shared/document-validation.js';
 
 const DOCUMENT_STATUSES: readonly SalesDocumentStatus[] = ['draft', 'issued', 'void'];
+const DOCUMENT_STATUS_TRANSITIONS: Record<SalesDocumentStatus, readonly SalesDocumentStatus[]> = {
+  draft: ['issued', 'void'],
+  issued: ['void'],
+  void: [],
+};
+const DOCUMENT_STATUS_LABELS: Record<SalesDocumentStatus, string> = { draft: '草稿', issued: '已开单', void: '已作废' };
 const PAYMENT_STATUSES: readonly PaymentStatus[] = ['unpaid', 'partial', 'paid'];
 
 export interface SalesDocumentProductImage {
@@ -194,6 +203,7 @@ export interface SalesDocumentServiceOptions {
   quotationRepository?: QuotationRepository;
   customerRepository?: CustomerRepository;
   customerProductRepository?: CustomerProductRepository;
+  companyRepository?: CompanyRepository;
   documentNumberRepository?: DocumentNumberRepository;
   settingsRepository?: SettingsRepository;
   productProvider?: SalesDocumentProductProvider;
@@ -201,6 +211,8 @@ export interface SalesDocumentServiceOptions {
   sourceFileReader?: SalesDocumentSourceFileReader;
   receiptFileStore?: SalesReceiptFileStore;
   orderService?: OrderService;
+  /** 与单据写入放在同一事务里记录版本，避免主保存成功而版本写入失败造成重试重复建单。 */
+  versions?: DocumentVersionService;
   now?: () => string;
 }
 
@@ -211,6 +223,11 @@ export class SalesDocumentServiceError extends Error {
       | 'CONFIRMATION_REQUIRED'
       | 'INVALID_PAYMENT_STATUS'
       | 'INVALID_STATUS'
+      | 'INVALID_STATUS_TRANSITION'
+      | 'ISSUED_DOCUMENT_PRESERVED'
+      | 'DOCUMENT_HAS_RECEIPTS'
+      | 'VOID_WITH_RECEIPTS'
+      | 'VOID_WITH_ORDER'
       | 'QUOTATION_NOT_FOUND'
       | 'QUOTATION_NOT_WON'
       | 'RECEIPT_EXCEEDS_TOTAL'
@@ -385,6 +402,7 @@ export class SalesDocumentService {
   readonly quotationRepository: QuotationRepository;
   readonly customerRepository: CustomerRepository;
   readonly customerProductRepository: CustomerProductRepository;
+  readonly companyRepository?: CompanyRepository;
   readonly documentNumberRepository: DocumentNumberRepository;
   readonly settingsRepository: SettingsRepository;
   readonly productProvider: SalesDocumentProductProvider;
@@ -392,6 +410,7 @@ export class SalesDocumentService {
   readonly sourceFileReader?: SalesDocumentSourceFileReader;
   readonly receiptFileStore?: SalesReceiptFileStore;
   readonly orderService?: OrderService;
+  readonly versions?: DocumentVersionService;
   private readonly now: () => string;
 
   constructor(private readonly options: SalesDocumentServiceOptions) {
@@ -399,6 +418,7 @@ export class SalesDocumentService {
     this.quotationRepository = options.quotationRepository ?? new QuotationRepository(options.database);
     this.customerRepository = options.customerRepository ?? new CustomerRepository(options.database);
     this.customerProductRepository = options.customerProductRepository ?? new CustomerProductRepository(options.database);
+    this.companyRepository = options.companyRepository;
     this.documentNumberRepository = options.documentNumberRepository ?? new DocumentNumberRepository(options.database);
     this.settingsRepository = options.settingsRepository ?? new SettingsRepository(options.database);
     this.productProvider = options.productProvider ?? new DatabaseSalesDocumentProductProvider(options.database);
@@ -406,6 +426,7 @@ export class SalesDocumentService {
     this.sourceFileReader = options.sourceFileReader;
     this.receiptFileStore = options.receiptFileStore;
     this.orderService = options.orderService;
+    this.versions = options.versions;
     this.now = options.now ?? (() => new Date().toISOString());
   }
 
@@ -447,9 +468,13 @@ export class SalesDocumentService {
         `第 ${invalidIndex + 1} 行数量 ${document.items[invalidIndex]!.quantity} 不是正整数，订单数量必须为整数`,
       );
     }
-    const shippingCents = document.shippingCents + document.taxCents;
-    const remarkParts = [`生成自销售单 ${document.number}`];
-    if (document.taxCents > 0) remarkParts.push(`含税费 ${centsToYuan(document.taxCents)} 元已并入运费`);
+    // 含运含税口径下商品单价已含税，taxCents 只是“其中税额”，不能再并入运费。
+    const taxIncluded = pricingBasisIncludesTax(document.pricingBasis);
+    const shippingCents = document.shippingCents + (taxIncluded ? 0 : document.taxCents);
+    const remarkParts = [document.remark.trim(), `生成自销售单 ${document.number}`];
+    if (!taxIncluded && document.taxCents > 0) remarkParts.push(`含税费 ${centsToYuan(document.taxCents)} 元已并入运费`);
+    const customer = document.customerId == null ? undefined : this.customerRepository.get(document.customerId);
+    const company = this.resolveCompanyBySnapshot(document.companySnapshot.name);
     const input: CreateOrderInput = {
       orderNo: '',
       orderedAt: document.documentDate,
@@ -461,10 +486,26 @@ export class SalesDocumentService {
       recipientName: document.consignee || document.contactName || document.customerName,
       recipientInfo: document.customerAddress,
       shippingCents,
-      remark: remarkParts.join('；'),
+      remark: remarkParts.filter(Boolean).join('；'),
+      orderDetail: document.purchaseOrderNo.trim() ? `采购单号：${document.purchaseOrderNo.trim()}` : undefined,
+      // 销售单没有渠道字段；销售单属于线下批发单据，避免生成订单默认落成线上单。
+      channel: 'offline',
+      // 付款政策以客户档案为准；销售单本身不保存账期快照。
+      paymentPolicy: customer?.paymentPolicy,
+      depositPercent: customer?.depositPercent,
+      creditDays: customer?.creditDays,
+      companyId: company?.id,
       sourceSalesDocumentId: salesDocumentId,
       createdBy: createdBy ?? '',
+      receipts: document.receipts.map((receipt) => ({
+        receivedAt: receipt.receivedAt,
+        amountCents: receipt.amountCents,
+        paymentMethod: receipt.paymentMethod,
+        note: [receipt.note.trim(), `销售单 ${document.number} 收款转入`].filter(Boolean).join('；'),
+        createdAt: receipt.createdAt,
+      })),
       items: document.items.map((item) => ({
+        productId: item.productId ?? undefined,
         customerProductId: item.customerProductId,
         name: item.name,
         sku: item.sku,
@@ -472,7 +513,8 @@ export class SalesDocumentService {
         packCount: item.packCount ?? undefined,
         quantity: item.quantity,
         unitPriceCents: item.unitPriceCents,
-        remark: item.remark,
+        // 订单行没有单独的参数/配置字段，转入备注避免信息丢失。
+        remark: [item.remark.trim(), item.parameters.trim(), item.configuration?.label?.trim()].filter(Boolean).join('；'),
       })),
     };
     try {
@@ -489,22 +531,28 @@ export class SalesDocumentService {
     }
   }
 
-  async create(input: SalesDocumentInput): Promise<SalesDocumentServiceDetail> {
+  async create(input: SalesDocumentInput, createdBy = ''): Promise<SalesDocumentServiceDetail> {
     const prepared = await this.prepareSave(input, undefined, null);
     try {
       await this.commitAssets(prepared.assetBatches);
-      const id = withTransaction(this.options.database, (database) => {
+      return withTransaction(this.options.database, (database) => {
         prepared.record.number = this.documentNumberRepository.next('sales', prepared.record.documentDate);
-        return this.repository.insert(database, prepared.record);
+        const id = this.repository.insert(database, prepared.record);
+        const detail = this.requireDetail(id);
+        this.versions?.recordSalesDocument(detail, 'create', createdBy);
+        return detail;
       });
-      return this.requireDetail(id);
     } catch (error) {
       await this.rollbackAssets(prepared.assetBatches);
       throw error;
     }
   }
 
-  async createFromQuotation(quotationId: number, documentDate?: string): Promise<SalesDocumentServiceDetail> {
+  async createFromQuotation(
+    quotationId: number,
+    documentDate?: string,
+    createdBy = '',
+  ): Promise<SalesDocumentServiceDetail> {
     const quotation = this.quotationRepository.get(quotationId);
     if (!quotation) {
       throw new SalesDocumentServiceError('QUOTATION_NOT_FOUND', '报价单不存在');
@@ -567,34 +615,37 @@ export class SalesDocumentService {
       sourceQuotationId: quotationId,
       displayConfig: { showProductImages: false },
       items,
-    }, quotationId);
+    }, quotationId, createdBy);
   }
 
   private async createWithSourceQuotation(
     input: SalesDocumentInput,
     sourceQuotationId: number,
+    createdBy: string,
   ): Promise<SalesDocumentServiceDetail> {
     const prepared = await this.prepareSave(input, undefined, sourceQuotationId);
     try {
       await this.commitAssets(prepared.assetBatches);
-      const id = withTransaction(this.options.database, (database) => {
+      return withTransaction(this.options.database, (database) => {
         prepared.record.number = this.documentNumberRepository.next('sales', prepared.record.documentDate);
-        return this.repository.insert(database, prepared.record);
+        const id = this.repository.insert(database, prepared.record);
+        const detail = this.requireDetail(id);
+        this.versions?.recordSalesDocument(detail, 'create', createdBy);
+        return detail;
       });
-      return this.requireDetail(id);
     } catch (error) {
       await this.rollbackAssets(prepared.assetBatches);
       throw error;
     }
   }
 
-  async update(id: number, input: SalesDocumentInput): Promise<SalesDocumentServiceDetail | undefined> {
+  async update(id: number, input: SalesDocumentInput, createdBy = ''): Promise<SalesDocumentServiceDetail | undefined> {
     const existing = this.repository.get(id);
     if (!existing) return undefined;
     const prepared = await this.prepareSave(input, existing, existing.sourceQuotationId);
     try {
       await this.commitAssets(prepared.assetBatches);
-      const changed = withTransaction(this.options.database, (database) => {
+      const detail = withTransaction(this.options.database, (database) => {
         if (existing.receivedCents > prepared.record.totalCents) {
           throw new SalesDocumentServiceError(
             'RECEIPT_EXCEEDS_TOTAL',
@@ -605,13 +656,15 @@ export class SalesDocumentService {
         prepared.record.receivedCents = existing.receivedCents;
         prepared.record.outstandingCents = calculateOutstandingCents(prepared.record.totalCents, existing.receivedCents);
         prepared.record.paymentStatus = derivePaymentStatus(prepared.record.totalCents, existing.receivedCents);
-        return this.repository.replace(database, id, prepared.record);
+        if (!this.repository.replace(database, id, prepared.record)) return undefined;
+        const saved = this.requireDetail(id);
+        this.versions?.recordSalesDocument(saved, 'update', createdBy);
+        return saved;
       });
-      if (!changed) {
+      if (!detail) {
         await this.rollbackAssets(prepared.assetBatches);
         return undefined;
       }
-      const detail = this.requireDetail(id);
       const previous = existing.items.map((item) => item.imageRelativePath).filter((path): path is string => Boolean(path));
       if (existing.companySnapshot.logoRelativePath?.startsWith('sales-document-assets/')) {
         previous.push(existing.companySnapshot.logoRelativePath);
@@ -624,30 +677,80 @@ export class SalesDocumentService {
     }
   }
 
-  updateStatus(id: number, status: unknown): SalesDocumentServiceDetail | undefined {
+  updateStatus(id: number, status: unknown, createdBy = ''): SalesDocumentServiceDetail | undefined {
+    const existing = this.repository.get(id);
+    if (!existing) return undefined;
     const normalized = normalizeDocumentStatus(status);
-    if (!this.repository.updateStatus(id, normalized, this.now())) return undefined;
-    return this.requireDetail(id);
+    if (normalized === existing.documentStatus) return this.requireDetail(id);
+    if (!DOCUMENT_STATUS_TRANSITIONS[existing.documentStatus].includes(normalized)) {
+      throw new SalesDocumentServiceError(
+        'INVALID_STATUS_TRANSITION',
+        `销售单不能从“${DOCUMENT_STATUS_LABELS[existing.documentStatus]}”改为“${DOCUMENT_STATUS_LABELS[normalized]}”`,
+        'documentStatus',
+      );
+    }
+    if (normalized === 'void') {
+      if (existing.receivedCents > 0) {
+        throw new SalesDocumentServiceError('VOID_WITH_RECEIPTS', '销售单已有收款记录，不能直接作废；请先删除或冲销收款记录', 'documentStatus');
+      }
+      if (this.repository.findGeneratedOrder(id)) {
+        throw new SalesDocumentServiceError('VOID_WITH_ORDER', '销售单已生成订单，不能直接作废；请先处理关联订单', 'documentStatus');
+      }
+    }
+    return withTransaction(this.options.database, () => {
+      if (!this.repository.updateStatus(id, normalized, this.now())) return undefined;
+      const detail = this.requireDetail(id);
+      this.versions?.recordSalesDocument(detail, 'status', createdBy);
+      return detail;
+    });
   }
 
-  async delete(id: number, confirmed = false): Promise<boolean> {
+  async delete(id: number, _confirmed = false): Promise<boolean> {
     const existing = this.repository.get(id);
     if (!existing) return false;
     if (existing.documentStatus === 'void') {
       throw new SalesDocumentServiceError('VOID_DOCUMENT_PRESERVED', '已作废销售单必须保留历史，不能删除');
     }
-    if (existing.documentStatus === 'issued' && !confirmed) {
-      throw new SalesDocumentServiceError('CONFIRMATION_REQUIRED', '已开单销售单删除前需要确认', 'confirmed');
+    if (existing.documentStatus === 'issued') {
+      throw new SalesDocumentServiceError('ISSUED_DOCUMENT_PRESERVED', '已开单销售单必须保留历史，请作废后归档，不能删除');
+    }
+    if (existing.receivedCents > 0) {
+      throw new SalesDocumentServiceError('DOCUMENT_HAS_RECEIPTS', '销售单已有收款记录，不能删除', 'confirmed');
+    }
+    if (this.repository.findGeneratedOrder(id)) {
+      throw new SalesDocumentServiceError('ORDER_ALREADY_GENERATED', '销售单已生成订单，不能删除');
     }
     const paths = this.repository.listDocumentFilePaths(id);
-    const deleted = this.repository.delete(id);
+    const deleted = withTransaction(this.options.database, () => {
+      const removed = this.repository.delete(id);
+      if (removed) this.versions?.removeAll('sales_document', id);
+      return removed;
+    });
     if (deleted) await this.deleteFiles(paths);
     return deleted;
+  }
+
+  /**
+   * 销售单生成订单时收款已一次性转入订单财务；之后销售单上的收款只作快照，
+   * 若继续允许增删改，订单台账与销售单台账会永久不一致。
+   */
+  private assertReceiptsEditable(documentId: number): void {
+    const generated = this.repository.findGeneratedOrder(documentId);
+    if (generated) {
+      throw new SalesDocumentServiceError(
+        'ORDER_ALREADY_GENERATED',
+        `该销售单已生成订单 ${generated.orderNo}，收款与退款请在订单财务中维护`,
+      );
+    }
   }
 
   addReceipt(documentId: number, input: SalesReceiptInput): SalesReceipt {
     const document = this.repository.get(documentId);
     if (!document) throw new SalesDocumentServiceError('SALES_DOCUMENT_NOT_FOUND', '销售单不存在');
+    if (document.documentStatus === 'void') {
+      throw new SalesDocumentServiceError('VOID_DOCUMENT_PRESERVED', '已作废销售单不能添加收款', 'amountCents');
+    }
+    this.assertReceiptsEditable(documentId);
     const receipt = this.normalizeReceiptInput(documentId, input);
     const id = withTransaction(this.options.database, (database) => {
       const receiptId = this.repository.insertReceipt(database, receipt);
@@ -662,6 +765,7 @@ export class SalesDocumentService {
     if (!existing) throw new SalesDocumentServiceError('RECEIPT_NOT_FOUND', '收款记录不存在');
     const document = this.repository.get(existing.salesDocumentId);
     if (!document) throw new SalesDocumentServiceError('SALES_DOCUMENT_NOT_FOUND', '销售单不存在');
+    this.assertReceiptsEditable(existing.salesDocumentId);
     const receipt = this.normalizeReceiptInput(existing.salesDocumentId, input, existing.createdAt);
     withTransaction(this.options.database, (database) => {
       this.repository.updateReceipt(database, receiptId, receipt);
@@ -675,6 +779,7 @@ export class SalesDocumentService {
     if (!existing) return false;
     const document = this.repository.get(existing.salesDocumentId);
     if (!document) return false;
+    this.assertReceiptsEditable(existing.salesDocumentId);
     const deleted = withTransaction(this.options.database, (database) => {
       const changed = this.repository.deleteReceipt(database, receiptId);
       if (changed) this.recalculatePayment(database, existing.salesDocumentId, document.totalCents, this.now());
@@ -902,6 +1007,17 @@ export class SalesDocumentService {
     };
   }
 
+  /** 销售单只保存公司名称快照；名称能唯一匹配启用公司时带出订单公司，否则交给订单默认公司逻辑。 */
+  private resolveCompanyBySnapshot(name: unknown): { id: number } | undefined {
+    // 历史销售单的公司快照可能为空对象或缺字段，不能假定 name 一定是字符串。
+    const normalized = typeof name === 'string' ? name.trim() : '';
+    if (!normalized || !this.companyRepository) return undefined;
+    const matches = this.companyRepository.list().filter((company) => (
+      company.isActive && (company.fullName.trim() === normalized || company.shortName.trim() === normalized)
+    ));
+    return matches.length === 1 ? { id: matches[0]!.id } : undefined;
+  }
+
   private resolveCustomer(customerId: number | null | undefined): { id: number; isActive: boolean } | undefined {
     if (customerId == null) return undefined;
     if (!Number.isSafeInteger(customerId) || customerId <= 0) {
@@ -1042,6 +1158,8 @@ export class SalesDocumentService {
 
   private async deleteFiles(paths: readonly string[]): Promise<void> {
     await Promise.all(paths.map(async (path) => {
+      // 历史版本快照仍引用该文件时保留，否则按版本回看会缺图/缺凭证。
+      if (this.versions?.isAssetReferenced(path)) return;
       if (path.startsWith('sales-receipt-proofs/')) {
         await this.receiptFileStore?.deleteFile(path);
       } else {

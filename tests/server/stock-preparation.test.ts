@@ -297,6 +297,39 @@ describe('备货表接口', () => {
     expect(groups[0].items[0]).toMatchObject({ displayName: '手填产品', quantity: 4, specs: [{ specification: '黑色', quantity: 4 }] });
   });
 
+  it('明细只带系统产品关联时按系统产品供应商归组', async () => {
+    const { app } = await testApp();
+    const product = await authInject(app, {
+      method: 'POST',
+      url: '/api/products',
+      payload: {
+        name: '系统角磨机',
+        specification: '100mm',
+        sku: '',
+        supplier: '德乙堡',
+        status: 'active',
+        packaging: [{ name: '彩盒', innerSize: '', innerWeight: 0, outerSize: '', outerWeight: 0, packCount: 50 }],
+      },
+    });
+    expect(product.statusCode).toBe(201);
+    const productId = Number(product.json().data.id);
+    await createOrder(app, {
+      orderedAt: '2026-09-08T08:00:00.000Z',
+      items: [{ name: '系统角磨机', productId, sku: '', specification: '100mm', quantity: 3, unitPriceCents: 1000 }],
+    });
+
+    const list = await authInject(app, { method: 'GET', url: '/api/stock/preparation?date=2026-09-08' });
+    const groups = list.json().data.groups;
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ kind: 'supplier', title: '德乙堡' });
+    expect(groups[0].items[0]).toMatchObject({
+      systemProductId: productId,
+      displayName: '系统角磨机',
+      quantity: 3,
+      specs: [{ specification: '100mm', quantity: 3 }],
+    });
+  });
+
   it('link 接口建立映射并写入报供名称，冲突时报 409', async () => {
     const { app } = await testApp();
     const { customerId } = await seedPreparationData(app);

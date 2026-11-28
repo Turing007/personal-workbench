@@ -98,7 +98,8 @@ test.describe('备货模块', () => {
       await page.getByRole('button', { name: '标记已备货' }).first().click();
       const confirmDialog = page.getByRole('dialog', { name: '标记已备货' });
       await expect(confirmDialog).toBeVisible();
-      await confirmDialog.getByRole('button', { name: '确认标记' }).click();
+      // 存在未单独确认的供应商时按钮文案为「仍然标记」，两种文案都应可完成整页标记。
+      await confirmDialog.getByRole('button', { name: /确认标记|仍然标记/ }).click();
       await expect(page.getByText(`E2E报供名${stamp}`)).toHaveCount(0);
     } finally {
       await page.request.delete(`/api/orders/${orderId}`);

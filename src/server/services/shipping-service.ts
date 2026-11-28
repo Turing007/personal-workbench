@@ -18,7 +18,9 @@ export class ShippingService {
   }
 
   eligibleOrders() {
-    return this.orderService.list({ status: 'ship_pending', page: 1, pageSize: 200 });
+    // 发货工作区历史上直接消费订单数组：列表改成分页对象后这里只取 rows，
+    // 保持 GET /api/shipping/eligible-orders 的返回结构不变（旧版手机端也依赖它）。
+    return this.orderService.list({ status: 'ship_pending', page: 1, pageSize: 200 }).rows;
   }
 
   createBatch(orderIds: number[]) {

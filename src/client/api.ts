@@ -1,4 +1,4 @@
-import type { OrderStatus } from '../shared/domain';
+import type { OrderChannel, OrderStatus } from '../shared/domain';
 import type { WorkbenchEnvironment } from '../shared/environment';
 import { calculateOrderAmountCents } from '../shared/order-prices';
 import { normalizeProductImageCategory } from '../shared/product-image-categories';
@@ -13,7 +13,18 @@ import type { PricePlanParams } from '../shared/price-calculator';
 import { mapStoredPurchaseQuotes, type ProductPurchaseQuote } from '../shared/product-purchase-quotes';
 import type { PackagingPreset } from '../shared/packaging-presets';
 import type { ProductOptionPresets } from '../shared/product-options';
-import type { StockPreparation } from '../shared/stock';
+import type {
+  StockConfirmation,
+  StockConfirmationInput,
+  StockConfirmationResult,
+  StockPreparation,
+} from '../shared/stock';
+import type { AuditLogFilters, AuditLogListResult } from '../shared/audit';
+import type {
+  DocumentVersionDetail,
+  DocumentVersionSummary,
+  DocumentVersionType,
+} from '../shared/document-versions';
 import type { PartialShipmentEntryInput, ShipmentRecord } from '../shared/shipping';
 import type { LibraryCategory, LibrarySort } from '../shared/library';
 import type {
@@ -53,6 +64,7 @@ import type {
   FinanceProofListFilters,
   FinanceProofListRow,
   FinanceReceipt,
+  FinanceRefund,
   OrderFinanceSummary,
   PayeeBreakdownRow,
   PaymentProofRecord,
@@ -554,13 +566,41 @@ export function draftToInput(draft: OrderDraft) {
   };
 }
 
-export function getOrders(params: { status?: 'all' | OrderStatus; q?: string; page?: number; pageSize?: number } = {}) {
+export type OrderListStatus = OrderStatus | 'draft';
+
+export interface OrderListStats {
+  /** 当前渠道下的状态计数（含 draft），all 为该渠道总数。 */
+  counts: Partial<Record<'all' | OrderListStatus, number>>;
+  /** 各渠道订单数，始终跨渠道统计。 */
+  channelCounts: Record<string, number>;
+  todayOrderCount: number;
+  todaySalesCents: number;
+  unassignedCompanyCount: number;
+}
+
+export function getOrders(params: {
+  status?: 'all' | OrderListStatus;
+  statuses?: readonly OrderListStatus[];
+  channel?: OrderChannel;
+  q?: string;
+  page?: number;
+  pageSize?: number;
+} = {}) {
   const query = new URLSearchParams();
   if (params.status && params.status !== 'all') query.set('status', params.status);
+  if (params.statuses?.length) query.set('statuses', params.statuses.join(','));
+  if (params.channel) query.set('channel', params.channel);
   if (params.q?.trim()) query.set('q', params.q.trim());
   query.set('page', String(params.page ?? 1));
   query.set('pageSize', String(params.pageSize ?? 50));
   return request<ListResponse<ApiOrderRow>>(`/api/orders?${query.toString()}`);
+}
+
+export function getOrderStats(params: { channel?: OrderChannel } = {}) {
+  const query = new URLSearchParams();
+  if (params.channel) query.set('channel', params.channel);
+  const suffix = query.toString();
+  return request<OrderListStats>(`/api/orders/stats${suffix ? `?${suffix}` : ''}`);
 }
 
 export function getOrderDetail(id: number | string) { return request<ApiOrderDetail>(`/api/orders/${id}/detail`); }
@@ -1078,6 +1118,22 @@ export function getStockPreparation(date: string | 'all', channel?: string) {
   return request<StockPreparation>(`/api/stock/preparation?${query.toString()}`);
 }
 
+export function getStockConfirmations(params: { date?: string; channel?: string; supplier?: string; limit?: number } = {}) {
+  const query = new URLSearchParams();
+  if (params.date) query.set('date', params.date);
+  if (params.channel) query.set('channel', params.channel);
+  if (params.supplier) query.set('supplier', params.supplier);
+  if (params.limit) query.set('limit', String(params.limit));
+  return request<StockConfirmation[]>(`/api/stock/confirmations${query.size ? `?${query.toString()}` : ''}`);
+}
+
+export function confirmSupplierStock(input: StockConfirmationInput) {
+  return request<StockConfirmationResult>('/api/stock/confirmations', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 function parseDimensionTriplet(value: string) {
   const values = value.match(/[0-9]+(?:\.[0-9]+)?/g)?.map(Number) ?? [];
   return values.length === 3 ? values : [0, 0, 0];
@@ -1236,7 +1292,7 @@ export function saveLabels(orderId: number | string, labels: unknown[]) {
 export function recordPrintHistory(orderIds: number[], labels: unknown[], actionType: 'print' | 'first-print' = 'print') { return request('/api/labels/print-history', { method: 'POST', body: JSON.stringify({ orderIds, labels, actionType }) }); }
 
 export interface ShippingBatch { id: number; batchNo: string; status: string; orderIds: number[]; text: string; }
-export function getEligibleOrders() { return request<{ rows: ApiOrderRow[] }>('/api/shipping/eligible-orders'); }
+export function getEligibleOrders() { return request<ApiOrderRow[]>('/api/shipping/eligible-orders'); }
 export function createShippingBatch(orderIds: number[]) { return request<ShippingBatch>('/api/shipping/batches', { method: 'POST', body: JSON.stringify({ orderIds }) }); }
 export function updateOrderTracking(id: number | string, trackingNo: string) { return request<{ id: number; trackingNo: string }>(`/api/orders/${id}/tracking`, { method: 'PATCH', body: JSON.stringify({ trackingNo }) }); }
 
@@ -1279,6 +1335,7 @@ export interface ApiFinanceDetail {
   profit: import('../shared/order-profit').OrderProfitSummary;
   proofs: Array<PaymentProofRecord & { url: string }>;
   receipts: FinanceReceipt[];
+  refunds: FinanceRefund[];
   invoices: Array<FinanceInvoice & { files: Array<FinanceInvoiceFile & { url: string }> }>;
 }
 
@@ -1368,7 +1425,7 @@ export interface CustomerStatement extends ReconciliationAging {
   closingCents: number;
   overdueCents: number;
   orders: Array<{ orderId: number; orderNo: string; lastShippedAt: string; dueDate: string; overdueDays: number; receivableCents: number; receivedCents: number; outstandingCents: number }>;
-  receipts: Array<{ orderId: number; orderNo: string; receivedAt: string; amountCents: number; paymentMethod: string; note: string }>;
+  receipts: Array<{ orderId: number; orderNo: string; receivedAt: string; amountCents: number; paymentMethod: string; note: string; kind?: 'receipt' | 'refund' }>;
 }
 
 export function getReconciliation() {
@@ -1394,6 +1451,19 @@ export function listFinanceOrders(params: FinanceListParams = {}) {
 
 export function getOrderFinance(orderId: number | string) {
   return request<ApiFinanceDetail>(`/api/finance/orders/${orderId}`);
+}
+
+export function listFinanceRefunds(orderId: number | string) {
+  return request<{ items: FinanceRefund[] }>(`/api/finance/orders/${orderId}/refunds`);
+}
+export function createFinanceRefund(orderId: number | string, input: { refundedAt: string; amountCents: number; paymentMethod?: string; reason?: string; note?: string }) {
+  return request<FinanceRefund>(`/api/finance/orders/${orderId}/refunds`, { method: 'POST', body: JSON.stringify(input) });
+}
+export function updateFinanceRefund(id: number, input: Record<string, unknown>) {
+  return request<FinanceRefund>(`/api/finance/refunds/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+}
+export function deleteFinanceRefund(id: number) {
+  return request<FinanceRefund>(`/api/finance/refunds/${id}`, { method: 'DELETE' });
 }
 
 export async function uploadFinanceProof(orderId: number | string, file: File, input: { paymentDate?: string; amountCents?: number; paymentMethod?: string; payerName?: string; transactionNo?: string; note?: string }) {
@@ -1585,6 +1655,30 @@ export function setSalesDocumentStatus(id: number | string, status: SalesDocumen
   return request<SalesDocumentDetail>(`/api/sales-documents/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
 }
 
+export function listDocumentVersions(type: DocumentVersionType, id: number | string) {
+  return request<DocumentVersionSummary[]>(`/api/${type === 'quotation' ? 'quotations' : 'sales-documents'}/${id}/versions`);
+}
+
+export function getDocumentVersion(type: DocumentVersionType, id: number | string, versionNo: number) {
+  return request<DocumentVersionDetail>(`/api/${type === 'quotation' ? 'quotations' : 'sales-documents'}/${id}/versions/${versionNo}`);
+}
+
+export function listQuotationVersions(id: number | string) {
+  return listDocumentVersions('quotation', id);
+}
+
+export function getQuotationVersion(id: number | string, versionNo: number) {
+  return getDocumentVersion('quotation', id, versionNo);
+}
+
+export function listSalesDocumentVersions(id: number | string) {
+  return listDocumentVersions('sales_document', id);
+}
+
+export function getSalesDocumentVersion(id: number | string, versionNo: number) {
+  return getDocumentVersion('sales_document', id, versionNo);
+}
+
 export interface GeneratedOrderResult {
   id: number;
   orderNo: string;
@@ -1720,6 +1814,17 @@ export function createManagedUser(input: { username: string; password: string; d
 
 export function updateManagedUser(id: number, patch: { displayName?: string; password?: string; role?: 'admin' | 'member'; isActive?: boolean }) {
   return request<{ user: AuthUser }>(`/api/auth/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+
+/** 操作审计日志（仅管理员可查）。 */
+export function listAuditLogs(filters: AuditLogFilters = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value === undefined || value === null || value === '') continue;
+    params.set(key, String(value));
+  }
+  const query = params.toString();
+  return request<AuditLogListResult>(`/api/audit-logs${query ? `?${query}` : ''}`);
 }
 
 export const getQuotationDetail = getQuotation;

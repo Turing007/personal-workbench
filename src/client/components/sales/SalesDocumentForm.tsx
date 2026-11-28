@@ -23,6 +23,8 @@ export interface SalesDocumentFormProps {
   customers: Customer[];
   value: SalesDocumentDraft;
   receipts: SalesReceipt[];
+  /** 已生成订单时收款只读，并显示此原因。 */
+  receiptsLockedReason?: string;
   saving?: boolean;
   onChange: (value: SalesDocumentDraft) => void;
   onSave: (value: SalesDocumentDraft) => Promise<void> | void;
@@ -137,6 +139,7 @@ export default function SalesDocumentForm({
   customers,
   value,
   receipts,
+  receiptsLockedReason,
   saving,
   onChange,
   onSave,
@@ -398,7 +401,7 @@ export default function SalesDocumentForm({
       </div>
     </section>
 
-    <ReceiptEditor documentId={value.id} receipts={receipts} disabled={value.documentStatus === 'void'} onRefresh={onRefreshReceipts} onNotify={onNotify} />
+    <ReceiptEditor documentId={value.id} receipts={receipts} disabled={value.documentStatus === 'void'} lockedReason={receiptsLockedReason} onRefresh={onRefreshReceipts} onNotify={onNotify} />
 
     <CustomerProductEditorModal open={customerProductEditorOpen} product={null} layer={40} onClose={() => setCustomerProductEditorOpen(false)} onSave={saveNewCustomerProduct} />
 

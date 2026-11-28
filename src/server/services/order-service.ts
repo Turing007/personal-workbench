@@ -125,6 +125,12 @@ export function normalizeOrderDate(value: unknown): string {
   const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   if (month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]!) throw new Error('下单时间无效');
   if (match[4] && Number.isNaN(Date.parse(input))) throw new Error('下单时间无效');
+  // 数据库只存日期（订单号、备货、统计都按自然日）。带时间的输入按北京时间折算，
+  // 否则 API 传 UTC 晚间时间会被截成前一天，而工作台按东八区统计“今天”。
+  if (match[4]) {
+    const shanghai = new Date(Date.parse(input) + 8 * 60 * 60 * 1000);
+    return shanghai.toISOString().slice(0, 10);
+  }
   return `${match[1]}-${match[2]}-${match[3]}`;
 }
 
@@ -198,11 +204,16 @@ export class OrderService {
     this.fileStore = options.fileStore;
   }
 
-  list(filters: { status?: string; channel?: string; query?: string; q?: string; page?: number; pageSize?: number } = {}) {
+  list(filters: { status?: string; statuses?: readonly string[]; channel?: string; query?: string; q?: string; page?: number; pageSize?: number } = {}) {
     return this.repositories.listOrders({
       ...filters,
       status: filters.status ? normalizeAnyOrderStatus(filters.status) : undefined,
+      statuses: filters.statuses?.map((status) => normalizeAnyOrderStatus(status)),
     });
+  }
+
+  stats(filters: { channel?: string } = {}) {
+    return this.repositories.getOrderStats(filters);
   }
 
   get(orderId: number) {
@@ -255,14 +266,20 @@ export class OrderService {
     const wasDraft = isDraftStatus(previous?.status);
     const isDraft = input.isDraft === undefined ? wasDraft : Boolean(input.isDraft);
     const previousCompanyId = previous?.company_id == null ? null : Number(previous.company_id);
+    const previousCustomerId = previous?.customer_id == null ? null : Number(previous.customer_id);
     const previousSettlementType = previous?.settlement_type === 'personal' ? 'personal' : 'corporate';
     const previousChannel = normalizeOrderChannel(previous?.channel, 'offline');
     // 旧手机端不传 companyId：沿用原公司，不能把它当成“清空公司”。
     const nextCompanyId = input.companyId === undefined ? previousCompanyId : input.companyId;
+    const nextCustomerId = input.customerId === undefined ? previousCustomerId : input.customerId;
+    const nextSettlementType = input.settlementType === undefined
+      ? previousSettlementType
+      : input.settlementType === 'personal' ? 'personal' : 'corporate';
     const nextChannel = input.channel === undefined ? previousChannel : normalizeOrderChannel(input.channel, previousChannel);
     const locks = this.repositories.getOrderFinanceLocks(orderId);
-    if (previousCompanyId !== nextCompanyId && (locks.hasReceipt || locks.hasValidInvoice)) {
-      throw new Error('已有入账水单或有效发票，不能修改收款/开票公司；请先作废相关记录');
+    const financeLocked = locks.hasReceipt || locks.hasValidInvoice || locks.hasPendingProof;
+    if (financeLocked && (previousCompanyId !== nextCompanyId || previousCustomerId !== nextCustomerId || previousSettlementType !== nextSettlementType)) {
+      throw new Error('已有入账水单、待审水单或有效发票，不能修改收款/开票公司，也不能修改客户或结算方式；请先作废相关记录');
     }
     const previousItems = Array.isArray(previous?.items) ? previous.items as Array<Record<string, unknown>> : [];
     const hasShipments = previousItems.some((item) => Number(item.shipped_quantity ?? 0) > 0)
@@ -310,8 +327,8 @@ export class OrderService {
     try {
       withCustomerProducts = await this.validateCustomerProductReferences(normalizedWithAttachments, false, new Set(previousPaths), { draft: isDraft });
       this.validateInput(withCustomerProducts, { draft: isDraft });
-      const nextSettlementType = withCustomerProducts.settlementType === 'personal' ? 'personal' : 'corporate';
-      if (locks.hasValidInvoice && nextSettlementType !== previousSettlementType) {
+      const resolvedSettlementType = withCustomerProducts.settlementType === 'personal' ? 'personal' : 'corporate';
+      if (locks.hasValidInvoice && resolvedSettlementType !== previousSettlementType) {
         throw new Error('已有有效发票，不能修改结算方式；请先作废相关发票');
       }
       const nextAmountCents = withCustomerProducts.amountCents ?? Math.round((withCustomerProducts.amount ?? 0) * 100);
@@ -485,14 +502,9 @@ export class OrderService {
       }
     }
 
-    const changed = to === 'shipped'
-      ? this.repositories.updateOrderStatusWithTracking(orderId, to, nextTrackingNo)
-      : this.repositories.updateOrderStatus(orderId, to);
+    const deductStickers = to === 'ship_pending' && options.deductStickers !== false;
+    const changed = this.repositories.transitionOrderStatus(orderId, from, to, nextTrackingNo, deductStickers);
     if (!changed) return undefined;
-    // 完成打包（进入待发货）时扣减标贴库存；回退不返还，重复打包由调用方决定是否跳过。
-    if (to === 'ship_pending' && options.deductStickers !== false) {
-      this.repositories.consumeStickersForOrder(orderId);
-    }
     return this.repositories.getOrderDetail(orderId);
   }
 

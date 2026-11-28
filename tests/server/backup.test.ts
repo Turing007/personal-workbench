@@ -60,6 +60,28 @@ function insertCustomer(database: DatabaseSync, name: string): number {
   return Number(result.lastInsertRowid);
 }
 
+/** 退款相关表用于验证备份恢复时新增列和表都能完整往返。 */
+function insertFinanceFixtures(database: DatabaseSync): void {
+  const orderId = Number(database
+    .prepare("INSERT INTO orders (order_no, ordered_at, amount_cents, status, channel, created_at, updated_at) VALUES ('DD20260808001', '2026-08-08', 10000, 'pending_stock', 'offline', '2026-08-08', '2026-08-08')")
+    .run().lastInsertRowid);
+  database
+    .prepare("INSERT INTO finance_receipts (order_id, received_at, amount_cents, payment_method, payee_name, note, created_at, updated_at) VALUES (?, '2026-08-08', 10000, '微信', '收款人甲', '全款', '2026-08-08', '2026-08-08')")
+    .run(orderId);
+  database
+    .prepare("INSERT INTO finance_refunds (order_id, refunded_at, amount_cents, payment_method, reason, note, created_by, created_at, updated_at) VALUES (?, '2026-08-09', 2000, '微信', '售后退款', '退部分款', 'tester', '2026-08-09', '2026-08-09')")
+    .run(orderId);
+  database
+    .prepare("INSERT INTO order_finance (order_id, receivable_cents, received_cents, outstanding_cents, payment_status, proof_status, invoice_status, refunded_cents, created_at, updated_at) VALUES (?, 10000, 8000, 2000, 'partial', 'none', 'not_requested', 2000, '2026-08-08', '2026-08-09')")
+    .run(orderId);
+  database
+    .prepare("INSERT INTO audit_logs (occurred_at, username, display_name, role, method, path, route, status_code, action, entity_type, entity_id, entity_label, summary, ip, detail_json) VALUES ('2026-08-09T01:00:00.000Z', 'tester', '测试员', 'admin', 'POST', '/api/finance/orders/1/refunds', '/api/finance/orders/:orderId/refunds', 201, 'finance.refund_create', 'order', '1', 'DD20260808001', '登记退款', '127.0.0.1', '{}')")
+    .run();
+  database
+    .prepare("INSERT INTO stock_confirmations (supplier, scope, channel, confirmed_at, confirmed_by, note, item_count, total_quantity, detail_json, created_at) VALUES ('供应商甲', '2026-08-08', '', '2026-08-08T09:00:00.000Z', 'tester', '', 1, 2, '{\"orders\":[],\"items\":[]}', '2026-08-08T09:00:00.000Z')")
+    .run();
+}
+
 function createService(dataDirectory: string, database: DatabaseSync): BackupService {
   return new BackupService({
     database,
@@ -86,6 +108,9 @@ function insertDocumentFixtures(database: DatabaseSync): void {
     .prepare("INSERT INTO sales_receipts (sales_document_id, received_at, amount_cents, payment_method, note, created_at, updated_at) VALUES (?, '2026-08-08', 100, '微信', '预付款', '2026-08-08', '2026-08-08')")
     .run(salesId).lastInsertRowid);
   database.prepare("INSERT INTO sales_receipt_files (receipt_id, relative_path, original_name, mime_type, size_bytes, created_at) VALUES (?, 'sales-receipt-proofs/receipt.png', 'receipt.png', 'image/png', 1, '2026-08-08')").run(receiptId);
+  database
+    .prepare("INSERT INTO document_versions (document_type, document_id, version_no, action, document_status, document_number, document_date, total_cents, snapshot_json, created_by, created_at) VALUES ('sales_document', ?, 1, 'create', 'draft', 'XS20260808001', '2026-08-08', 100, '{\"number\":\"XS20260808001\"}', 'tester', '2026-08-08')")
+    .run(salesId);
 }
 
 afterEach(async () => {
@@ -99,6 +124,7 @@ describe('backup and restore', () => {
     migrateDatabase(database);
     const productId = insertProduct(database, '原始产品');
     insertDocumentFixtures(database);
+    insertFinanceFixtures(database);
     const customerId = insertCustomer(database, '备份客户');
     database
       .prepare(
@@ -142,6 +168,12 @@ describe('backup and restore', () => {
     expect(manifest.recordCounts.sales_document_items).toBe(1);
     expect(manifest.recordCounts.sales_receipts).toBe(1);
     expect(manifest.recordCounts.sales_receipt_files).toBe(1);
+    expect(manifest.recordCounts.document_versions).toBe(1);
+    expect(manifest.recordCounts.finance_receipts).toBe(1);
+    expect(manifest.recordCounts.finance_refunds).toBe(1);
+    expect(manifest.recordCounts.order_finance).toBe(1);
+    expect(manifest.recordCounts.audit_logs).toBe(1);
+    expect(manifest.recordCounts.stock_confirmations).toBe(1);
     expect(manifest.recordCounts.supplier_catalogs).toBe(1);
     expect(manifest.recordCounts.supplier_catalog_files).toBe(1);
     expect(manifest.attachments).toEqual([
@@ -161,6 +193,17 @@ describe('backup and restore', () => {
     expect(database.prepare('SELECT COUNT(*) AS count FROM quotations').get()?.count).toBe(1);
     expect(database.prepare('SELECT COUNT(*) AS count FROM sales_documents').get()?.count).toBe(1);
     expect(database.prepare('SELECT COUNT(*) AS count FROM sales_receipt_files').get()?.count).toBe(1);
+    expect(database.prepare('SELECT document_type, action, total_cents FROM document_versions').get())
+      .toEqual({ document_type: 'sales_document', action: 'create', total_cents: 100 });
+    expect(database.prepare('SELECT COUNT(*) AS count FROM finance_receipts').get()?.count).toBe(1);
+    expect(database.prepare('SELECT refunded_at, amount_cents, reason FROM finance_refunds').get())
+      .toEqual({ refunded_at: '2026-08-09', amount_cents: 2000, reason: '售后退款' });
+    expect(database.prepare('SELECT received_cents, refunded_cents FROM order_finance').get())
+      .toEqual({ received_cents: 8000, refunded_cents: 2000 });
+    expect(database.prepare('SELECT action, summary FROM audit_logs').get())
+      .toEqual({ action: 'finance.refund_create', summary: '登记退款' });
+    expect(database.prepare('SELECT supplier, confirmed_by, total_quantity FROM stock_confirmations').get())
+      .toEqual({ supplier: '供应商甲', confirmed_by: 'tester', total_quantity: 2 });
     expect(database.prepare('SELECT COUNT(*) AS count FROM supplier_catalogs').get()?.count).toBe(1);
     expect(database.prepare('SELECT COUNT(*) AS count FROM supplier_catalog_files').get()?.count).toBe(1);
     expect(database.prepare('SELECT invoice_title, tax_no FROM customers WHERE id = ?').get(customerId))

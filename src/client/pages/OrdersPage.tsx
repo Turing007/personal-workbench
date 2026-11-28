@@ -1,4 +1,4 @@
-import { Clipboard, Package, PackageCheck, ListFilter, Paperclip, Plus, Printer, RefreshCw, Save, Trash2, Truck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clipboard, Package, PackageCheck, ListFilter, Paperclip, Plus, Printer, RefreshCw, Save, Trash2, Truck } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { autoPack } from '../../shared/packing';
 import LabelEditorModal, { type CartonLabel } from '../components/LabelEditorModal';
@@ -16,8 +16,10 @@ import StatusCards from '../components/StatusCards';
 import { ORDER_CHANNELS, ORDER_CHANNEL_LABELS, ORDER_STATUS_LABELS_WITH_DRAFT, type OrderChannel } from '../../shared/domain';
 import { getOrderNextAction, getOrderRollbackAction, isDraftOrder, isUnshippedOrder, type BatchAdvanceAction, type OrderNextAction } from '../order-workflow';
 import { FINANCE_PAYMENT_STATUS_LABELS, isOrderPaymentCleared, type FinancePaymentStatus } from '../../shared/finance';
-import { getOrderFinance, type ApiFinanceDetail } from '../api';
+import { getOrderFinance, type ApiFinanceDetail, type OrderListStats } from '../api';
+import { pageWindow, totalPages } from '../pagination';
 import PaymentProofEditor, { type PaymentProofEditorHandle } from '../components/finance/PaymentProofEditor';
+import RefundEditor from '../components/finance/RefundEditor';
 import { OrderCostEditor, OrderItemCostEditor, OrderProfitSummaryCard } from '../components/orders/OrderProfitEditor';
 import { badgeClass, errorText, money } from '../components/finance/finance-format';
 import { calculateOrderProfit } from '../../shared/order-profit';
@@ -31,11 +33,28 @@ import { useIsNarrow } from '../use-is-narrow';
 import { useHideOnScroll } from '../use-hide-on-scroll';
 import { copyText } from '../copy-text';
 
+/** 服务端订单列表的筛选与分页状态；由 App 持有，筛选变更后重新请求。 */
+export interface OrdersListQuery {
+  channel: OrderChannel;
+  statuses: OrderStatus[];
+  q: string;
+  page: number;
+  pageSize: number;
+}
+
 export interface OrdersPageProps {
   orders: OrderDraft[];
+  ordersQuery: OrdersListQuery;
+  /** 服务端筛选后的总条数（不是当前页条数）。 */
+  ordersTotal?: number;
+  ordersLoading?: boolean;
+  /** 当前渠道的状态计数与渠道徽标；服务端统计，避免分页后数字失真。 */
+  orderStats?: OrderListStats;
+  onOrdersQueryChange: (patch: Partial<OrdersListQuery>) => void;
+  /** 深链打开不在当前页的订单时按 ID 拉取详情。 */
+  fetchOrderById?: (id: number | string) => Promise<OrderDraft | undefined>;
   customers: Customer[];
   companies?: Company[];
-  statusCounts?: Partial<Record<'all' | OrderStatus, number>>;
   labelsByOrderId?: Record<string, CartonLabel[]>;
   initialOrderId?: number | null;
   /** 工作台跳转：直接设置状态筛选并打开新建订单。 */
@@ -234,20 +253,24 @@ export function fallbackLabels(order: OrderDraft): CartonLabel[] {
 
 const ORDERS_CHANNEL_STORAGE_KEY = 'workbench:orders-channel';
 
-export default function OrdersPage({ orders, customers, companies = [], labelsByOrderId, initialOrderId, initialStatus, onInitialStatusConsumed, initialChannel, onInitialChannelConsumed, startCreate, onStartCreateConsumed, onSaveOrder, onSaveDraft, onDeleteOrder, onSaveCustomerProduct, onCreateCustomer, onGetNextOrderNumber, onDeleteContract, onGenerateContract, onAdvanceStatus, onRollbackStatus, onBatchAdvance, onPublishOrder, onSaveTracking, onConfirmShipping, onOpenFinance, onSaveLabels, onMergeLabels, onRestoreAutoLabels, onPrintHistory, onRefreshOrders, onNotify }: OrdersPageProps) {
-  const [activeChannel, setActiveChannel] = useState<OrderChannel>(() => {
-    try {
-      const saved = localStorage.getItem(ORDERS_CHANNEL_STORAGE_KEY);
-      return saved === 'online' || saved === 'offline' ? saved : 'online';
-    } catch { return 'online'; }
-  });
+export default function OrdersPage({ orders, ordersQuery, ordersTotal = 0, ordersLoading = false, orderStats, onOrdersQueryChange, fetchOrderById, customers, companies = [], labelsByOrderId, initialOrderId, initialStatus, onInitialStatusConsumed, initialChannel, onInitialChannelConsumed, startCreate, onStartCreateConsumed, onSaveOrder, onSaveDraft, onDeleteOrder, onSaveCustomerProduct, onCreateCustomer, onGetNextOrderNumber, onDeleteContract, onGenerateContract, onAdvanceStatus, onRollbackStatus, onBatchAdvance, onPublishOrder, onSaveTracking, onConfirmShipping, onOpenFinance, onSaveLabels, onMergeLabels, onRestoreAutoLabels, onPrintHistory, onRefreshOrders, onNotify }: OrdersPageProps) {
+  const activeChannel = ordersQuery.channel;
+  const statusFilters = ordersQuery.statuses;
   const selectChannel = (channel: OrderChannel) => {
-    setActiveChannel(channel);
     setSelectedIds([]);
     try { localStorage.setItem(ORDERS_CHANNEL_STORAGE_KEY, channel); } catch { /* localStorage 不可用时仅当前页生效 */ }
+    onOrdersQueryChange({ channel, page: 1 });
   };
-  const [statusFilters, setStatusFilters] = useState<OrderStatus[]>([]);
-  const [query, setQuery] = useState('');
+  /** 搜索框即时输入，去抖后交给服务端查询，避免每敲一个字都发请求。 */
+  const [queryInput, setQueryInput] = useState(ordersQuery.q);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const next = queryInput.trim();
+      if (next !== ordersQuery.q) onOrdersQueryChange({ q: next, page: 1 });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [queryInput, ordersQuery.q, onOrdersQueryChange]);
+  useEffect(() => { setQueryInput(ordersQuery.q); }, [ordersQuery.q]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [detailOrder, setDetailOrder] = useState<OrderDraft>();
   const [productsOrder, setProductsOrder] = useState<OrderDraft>();
@@ -272,11 +295,15 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
   const [shippingQuantities, setShippingQuantities] = useState<Record<string, Record<string, number>>>({});
   const [shippingSheetOpen, setShippingSheetOpen] = useState(false);
   const consumedInitialOrderId = useRef<number | null>(null);
+  /** 深链订单正在按 ID 拉取时记住 ID，避免列表刷新导致 effect 重入并重复请求。 */
+  const fetchingInitialOrderId = useRef<number | null>(null);
   useEffect(() => {
     if (!initialStatus) return;
-    setStatusFilters([initialStatus]);
+    // 工作台入口已在 App 里把查询切到该状态；这里只在真正不一致时补一次，避免重复请求。
+    const alreadyApplied = statusFilters.length === 1 && statusFilters[0] === initialStatus;
+    if (!alreadyApplied) onOrdersQueryChange({ statuses: [initialStatus], page: 1 });
     onInitialStatusConsumed?.();
-  }, [initialStatus, onInitialStatusConsumed]);
+  }, [initialStatus, onInitialStatusConsumed, onOrdersQueryChange, statusFilters]);
   useEffect(() => {
     if (!startCreate) return;
     setCreating(true);
@@ -304,11 +331,13 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
 
   useEffect(() => {
     if (!initialChannel) return;
-    setActiveChannel(initialChannel);
-    setSelectedIds([]);
     try { localStorage.setItem(ORDERS_CHANNEL_STORAGE_KEY, initialChannel); } catch { /* ignore */ }
+    if (initialChannel !== activeChannel) {
+      setSelectedIds([]);
+      onOrdersQueryChange({ channel: initialChannel, page: 1 });
+    }
     onInitialChannelConsumed?.();
-  }, [initialChannel, onInitialChannelConsumed]);
+  }, [initialChannel, onInitialChannelConsumed, onOrdersQueryChange, activeChannel]);
 
   useEffect(() => {
     if (initialOrderId == null || consumedInitialOrderId.current === initialOrderId) return;
@@ -317,31 +346,33 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
       consumedInitialOrderId.current = initialOrderId;
       selectChannel(order.channel ?? 'offline');
       setDetailOrder(order);
+      return;
     }
-  }, [initialOrderId, orders]);
-
-  const channelOrders = useMemo(() => orders.filter((order) => (order.channel ?? 'offline') === activeChannel), [orders, activeChannel]);
-  const channelCounts = useMemo(() => ({
-    online: orders.filter((order) => (order.channel ?? 'offline') === 'online').length,
-    offline: orders.filter((order) => (order.channel ?? 'offline') === 'offline').length,
-  }), [orders]);
-  const counts = useMemo(() => {
-    const next: Partial<Record<'all' | OrderStatus, number>> = { all: channelOrders.length };
-    channelOrders.forEach((order) => { if (order.status) next[order.status] = (next[order.status] ?? 0) + 1; });
-    return next;
-  }, [channelOrders]);
-
-  const visibleOrders = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return channelOrders.filter((order) => {
-      const matchesStatus = !statusFilters.length || (order.status != null && statusFilters.includes(order.status));
-      const searchable = [order.orderNo, order.customerName, order.recipientName, ...order.items.flatMap((item) => [item.name, item.sku, item.specification])].join(' ').toLowerCase();
-      return matchesStatus && (!needle || searchable.includes(needle));
+    // 列表已改成服务端分页：目标订单可能不在当前页/当前渠道，按 ID 直接取详情。
+    // 注意不要在 effect 清理时取消请求：列表刷新会让 effect 重跑，取消后就会被 consumed 拦住而永远打不开。
+    if (!fetchOrderById || fetchingInitialOrderId.current === initialOrderId) return;
+    fetchingInitialOrderId.current = initialOrderId;
+    void fetchOrderById(initialOrderId).then((fetched) => {
+      if (fetchingInitialOrderId.current === initialOrderId) fetchingInitialOrderId.current = null;
+      if (!fetched) return;
+      consumedInitialOrderId.current = initialOrderId;
+      selectChannel(fetched.channel ?? 'offline');
+      setDetailOrder(fetched);
     });
-  }, [statusFilters, channelOrders, query]);
+  }, [initialOrderId, orders, fetchOrderById]);
+
+  // 列表、状态数、渠道数都来自服务端，当前页不再做二次过滤。
+  // 发货中表格允许直接填物流单号/确认发货，切换查询后新结果返回前不能拿旧页数据渲染：
+  // 此时仍按订单状态再过滤一次，避免把「上一筛选」的订单误当成发货中订单操作。
+  const counts: Partial<Record<'all' | OrderStatus, number>> = orderStats?.counts ?? {};
+  const channelCounts: Record<string, number> = orderStats?.channelCounts ?? {};
+  const orderPageCount = totalPages(ordersTotal, ordersQuery.pageSize);
+  const orderRangeStart = ordersTotal === 0 ? 0 : (ordersQuery.page - 1) * ordersQuery.pageSize + 1;
+  const orderRangeEnd = Math.min(ordersTotal, ordersQuery.page * ordersQuery.pageSize);
   const activeStatusKey = statusFilters.length === 1 ? statusFilters[0] : 'all';
   const showCreateOrder = activeStatusKey === 'all' || activeStatusKey === 'draft';
   const shippingViewActive = activeStatusKey === 'shipping';
+  const visibleOrders = shippingViewActive ? orders.filter((order) => order.status === 'shipping') : orders;
   useEffect(() => {
     if (shippingViewActive) setSelectedIds([]);
   }, [shippingViewActive]);
@@ -349,6 +380,12 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
     setSelectedShippingKeys([]);
     setShippingSheetOpen(false);
   }, [shippingViewActive, activeChannel]);
+  // 服务端分页下跨页的选中项不可见也不能操作，翻页/换筛选时清空，避免“已选 N 条”对不上当前页。
+  useEffect(() => {
+    setSelectedIds([]);
+    setSelectedShippingKeys([]);
+    setShippingSheetOpen(false);
+  }, [ordersQuery.page, ordersQuery.q, ordersQuery.statuses, activeChannel]);
 
   const selectedShippingOrders = useMemo(
     () => visibleOrders.filter((order) => selectedShippingKeys.includes(orderKey(order))),
@@ -496,7 +533,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
   const openShippingView = () => {
     setDetailOrder(undefined);
     setSelectedIds([]);
-    setStatusFilters(['shipping']);
+    onOrdersQueryChange({ statuses: ['shipping'], page: 1 });
   };
 
   // 手机卡片把状态胶囊本身做成「一键推进」按钮：胶囊上直接写着下一步动作，点一下完成本步。
@@ -572,14 +609,14 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
 
   return <div className={`page-shell orders-page${(shippingViewActive ? selectedShippingOrders.length : selectedOrders.length) > 0 ? ' has-bulk-bar' : ''}`}>
     <div className="orders-channel-tabs" role="tablist" aria-label="订单渠道">
-      {ORDER_CHANNELS.map((channel) => <button key={channel} type="button" role="tab" aria-selected={activeChannel === channel} className={activeChannel === channel ? 'is-active' : undefined} onClick={() => selectChannel(channel)}>{ORDER_CHANNEL_LABELS[channel]}订单<b>{channelCounts[channel]}</b></button>)}
+      {ORDER_CHANNELS.map((channel) => <button key={channel} type="button" role="tab" aria-selected={activeChannel === channel} className={activeChannel === channel ? 'is-active' : undefined} onClick={() => selectChannel(channel)}>{ORDER_CHANNEL_LABELS[channel]}订单<b>{channelCounts[channel] ?? 0}</b></button>)}
     </div>
     <section className="table-panel orders-panel">
       <div className="page-toolbar table-toolbar orders-table-toolbar">
-        <OrdersSearchBar value={query} onChange={setQuery} />
-        <StatusCards activeKey={activeStatusKey} counts={counts} onSelect={(key) => setStatusFilters(key === 'all' ? [] : [key])} />
+        <OrdersSearchBar value={queryInput} onChange={setQueryInput} />
+        <StatusCards activeKey={activeStatusKey} counts={counts} onSelect={(key) => onOrdersQueryChange({ statuses: key === 'all' ? [] : [key], page: 1 })} />
         <OrderRefreshButton className="orders-refresh-desktop" refreshing={refreshingOrders} disabled={!onRefreshOrders} onClick={() => { void refreshOrderList(); }} />
-        <span className="toolbar-count"><ListFilter size={14} />{visibleOrders.length} 条订单</span>
+        <span className="toolbar-count"><ListFilter size={14} />{ordersLoading ? '加载中…' : `${ordersTotal} 条订单`}</span>
         <OrderRefreshButton className="orders-refresh-inline" refreshing={refreshingOrders} disabled={!onRefreshOrders} onClick={() => { void refreshOrderList(); }} />
         {showCreateOrder && <button type="button" className="button button-primary orders-create-button" onClick={() => setCreating(true)}><Plus size={15} />新建订单</button>}
       </div>
@@ -612,7 +649,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
             onNotify={onNotify}
           />)}</tbody>
         </table>
-        {!visibleOrders.length && <div className="table-state">暂无符合条件的发货中订单</div>}
+        {!visibleOrders.length && <div className="table-state">{ordersLoading ? '正在加载订单…' : '暂无符合条件的发货中订单'}</div>}
       </div>
       <div className="orders-card-list orders-shipping-mobile-list" aria-label="发货中订单">
         {visibleOrders.map((order) => <ShippingOrderMobileCard
@@ -630,7 +667,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
           onRefresh={onRefreshOrders}
           onNotify={onNotify}
         />)}
-        {!visibleOrders.length && <div className="table-state">暂无符合条件的发货中订单</div>}
+        {!visibleOrders.length && <div className="table-state">{ordersLoading ? '正在加载订单…' : '暂无符合条件的发货中订单'}</div>}
       </div>
       {selectedShippingOrders.length > 0 && <div className="orders-bulk-bar orders-shipping-bulk-bar" role="region" aria-label="发货表批量操作">
         <span className="badge badge-accent">已选 {selectedShippingOrders.length} 单</span>
@@ -678,7 +715,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
               </tr>;
           })}</tbody>
         </table>
-        {!visibleOrders.length && <div className="table-state">暂无符合条件的订单</div>}
+        {!visibleOrders.length && <div className="table-state">{ordersLoading ? '正在加载订单…' : '暂无符合条件的订单'}</div>}
       </div>
       <div className="orders-card-list" aria-label="订单卡片列表">{visibleOrders.map((order) => {
         const boxCount = orderBoxCount(order);
@@ -722,7 +759,7 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
           </div>
           {renderOrderActions(order, { hideNextAction: true })}
         </article>;
-      })}{!visibleOrders.length && <div className="table-state">暂无符合条件的订单</div>}</div>
+      })}{!visibleOrders.length && <div className="table-state">{ordersLoading ? '正在加载订单…' : '暂无符合条件的订单'}</div>}</div>
       {selectedOrders.length > 0 && <div className="orders-bulk-bar" role="region" aria-label="批量操作">
         <span className="badge badge-accent">已选 {selectedOrders.length} 条</span>
         <button type="button" className="button button-secondary button-sm" title="将所选待备货订单标记为已备货" onClick={() => onBatchAdvance?.(selectedOrders, 'stock')}><PackageCheck size={14} />一键备货</button>
@@ -732,6 +769,17 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
         <button type="button" className="button button-ghost button-sm" onClick={() => setSelectedIds([])}>取消选择</button>
       </div>}
       </>}
+      {ordersTotal > 0 && <div className="orders-pagination">
+        <span>第 {orderRangeStart}-{orderRangeEnd} 条 · 共 {ordersTotal} 条</span>
+        <div className="orders-pagination-controls">
+          <button className="icon-button orders-page-step" type="button" aria-label="上一页" title="上一页" disabled={ordersQuery.page <= 1 || ordersLoading} onClick={() => onOrdersQueryChange({ page: ordersQuery.page - 1 })}><ChevronLeft size={14} /></button>
+          {pageWindow(ordersQuery.page, orderPageCount).map((entry, index) => entry === 'gap'
+            ? <span className="orders-page-gap" key={`gap-${index}`}>…</span>
+            : <button className={entry === ordersQuery.page ? 'orders-page-button is-current' : 'orders-page-button'} key={entry} type="button" aria-current={entry === ordersQuery.page ? 'page' : undefined} disabled={ordersLoading} onClick={() => onOrdersQueryChange({ page: entry })}>{entry}</button>)}
+          <button className="icon-button orders-page-step" type="button" aria-label="下一页" title="下一页" disabled={ordersQuery.page >= orderPageCount || ordersLoading} onClick={() => onOrdersQueryChange({ page: ordersQuery.page + 1 })}><ChevronRight size={14} /></button>
+          <span className="orders-pagination-page">第 {ordersQuery.page} / {orderPageCount} 页</span>
+        </div>
+      </div>}
     </section>
 
     <Modal open={creating || Boolean(editingOrder)} title={editingOrder ? `编辑订单 · ${editingOrder.orderNo}` : '新建订单'} onClose={() => { setCreating(false); setEditingOrder(undefined); }} width={1040}><OrderForm key={editingOrder?.id ?? (creating ? `new-${activeChannel}` : 'closed')} value={editingOrder} defaultChannel={activeChannel} customers={customers} companies={companies} onSaveCustomerProduct={onSaveCustomerProduct} onCreateCustomer={onCreateCustomer} onGetNextOrderNumber={onGetNextOrderNumber} onSubmit={(order) => { onSaveOrder(order); setCreating(false); setEditingOrder(undefined); }} onSaveDraft={onSaveDraft ? (order) => { onSaveDraft(order); setCreating(false); setEditingOrder(undefined); } : undefined} onCancel={() => { setCreating(false); setEditingOrder(undefined); }} /></Modal>
@@ -803,12 +851,13 @@ export default function OrdersPage({ orders, customers, companies = [], labelsBy
       {financeDetail && <div className="finance-detail">
         <div className="finance-detail-summary">
           <div><span>应收金额</span><strong>{money(financeDetail.finance.receivableCents)}</strong></div>
-          <div><span>已收金额</span><strong className="finance-positive">{money(financeDetail.finance.receivedCents)}</strong></div>
-          <div><span>未收金额</span><strong className={financeDetail.finance.outstandingCents > 0 ? 'finance-warning' : 'finance-positive'}>{money(financeDetail.finance.outstandingCents)}</strong></div>
+          <div><span>已收金额</span><strong className="finance-positive">{money(financeDetail.finance.receivedCents)}</strong>{financeDetail.finance.refundedCents > 0 && <small>已退 {money(financeDetail.finance.refundedCents)}</small>}</div>
+          <div><span>{financeDetail.finance.overpaidCents > 0 ? '超收金额' : '未收金额'}</span><strong className={financeDetail.finance.outstandingCents > 0 || financeDetail.finance.overpaidCents > 0 ? 'finance-warning' : 'finance-positive'}>{money(financeDetail.finance.overpaidCents > 0 ? financeDetail.finance.overpaidCents : financeDetail.finance.outstandingCents)}</strong>{financeDetail.finance.overpaidCents > 0 && <small>客户多付，可在下方退款</small>}</div>
           <div><span>付款状态</span><b className={badgeClass(financeDetail.finance.paymentStatus)}>{FINANCE_PAYMENT_STATUS_LABELS[financeDetail.finance.paymentStatus]}</b></div>
         </div>
         {!isOrderPaymentCleared(financeDetail.finance.receivableCents, financeDetail.finance.receivedCents) && <div className="notice notice-warning">该订单尚未收齐全额货款；上传水单并审核通过后才能确认发货。</div>}
         <PaymentProofEditor ref={financeEditorRef} mode="order-modal" detail={financeDetail} onRefresh={refreshFinance} onNotify={onNotify} />
+        <RefundEditor detail={financeDetail} onRefresh={refreshFinance} onNotify={onNotify} />
         <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: 11 }}>发票编辑请从订单详情的“打开财务详情”进入财务页。</p>
       </div>}
     </Modal>

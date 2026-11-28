@@ -17,7 +17,7 @@ import type { ProductRecord } from './components/ProductEditor';
 import type { Customer } from '../shared/customers';
 import { normalizePaymentPolicy } from '../shared/payment-policy';
 import type { Company } from '../shared/companies';
-import OrdersPage, { fallbackLabels } from './pages/OrdersPage';
+import OrdersPage, { fallbackLabels, type OrdersListQuery } from './pages/OrdersPage';
 import { getBatchAdvancePlan, getOrderRollbackAction, type BatchAdvanceAction } from './order-workflow';
 import ProductsPage from './pages/ProductsPage';
 import CatalogPage from './pages/CatalogPage';
@@ -45,6 +45,7 @@ import {
   getOrderDetail,
   getNextOrderNumber,
   getOrders,
+  getOrderStats,
   getProducts,
   getProduct,
   mergeLabels,
@@ -74,7 +75,7 @@ import {
   updateOrderTracking,
   confirmPartialShipments,
 } from './api';
-import type { ApiOrderDetail, ApiOrderRow, AuthUser } from './api';
+import type { ApiOrderDetail, ApiOrderRow, AuthUser, OrderListStats } from './api';
 import type { PaymentProofStatus } from '../shared/finance';
 import { normalizeOrderChannel, type OrderChannel } from '../shared/domain';
 import type { PartialShipmentEntryInput } from '../shared/shipping';
@@ -134,6 +135,8 @@ function mapOrderDetail(row: ApiOrderDetail | ApiOrderRow): OrderDraft {
         receivableCents: Math.max(0, Math.trunc(asNumber(rawFinance.receivableCents ?? rawFinance.receivable_cents))),
         receivedCents: Math.max(0, Math.trunc(asNumber(rawFinance.receivedCents ?? rawFinance.received_cents))),
         outstandingCents: Math.trunc(asNumber(rawFinance.outstandingCents ?? rawFinance.outstanding_cents)),
+        refundedCents: Math.max(0, Math.trunc(asNumber(rawFinance.refundedCents ?? rawFinance.refunded_cents))),
+        overpaidCents: Math.max(0, Math.trunc(asNumber(rawFinance.overpaidCents ?? rawFinance.overpaid_cents))),
         paymentStatus: String(rawFinance.paymentStatus ?? rawFinance.payment_status ?? 'unpaid'),
         proofStatus: String(rawFinance.proofStatus ?? rawFinance.proof_status ?? 'none'),
         invoiceStatus: String(rawFinance.invoiceStatus ?? rawFinance.invoice_status ?? 'not_requested'),
@@ -174,6 +177,19 @@ function initialActiveNav(): NavigationKey {
   return 'dashboard';
 }
 
+const ORDERS_CHANNEL_STORAGE_KEY = 'workbench:orders-channel';
+/** 订单列表走服务端分页：每页条数小一些，详情按页批量取。 */
+const ORDERS_PAGE_SIZE = 30;
+
+function initialOrdersQuery(): OrdersListQuery {
+  let channel: OrderChannel = 'online';
+  try {
+    const saved = window.localStorage.getItem(ORDERS_CHANNEL_STORAGE_KEY);
+    if (saved === 'online' || saved === 'offline') channel = saved;
+  } catch { /* localStorage 不可用时默认线上 */ }
+  return { channel, statuses: [], q: '', page: 1, pageSize: ORDERS_PAGE_SIZE };
+}
+
 interface WorkbenchProps {
   user: AuthUser;
   onLogout: () => void;
@@ -183,6 +199,15 @@ interface WorkbenchProps {
 function Workbench({ user, onLogout }: WorkbenchProps) {
   const [active, setActive] = useState<NavigationKey>(initialActiveNav);
   const [orders, setOrders] = useState<OrderDraft[]>([]);
+  /** 订单列表查询条件（渠道/状态/搜索/页码）由 App 持有，OrdersPage 只负责展示与发起变更。 */
+  const [ordersQuery, setOrdersQuery] = useState<OrdersListQuery>(initialOrdersQuery);
+  const ordersQueryRef = useRef(ordersQuery);
+  const ordersLoadSeq = useRef(0);
+  /** 从工作台入口进入订单页时已按入口条件加载过，避免挂载后重复请求。 */
+  const ordersEntryLoadedRef = useRef(false);
+  const [ordersLoading, setOrdersLoading] = useState(true);
+  const [ordersTotal, setOrdersTotal] = useState(0);
+  const [orderStats, setOrderStats] = useState<OrderListStats>();
   const [products, setProducts] = useState<ProductRecord[]>([]);
   const [productSaving, setProductSaving] = useState(false);
   const productSaveTask = useRef<Promise<void> | null>(null);
@@ -366,30 +391,109 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
   const loadCompanies = useCallback(async () => {
     try { setCompanies((await listCompanies(true)).items); } catch (error) { notify((error as { message?: string }).message ?? '公司档案加载失败', 'error'); }
   }, [notify]);
-  const loadOrders = useCallback(async () => {
-    setLoading(true);
+  const loadOrders = useCallback(async (patch: Partial<OrdersListQuery> = {}) => {
+    const query = { ...ordersQueryRef.current, ...patch };
+    ordersQueryRef.current = query;
+    setOrdersQuery(query);
+    const seq = ++ordersLoadSeq.current;
+    setOrdersLoading(true);
     try {
-      const result = await getOrders({ pageSize: 200 });
+      let [result, stats] = await Promise.all([
+        getOrders({ channel: query.channel, statuses: query.statuses, q: query.q, page: query.page, pageSize: query.pageSize }),
+        // 统计失败不影响列表本身：徽标/状态数保持上一次的值即可。
+        getOrderStats({ channel: query.channel }).catch(() => undefined),
+      ]);
+      if (seq !== ordersLoadSeq.current) return;
+      // 删除/筛选后页码可能越界：回到最后一页重新取，避免停在空白页。
+      if (!result.rows.length && result.total > 0 && query.page > 1) {
+        const lastPage = Math.max(1, Math.ceil(result.total / query.pageSize));
+        if (lastPage !== query.page) {
+          const lastQuery = { ...query, page: lastPage };
+          ordersQueryRef.current = lastQuery;
+          setOrdersQuery(lastQuery);
+          [result, stats] = await Promise.all([
+            getOrders({ channel: lastQuery.channel, statuses: lastQuery.statuses, q: lastQuery.q, page: lastQuery.page, pageSize: lastQuery.pageSize }),
+            getOrderStats({ channel: lastQuery.channel }).catch(() => undefined),
+          ]);
+          if (seq !== ordersLoadSeq.current) return;
+        }
+      }
+      // 列表行不含明细与财务汇总，按当前页补详情；失败时退回列表行，至少保证列表可见。
       const details = await Promise.all(result.rows.map((row) => getOrderDetail(row.id).catch(() => row)));
+      if (seq !== ordersLoadSeq.current) return;
       const mapped = details.map((row) => mapOrderDetail(row as ApiOrderDetail | ApiOrderRow));
       setOrders(mapped);
+      setOrdersTotal(result.total);
+      if (stats) setOrderStats(stats);
       setLabelsByOrderId((current) => {
         const next = { ...current };
-        details.forEach((row) => {
-          const mappedOrder = mapOrderDetail(row as ApiOrderDetail | ApiOrderRow);
+        details.forEach((row, index) => {
           const rawLabels = Array.isArray((row as ApiOrderDetail).labels) ? (row as ApiOrderDetail).labels : [];
-          if (rawLabels.length) next[orderKey(mappedOrder)] = rawLabels.map((label) => labelFromApi(label as Record<string, unknown>, mappedOrder));
+          if (rawLabels.length) next[orderKey(mapped[index])] = rawLabels.map((label) => labelFromApi(label as Record<string, unknown>, mapped[index]));
         });
         return next;
       });
-    } catch (error) { notify((error as { message?: string }).message ?? '订单加载失败', 'error'); }
-    finally { setLoading(false); }
+    } catch (error) {
+      // 已被更新请求取代的旧请求失败时不再打扰用户（典型：进入订单页会连续触发几次查询）。
+      if (seq !== ordersLoadSeq.current) return;
+      notify((error as { message?: string }).message ?? '订单加载失败', 'error');
+    }
+    finally { if (seq === ordersLoadSeq.current) setOrdersLoading(false); }
   }, [notify]);
+
+  /** 深链/打印记录用：按 ID 取单条订单详情，不依赖当前分页。 */
+  const fetchOrderById = useCallback(async (id: number | string): Promise<OrderDraft | undefined> => {
+    try {
+      const raw = await getOrderDetail(id);
+      const order = mapOrderDetail(raw);
+      // 深链订单可能不在当前页，loadOrders 不会为它补箱唛。这里顺手写入 labelsByOrderId，
+      // 否则「打印箱唛 / 编辑箱唛」会退回自动装箱结果，保存时覆盖服务端的手工箱唛。
+      const rawLabels = Array.isArray(raw.labels) ? raw.labels : [];
+      if (rawLabels.length) {
+        setLabelsByOrderId((current) => ({
+          ...current,
+          [orderKey(order)]: rawLabels.map((label) => labelFromApi(label, order)),
+        }));
+      }
+      return order;
+    } catch { return undefined; }
+  }, []);
+
+  const changeOrdersQuery = useCallback((patch: Partial<OrdersListQuery>) => { void loadOrders(patch); }, [loadOrders]);
+
+  /**
+   * 从工作台进入订单页：先清掉上次的状态/搜索/页码（「全部订单」必须回到全量），
+   * 并在同一批里按入口条件发起查询；OrdersPage 挂载后不会再重复请求。
+   */
+  const openOrdersPage = useCallback((status?: OrderStatus, channel?: OrderChannel) => {
+    setOrdersInitialStatus(status);
+    setOrdersInitialChannel(channel);
+    ordersEntryLoadedRef.current = true;
+    void loadOrders({
+      statuses: status ? [status] : [],
+      q: '',
+      page: 1,
+      ...(channel ? { channel } : {}),
+    });
+    navigate('orders');
+  }, [loadOrders, navigate]);
 
   useEffect(() => {
     // Workbench 只在 AuthGate 就绪后挂载，这里可以放心加载数据。
-    void Promise.all([loadProducts(), loadCustomers(), loadCompanies(), loadOrders(), loadCompanyProfile()]);
-  }, [loadProducts, loadCustomers, loadCompanies, loadOrders, loadCompanyProfile]);
+    // 订单列表改为进入订单页时按需加载，工作台统计走 /api/orders/stats，不再启动即拉全量。
+    void Promise.all([loadProducts(), loadCustomers(), loadCompanies(), loadCompanyProfile()])
+      .finally(() => setLoading(false));
+  }, [loadProducts, loadCustomers, loadCompanies, loadCompanyProfile]);
+
+  useEffect(() => {
+    if (active !== 'orders') return;
+    // 工作台入口已在 openOrdersPage 里带条件加载过，跳过这次重复刷新。
+    if (ordersEntryLoadedRef.current) {
+      ordersEntryLoadedRef.current = false;
+      return;
+    }
+    void loadOrders();
+  }, [active, loadOrders]);
 
   const toggleProductSaleStatus = async (product: ProductRecord, next: 'active' | 'discontinued') => {
     try {
@@ -804,11 +908,13 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
     try {
       const orderIds = [...new Set(labels.map((label) => Number(label.orderId)).filter((id) => Number.isSafeInteger(id)))];
       const persistedLabelsByOrder = await Promise.all(orderIds.map(async (orderId) => {
-        const order = orders.find((entry) => Number(entry.id) === orderId);
+        let order = orders.find((entry) => Number(entry.id) === orderId);
         const orderLabels = labels.filter((label) => Number(label.orderId) === orderId);
         if (!orderLabels.length) return [];
         const hasPersistedLabels = orderLabels.every((label) => /^\d+$/.test(label.id));
-        // 订单不在当前分页数据里时无法先持久化箱唛，仍需原样上报，由服务端按提交内容记录。
+        // 列表改成服务端分页后，订单可能不在当前页：按 ID 取一次详情再持久化箱唛。
+        if (!hasPersistedLabels && !order) order = await fetchOrderById(orderId);
+        // 仍然取不到时无法先持久化箱唛，仍需原样上报，由服务端按提交内容记录。
         if (hasPersistedLabels || !order) return orderLabels;
         return await saveOrderLabels(order, orderLabels);
       }));
@@ -898,13 +1004,13 @@ function Workbench({ user, onLogout }: WorkbenchProps) {
         <button type="button" className="button button-secondary" onClick={() => void productUploadQueue.retryFailures()}>重试</button>
       </span>
     </div>}
-    {active === 'dashboard' && <DashboardPage orders={orders} onOpenOrders={(status, channel) => { setOrdersInitialStatus(status); setOrdersInitialChannel(channel); navigate('orders'); }} onOpenFinance={(channel) => { setFinanceInitialChannel(channel); navigate('finance'); }} onOpenWaterSlips={(status, channel) => { setWaterInitialStatus(status); setWaterInitialChannel(channel); navigate('water-slips'); }} onNewOrder={(channel) => { setOrdersInitialChannel(channel); setOrdersStartCreate(true); navigate('orders'); }} onNewQuotation={() => { setQuotationStartCreate(true); navigate('quotations'); }} onNewProduct={() => { setProductStartCreate(true); navigate('products'); }} onRefresh={loadOrders} />}
+    {active === 'dashboard' && <DashboardPage onOpenOrders={openOrdersPage} onOpenFinance={(channel) => { setFinanceInitialChannel(channel); navigate('finance'); }} onOpenWaterSlips={(status, channel) => { setWaterInitialStatus(status); setWaterInitialChannel(channel); navigate('water-slips'); }} onNewOrder={(channel) => { setOrdersStartCreate(true); openOrdersPage(undefined, channel); }} onNewQuotation={() => { setQuotationStartCreate(true); navigate('quotations'); }} onNewProduct={() => { setProductStartCreate(true); navigate('products'); }} />}
     {active === 'finance' && <FinancePage onNotify={notify} initialOrderId={financeInitialOrderId} initialChannel={financeInitialChannel} returnOrderId={financeReturnOrderId} customers={customers} companies={companies} onCompaniesChanged={loadCompanies} onReturnToOrder={(orderId) => { setOrdersInitialOrderId(orderId); setFinanceReturnOrderId(undefined); navigate('orders'); }} />}
     {active === 'water-slips' && <WaterSlipPage onNotify={notify} initialStatus={waterInitialStatus} initialChannel={waterInitialChannel} onInitialFiltersConsumed={() => setWaterInitialStatus(undefined)} onOpenOrder={(orderId) => { setOrdersInitialOrderId(orderId); navigate('orders'); }} onOpenFinance={(orderId, channel) => { setFinanceInitialOrderId(orderId); setFinanceReturnOrderId(orderId); setFinanceInitialChannel(channel); navigate('finance'); }} />}
-    {active === 'orders' && <OrdersPage orders={orders} customers={customers} companies={companies} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} initialStatus={ordersInitialStatus} onInitialStatusConsumed={() => setOrdersInitialStatus(undefined)} initialChannel={ordersInitialChannel} onInitialChannelConsumed={() => setOrdersInitialChannel(undefined)} startCreate={ordersStartCreate} onStartCreateConsumed={() => setOrdersStartCreate(false)} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onRollbackStatus={(order, status) => { void rollback(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onSaveTracking={saveShippingTracking} onConfirmShipping={confirmShipping} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); setFinanceReturnOrderId(Number(order.id)); setFinanceInitialChannel(order.channel); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} onRefreshOrders={async () => { await Promise.all([loadOrders(), loadCustomers()]); }} onNotify={notify} />}
+    {active === 'orders' && <OrdersPage orders={orders} ordersQuery={ordersQuery} ordersTotal={ordersTotal} ordersLoading={ordersLoading} orderStats={orderStats} onOrdersQueryChange={changeOrdersQuery} fetchOrderById={fetchOrderById} customers={customers} companies={companies} labelsByOrderId={labelsByOrderId} initialOrderId={ordersInitialOrderId} initialStatus={ordersInitialStatus} onInitialStatusConsumed={() => setOrdersInitialStatus(undefined)} initialChannel={ordersInitialChannel} onInitialChannelConsumed={() => setOrdersInitialChannel(undefined)} startCreate={ordersStartCreate} onStartCreateConsumed={() => setOrdersStartCreate(false)} onSaveOrder={(draft) => { void saveOrderDraft(draft); }} onSaveDraft={(draft) => { void saveOrderAsDraft(draft); }} onPublishOrder={(order) => { void publishOrderDraft(order); }} onDeleteOrder={(order) => { void removeOrder(order); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onGetNextOrderNumber={previewNextOrderNumber} onDeleteContract={removeOrderContract} onGenerateContract={generateContract} onAdvanceStatus={(order, status) => { void advance(order, status); }} onRollbackStatus={(order, status) => { void rollback(order, status); }} onBatchAdvance={(orders, action) => { void batchAdvance(orders, action); }} onSaveTracking={saveShippingTracking} onConfirmShipping={confirmShipping} onOpenFinance={(order) => { setFinanceInitialOrderId(Number(order.id)); setFinanceReturnOrderId(Number(order.id)); setFinanceInitialChannel(order.channel); navigate('finance'); }} onSaveLabels={(order, labels) => { void saveOrderLabels(order, labels); }} onMergeLabels={mergeOrderLabels} onRestoreAutoLabels={restoreAutoLabels} onPrintHistory={(labels) => recordHistory(labels).catch(() => undefined)} onRefreshOrders={async () => { await Promise.all([loadOrders(), loadCustomers()]); }} onNotify={notify} />}
     {active === 'stock' && <StockPage onNotify={notify} systemProducts={products} />}
     {active === 'quotations' && <QuotationPage onNotify={notify} startCreate={quotationStartCreate} onStartCreateConsumed={() => setQuotationStartCreate(false)} onOpenSalesDocument={() => navigate('sales-documents')} onOpenCustomerProducts={(customerId) => { setCustomerProductsInitialCustomerId(customerId); navigate('customer-products'); }} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} />}
-    {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={async (orderId) => { await loadOrders(); setOrdersInitialOrderId(orderId); navigate('orders'); }} />}
+    {active === 'sales-documents' && <SalesDocumentsPage customers={customers} onNotify={notify} onSaveCustomerProduct={saveOrderCustomerProduct} onCreateCustomer={createCustomerProfile} onOpenOrder={(orderId) => { setOrdersInitialOrderId(orderId); navigate('orders'); }} />}
     {active === 'products' && <ProductsPage products={products} loading={loading} startCreate={productStartCreate} onStartCreateConsumed={() => setProductStartCreate(false)} onSave={saveProductRecord} saving={productSaving} onExport={exportProductLibrary} onOpenCatalog={() => navigate('product-catalog')} onDownloadTemplate={downloadProductTemplate} onImport={importProductLibrary} onRefresh={async () => { if (await loadProducts()) notify('产品库已刷新', 'success'); }} onReloadProducts={async () => { await loadProducts(); }} onManagePresets={() => { setSettingsInitialSection('packaging'); navigate('settings'); }} onManageProductOptions={() => { setSettingsInitialSection('product-options'); navigate('settings'); }} onUpdateSaleStatus={(product, next) => { void toggleProductSaleStatus(product, next); }} onDelete={async (product) => { try { await deleteProduct(product.id); await loadProducts(); notify('产品已删除', 'success'); } catch (error) { notify((error as { message?: string }).message ?? '删除失败', 'error'); } }} uploadingProductIds={uploadQueue.uploadingProductIds} uploadFiles={uploadQueue.files} onRetryUploadFile={(taskId) => productUploadQueue.retryFailure(taskId)} />}
     {active === 'product-catalog' && <CatalogPage products={products} loading={loading} onNotify={notify} />}
     {active === 'customer-products' && <CustomerProductsPage customers={customers} systemProducts={products} initialCustomerId={customerProductsInitialCustomerId ?? undefined} loading={loading} onCustomersChanged={loadCustomers} onNotify={notify} />}

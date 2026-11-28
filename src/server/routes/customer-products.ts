@@ -6,6 +6,7 @@ import {
   CustomerNotFoundError,
   CustomerInactiveError,
   CustomerProductExistsError,
+  CustomerProductInUseError,
   CustomerProductNotFoundError,
   CustomerProductService,
   CustomerProductValidationError,
@@ -31,6 +32,9 @@ function customerProductError(error: unknown): ApiError {
   if (error instanceof ApiError) return error;
   if (error instanceof CustomerProductExistsError) {
     return new ApiError(409, 'CUSTOMER_PRODUCT_EXISTS', error.message);
+  }
+  if (error instanceof CustomerProductInUseError) {
+    return new ApiError(409, 'CUSTOMER_PRODUCT_IN_USE', error.message);
   }
   if (error instanceof CustomerProductValidationError) {
     return new ApiError(400, 'VALIDATION_ERROR', error.message, error.field);

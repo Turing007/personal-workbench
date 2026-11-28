@@ -8,7 +8,9 @@ export interface ReconciliationTemplateOptions {
 }
 
 function money(cents: number): string {
-  return `¥${(Number(cents) / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const value = Number(cents) / 100;
+  const formatted = Math.abs(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${value < 0 ? '-' : ''}¥${formatted}`;
 }
 
 function dateText(value: string): string {
@@ -33,7 +35,7 @@ export function renderReconciliationHtml(statement: CustomerStatement, options: 
   const receiptRows = statement.receipts.map((receipt) => `<tr>
     <td>${dateText(receipt.receivedAt)}</td>
     <td>${escapeHtml(receipt.orderNo)}</td>
-    <td>${escapeHtml(receipt.paymentMethod || '—')}</td>
+    <td>${escapeHtml(receipt.kind === 'refund' ? '退款' : (receipt.paymentMethod || '—'))}</td>
     <td>${escapeHtml(receipt.note || '')}</td>
     <td class="number">${money(receipt.amountCents)}</td>
   </tr>`).join('');

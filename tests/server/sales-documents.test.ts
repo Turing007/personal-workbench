@@ -283,17 +283,27 @@ describe('sales document repository and service', () => {
     database.close();
   });
 
-  it('preserves void documents and requires confirmation before deleting issued documents', async () => {
+  it('已开单和已作废销售单必须保留历史，不能删除', async () => {
     const { database, salesService } = await createContext();
     const issued = await salesService.create(makeSalesInput());
     salesService.updateStatus(issued.id, 'issued');
-    await expect(salesService.delete(issued.id)).rejects.toMatchObject({ code: 'CONFIRMATION_REQUIRED' });
-    expect(await salesService.delete(issued.id, true)).toBe(true);
+    await expect(salesService.delete(issued.id)).rejects.toMatchObject({ code: 'ISSUED_DOCUMENT_PRESERVED' });
+    expect(salesService.get(issued.id)?.documentStatus).toBe('issued');
 
     const voidDocument = await salesService.create(makeSalesInput());
     salesService.updateStatus(voidDocument.id, 'void');
     await expect(salesService.delete(voidDocument.id, true)).rejects.toMatchObject({ code: 'VOID_DOCUMENT_PRESERVED' });
     expect(salesService.get(voidDocument.id)?.documentStatus).toBe('void');
+    database.close();
+  });
+
+  it('销售单状态只能单向流转，已开单不能退回草稿', async () => {
+    const { database, salesService } = await createContext();
+    const document = await salesService.create(makeSalesInput());
+    salesService.updateStatus(document.id, 'issued');
+    await expect(Promise.resolve().then(() => salesService.updateStatus(document.id, 'draft')))
+      .rejects.toMatchObject({ code: 'INVALID_STATUS_TRANSITION' });
+    expect(salesService.get(document.id)?.documentStatus).toBe('issued');
     database.close();
   });
 
@@ -344,6 +354,7 @@ describe('sales document repository and service', () => {
     expect(salesService.get(document.id)).toMatchObject({ paymentStatus: 'partial', receivedCents: 9_000 });
     expect(await salesService.deleteReceipt(deposit.id)).toBe(true);
     expect(salesService.get(document.id)).toMatchObject({ paymentStatus: 'partial', receivedCents: 6_000 });
+    await expect(salesService.delete(document.id)).rejects.toMatchObject({ code: 'DOCUMENT_HAS_RECEIPTS' });
     database.close();
   });
 });

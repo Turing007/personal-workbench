@@ -31,6 +31,14 @@ export class CustomerProductExistsError extends Error {
   }
 }
 
+/** 客户产品仍被待备货订单或标贴台账引用，不能硬删除。 */
+export class CustomerProductInUseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CustomerProductInUseError';
+  }
+}
+
 export class CustomerNotFoundError extends Error {
   constructor() {
     super('客户不存在');
@@ -233,7 +241,18 @@ export class CustomerProductService {
   }
 
   remove(id: number): boolean {
+    if (!this.repository.getById(id)) return false;
+    this.assertDeletable(id);
     return this.repository.delete(id);
+  }
+
+  private assertDeletable(id: number): void {
+    const usage = this.repository.usage(id);
+    if (!usage.pendingStockOrders && !usage.stickerTransactions) return;
+    const reasons: string[] = [];
+    if (usage.pendingStockOrders) reasons.push(`${usage.pendingStockOrders} 张待备货订单`);
+    if (usage.stickerTransactions) reasons.push(`${usage.stickerTransactions} 条标贴台账`);
+    throw new CustomerProductInUseError(`该客户产品还有${reasons.join('、')}，不能删除；请先完成备货或保留标贴历史`);
   }
 
   /** 备货模块补关联：一次性建立与系统产品的映射并填写报供名称；传 null 表示清除映射。 */
@@ -287,6 +306,7 @@ export class CustomerProductService {
       this.repository.getById(id)?.customerId === customerId
     ));
     if (!allBelongToCustomer) throw new CustomerProductNotFoundError();
+    for (const id of normalizedIds) this.assertDeletable(id);
     return this.repository.deleteMany(customerId, normalizedIds);
   }
 

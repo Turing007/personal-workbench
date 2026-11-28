@@ -12,8 +12,8 @@ import {
   Truck,
   WalletCards,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { OrderDraft, OrderStatus } from '../components/OrderForm';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { OrderStatus } from '../components/OrderForm';
 import type { CompanyStatsRow } from '../../shared/companies';
 import {
   currentMonth,
@@ -21,12 +21,11 @@ import {
   type FinanceProofListRow,
   type PaymentProofStatus,
 } from '../../shared/finance';
-import { ORDER_CHANNEL_LABELS, ORDER_STATUS_LABELS_WITH_DRAFT, type OrderChannel } from '../../shared/domain';
-import { listCompanyStats, listFinanceOrders, listFinanceProofs } from '../api';
+import { ORDER_CHANNEL_LABELS, ORDER_STATUS_LABELS_WITH_DRAFT, ORDER_STATUS_SEQUENCE, type OrderChannel } from '../../shared/domain';
+import { getOrderStats, getOrders, listCompanyStats, listFinanceOrders, listFinanceProofs, type ApiOrderRow, type OrderListStats } from '../api';
 import { money } from '../components/finance/finance-format';
 
 export interface DashboardPageProps {
-  orders: OrderDraft[];
   onOpenOrders: (status?: OrderStatus, channel?: OrderChannel) => void;
   onOpenFinance: (channel?: OrderChannel) => void;
   onOpenWaterSlips: (status?: PaymentProofStatus, channel?: OrderChannel) => void;
@@ -43,26 +42,18 @@ const proofStatusLabels: Record<PaymentProofStatus, string> = {
   void: '已作废',
 };
 
-function todayString(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function orderAmountCents(order: OrderDraft): number {
-  if (order.financeSummary?.receivableCents != null) return order.financeSummary.receivableCents;
-  const amount = Number(order.amount);
-  return Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) : 0;
-}
-
 function orderDateLabel(value: string): string {
   return value.length > 10 ? value.slice(5, 16).replace('T', ' ') : value;
 }
 
+/** 列表行没有财务汇总，按订单金额分转分展示即可。 */
+function orderRowAmountCents(order: ApiOrderRow): number {
+  if (order.amount_cents != null) return Math.max(0, Math.trunc(Number(order.amount_cents)));
+  const amount = Number(order.amount);
+  return Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) : 0;
+}
+
 export default function DashboardPage({
-  orders,
   onOpenOrders,
   onOpenFinance,
   onOpenWaterSlips,
@@ -74,58 +65,55 @@ export default function DashboardPage({
   const [financeStats, setFinanceStats] = useState<FinanceListStats>();
   const [companyStats, setCompanyStats] = useState<CompanyStatsRow[]>([]);
   const [recentProofs, setRecentProofs] = useState<FinanceProofListRow[]>([]);
+  const [orderStats, setOrderStats] = useState<OrderListStats>();
+  const [recentOrders, setRecentOrders] = useState<ApiOrderRow[]>([]);
   const [channel, setChannel] = useState<'all' | OrderChannel>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const channelFilter = channel === 'all' ? undefined : channel;
+  // 快速切换渠道时先发后至的旧响应不能覆盖新渠道数据。
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     setError('');
     try {
-      const [finance, companies, proofs] = await Promise.all([
+      const [finance, companies, proofs, stats, recent] = await Promise.all([
         listFinanceOrders({ pageSize: 1, channel: channelFilter }),
         listCompanyStats(currentMonth(), channelFilter),
         listFinanceProofs({ limit: 6, channel: channelFilter }),
+        getOrderStats({ channel: channelFilter }),
+        // 工作台只要最近 6 单：直接从服务端按时间倒序取，不再依赖整张订单表。
+        // 草稿也属于「最近订单」（与 counts.all 口径一致），否则刚存的草稿不会出现。
+        getOrders({ channel: channelFilter, statuses: [...ORDER_STATUS_SEQUENCE, 'draft'], page: 1, pageSize: 6 }),
       ]);
+      if (seq !== loadSeq.current) return;
       setFinanceStats(finance.stats);
       setCompanyStats(companies.items);
       setRecentProofs(proofs.items);
+      setOrderStats(stats);
+      setRecentOrders(recent.rows);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '工作台数据加载失败');
+      if (seq !== loadSeq.current) return;
+      // request() 抛出的是 { code, message } 普通对象，不能只认 Error。
+      setError((reason as { message?: string })?.message ?? '工作台数据加载失败');
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [channelFilter]);
 
   useEffect(() => { void load(); }, [load]);
 
-  const today = todayString();
-  const scopedOrders = useMemo(() => orders.filter((order) => channel === 'all' || (order.channel ?? 'offline') === channel), [orders, channel]);
-  const nonDraftOrders = useMemo(() => scopedOrders.filter((order) => order.status !== 'draft'), [scopedOrders]);
-  const todayOrders = useMemo(
-    () => nonDraftOrders.filter((order) => order.orderedAt.slice(0, 10) === today),
-    [nonDraftOrders, today],
-  );
-  const todaySalesCents = useMemo(() => todayOrders.reduce((sum, order) => sum + orderAmountCents(order), 0), [todayOrders]);
-  const outstandingCents = financeStats?.outstandingCents
-    ?? nonDraftOrders.reduce((sum, order) => sum + (order.financeSummary?.outstandingCents ?? 0), 0);
+  const todayOrderCount = orderStats?.todayOrderCount ?? 0;
+  const todaySalesCents = orderStats?.todaySalesCents ?? 0;
+  const outstandingCents = financeStats?.outstandingCents ?? 0;
   const receivedThisMonthCents = useMemo(
     () => companyStats.reduce((sum, row) => sum + row.receivedCents, 0),
     [companyStats],
   );
-  const unassignedCompanyCount = useMemo(
-    () => nonDraftOrders.filter((order) => (order.settlementType ?? 'corporate') !== 'personal' && order.companyId == null).length,
-    [nonDraftOrders],
-  );
-  const counts = useMemo<Partial<Record<OrderStatus, number>>>(() => {
-    const computed: Partial<Record<OrderStatus, number>> = {};
-    for (const order of nonDraftOrders) {
-      if (!order.status) continue;
-      computed[order.status] = (computed[order.status] ?? 0) + 1;
-    }
-    return computed;
-  }, [nonDraftOrders]);
+  const unassignedCompanyCount = orderStats?.unassignedCompanyCount ?? 0;
+  const counts: Partial<Record<'all' | OrderStatus, number>> = orderStats?.counts ?? {};
 
   const tasks: Array<{
     label: string;
@@ -152,10 +140,6 @@ export default function DashboardPage({
       .slice(0, 6),
     [companyStats],
   );
-  const recentOrders = useMemo(
-    () => [...nonDraftOrders].sort((a, b) => b.orderedAt.localeCompare(a.orderedAt)).slice(0, 6),
-    [nonDraftOrders],
-  );
   const dateText = useMemo(() => new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date()), []);
 
   return <div className="page-shell dashboard-page">
@@ -177,10 +161,10 @@ export default function DashboardPage({
     {error && <div className="dashboard-error" role="alert">{error}</div>}
 
     <div className="dashboard-metrics">
-      <div><span>今日订单</span><strong>{todayOrders.length}<small> 单</small></strong><em>今天新下的订单</em></div>
+      <div><span>今日订单</span><strong>{todayOrderCount}<small> 单</small></strong><em>今天新下的订单</em></div>
       <div><span>今日销售额</span><strong className="finance-positive">{money(todaySalesCents)}</strong><em>按订单金额统计</em></div>
       <div><span>本月已收</span><strong className="finance-positive">{money(receivedThisMonthCents)}</strong><em>{currentMonth()} 按收款日期</em></div>
-      <div><span>未收款</span><strong className={outstandingCents > 0 ? 'finance-warning' : 'finance-positive'}>{money(outstandingCents)}</strong><em>全部订单未收合计</em></div>
+      <div><span>未收款</span><strong className={outstandingCents > 0 ? 'finance-warning' : 'finance-positive'}>{money(Math.max(0, outstandingCents))}</strong><em>{financeStats && financeStats.overpaidCents > 0 ? `全部订单未收合计 · 超收 ${money(financeStats.overpaidCents)}` : '全部订单未收合计'}</em></div>
     </div>
 
     <section className="dashboard-section">
@@ -222,9 +206,9 @@ export default function DashboardPage({
     <section className="dashboard-panel dashboard-recent-orders">
       <div className="dashboard-section-head"><div><strong>最近订单</strong><span>按订单状态继续处理</span></div><button type="button" className="button button-ghost" onClick={() => onOpenOrders(undefined, channelFilter)}>全部订单<ArrowRight size={13} /></button></div>
       {recentOrders.length ? <div className="dashboard-order-list">
-        {recentOrders.map((order) => <button type="button" className="dashboard-order-row" key={order.id ?? order.orderNo} onClick={() => onOpenOrders()}>
-          <div><strong>{order.orderNo}</strong><span>{order.customerName || '未填客户'} · {orderDateLabel(order.orderedAt)}</span></div>
-          <div><strong>{money(orderAmountCents(order))}</strong><span>{order.status ? ORDER_STATUS_LABELS_WITH_DRAFT[order.status] : '—'}</span></div>
+        {recentOrders.map((order) => <button type="button" className="dashboard-order-row" key={order.id ?? order.order_no} onClick={() => onOpenOrders(order.status as OrderStatus, order.channel === 'online' || order.channel === 'offline' ? order.channel : undefined)}>
+          <div><strong>{order.order_no}</strong><span>{order.customer_name || '未填客户'} · {orderDateLabel(order.ordered_at)}</span></div>
+          <div><strong>{money(orderRowAmountCents(order))}</strong><span>{order.status ? ORDER_STATUS_LABELS_WITH_DRAFT[order.status] : '—'}</span></div>
         </button>)}
       </div> : <div className="dashboard-empty">还没有订单。</div>}
     </section>

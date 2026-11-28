@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculateOutstandingCents,
+  calculateOverpaidCents,
   deriveFinancePaymentStatus,
   deriveInvoiceStatus,
   deriveProofStatus,
@@ -87,6 +88,14 @@ describe('金额与标签', () => {
     expect(calculateOutstandingCents(10000, 4000)).toBe(6000);
     expect(calculateOutstandingCents(10000, 12000)).toBe(-2000);
     expect(() => calculateOutstandingCents(-1, 0)).toThrow();
+  });
+
+  it('超收金额只取已收超过应收的部分', () => {
+    expect(calculateOverpaidCents(10000, 4000)).toBe(0);
+    expect(calculateOverpaidCents(10000, 10000)).toBe(0);
+    expect(calculateOverpaidCents(10000, 12000)).toBe(2000);
+    expect(calculateOverpaidCents(0, 100)).toBe(100);
+    expect(() => calculateOverpaidCents(-1, 0)).toThrow();
   });
 
   it('状态标签与中文文案一一对应', () => {

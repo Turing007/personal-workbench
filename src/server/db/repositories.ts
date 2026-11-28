@@ -106,6 +106,16 @@ export interface OrderAttachmentInput {
   size: number;
 }
 
+/** 从销售单转入订单的收款快照；paymentProofId 为空，凭证仍保留在销售单侧。 */
+export interface CreateOrderReceiptInput {
+  receivedAt: string;
+  amountCents: number;
+  paymentMethod?: string;
+  payeeName?: string;
+  note?: string;
+  createdAt?: string;
+}
+
 export interface CreateOrderInput {
   orderNo: string;
   orderedAt: string;
@@ -148,6 +158,8 @@ export interface CreateOrderInput {
   depositPercent?: number;
   /** 账期天数。 */
   creditDays?: number;
+  /** 创建订单时一并写入的收款（销售单转订单用）；更新订单不会读取该字段。 */
+  receipts?: readonly CreateOrderReceiptInput[];
   /** 创建人用户名，由服务端从会话注入，不接受客户端提交。 */
   createdBy?: string;
   items: OrderItemInput[];
@@ -157,6 +169,8 @@ export type UpdateOrderInput = CreateOrderInput;
 
 export interface OrderListFilters {
   status?: string;
+  /** 多状态筛选（状态卡多选）；与 status 同时传入时以 statuses 为准。 */
+  statuses?: readonly string[];
   channel?: string;
   query?: string;
   q?: string;
@@ -598,6 +612,23 @@ export class DatabaseRepositories {
     });
   }
 
+  /** 删除系统产品前检查引用；有关联客户产品/订单/单据时应改为停用，避免供应商映射和快照失联。 */
+  productUsage(productId: number): { customerProducts: number; orderItems: number; quotationItems: number; salesDocumentItems: number } {
+    const row = this.database.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM customer_products WHERE system_product_id = ?) AS customer_products,
+        (SELECT COUNT(*) FROM order_items WHERE product_id = ?) AS order_items,
+        (SELECT COUNT(*) FROM quotation_items WHERE product_id = ?) AS quotation_items,
+        (SELECT COUNT(*) FROM sales_document_items WHERE product_id = ?) AS sales_document_items
+    `).get(productId, productId, productId, productId) as Record<string, unknown> | undefined;
+    return {
+      customerProducts: Number(row?.customer_products ?? 0),
+      orderItems: Number(row?.order_items ?? 0),
+      quotationItems: Number(row?.quotation_items ?? 0),
+      salesDocumentItems: Number(row?.sales_document_items ?? 0),
+    };
+  }
+
   deleteProduct(productId: number): string[] {
     const paths = [
       ...this.database.prepare('SELECT relative_path FROM product_images WHERE product_id = ?').all(productId),
@@ -917,11 +948,49 @@ export class DatabaseRepositories {
             input.createdBy ?? '',
           ),
       );
+      const importedReceipts = (input.receipts ?? [])
+        .map((receipt) => ({
+          receivedAt: String(receipt.receivedAt ?? '').trim() || timestamp.slice(0, 10),
+          amountCents: Math.max(0, Math.trunc(Number(receipt.amountCents) || 0)),
+          paymentMethod: String(receipt.paymentMethod ?? '').trim(),
+          payeeName: String(receipt.payeeName ?? '').trim(),
+          note: String(receipt.note ?? '').trim(),
+          createdAt: receipt.createdAt ? String(receipt.createdAt) : timestamp,
+        }))
+        .filter((receipt) => receipt.amountCents > 0);
+      const receivedCents = importedReceipts.reduce((sum, receipt) => sum + receipt.amountCents, 0);
       database.prepare(`
         INSERT INTO order_finance
           (order_id, receivable_cents, received_cents, outstanding_cents, payment_status, proof_status, invoice_status, created_at, updated_at)
-        VALUES (?, ?, 0, ?, 'unpaid', 'none', 'not_requested', ?, ?)
-      `).run(orderId, amountCents, amountCents, timestamp, timestamp);
+        VALUES (?, ?, ?, ?, ?, 'none', 'not_requested', ?, ?)
+      `).run(
+        orderId,
+        amountCents,
+        receivedCents,
+        calculateOutstandingCents(amountCents, receivedCents),
+        deriveFinancePaymentStatus(amountCents, receivedCents),
+        timestamp,
+        timestamp,
+      );
+      if (importedReceipts.length) {
+        const insertReceipt = database.prepare(`
+          INSERT INTO finance_receipts
+            (order_id, payment_proof_id, received_at, amount_cents, payment_method, payee_name, note, created_at, updated_at)
+          VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const receipt of importedReceipts) {
+          insertReceipt.run(
+            orderId,
+            receipt.receivedAt,
+            receipt.amountCents,
+            receipt.paymentMethod,
+            receipt.payeeName,
+            receipt.note,
+            receipt.createdAt,
+            receipt.createdAt,
+          );
+        }
+      }
 
       const itemIds: number[] = [];
       const insertItem = database.prepare(
@@ -1002,11 +1071,17 @@ export class DatabaseRepositories {
 
   updateOrder(orderId: number, input: UpdateOrderInput, options: { preserveItems?: boolean } = {}) {
     const timestamp = now();
-    const settlementType = input.settlementType === 'personal' ? 'personal' : 'corporate';
     return withTransaction(this.database, (database) => {
-      const existing = database.prepare(`SELECT id, order_detail, channel, logistics_cost_cents, label_cost_cents, other_cost_cents, other_cost_note, cost_confirmed
+      const existing = database.prepare(`SELECT id, customer_id, customer_name, customer_contact_name, customer_contact_phone,
+        customer_shipping_info, recipient_name, recipient_info, shipping_cents, tracking_no, payment_note, order_detail, remark,
+        channel, settlement_type, company_id, payment_policy, deposit_percent, credit_days,
+        logistics_cost_cents, label_cost_cents, other_cost_cents, other_cost_note, cost_confirmed
         FROM orders WHERE id = ?`).get(orderId) as Record<string, unknown> | undefined;
       if (!existing) return undefined;
+      // 更新接口允许旧客户端只提交部分字段：字段缺失时沿用原值，不能用默认值把已有数据清空。
+      const settlementType = input.settlementType === undefined
+        ? (existing.settlement_type === 'personal' ? 'personal' : 'corporate')
+        : input.settlementType === 'personal' ? 'personal' : 'corporate';
       const previousItems = database.prepare(`SELECT id, name, sku, specification, pack_count, quantity, remark, label_requirement,
         machine_cost_cents, battery_cost_cents, charger_cost_cents,
         packaging_cost_cents, accessory_cost_cents, other_cost_cents, cost_confirmed
@@ -1033,33 +1108,37 @@ export class DatabaseRepositories {
             payment_policy = ?, deposit_percent = ?, credit_days = ?, updated_at = ? WHERE id = ?`,
         )
         .run(
-          input.customerId ?? null,
-          input.customerName ?? '',
-          input.customerContactName ?? '',
-          input.customerContactPhone ?? '',
-          input.customerShippingInfo ?? '',
+          input.customerId === undefined ? (existing.customer_id == null ? null : Number(existing.customer_id)) : input.customerId,
+          input.customerName === undefined ? String(existing.customer_name ?? '') : input.customerName,
+          input.customerContactName === undefined ? String(existing.customer_contact_name ?? '') : input.customerContactName,
+          input.customerContactPhone === undefined ? String(existing.customer_contact_phone ?? '') : input.customerContactPhone,
+          input.customerShippingInfo === undefined ? String(existing.customer_shipping_info ?? '') : input.customerShippingInfo,
           input.orderNo.trim(),
           input.orderedAt,
-          input.recipientName ?? '',
-          input.recipientInfo ?? '',
+          input.recipientName === undefined ? String(existing.recipient_name ?? '') : input.recipientName,
+          input.recipientInfo === undefined ? String(existing.recipient_info ?? '') : input.recipientInfo,
           input.amount ?? amountCents / 100,
           amountCents,
-          input.shippingCents ?? 0,
+          input.shippingCents === undefined ? Number(existing.shipping_cents ?? 0) : input.shippingCents,
           logisticsCostCents,
           labelCostCents,
           otherCostCents,
           otherCostNote,
           orderCostConfirmed ? 1 : 0,
-          input.trackingNo ?? '',
-          input.paymentNote ?? '',
-          input.orderDetail ?? '',
-          input.remark ?? '',
+          input.trackingNo === undefined ? String(existing.tracking_no ?? '') : input.trackingNo,
+          input.paymentNote === undefined ? String(existing.payment_note ?? '') : input.paymentNote,
+          input.orderDetail === undefined ? String(existing.order_detail ?? '') : input.orderDetail,
+          input.remark === undefined ? String(existing.remark ?? '') : input.remark,
           input.channel ?? String(existing.channel ?? 'offline'),
           settlementType,
-          input.companyId ?? null,
-          normalizePaymentPolicy(input.paymentPolicy),
-          Math.max(0, Math.min(100, Math.trunc(Number(input.depositPercent) || 0))),
-          Math.max(0, Math.trunc(Number(input.creditDays) || 0)),
+          input.companyId === undefined ? (existing.company_id == null ? null : Number(existing.company_id)) : input.companyId,
+          input.paymentPolicy === undefined ? normalizePaymentPolicy(existing.payment_policy) : normalizePaymentPolicy(input.paymentPolicy),
+          input.depositPercent === undefined
+            ? Math.max(0, Math.min(100, Math.trunc(Number(existing.deposit_percent) || 0)))
+            : Math.max(0, Math.min(100, Math.trunc(Number(input.depositPercent) || 0))),
+          input.creditDays === undefined
+            ? Math.max(0, Math.trunc(Number(existing.credit_days) || 0))
+            : Math.max(0, Math.trunc(Number(input.creditDays) || 0)),
           timestamp,
           orderId,
         );
@@ -1269,26 +1348,43 @@ export class DatabaseRepositories {
   }
 
   /** 订单详情用的轻量财务摘要，避免详情页加载全部水单/发票附件。 */
-  getOrderFinanceLocks(orderId: number): { hasReceipt: boolean; hasValidInvoice: boolean; validInvoiceCents: number } {
+  getOrderFinanceLocks(orderId: number): { hasReceipt: boolean; hasValidInvoice: boolean; hasPendingProof: boolean; validInvoiceCents: number } {
     const row = this.database.prepare(`
       SELECT
         EXISTS(SELECT 1 FROM finance_receipts WHERE order_id = ?) AS has_receipt,
         EXISTS(SELECT 1 FROM finance_invoices WHERE order_id = ? AND status <> 'void') AS has_valid_invoice,
+        EXISTS(SELECT 1 FROM payment_proofs WHERE order_id = ? AND status = 'pending') AS has_pending_proof,
         COALESCE((SELECT SUM(amount_cents) FROM finance_invoices WHERE order_id = ? AND status <> 'void'), 0) AS valid_invoice_cents
-    `).get(orderId, orderId, orderId);
+    `).get(orderId, orderId, orderId, orderId);
     return {
       hasReceipt: Number(row?.has_receipt ?? 0) === 1,
       hasValidInvoice: Number(row?.has_valid_invoice ?? 0) === 1,
+      hasPendingProof: Number(row?.has_pending_proof ?? 0) === 1,
       validInvoiceCents: Number(row?.valid_invoice_cents ?? 0),
     };
   }
 
   getOrderFinanceSummary(orderId: number) {
     return this.database.prepare(`
-      SELECT order_id, receivable_cents, received_cents, outstanding_cents,
+      SELECT order_id, receivable_cents, received_cents, outstanding_cents, refunded_cents,
+        CASE WHEN received_cents > receivable_cents THEN received_cents - receivable_cents ELSE 0 END AS overpaid_cents,
         payment_status, proof_status, invoice_status, updated_at
       FROM order_finance WHERE order_id = ?
     `).get(orderId);
+  }
+
+  /** 状态推进 + 标贴扣减放在同一事务，并用原状态做乐观校验，避免状态已变、台账未扣。 */
+  transitionOrderStatus(orderId: number, fromStatus: string, toStatus: string, trackingNo: string, deductStickers: boolean): boolean {
+    return withTransaction(this.database, (database) => {
+      const result = database
+        .prepare('UPDATE orders SET status = ?, tracking_no = ?, updated_at = ? WHERE id = ? AND status = ?')
+        .run(toStatus, trackingNo.trim(), now(), orderId, fromStatus);
+      if (Number(result.changes ?? 0) === 0) return false;
+      if (toStatus === 'ship_pending' && deductStickers) {
+        this.consumeStickersForOrderInDatabase(database, orderId);
+      }
+      return true;
+    });
   }
 
   updateOrderStatusWithTracking(orderId: number, status: string, trackingNo: string): boolean {
@@ -1383,14 +1479,18 @@ export class DatabaseRepositories {
   }
 
   listOrders(filters: OrderListFilters = {}) {
-    const page = Math.max(1, Math.trunc(filters.page ?? 1));
-    const pageSize = Math.min(200, Math.max(1, Math.trunc(filters.pageSize ?? 50)));
+    const rawPage = Math.trunc(Number(filters.page ?? 1));
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+    const rawPageSize = Math.trunc(Number(filters.pageSize ?? 50));
+    const pageSize = Number.isFinite(rawPageSize) ? Math.min(200, Math.max(1, rawPageSize)) : 50;
     const query = (filters.query ?? filters.q)?.trim();
+    const statuses = (filters.statuses?.length ? filters.statuses : filters.status ? [filters.status] : [])
+      .filter((status): status is string => typeof status === 'string' && status.length > 0);
     const values: SqlValue[] = [];
     const conditions: string[] = [];
-    if (filters.status) {
-      conditions.push('o.status = ?');
-      values.push(filters.status);
+    if (statuses.length) {
+      conditions.push(`o.status IN (${statuses.map(() => '?').join(', ')})`);
+      values.push(...statuses);
     }
     if (filters.channel) {
       conditions.push('o.channel = ?');
@@ -1399,12 +1499,12 @@ export class DatabaseRepositories {
     if (query) {
       conditions.push(`(
         o.order_no LIKE ? OR o.customer_name LIKE ? OR o.recipient_name LIKE ? OR
-        o.recipient_info LIKE ? OR EXISTS (
+        o.recipient_info LIKE ? OR o.tracking_no LIKE ? OR EXISTS (
           SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND
             (oi.name LIKE ? OR oi.sku LIKE ? OR oi.specification LIKE ?)
         )
       )`);
-      values.push(...Array(7).fill(`%${query}%`));
+      values.push(...Array(8).fill(`%${query}%`));
     }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const count = Number(this.database.prepare(`SELECT COUNT(*) AS count FROM orders o ${where}`).get(...values)?.count ?? 0);
@@ -1423,6 +1523,63 @@ export class DatabaseRepositories {
       )
       .all(...values, pageSize, (page - 1) * pageSize);
     return { rows, total: count, page, pageSize };
+  }
+
+  /**
+   * 订单页/工作台的状态卡与渠道徽标统计。
+   * 状态数按渠道过滤；渠道数始终跨渠道统计；今日与未分配公司只算正式订单（不含草稿）。
+   */
+  getOrderStats(filters: { channel?: string } = {}) {
+    const channel = filters.channel;
+    const channelCondition = channel ? ' AND o.channel = ?' : '';
+    const channelValues: SqlValue[] = channel ? [channel] : [];
+
+    const counts: Record<string, number> = { all: 0 };
+    const statusRows = this.database
+      .prepare(`SELECT o.status AS status, COUNT(*) AS count FROM orders o WHERE 1 = 1${channelCondition} GROUP BY o.status`)
+      .all(...channelValues);
+    for (const row of statusRows) {
+      const status = String(row.status ?? '');
+      const count = Number(row.count ?? 0);
+      if (!status) continue;
+      counts[status] = (counts[status] ?? 0) + count;
+      counts.all += count;
+    }
+
+    const channelCounts: Record<string, number> = { online: 0, offline: 0 };
+    const channelRows = this.database
+      .prepare('SELECT o.channel AS channel, COUNT(*) AS count FROM orders o GROUP BY o.channel')
+      .all();
+    for (const row of channelRows) {
+      const value = String(row.channel ?? '');
+      if (!value) continue;
+      channelCounts[value] = (channelCounts[value] ?? 0) + Number(row.count ?? 0);
+    }
+
+    const todayRow = this.database
+      .prepare(
+        `SELECT COUNT(*) AS count,
+          COALESCE(SUM(COALESCE(o.amount_cents, CAST(ROUND(o.amount * 100) AS INTEGER))), 0) AS cents
+         FROM orders o
+         WHERE o.status <> 'draft' AND date(o.ordered_at, '+8 hours') = date('now', '+8 hours')${channelCondition}`,
+      )
+      .get(...channelValues);
+
+    const unassignedRow = this.database
+      .prepare(
+        `SELECT COUNT(*) AS count FROM orders o
+         WHERE o.status <> 'draft' AND COALESCE(o.settlement_type, 'corporate') <> 'personal'
+           AND o.company_id IS NULL${channelCondition}`,
+      )
+      .get(...channelValues);
+
+    return {
+      counts,
+      channelCounts,
+      todayOrderCount: Number(todayRow?.count ?? 0),
+      todaySalesCents: Number(todayRow?.cents ?? 0),
+      unassignedCompanyCount: Number(unassignedRow?.count ?? 0),
+    };
   }
 
   getOrderDetail(orderId: number) {
@@ -1804,13 +1961,17 @@ export class DatabaseRepositories {
 
   /** 完成打包时按订单行数量扣减标贴库存（每台 1 张）；回退不返还，由调用方决定重复打包是否跳过。 */
   consumeStickersForOrder(orderId: number): number {
+    return this.consumeStickersForOrderInDatabase(this.database, orderId);
+  }
+
+  private consumeStickersForOrderInDatabase(database: DatabaseSync, orderId: number): number {
     const timestamp = now();
-    const items = this.database.prepare(`
+    const items = database.prepare(`
       SELECT oi.id AS order_item_id, oi.customer_product_id, oi.quantity
       FROM order_items oi JOIN customer_products cp ON cp.id = oi.customer_product_id
       WHERE oi.order_id = ? AND cp.sticker_enabled = 1 AND oi.quantity > 0
     `).all(orderId) as Array<Record<string, unknown>>;
-    const insert = this.database.prepare(
+    const insert = database.prepare(
       `INSERT INTO sticker_transactions (customer_product_id, kind, quantity, order_id, order_item_id, note, created_at)
        VALUES (?, 'consume', ?, ?, ?, '', ?)`,
     );
@@ -1905,7 +2066,7 @@ export class DatabaseRepositories {
     }));
   }
 
-  /** 账期对账：某客户在日期区间内的收款明细（只统计账期订单）。 */
+  /** 账期对账：某客户在日期区间内的收款与退款明细（只统计账期订单）；退款以负数计入。 */
   listCreditReceipts(customerId: number, from: string, to: string): Array<{
     orderId: number;
     orderNo: string;
@@ -1913,15 +2074,32 @@ export class DatabaseRepositories {
     amountCents: number;
     paymentMethod: string;
     note: string;
+    kind: 'receipt' | 'refund';
   }> {
     const rows = this.database.prepare(`
-      SELECT fr.order_id, o.order_no, fr.received_at, fr.amount_cents, fr.payment_method, fr.note
-      FROM finance_receipts fr
-      JOIN orders o ON o.id = fr.order_id
-      WHERE o.payment_policy = 'credit' AND o.customer_id = ?
-        AND fr.received_at >= ? AND fr.received_at <= ?
-      ORDER BY fr.received_at, fr.id
-    `).all(customerId, from, to) as Array<Record<string, unknown>>;
+      SELECT order_id, order_no, received_at, amount_cents, payment_method, note, kind
+      FROM (
+        SELECT fr.order_id, o.order_no, fr.received_at, fr.amount_cents, fr.payment_method, fr.note, 'receipt' AS kind
+        FROM finance_receipts fr
+        JOIN orders o ON o.id = fr.order_id
+        WHERE o.payment_policy = 'credit' AND o.customer_id = ?
+          AND fr.received_at >= ? AND fr.received_at <= ?
+        UNION ALL
+        SELECT rf.order_id, o.order_no, rf.refunded_at AS received_at, -rf.amount_cents AS amount_cents,
+          rf.payment_method,
+          CASE
+            WHEN rf.reason <> '' AND rf.note <> '' THEN '退款：' || rf.reason || ' · ' || rf.note
+            WHEN rf.reason <> '' THEN '退款：' || rf.reason
+            ELSE rf.note
+          END AS note,
+          'refund' AS kind
+        FROM finance_refunds rf
+        JOIN orders o ON o.id = rf.order_id
+        WHERE o.payment_policy = 'credit' AND o.customer_id = ?
+          AND rf.refunded_at >= ? AND rf.refunded_at <= ?
+      ) combined
+      ORDER BY received_at, kind
+    `).all(customerId, from, to, customerId, from, to) as Array<Record<string, unknown>>;
     return rows.map((row) => ({
       orderId: Number(row.order_id),
       orderNo: String(row.order_no ?? ''),
@@ -1929,6 +2107,7 @@ export class DatabaseRepositories {
       amountCents: Number(row.amount_cents ?? 0),
       paymentMethod: String(row.payment_method ?? ''),
       note: String(row.note ?? ''),
+      kind: String(row.kind) === 'refund' ? 'refund' : 'receipt',
     }));
   }
 

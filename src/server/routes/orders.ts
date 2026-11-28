@@ -145,6 +145,22 @@ function parseOrderChannel(value: unknown): string | undefined {
   return value;
 }
 
+/** 状态卡多选：逗号分隔，去重；空串视为全部。 */
+function parseOrderStatuses(value: unknown): string[] | undefined {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const statuses = value.split(',').map((item) => item.trim()).filter(Boolean);
+  return statuses.length ? [...new Set(statuses)] : undefined;
+}
+
+function queryPositiveInteger(value: string | undefined, field: string, label: string): number | undefined {
+  if (value === undefined || value === '') return undefined;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new ApiError(400, 'VALIDATION_ERROR', `${label}必须是正整数`, field);
+  }
+  return parsed;
+}
+
 function parseOrderInput(value: unknown, options: { allowEmptyOrderNo?: boolean } = {}): CreateOrderInput {
   const body = asRecord(value);
   if (!Array.isArray(body.items)) throw new ApiError(400, 'VALIDATION_ERROR', '订单至少需要一行产品', 'items');
@@ -300,12 +316,20 @@ export async function registerOrderRoutes(app: FastifyInstance, options: OrderRo
       const query = request.query as Record<string, string | undefined>;
       return sendSuccess(reply, service.list({
         status: query.status,
+        statuses: parseOrderStatuses(query.statuses),
         channel: parseOrderChannel(query.channel),
         q: query.q,
         query: query.query,
-        page: query.page ? Number(query.page) : undefined,
-        pageSize: query.pageSize ? Number(query.pageSize) : undefined,
+        page: queryPositiveInteger(query.page, 'page', '页码'),
+        pageSize: queryPositiveInteger(query.pageSize, 'pageSize', '每页条数'),
       }));
+    }, reply),
+  );
+
+  app.get('/api/orders/stats', async (request, reply) =>
+    safeRoute(() => {
+      const query = request.query as Record<string, string | undefined>;
+      return sendSuccess(reply, service.stats({ channel: parseOrderChannel(query.channel) }));
     }, reply),
   );
 
@@ -423,6 +447,8 @@ export async function registerOrderRoutes(app: FastifyInstance, options: OrderRo
         receivableCents: Number(financeRow.receivable_cents ?? 0),
         receivedCents: Number(financeRow.received_cents ?? 0),
         outstandingCents: Number(financeRow.outstanding_cents ?? 0),
+        refundedCents: Number(financeRow.refunded_cents ?? 0),
+        overpaidCents: Number(financeRow.overpaid_cents ?? 0),
         paymentStatus: String(financeRow.payment_status ?? 'unpaid'),
         proofStatus: String(financeRow.proof_status ?? 'none'),
         invoiceStatus: String(financeRow.invoice_status ?? 'not_requested'),

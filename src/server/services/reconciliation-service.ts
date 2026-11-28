@@ -44,6 +44,8 @@ export interface StatementReceiptRow {
   amountCents: number;
   paymentMethod: string;
   note: string;
+  /** 收款为正数，退款为负数；旧接口调用方可忽略。 */
+  kind: 'receipt' | 'refund';
 }
 
 export interface CustomerStatement {
@@ -146,7 +148,9 @@ export class ReconciliationService {
       if (row.outstandingCents > 0 && overdueDays < 0) overdueCents += row.outstandingCents;
       if (!shippedDate) continue;
       if (shippedDate < from) {
-        openingCents += Math.max(0, row.receivableCents - (receiptsBefore.get(row.orderId) ?? 0));
+        // 账期前多收的钱是客户预存余额，期初应为负数并结转到本期；
+        // 若在这里截断为 0，本期退还超收的负数收款会让期末未收虚增。
+        openingCents += row.receivableCents - (receiptsBefore.get(row.orderId) ?? 0);
       } else if (shippedDate <= to) {
         periodReceivableCents += row.receivableCents;
         orders.push({

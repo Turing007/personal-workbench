@@ -48,6 +48,7 @@ import {
   validateDocumentLines,
   validateTaxRateBps,
 } from '../../shared/document-validation.js';
+import type { DocumentVersionService } from './document-version-service.js';
 
 const QUOTATION_STATUSES: readonly QuotationStatus[] = ['draft', 'sent', 'won', 'expired'];
 
@@ -184,6 +185,8 @@ export interface QuotationServiceOptions {
   customerProductRepository?: CustomerProductRepository;
   productProvider?: QuotationProductProvider;
   assetManager?: QuotationAssetManager;
+  /** 与报价单写入放在同一事务里记录版本，避免主保存成功而版本写入失败造成重试重复建单。 */
+  versions?: DocumentVersionService;
   now?: () => string;
 }
 
@@ -243,6 +246,7 @@ export class QuotationService {
   readonly customerProductRepository: CustomerProductRepository;
   readonly productProvider?: QuotationProductProvider;
   readonly assetManager?: QuotationAssetManager;
+  readonly versions?: DocumentVersionService;
   private readonly now: () => string;
 
   constructor(options: QuotationServiceOptions) {
@@ -254,6 +258,7 @@ export class QuotationService {
     this.customerProductRepository = options.customerProductRepository ?? new CustomerProductRepository(options.database);
     this.productProvider = options.productProvider ?? new DatabaseQuotationProductProvider(options.database);
     this.assetManager = options.assetManager;
+    this.versions = options.versions;
     this.now = options.now ?? (() => new Date().toISOString());
   }
 
@@ -269,34 +274,40 @@ export class QuotationService {
     return detail ? asDetail(detail) : undefined;
   }
 
-  async create(input: QuotationInput): Promise<QuotationServiceDetail> {
+  async create(input: QuotationInput, createdBy = ''): Promise<QuotationServiceDetail> {
     const prepared = await this.prepareSave(input, undefined);
     try {
       await this.commitAssets(prepared.assetBatches);
-      const id = withTransaction(this.database, (database) => {
+      return withTransaction(this.database, (database) => {
         const number = this.documentNumberRepository.next('quotation', prepared.record.quotationDate);
         prepared.record.number = number;
-        return this.repository.insert(database, prepared.record);
+        const id = this.repository.insert(database, prepared.record);
+        const detail = this.requireDetail(id);
+        this.versions?.recordQuotation(detail, 'create', createdBy);
+        return detail;
       });
-      return this.requireDetail(id);
     } catch (error) {
       await this.rollbackAssets(prepared.assetBatches);
       throw error;
     }
   }
 
-  async update(id: number, input: QuotationInput): Promise<QuotationServiceDetail | undefined> {
+  async update(id: number, input: QuotationInput, createdBy = ''): Promise<QuotationServiceDetail | undefined> {
     const existing = this.repository.get(id);
     if (!existing) return undefined;
     const prepared = await this.prepareSave(input, existing);
     try {
       await this.commitAssets(prepared.assetBatches);
-      const changed = withTransaction(this.database, (database) => this.repository.replace(database, id, prepared.record));
-      if (!changed) {
+      const detail = withTransaction(this.database, (database) => {
+        if (!this.repository.replace(database, id, prepared.record)) return undefined;
+        const saved = this.requireDetail(id);
+        this.versions?.recordQuotation(saved, 'update', createdBy);
+        return saved;
+      });
+      if (!detail) {
         await this.rollbackAssets(prepared.assetBatches);
         return undefined;
       }
-      const detail = this.requireDetail(id);
       const previousPaths = existing.items
         .map((item) => item.imageRelativePath)
         .filter((path): path is string => Boolean(path));
@@ -311,10 +322,18 @@ export class QuotationService {
     }
   }
 
-  updateStatus(id: number, status: unknown): QuotationServiceDetail | undefined {
+  updateStatus(id: number, status: unknown, createdBy = ''): QuotationServiceDetail | undefined {
     const normalized = normalizeStatus(status);
-    if (!this.repository.updateStatus(id, normalized)) return undefined;
-    return this.requireDetail(id);
+    const existing = this.repository.get(id);
+    if (!existing) return undefined;
+    // 重复提交相同状态不产生无意义的版本记录。
+    if (existing.status === normalized) return this.requireDetail(id);
+    return withTransaction(this.database, () => {
+      if (!this.repository.updateStatus(id, normalized)) return undefined;
+      const detail = this.requireDetail(id);
+      this.versions?.recordQuotation(detail, 'status', createdBy);
+      return detail;
+    });
   }
 
   async delete(id: number, confirmed = false): Promise<boolean> {
@@ -327,7 +346,11 @@ export class QuotationService {
     if (existing.companySnapshot.logoRelativePath?.startsWith('quotation-assets/')) {
       paths.push(existing.companySnapshot.logoRelativePath);
     }
-    const deleted = this.repository.delete(id);
+    const deleted = withTransaction(this.database, () => {
+      const removed = this.repository.delete(id);
+      if (removed) this.versions?.removeAll('quotation', id);
+      return removed;
+    });
     if (deleted) await this.deleteAssets(paths);
     return deleted;
   }
@@ -607,11 +630,16 @@ export class QuotationService {
   }
 
   private async deleteAssets(paths: readonly string[]): Promise<void> {
-    await deleteAssetFiles(this.assetManager, paths);
+    await deleteAssetFiles(this.assetManager, this.unreferencedAssets(paths));
   }
 
   private async deleteReplacedAssets(previousPaths: readonly string[], currentPaths: Set<string>): Promise<void> {
-    await deleteReplacedAssetFiles(this.assetManager, previousPaths, currentPaths);
+    await deleteReplacedAssetFiles(this.assetManager, this.unreferencedAssets(previousPaths), currentPaths);
+  }
+
+  /** 历史版本快照仍引用的图片/Logo 必须保留，否则版本回看会缺图。 */
+  private unreferencedAssets(paths: readonly string[]): string[] {
+    return paths.filter((path) => !this.versions?.isAssetReferenced(path));
   }
 }
 

@@ -7,6 +7,9 @@ import { join, resolve } from 'node:path';
 import { MAX_CONTRACT_SIZE, MAX_VIDEO_SIZE } from './config.js';
 import { AuthService, SESSION_COOKIE } from './auth/auth-service.js';
 import { UserRepository } from './auth/user-repository.js';
+import { AuditLogRepository } from './db/audit-repository.js';
+import { registerAuditLog } from './audit/audit-log.js';
+import { registerAuditRoutes } from './routes/audit.js';
 import { createRepositories, type DatabaseRepositories } from './db/repositories.js';
 import { FileStore } from './files/file-store.js';
 import { BackupService } from './backup/backup-service.js';
@@ -14,6 +17,8 @@ import { AutoBackupService } from './backup/auto-backup-service.js';
 import { DocumentAssetManager } from './documents/document-assets.js';
 import { QuotationRepository } from './db/quotation-repository.js';
 import { SalesDocumentRepository } from './db/sales-document-repository.js';
+import { DocumentVersionRepository } from './db/document-version-repository.js';
+import { DocumentVersionService } from './services/document-version-service.js';
 import { SettingsRepository } from './db/settings-repository.js';
 import { CatalogRepository } from './db/catalog-repository.js';
 import { SupplierCatalogRepository } from './db/supplier-catalog-repository.js';
@@ -49,6 +54,7 @@ import { registerCompanyRoutes } from './routes/companies.js';
 import { CompanyRepository } from './db/company-repository.js';
 import { registerStockRoutes } from './routes/stock.js';
 import { StockRepository } from './db/stock-repository.js';
+import { StockConfirmationRepository } from './db/stock-confirmation-repository.js';
 import { StockPreparationService } from './services/stock-service.js';
 import { FinanceService } from './services/finance-service.js';
 import { OrderService } from './services/order-service.js';
@@ -79,6 +85,7 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: options.logger ?? false, trustProxy: options.trustProxy ?? false });
   const repositories = options.repositories ?? createRepositories(options.database);
   const authService = new AuthService(new UserRepository(options.database));
+  const auditLogRepository = new AuditLogRepository(options.database);
 
   await app.register(cookie);
 
@@ -100,7 +107,10 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
     request.user = user;
   });
 
+  // 审计钩子必须注册在业务路由之前，才能覆盖账号管理等早注册的接口。
+  registerAuditLog(app, auditLogRepository);
   await registerAuthRoutes(app, { service: authService });
+  await registerAuditRoutes(app, { repository: auditLogRepository });
 
   await app.register(multipart, {
     limits: {
@@ -228,11 +238,16 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
   await registerLabelRoutes(app, { repositories });
   await registerShippingRoutes(app, { repositories, settingsRepository, fileStore: options.fileStore });
   await registerStockRoutes(app, {
-    service: new StockPreparationService(new StockRepository(options.database)),
+    service: new StockPreparationService(new StockRepository(options.database), {
+      confirmations: new StockConfirmationRepository(options.database),
+      advanceOrder: (orderId) => { orderService.transition(orderId, 'stock_reported', 'manual'); },
+      orderNumber: (orderId) => String(options.database.prepare('SELECT order_no FROM orders WHERE id = ?').get(orderId)?.order_no ?? ''),
+    }),
   });
 
   const quotationRepository = new QuotationRepository(options.database);
   const salesDocumentRepository = new SalesDocumentRepository(options.database);
+  const documentVersionService = new DocumentVersionService(new DocumentVersionRepository(options.database));
   const documentAssetManager = options.fileStore
     ? new DocumentAssetManager(options.fileStore, (productId, relativePath, customerProductId) => {
       // 客户产品行：允许客户产品自己的图片，或其关联系统产品的图片
@@ -267,6 +282,7 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
     customerRepository,
     customerProductRepository,
     assetManager,
+    versions: documentVersionService,
   });
   const salesDocumentService = new SalesDocumentService({
     database: options.database,
@@ -274,11 +290,13 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
     quotationRepository,
     customerRepository,
     customerProductRepository,
+    companyRepository,
     settingsRepository,
     assetManager,
     sourceFileReader: options.fileStore,
     receiptFileStore: options.fileStore,
     orderService,
+    versions: documentVersionService,
   });
 
   await registerSettingsRoutes(app, {
@@ -303,11 +321,15 @@ export async function createApp(options: AppOptions): Promise<FastifyInstance> {
       customerRepository,
       customerProductRepository,
     }),
-    copyQuotationToSales: (quotationId) => salesDocumentService.createFromQuotation(quotationId),
+    versions: documentVersionService,
+    copyQuotationToSales: (quotationId, createdBy) => (
+      salesDocumentService.createFromQuotation(quotationId, undefined, createdBy ?? '')
+    ),
   });
   await registerSalesDocumentRoutes(app, {
     service: salesDocumentService,
     fileStore: options.fileStore,
+    versions: documentVersionService,
   });
 
   if (options.databasePath && options.dataDirectory && options.backupsDirectory) {

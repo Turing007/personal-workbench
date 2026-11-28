@@ -43,6 +43,24 @@ function insertOrder(database: DatabaseSync, amountCents = 10000, companyId: num
   return orderId;
 }
 
+type TestApp = Awaited<ReturnType<typeof setup>>['app'];
+
+/** 上传并审核一张水单，返回水单 id；用于让订单产生真实收款记录。 */
+async function uploadAndApprove(app: TestApp, orderId: number, amountCents: number, transactionNo: string, paymentDate = '2026-08-20'): Promise<number> {
+  const form = new FormData();
+  form.append('file', new Blob([Buffer.from('proof')], { type: 'image/png' }), 'proof.png');
+  form.append('paymentDate', paymentDate);
+  form.append('amountCents', String(amountCents));
+  form.append('paymentMethod', '银行转账');
+  form.append('transactionNo', transactionNo);
+  const uploaded = await authInject(app, { method: 'POST', url: `/api/finance/orders/${orderId}/proofs`, payload: form as unknown as BodyInit, headers: Object.fromEntries(form.entries()) });
+  expect(uploaded.statusCode).toBe(201);
+  const proofId = Number(uploaded.json().data.id);
+  const approved = await authInject(app, { method: 'POST', url: `/api/finance/proofs/${proofId}/approve`, payload: {} });
+  expect(approved.statusCode).toBe(200);
+  return proofId;
+}
+
 describe('财务模块', () => {
   it('审核水单后生成收款并更新订单财务状态', async () => {
     const { database, app } = await setup();
@@ -61,6 +79,211 @@ describe('财务模块', () => {
     expect(approved.json().data.finance).toMatchObject({ receivedCents: 10000, outstandingCents: 0, paymentStatus: 'paid' });
     expect(database.prepare('SELECT COUNT(*) AS count FROM finance_receipts WHERE payment_proof_id = ?').get(proofId)?.count).toBe(1);
     await app.close();
+    database.close();
+  });
+
+  it('超收订单可登记退款并按净额重算，退款可修改和删除', async () => {
+    const { database, app } = await setup();
+    const orderId = insertOrder(database, 10000);
+    await uploadAndApprove(app, orderId, 12000, 'TX-REFUND-1');
+
+    const overpaidDetail = await authInject(app, { method: 'GET', url: `/api/finance/orders/${orderId}` });
+    expect(overpaidDetail.statusCode).toBe(200);
+    expect(overpaidDetail.json().data.finance).toMatchObject({
+      receivedCents: 12000,
+      outstandingCents: -2000,
+      refundedCents: 0,
+      overpaidCents: 2000,
+      paymentStatus: 'overpaid',
+    });
+    expect(overpaidDetail.json().data.refunds).toEqual([]);
+
+    const created = await authInject(app, {
+      method: 'POST',
+      url: `/api/finance/orders/${orderId}/refunds`,
+      payload: { refundedAt: '2026-08-21', amountCents: 2000, paymentMethod: '银行转账', reason: '退还超收', note: '客户多付' },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().data).toMatchObject({ orderId, refundedAt: '2026-08-21', amountCents: 2000, paymentMethod: '银行转账', reason: '退还超收', note: '客户多付' });
+    const refundId = Number(created.json().data.id);
+    expect(created.json().data.createdBy).toBeTruthy();
+
+    const settled = await authInject(app, { method: 'GET', url: `/api/finance/orders/${orderId}` });
+    expect(settled.json().data.finance).toMatchObject({
+      receivedCents: 10000,
+      outstandingCents: 0,
+      refundedCents: 2000,
+      overpaidCents: 0,
+      paymentStatus: 'paid',
+    });
+    expect(settled.json().data.refunds).toHaveLength(1);
+
+    const list = await authInject(app, { method: 'GET', url: '/api/finance/orders' });
+    const row = (list.json().data.rows as Array<Record<string, unknown>>).find((item) => item.orderId === orderId);
+    expect(row).toMatchObject({ receivedCents: 10000, outstandingCents: 0, refundedCents: 2000, overpaidCents: 0, paymentStatus: 'paid' });
+    expect(list.json().data.stats).toMatchObject({ receivedCents: 10000, refundedCents: 2000, overpaidCents: 0 });
+
+    const updated = await authInject(app, {
+      method: 'PUT',
+      url: `/api/finance/refunds/${refundId}`,
+      payload: { refundedAt: '2026-08-21', amountCents: 1500, paymentMethod: '微信', reason: '部分退还' },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json().data).toMatchObject({ amountCents: 1500, paymentMethod: '微信', reason: '部分退还' });
+    const afterUpdate = await authInject(app, { method: 'GET', url: `/api/finance/orders/${orderId}` });
+    expect(afterUpdate.json().data.finance).toMatchObject({ receivedCents: 10500, outstandingCents: -500, refundedCents: 1500, overpaidCents: 500, paymentStatus: 'overpaid' });
+
+    const deleted = await authInject(app, { method: 'DELETE', url: `/api/finance/refunds/${refundId}` });
+    expect(deleted.statusCode).toBe(200);
+    const afterDelete = await authInject(app, { method: 'GET', url: `/api/finance/orders/${orderId}` });
+    expect(afterDelete.json().data.finance).toMatchObject({ receivedCents: 12000, outstandingCents: -2000, refundedCents: 0, overpaidCents: 2000, paymentStatus: 'overpaid' });
+    expect(afterDelete.json().data.refunds).toEqual([]);
+    await app.close();
+    database.close();
+  });
+
+  it('退款金额不能超过已收，已退款的水单不能直接作废', async () => {
+    const { database, app } = await setup();
+    const orderId = insertOrder(database, 10000);
+    const proofId = await uploadAndApprove(app, orderId, 12000, 'TX-REFUND-2');
+
+    const tooMuch = await authInject(app, {
+      method: 'POST',
+      url: `/api/finance/orders/${orderId}/refunds`,
+      payload: { refundedAt: '2026-08-21', amountCents: 12001 },
+    });
+    expect(tooMuch.statusCode).toBe(409);
+    expect(tooMuch.json().error.code).toBe('REFUND_EXCEEDS_RECEIVED');
+
+    const refund = await authInject(app, {
+      method: 'POST',
+      url: `/api/finance/orders/${orderId}/refunds`,
+      payload: { refundedAt: '2026-08-21', amountCents: 2000 },
+    });
+    expect(refund.statusCode).toBe(201);
+
+    const blockedVoid = await authInject(app, { method: 'POST', url: `/api/finance/proofs/${proofId}/void`, payload: { note: '测试作废' } });
+    expect(blockedVoid.statusCode).toBe(409);
+    expect(blockedVoid.json().error.code).toBe('REFUND_PREVENTS_VOID');
+
+    const removed = await authInject(app, { method: 'DELETE', url: `/api/finance/refunds/${refund.json().data.id}` });
+    expect(removed.statusCode).toBe(200);
+    const voided = await authInject(app, { method: 'POST', url: `/api/finance/proofs/${proofId}/void`, payload: { note: '测试作废' } });
+    expect(voided.statusCode).toBe(200);
+    expect(voided.json().data.finance).toMatchObject({ receivedCents: 0, outstandingCents: 10000, refundedCents: 0, paymentStatus: 'unpaid' });
+    await app.close();
+    database.close();
+  });
+
+  it('退款参数校验与不存在的订单/退款记录', async () => {
+    const { database, app } = await setup();
+    const orderId = insertOrder(database, 10000);
+    await uploadAndApprove(app, orderId, 10000, 'TX-REFUND-3');
+
+    const zero = await authInject(app, { method: 'POST', url: `/api/finance/orders/${orderId}/refunds`, payload: { refundedAt: '2026-08-21', amountCents: 0 } });
+    expect(zero.statusCode).toBe(400);
+    expect(zero.json().error.code).toBe('VALIDATION_ERROR');
+
+    const missingDate = await authInject(app, { method: 'POST', url: `/api/finance/orders/${orderId}/refunds`, payload: { amountCents: 100 } });
+    expect(missingDate.statusCode).toBe(400);
+    expect(missingDate.json().error.code).toBe('VALIDATION_ERROR');
+
+    const missingOrder = await authInject(app, { method: 'POST', url: '/api/finance/orders/9999/refunds', payload: { refundedAt: '2026-08-21', amountCents: 100 } });
+    expect(missingOrder.statusCode).toBe(404);
+    expect(missingOrder.json().error.code).toBe('FINANCE_ORDER_NOT_FOUND');
+
+    const missingRefund = await authInject(app, { method: 'DELETE', url: '/api/finance/refunds/9999' });
+    expect(missingRefund.statusCode).toBe(404);
+    expect(missingRefund.json().error.code).toBe('REFUND_NOT_FOUND');
+    await app.close();
+    database.close();
+  });
+
+  it('退款按公司净额汇总，并计入账期对账单的负数收款', async () => {
+    const { database, app, companyId } = await setup();
+    const customerId = Number(database.prepare(
+      `INSERT INTO customers (name, payment_policy, created_at, updated_at) VALUES ('账期客户', 'credit', '2026-08-20', '2026-08-20')`,
+    ).run().lastInsertRowid);
+    const orderId = insertOrder(database, 10000, companyId);
+    database.prepare("UPDATE orders SET customer_id = ?, payment_policy = 'credit', status = 'shipping' WHERE id = ?").run(customerId, orderId);
+    database.prepare("INSERT INTO shipments (order_id, tracking_no, shipped_at, total_boxes, recipient_info, remark) VALUES (?, 'SF-REFUND-1', '2026-08-20', 1, '', '')").run(orderId);
+    await uploadAndApprove(app, orderId, 10000, 'TX-REFUND-4');
+
+    const refund = await authInject(app, { method: 'POST', url: `/api/finance/orders/${orderId}/refunds`, payload: { refundedAt: '2026-08-21', amountCents: 2000, reason: '售后退款' } });
+    expect(refund.statusCode).toBe(201);
+
+    const byCompany = await authInject(app, { method: 'GET', url: '/api/finance/receipts/by-company' });
+    expect(byCompany.statusCode).toBe(200);
+    expect((byCompany.json().data.items as Array<Record<string, unknown>>).find((item) => item.companyId === companyId)).toMatchObject({ amountCents: 8000, receiptCount: 1 });
+
+    const companyStats = await authInject(app, { method: 'GET', url: '/api/finance/companies/stats?month=2026-08' });
+    expect(companyStats.statusCode).toBe(200);
+    expect((companyStats.json().data.items as Array<Record<string, unknown>>).find((item) => item.companyId === companyId)).toMatchObject({ receivedCents: 8000, receivedCount: 1 });
+
+    const statement = await authInject(app, { method: 'GET', url: `/api/finance/reconciliation/${customerId}?from=2026-08-01&to=2026-08-31` });
+    expect(statement.statusCode).toBe(200);
+    expect(statement.json().data.periodReceiptCents).toBe(8000);
+    expect(statement.json().data.closingCents).toBe(2000);
+    expect(statement.json().data.receipts).toEqual([
+      expect.objectContaining({ orderId, amountCents: 10000, kind: 'receipt' }),
+      expect.objectContaining({ orderId, amountCents: -2000, kind: 'refund', note: expect.stringContaining('售后退款') }),
+    ]);
+    await app.close();
+    database.close();
+  });
+
+  it('存在待审水单时锁定客户与结算方式', async () => {
+    const { database, app, companyId } = await setup();
+    const orderId = insertOrder(database, 10000, companyId);
+    const orderNo = String((database.prepare('SELECT order_no FROM orders WHERE id = ?').get(orderId) as { order_no: string }).order_no);
+    const form = new FormData();
+    form.append('file', new Blob([Buffer.from('proof')], { type: 'image/png' }), 'proof.png');
+    form.append('paymentDate', '2026-08-20');
+    form.append('amountCents', '1000');
+    form.append('paymentMethod', '银行转账');
+    form.append('transactionNo', 'TX-LOCK-1');
+    const uploaded = await authInject(app, {
+      method: 'POST',
+      url: `/api/finance/orders/${orderId}/proofs`,
+      payload: form as unknown as BodyInit,
+      headers: Object.fromEntries(form.entries()),
+    });
+    expect(uploaded.statusCode).toBe(201);
+
+    const update = await authInject(app, {
+      method: 'PUT',
+      url: `/api/orders/${orderId}`,
+      payload: {
+        orderNo,
+        orderedAt: '2026-08-20T08:00:00.000Z',
+        recipientName: '客户',
+        recipientInfo: '',
+        settlementType: 'personal',
+        companyId,
+        items: [{ name: '测试产品', sku: '', specification: '标准规格', packCount: 10, quantity: 10, unitPriceCents: 1000 }],
+      },
+    });
+    expect(update.statusCode).toBe(400);
+    expect(update.json().error.message).toContain('待审水单');
+    await app.close();
+    database.close();
+  });
+
+  it('已开票的发票不能退回待开票', async () => {
+    const { database, fileStore, companyId } = await setup();
+    const orderId = insertOrder(database, 10000, companyId);
+    const service = new FinanceService({ database, fileStore, repository: new FinanceRepository(database) });
+    const invoice = service.createInvoice(orderId, {
+      invoiceType: '电子普通发票',
+      title: '测试公司',
+      taxNo: '9133',
+      amountCents: 10000,
+      taxRateBps: 1300,
+      taxCents: 1300,
+    });
+    expect(service.submitInvoice(invoice.id).status).toBe('pending_issue');
+    expect(service.issueInvoice(invoice.id, { invoiceNo: 'INV-001' }).status).toBe('issued');
+    expect(() => service.submitInvoice(invoice.id)).toThrow('只有未完成或待开票记录才能提交开票申请');
     database.close();
   });
 

@@ -612,6 +612,10 @@ export async function registerProductRoutes(app: FastifyInstance, options: Produ
     safeRoute(async () => {
       const id = getProductId(request);
       if (!repositories.getProduct(id)) throw new ApiError(404, 'NOT_FOUND', '产品不存在');
+      const usage = repositories.productUsage(id);
+      if (usage.customerProducts || usage.orderItems || usage.quotationItems || usage.salesDocumentItems) {
+        throw new ApiError(409, 'PRODUCT_IN_USE', '该产品已被客户产品、订单或报价/销售单引用，不能删除；请改为停用');
+      }
       const paths = repositories.deleteProduct(id);
       if (fileStore) await Promise.all(paths.map((path) => fileStore.deleteFile(path)));
       return sendSuccess(reply, null);

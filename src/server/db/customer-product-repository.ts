@@ -519,6 +519,20 @@ export class CustomerProductRepository {
     return result.changes ? this.getById(id) : undefined;
   }
 
+  /** 删除前检查：待备货订单和标贴台账都依赖客户产品，硬删除会破坏备货分组或抹掉台账历史。 */
+  usage(id: number): { pendingStockOrders: number; stickerTransactions: number } {
+    const row = this.database.prepare(`
+      SELECT
+        (SELECT COUNT(DISTINCT o.id) FROM order_items oi JOIN orders o ON o.id = oi.order_id
+          WHERE oi.customer_product_id = ? AND o.status = 'pending_stock') AS pending_stock_orders,
+        (SELECT COUNT(*) FROM sticker_transactions WHERE customer_product_id = ?) AS sticker_transactions
+    `).get(id, id) as { pending_stock_orders?: unknown; sticker_transactions?: unknown } | undefined;
+    return {
+      pendingStockOrders: Number(row?.pending_stock_orders ?? 0),
+      stickerTransactions: Number(row?.sticker_transactions ?? 0),
+    };
+  }
+
   delete(id: number): boolean {
     return this.database.prepare('DELETE FROM customer_products WHERE id = ?').run(id).changes > 0;
   }

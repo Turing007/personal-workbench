@@ -26,6 +26,10 @@ export interface StockPreparationGroup {
   /** 分组标题：供应商名，或「未填供应商」「未关联产品」。 */
   title: string;
   items: StockPreparationItem[];
+  /** 当前筛选范围内该供应商最近一次确认备货的时间与操作人。 */
+  lastConfirmedAt?: string;
+  lastConfirmedBy?: string;
+  lastConfirmedOrderCount?: number;
 }
 
 export interface StockPreparation {
@@ -44,6 +48,51 @@ export function formatStockItemLine(item: StockPreparationItem): string {
     ? item.specs.map((spec) => `${spec.specification ? `${spec.specification} × ` : '× '}${spec.quantity}`).join('，')
     : `× ${item.quantity}`;
   return `${item.displayName}（${specs}）`;
+}
+
+/** 供应商备货确认记录里的一笔订单。 */
+export interface StockConfirmationOrder {
+  orderId: number;
+  orderNo: string;
+  /** 本次确认是否已把该订单推进到「已备货」。 */
+  advanced: boolean;
+}
+
+/** 供应商备货确认记录里的产品快照。 */
+export interface StockConfirmationItem {
+  displayName: string;
+  quantity: number;
+  specs: StockPreparationSpec[];
+}
+
+export interface StockConfirmation {
+  id: number;
+  supplier: string;
+  /** 'all' 或 YYYY-MM-DD，与备货表筛选范围一致。 */
+  scope: string;
+  /** '' 表示全部渠道，否则 online/offline。 */
+  channel: string;
+  confirmedAt: string;
+  confirmedBy: string;
+  note: string;
+  itemCount: number;
+  totalQuantity: number;
+  orders: StockConfirmationOrder[];
+  items: StockConfirmationItem[];
+}
+
+export interface StockConfirmationInput {
+  date?: string;
+  channel?: 'online' | 'offline';
+  supplier: string;
+  note?: string;
+}
+
+export interface StockConfirmationResult {
+  confirmation: StockConfirmation;
+  advancedOrderIds: number[];
+  pendingOrderIds: number[];
+  failedOrderIds: number[];
 }
 
 export interface SupplierStockConfirmPlan {

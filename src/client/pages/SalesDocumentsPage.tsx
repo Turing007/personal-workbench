@@ -1,4 +1,4 @@
-import { ClipboardList, Edit3, ExternalLink, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { ClipboardList, Edit3, ExternalLink, History, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import SearchInput from '../components/SearchInput';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
@@ -16,11 +16,14 @@ import {
   downloadSalesDocumentPdf,
   getCompanyProfile,
   getSalesDocument,
+  getSalesDocumentVersion,
   listSalesDocuments,
+  listSalesDocumentVersions,
   saveSalesDocument,
   setSalesDocumentStatus,
 } from '../api';
 import Modal from '../components/Modal';
+import DocumentVersionModal from '../components/documents/DocumentVersionModal';
 import PdfDownloadButton from '../components/documents/PdfDownloadButton';
 import SalesDocumentForm, { createEmptySalesDocumentDraft } from '../components/sales/SalesDocumentForm';
 import type { SalesDocumentDraft } from '../documents/document-drafts';
@@ -37,6 +40,13 @@ export interface SalesDocumentsPageProps {
 }
 
 const documentStatusLabels: Record<SalesDocumentStatus, string> = { draft: '草稿', issued: '已开单', void: '已作废' };
+
+/** 销售单状态只能单向流转：草稿→已开单/已作废，已开单→已作废。 */
+function statusOptions(status: SalesDocumentStatus): SalesDocumentStatus[] {
+  if (status === 'draft') return ['draft', 'issued', 'void'];
+  if (status === 'issued') return ['issued', 'void'];
+  return ['void'];
+}
 const paymentStatusLabels: Record<PaymentStatus, string> = { unpaid: '未付款', partial: '部分付款', paid: '已付清' };
 
 function formatMoney(cents: number): string {
@@ -58,6 +68,8 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
   const [company, setCompany] = useState<CompanySnapshot>();
   const [draft, setDraft] = useState<SalesDocumentDraft>(() => createEmptySalesDocumentDraft());
   const [receipts, setReceipts] = useState<SalesReceipt[]>([]);
+  const [receiptsLockedReason, setReceiptsLockedReason] = useState('');
+  const [versionRow, setVersionRow] = useState<SalesDocumentSummary>();
   const [editorOpen, setEditorOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -106,11 +118,16 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
   const applyDetail = (detail: SalesDocumentDetail) => {
     setDraft(salesDocumentDetailToDraft(detail));
     setReceipts(detail.receipts);
+    // 生成订单时收款已复制到订单财务；此后销售单只保留快照，避免两边各改各的。
+    setReceiptsLockedReason(detail.generatedOrderNo
+      ? `该销售单已生成订单 ${detail.generatedOrderNo}，收款与退款请在订单财务中维护，此处仅作查看。`
+      : '');
   };
 
   const openNew = () => {
     setDraft(createEmptySalesDocumentDraft(company));
     setReceipts([]);
+    setReceiptsLockedReason('');
     setEditorOpen(true);
   };
 
@@ -166,12 +183,11 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
   };
 
   const remove = async (row: SalesDocumentSummary) => {
-    if (row.documentStatus === 'void') return;
-    if (!window.confirm(`确定删除销售单“${row.number}”吗？`)) return;
-    if (row.documentStatus === 'issued' && !window.confirm('该销售单已开单，请再次确认删除。')) return;
+    if (row.documentStatus !== 'draft') return;
+    if (!window.confirm(`确定删除销售单“${row.number}”吗？删除后不可恢复。`)) return;
     setBusyId(row.id);
     try {
-      await deleteSalesDocument(row.id, row.documentStatus === 'issued');
+      await deleteSalesDocument(row.id);
       notify('销售单已删除', 'success');
       await load();
     } catch (error) {
@@ -231,15 +247,16 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
             <td className="strong-cell">{formatMoney(row.totalCents)}</td>
             <td>{formatMoney(receivedCents)}</td>
             <td className="amount" style={{ color: row.outstandingCents > 0 ? 'var(--color-warning-text)' : 'var(--color-accent)' }}>{formatMoney(row.outstandingCents)}</td>
-            <td><select className="toolbar-select" aria-label={`${row.number}单据状态`} value={row.documentStatus} disabled={busyId === row.id || row.documentStatus === 'void'} onChange={(event) => void changeStatus(row, event.target.value as SalesDocumentStatus)}><option value="draft">草稿</option><option value="issued">已开单</option><option value="void">已作废</option></select></td>
+            <td><select className="toolbar-select" aria-label={`${row.number}单据状态`} value={row.documentStatus} disabled={busyId === row.id || row.documentStatus === 'void'} onChange={(event) => void changeStatus(row, event.target.value as SalesDocumentStatus)}>{statusOptions(row.documentStatus).map((status) => <option key={status} value={status}>{documentStatusLabels[status]}</option>)}</select></td>
             <td><span className={`badge ${row.paymentStatus === 'paid' ? 'badge-success' : row.paymentStatus === 'partial' ? 'badge-warning' : 'badge-neutral'}`}>{paymentStatusLabels[row.paymentStatus]}</span></td>
             <td style={{ color: 'var(--color-text-secondary)' }}>{row.updatedAt.replace('T', ' ').slice(0, 16)}</td>
             <td><div className="row-actions">
               <button className="icon-button" type="button" title={row.documentStatus === 'void' ? '查看销售单' : '编辑销售单'} disabled={busyId === row.id} onClick={() => void openEdit(row.id)}><Edit3 size={14} /></button>
               <PdfDownloadButton number={row.number} download={() => downloadSalesDocumentPdf(row.id)} onError={(message) => notify(message, 'error')} disabled={busyId === row.id} />
+              <button className="icon-button" type="button" title="查看版本记录" disabled={busyId === row.id} onClick={() => setVersionRow(row)}><History size={14} /></button>
               {row.documentStatus === 'issued' && !row.generatedOrderNo && <button className="icon-button" type="button" title="从本销售单生成订单" disabled={busyId === row.id} onClick={() => void generateOrder(row)}><ClipboardList size={14} /></button>}
               {row.generatedOrderId != null && row.generatedOrderNo && <button className="icon-button" type="button" title={`查看生成的订单 ${row.generatedOrderNo}`} disabled={busyId === row.id} onClick={() => void onOpenOrder?.(row.generatedOrderId!)}><ExternalLink size={14} /></button>}
-              {row.documentStatus !== 'void' && <button className="icon-button danger" type="button" title="删除销售单" disabled={busyId === row.id} onClick={() => void remove(row)}><Trash2 size={14} /></button>}
+              {row.documentStatus === 'draft' && <button className="icon-button danger" type="button" title="删除销售单" disabled={busyId === row.id} onClick={() => void remove(row)}><Trash2 size={14} /></button>}
             </div></td>
           </tr>;
         })}</tbody>
@@ -262,14 +279,15 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
               <div className="sales-doc-card-field"><span>未付</span><strong style={row.outstandingCents > 0 ? { color: 'var(--color-warning-text)' } : { color: 'var(--color-accent)' }}>{formatMoney(row.outstandingCents)}</strong></div>
             </div>
             <div className="sales-doc-card-status">
-              <select className="toolbar-select" aria-label={`${row.number}单据状态`} value={row.documentStatus} disabled={busyId === row.id || row.documentStatus === 'void'} onChange={(event) => void changeStatus(row, event.target.value as SalesDocumentStatus)}><option value="draft">草稿</option><option value="issued">已开单</option><option value="void">已作废</option></select>
+              <select className="toolbar-select" aria-label={`${row.number}单据状态`} value={row.documentStatus} disabled={busyId === row.id || row.documentStatus === 'void'} onChange={(event) => void changeStatus(row, event.target.value as SalesDocumentStatus)}>{statusOptions(row.documentStatus).map((status) => <option key={status} value={status}>{documentStatusLabels[status]}</option>)}</select>
             </div>
             <div className="row-actions">
               <button className="icon-button" type="button" title={row.documentStatus === 'void' ? '查看销售单' : '编辑销售单'} disabled={busyId === row.id} onClick={() => void openEdit(row.id)}><Edit3 size={14} /></button>
               <PdfDownloadButton number={row.number} download={() => downloadSalesDocumentPdf(row.id)} onError={(message) => notify(message, 'error')} disabled={busyId === row.id} />
+              <button className="icon-button" type="button" title="查看版本记录" disabled={busyId === row.id} onClick={() => setVersionRow(row)}><History size={14} /></button>
               {row.documentStatus === 'issued' && !row.generatedOrderNo && <button className="icon-button" type="button" title="从本销售单生成订单" disabled={busyId === row.id} onClick={() => void generateOrder(row)}><ClipboardList size={14} /></button>}
               {row.generatedOrderId != null && row.generatedOrderNo && <button className="icon-button" type="button" title={`查看生成的订单 ${row.generatedOrderNo}`} disabled={busyId === row.id} onClick={() => void onOpenOrder?.(row.generatedOrderId!)}><ExternalLink size={14} /></button>}
-              {row.documentStatus !== 'void' && <button className="icon-button danger" type="button" title="删除销售单" disabled={busyId === row.id} onClick={() => void remove(row)}><Trash2 size={14} /></button>}
+              {row.documentStatus === 'draft' && <button className="icon-button danger" type="button" title="删除销售单" disabled={busyId === row.id} onClick={() => void remove(row)}><Trash2 size={14} /></button>}
             </div>
           </article>;
         })}
@@ -283,6 +301,7 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
         customers={customers}
         value={draft}
         receipts={receipts}
+        receiptsLockedReason={receiptsLockedReason || undefined}
         saving={saving}
         onChange={setDraft}
         onSave={save}
@@ -293,5 +312,13 @@ export default function SalesDocumentsPage({ onNotify, customers, onSaveCustomer
         onCreateCustomer={onCreateCustomer}
       />
     </Modal>
+
+    <DocumentVersionModal
+      open={Boolean(versionRow)}
+      title={versionRow ? `销售单 ${versionRow.number} · 版本记录` : '版本记录'}
+      onClose={() => setVersionRow(undefined)}
+      loadVersions={() => listSalesDocumentVersions(versionRow!.id)}
+      loadVersion={(versionNo) => getSalesDocumentVersion(versionRow!.id, versionNo)}
+    />
   </div>;
 }

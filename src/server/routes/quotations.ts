@@ -19,7 +19,9 @@ import {
 } from '../services/quotation-customer-product-sync-service.js';
 import { DocumentValidationError } from '../../shared/document-validation.js';
 import type { QuotationStatus } from '../../shared/documents.js';
+import type { DocumentVersionService } from '../services/document-version-service.js';
 import { ApiError, asRecord, parseId, sendFailure, sendSuccess } from './api-response.js';
+import { registerDocumentVersionRoutes } from './document-versions.js';
 import { assertMultipartFileNotTruncated, imagePartsOptions } from './multipart-limits.js';
 
 interface IdParams {
@@ -27,7 +29,7 @@ interface IdParams {
 }
 
 interface CopyQuotationToSales {
-  (quotationId: number): Promise<unknown> | unknown;
+  (quotationId: number, createdBy?: string): Promise<unknown> | unknown;
 }
 
 export interface QuotationRouteOptions {
@@ -38,6 +40,7 @@ export interface QuotationRouteOptions {
   pdfRenderer?: Pick<PdfRenderer, 'render'>;
   copyQuotationToSales?: CopyQuotationToSales;
   customerProductSyncService?: QuotationCustomerProductSyncService;
+  versions?: DocumentVersionService;
 }
 
 interface BufferedUpload {
@@ -209,9 +212,10 @@ export async function registerQuotationRoutes(
     }));
   }, reply));
 
-  app.post('/api/quotations', async (request, reply) => safeRoute(async () => (
-    sendSuccess(reply, await service.create(await parseQuotationInput(request)), 201)
-  ), reply));
+  app.post('/api/quotations', async (request, reply) => safeRoute(async () => {
+    const quotation = await service.create(await parseQuotationInput(request), request.user?.username ?? '');
+    return sendSuccess(reply, quotation, 201);
+  }, reply));
 
   app.get('/api/quotations/:id', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(() => {
     const quotation = service.get(parseId(request.params.id));
@@ -220,14 +224,21 @@ export async function registerQuotationRoutes(
   }, reply));
 
   app.put('/api/quotations/:id', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(async () => {
-    const quotation = await service.update(parseId(request.params.id), await parseQuotationInput(request));
+    const quotation = await service.update(
+      parseId(request.params.id),
+      await parseQuotationInput(request),
+      request.user?.username ?? '',
+    );
     if (!quotation) throw new ApiError(404, 'NOT_FOUND', '报价单不存在');
     return sendSuccess(reply, quotation);
   }, reply));
 
   app.patch('/api/quotations/:id/status', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(() => {
-    const body = asRecord(request.body);
-    const quotation = service.updateStatus(parseId(request.params.id), body.status);
+    const quotation = service.updateStatus(
+      parseId(request.params.id),
+      asRecord(request.body).status,
+      request.user?.username ?? '',
+    );
     if (!quotation) throw new ApiError(404, 'NOT_FOUND', '报价单不存在');
     return sendSuccess(reply, quotation);
   }, reply));
@@ -288,8 +299,18 @@ export async function registerQuotationRoutes(
     if (!options.copyQuotationToSales) {
       throw new ApiError(503, 'SALES_SERVICE_UNAVAILABLE', '销售开单服务尚未配置');
     }
-    return sendSuccess(reply, await options.copyQuotationToSales(id), 201);
+    return sendSuccess(reply, await options.copyQuotationToSales(id, request.user?.username ?? ''), 201);
   }, reply));
+
+  if (options.versions) {
+    await registerDocumentVersionRoutes(app, {
+      basePath: '/api/quotations',
+      documentType: 'quotation',
+      notFoundMessage: '报价单不存在',
+      exists: (id) => Boolean(service.get(id)),
+      service: options.versions,
+    });
+  }
 }
 
 export const quotationRoutes = registerQuotationRoutes;

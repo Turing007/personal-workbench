@@ -1,11 +1,13 @@
-import { CalendarDays, Copy, Link2, PackageOpen, RefreshCw, TriangleAlert, X } from 'lucide-react';
+import { CalendarDays, Copy, History, Link2, PackageOpen, RefreshCw, TriangleAlert, X } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   advanceOrderStatus,
+  confirmSupplierStock,
   getStockPreparation,
   linkCustomerProductToSystem,
 } from '../api';
 import { errorText } from '../components/finance/finance-format';
+import StockConfirmationHistoryModal from '../components/stock/StockConfirmationHistoryModal';
 import { copyText } from '../copy-text';
 import Modal from '../components/Modal';
 import SystemProductOptionRow from '../components/SystemProductOptionRow';
@@ -55,6 +57,8 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
   const [marking, setMarking] = useState(false);
   const [confirmMarkOpen, setConfirmMarkOpen] = useState(false);
   const [confirmSupplier, setConfirmSupplier] = useState<StockPreparationGroup | null>(null);
+  const [confirmNote, setConfirmNote] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [linkTarget, setLinkTarget] = useState<StockPreparationItem | null>(null);
 
   const scopeParam = scope === 'all' ? 'all' : (date || todayISO());
@@ -85,6 +89,10 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
     () => confirmSupplier ? planSupplierStockConfirm(groups, confirmSupplier) : { advanceOrderIds: [], pendingOrderIds: [] },
     [confirmSupplier, groups],
   );
+  const unconfirmedSupplierGroups = useMemo(
+    () => groups.filter((group) => group.kind === 'supplier' && !group.lastConfirmedAt),
+    [groups],
+  );
 
   const copyStockText = async (text: string) => {
     if (!await copyText(text)) {
@@ -113,24 +121,27 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
 
   const markSupplierStocked = async () => {
     if (!confirmSupplier) return;
-    const { advanceOrderIds, pendingOrderIds } = planSupplierStockConfirm(groups, confirmSupplier);
     const supplierTitle = confirmSupplier.title;
     setMarking(true);
     setConfirmSupplier(null);
-    let failureCount = 0;
-    for (const orderId of advanceOrderIds) {
-      try {
-        await advanceOrderStatus(orderId, 'stock_reported');
-      } catch {
-        failureCount += 1;
-      }
+    try {
+      const result = await confirmSupplierStock({
+        date: scope === 'all' ? 'all' : scopeParam,
+        channel: channel === 'all' ? undefined : channel,
+        supplier: supplierTitle,
+        note: confirmNote.trim(),
+      });
+      const parts = [`已确认「${supplierTitle}」：${result.advancedOrderIds.length} 张订单推进到已备货`];
+      if (result.pendingOrderIds.length) parts.push(`${result.pendingOrderIds.length} 张订单还涉及其他供应商，暂未推进`);
+      if (result.failedOrderIds.length) parts.push(`${result.failedOrderIds.length} 张推进失败，请重试`);
+      onNotify?.(parts.join('；'), result.failedOrderIds.length ? 'error' : 'success');
+    } catch (error) {
+      onNotify?.(errorText(error, '确认备货失败'), 'error');
+    } finally {
+      setMarking(false);
+      setConfirmNote('');
+      await load();
     }
-    setMarking(false);
-    const parts = [`已确认「${supplierTitle}」：${advanceOrderIds.length - failureCount} 张订单推进到已备货`];
-    if (pendingOrderIds.length) parts.push(`${pendingOrderIds.length} 张订单还涉及其他供应商，暂未推进`);
-    if (failureCount) parts.push(`${failureCount} 张推进失败，请重试`);
-    onNotify?.(parts.join('；'), failureCount ? 'error' : 'success');
-    await load();
   };
 
   return <div className="page-shell stock-page">
@@ -166,6 +177,7 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
         <select className="toolbar-select" aria-label="订单渠道筛选" value={channel} onChange={(event) => setChannel(event.target.value as 'all' | import('../../shared/domain').OrderChannel)}><option value="all">全部渠道</option><option value="online">线上订单</option><option value="offline">线下订单</option></select>
         <button className="icon-button" type="button" title="刷新备货表" disabled={loading} onClick={() => void load()}><RefreshCw size={15} /></button>
         <div className="stock-action-row">
+          <button className="button button-secondary" type="button" onClick={() => setHistoryOpen(true)}><History size={14} />确认记录</button>
           <button className="button button-secondary" type="button" disabled={!groups.length || !preparation} onClick={() => { if (preparation) void copyStockText(buildCopyAllText(preparation, groups)); }}><Copy size={14} />复制全部</button>
           <button className="button button-primary" type="button" disabled={marking || !orderIds.length} onClick={() => setConfirmMarkOpen(true)}><PackageOpen size={14} />标记已备货</button>
         </div>
@@ -183,7 +195,7 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
             group={group}
             onCopyGroup={(text) => void copyStockText(text)}
             onLink={(item) => setLinkTarget(item)}
-            onConfirmSupplier={(target) => setConfirmSupplier(target)}
+            onConfirmSupplier={(target) => { setConfirmNote(''); setConfirmSupplier(target); }}
             marking={marking}
             systemProductCount={systemProducts.length}
           />)}
@@ -194,9 +206,15 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
     <Modal open={confirmMarkOpen} title="标记已备货" onClose={() => setConfirmMarkOpen(false)} width={420} compact>
       <div style={{ display: 'grid', gap: 12, fontSize: 13, color: 'var(--color-text)' }}>
         <span>将把当前范围内的 <strong>{orderIds.length}</strong> 张待备货订单推进到「已备货」，订单会离开备货表。确认继续？</span>
+        {warningGroups.length > 0 && <span style={{ color: 'var(--color-warning-text)' }}>
+          当前还有 {warningGroups.reduce((sum, group) => sum + group.items.length, 0)} 项未关联产品或未填供应商，相关订单可能尚未报给供应商。请确认已线下处理后再继续。
+        </span>}
+        {unconfirmedSupplierGroups.length > 0 && <span style={{ color: 'var(--color-warning-text)' }}>
+          还有 {unconfirmedSupplierGroups.length} 家供应商未单独确认：{unconfirmedSupplierGroups.map((group) => group.title).join('、')}。确认记录只会保留已确认的供应商。
+        </span>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button className="button button-secondary" type="button" disabled={marking} onClick={() => setConfirmMarkOpen(false)}>取消</button>
-          <button className="button button-primary" type="button" disabled={marking} onClick={() => void markStocked()}>{marking ? '处理中…' : '确认标记'}</button>
+          <button className="button button-primary" type="button" disabled={marking} onClick={() => void markStocked()}>{marking ? '处理中…' : warningGroups.length > 0 || unconfirmedSupplierGroups.length > 0 ? '仍然标记' : '确认标记'}</button>
         </div>
       </div>
     </Modal>
@@ -206,10 +224,21 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
         <span>确认供应商「<strong>{confirmSupplier?.title}</strong>」的备货已完成？</span>
         <span>将把 <strong>{supplierPlan.advanceOrderIds.length}</strong> 张只涉及该供应商的订单推进到「已备货」，这些订单会离开备货表。</span>
         {supplierPlan.pendingOrderIds.length > 0 && <span style={{ color: 'var(--color-warning-text)' }}>{supplierPlan.pendingOrderIds.length} 张订单还涉及其他供应商，暂不推进；等其余供应商备齐后请点整页「标记已备货」。</span>}
-        {supplierPlan.advanceOrderIds.length === 0 && supplierPlan.pendingOrderIds.length > 0 && <span style={{ color: 'var(--color-warning-text)' }}>该供应商名下没有可单独推进的订单。</span>}
+        {supplierPlan.advanceOrderIds.length === 0 && supplierPlan.pendingOrderIds.length > 0 && <span style={{ color: 'var(--color-warning-text)' }}>该供应商名下没有可单独推进的订单，确认后会留下记录。</span>}
+        <label style={{ display: 'grid', gap: 5, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+          备注（可选）
+          <input
+            value={confirmNote}
+            maxLength={200}
+            placeholder="例如：已电话确认，周五到货"
+            onChange={(event) => setConfirmNote(event.target.value)}
+            style={{ border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)', padding: '7px 8px', font: 'inherit', fontSize: 12, background: 'var(--color-surface)' }}
+          />
+        </label>
+        <span style={{ color: 'var(--color-text-muted)', fontSize: 12 }}>确认后会在「确认记录」里保存操作人、时间和本次备货明细。</span>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button className="button button-secondary" type="button" disabled={marking} onClick={() => setConfirmSupplier(null)}>取消</button>
-          <button className="button button-primary" type="button" disabled={marking || supplierPlan.advanceOrderIds.length === 0} onClick={() => void markSupplierStocked()}>{marking ? '处理中…' : '确定'}</button>
+          <button className="button button-primary" type="button" disabled={marking || (supplierPlan.advanceOrderIds.length === 0 && supplierPlan.pendingOrderIds.length === 0)} onClick={() => void markSupplierStocked()}>{marking ? '处理中…' : supplierPlan.advanceOrderIds.length ? '确定' : '仅记录确认'}</button>
         </div>
       </div>
     </Modal>
@@ -224,6 +253,8 @@ export default function StockPage({ onNotify, systemProducts = [] }: StockPagePr
         await load();
       }}
     />
+
+    <StockConfirmationHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} />
   </div>;
 }
 
@@ -242,6 +273,12 @@ function StockGroupCard({ group, onCopyGroup, onLink, onConfirmSupplier, marking
       <strong className="stock-group-title">{group.title}</strong>
       <span className="stock-group-count">{group.items.length} 项 · {totalQuantity} 件</span>
       {warning && <span className="stock-group-hint">{group.kind === 'unlinked' ? '未关联系统产品' : '系统产品未填供应商'}</span>}
+      {group.lastConfirmedAt && <span
+        className="stock-group-confirmed"
+        title={`${group.lastConfirmedBy || '未知操作人'} 于 ${group.lastConfirmedAt.replace('T', ' ').slice(0, 16)} 确认${group.lastConfirmedOrderCount ? `（${group.lastConfirmedOrderCount} 张订单）` : ''}`}
+      >
+        已确认 · {group.lastConfirmedAt.replace('T', ' ').slice(5, 16)}{group.lastConfirmedBy ? ` · ${group.lastConfirmedBy}` : ''}
+      </span>}
       <div className="row-actions">
         {group.kind === 'supplier' && <button className="button button-secondary button-sm stock-confirm-button" type="button" disabled={marking} onClick={() => onConfirmSupplier(group)}>确认备货</button>}
         <button className="icon-button" type="button" title="复制备货明细" onClick={() => onCopyGroup(groupCopyText(group))}><Copy size={14} /></button>

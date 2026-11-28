@@ -33,6 +33,7 @@ interface TestItem {
   quantity: number;
   unitPriceCents: number;
   packCount?: number | null;
+  productId?: number | null;
 }
 
 let documentSequence = 0;
@@ -45,8 +46,10 @@ function insertSalesDocument(
     consignee?: string;
     contactName?: string;
     customerName?: string;
+    customerId?: number | null;
     shippingCents?: number;
     taxRateBps?: number;
+    pricingBasis?: 'shipping_ex_tax' | 'shipping_inc_tax' | 'no_shipping_ex_tax';
     items: TestItem[];
   },
 ): number {
@@ -54,25 +57,30 @@ function insertSalesDocument(
   const documentDate = options.documentDate ?? '2026-08-20';
   const shippingCents = options.shippingCents ?? 0;
   const taxRateBps = options.taxRateBps ?? 0;
+  const pricingBasis = options.pricingBasis ?? 'shipping_ex_tax';
   const subtotalCents = options.items.reduce((sum, item) => sum + Math.round(item.quantity * item.unitPriceCents), 0);
-  const taxCents = Math.round((subtotalCents * taxRateBps) / 10000);
-  const totalCents = subtotalCents + taxCents + shippingCents;
+  const taxCents = pricingBasis === 'shipping_inc_tax'
+    ? Math.round((subtotalCents * taxRateBps) / (10000 + taxRateBps))
+    : Math.round((subtotalCents * taxRateBps) / 10000);
+  const totalCents = pricingBasis === 'shipping_inc_tax' ? subtotalCents + shippingCents : subtotalCents + taxCents + shippingCents;
   documentSequence += 1;
   const result = database.prepare(`
     INSERT INTO sales_documents
-      (number, document_status, document_date, customer_name, contact_name, contact_phone, address,
-       recipient, shipping_cents, tax_rate_bps, subtotal_cents, tax_cents, total_cents,
+      (number, document_status, document_date, customer_id, customer_name, contact_name, contact_phone, address,
+       recipient, shipping_cents, tax_rate_bps, pricing_basis, subtotal_cents, tax_cents, total_cents,
        received_cents, outstanding_cents, company_snapshot_json, display_config_json, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, '', '', ?, ?, ?, ?, ?, ?, 0, ?, '{}', '{}', ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, '', '', ?, ?, ?, ?, ?, ?, ?, 0, ?, '{}', '{}', ?, ?)
   `).run(
     `XS-TEST-${String(documentSequence).padStart(3, '0')}`,
     options.status ?? 'issued',
     documentDate,
+    options.customerId ?? null,
     options.customerName ?? '测试客户',
     options.contactName ?? '王小姐',
     options.consignee ?? '',
     shippingCents,
     taxRateBps,
+    pricingBasis,
     subtotalCents,
     taxCents,
     totalCents,
@@ -83,12 +91,13 @@ function insertSalesDocument(
   const documentId = Number(result.lastInsertRowid);
   const insertItem = database.prepare(`
     INSERT INTO sales_document_items
-      (sales_document_id, name, sku, specification, pack_count, quantity, unit_price_cents, amount_cents, sort_order, created_at, updated_at)
-    VALUES (?, ?, '', '', ?, ?, ?, ?, ?, ?, ?)
+      (sales_document_id, product_id, name, sku, specification, pack_count, quantity, unit_price_cents, amount_cents, sort_order, created_at, updated_at)
+    VALUES (?, ?, ?, '', '', ?, ?, ?, ?, ?, ?, ?)
   `);
   options.items.forEach((item, index) => {
     insertItem.run(
       documentId,
+      item.productId ?? null,
       item.name,
       item.packCount ?? null,
       item.quantity,
@@ -188,6 +197,133 @@ describe('销售单生成订单', () => {
     const response = await authInject(app, { method: 'POST', url: '/api/sales-documents/9999/create-order' });
     expect(response.statusCode).toBe(404);
     expect(response.json().error.code).toBe('SALES_DOCUMENT_NOT_FOUND');
+    await app.close();
+    database.close();
+  });
+
+  it('含税单价口径生成订单时税额不再重复并入运费', async () => {
+    const { database, app } = await setup();
+    const documentId = insertSalesDocument(database, {
+      status: 'issued',
+      shippingCents: 1000,
+      taxRateBps: 1300,
+      pricingBasis: 'shipping_inc_tax',
+      items: [{ name: '含税配件', quantity: 1, unitPriceCents: 13560 }],
+    });
+
+    const response = await authInject(app, { method: 'POST', url: `/api/sales-documents/${documentId}/create-order` });
+    expect(response.statusCode).toBe(201);
+    const order = response.json().data;
+    expect(order.shipping_cents).toBe(1000);
+    expect(order.amount_cents).toBe(14560);
+    expect(order.remark).not.toContain('含税费');
+    const finance = database.prepare('SELECT receivable_cents, outstanding_cents FROM order_finance WHERE order_id = ?').get(order.id) as { receivable_cents: number; outstanding_cents: number };
+    expect(finance).toEqual({ receivable_cents: 14560, outstanding_cents: 14560 });
+    await app.close();
+    database.close();
+  });
+
+  it('销售单已有收款随订单转入财务收款记录', async () => {
+    const { database, app } = await setup();
+    const documentId = insertSalesDocument(database, {
+      status: 'issued',
+      shippingCents: 0,
+      taxRateBps: 0,
+      items: [{ name: '样品', quantity: 1, unitPriceCents: 10000 }],
+    });
+    const timestamp = new Date().toISOString();
+    database.prepare(`
+      INSERT INTO sales_receipts (sales_document_id, received_at, amount_cents, payment_method, note, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(documentId, '2026-08-18', 3000, '微信', '定金', timestamp, timestamp);
+    database.prepare(`
+      UPDATE sales_documents SET received_cents = 3000, outstanding_cents = 7000, payment_status = 'partial' WHERE id = ?
+    `).run(documentId);
+
+    const response = await authInject(app, { method: 'POST', url: `/api/sales-documents/${documentId}/create-order` });
+    expect(response.statusCode).toBe(201);
+    const order = response.json().data;
+    expect(order.amount_cents).toBe(10000);
+    const finance = database.prepare('SELECT received_cents, outstanding_cents, payment_status FROM order_finance WHERE order_id = ?').get(order.id);
+    expect(finance).toEqual({ received_cents: 3000, outstanding_cents: 7000, payment_status: 'partial' });
+    const receipts = database.prepare('SELECT amount_cents, payment_method, payment_proof_id, note FROM finance_receipts WHERE order_id = ?').all(order.id) as Array<Record<string, unknown>>;
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]).toMatchObject({ amount_cents: 3000, payment_method: '微信', payment_proof_id: null });
+    expect(String(receipts[0]!.note)).toContain('销售单');
+    await app.close();
+    database.close();
+  });
+
+  it('生成订单后销售单收款冻结，避免与订单财务两套台账不一致', async () => {
+    const { database, app } = await setup();
+    const documentId = insertSalesDocument(database, {
+      status: 'issued',
+      items: [{ name: '样品', quantity: 1, unitPriceCents: 10000 }],
+    });
+    const timestamp = new Date().toISOString();
+    const receiptId = Number(database.prepare(`
+      INSERT INTO sales_receipts (sales_document_id, received_at, amount_cents, payment_method, note, created_at, updated_at)
+      VALUES (?, '2026-08-18', 3000, '微信', '定金', ?, ?)
+    `).run(documentId, timestamp, timestamp).lastInsertRowid);
+
+    const generated = await authInject(app, { method: 'POST', url: `/api/sales-documents/${documentId}/create-order` });
+    expect(generated.statusCode).toBe(201);
+
+    const add = await authInject(app, {
+      method: 'POST',
+      url: `/api/sales-documents/${documentId}/receipts`,
+      payload: { receivedAt: '2026-08-19', amountCents: 1000, paymentMethod: '现金', note: '尾款' },
+    });
+    expect(add.statusCode).toBe(409);
+    expect(add.json().error.code).toBe('ORDER_ALREADY_GENERATED');
+    expect(add.json().error.message).toContain('订单财务');
+
+    const update = await authInject(app, {
+      method: 'PUT',
+      url: `/api/sales-receipts/${receiptId}`,
+      payload: { receivedAt: '2026-08-18', amountCents: 5000, paymentMethod: '微信', note: '定金' },
+    });
+    expect(update.statusCode).toBe(409);
+    expect(update.json().error.code).toBe('ORDER_ALREADY_GENERATED');
+
+    const remove = await authInject(app, { method: 'DELETE', url: `/api/sales-receipts/${receiptId}` });
+    expect(remove.statusCode).toBe(409);
+    expect(remove.json().error.code).toBe('ORDER_ALREADY_GENERATED');
+
+    const persisted = database.prepare('SELECT amount_cents FROM sales_receipts WHERE id = ?').get(receiptId) as { amount_cents: number };
+    expect(persisted.amount_cents).toBe(3000);
+    await app.close();
+    database.close();
+  });
+
+  it('生成订单继承客户付款政策并保留系统产品关联', async () => {
+    const { database, app } = await setup();
+    const timestamp = new Date().toISOString();
+    const customerId = Number(database.prepare(`
+      INSERT INTO customers (name, payment_policy, deposit_percent, credit_days, created_at, updated_at)
+      VALUES (?, 'prepay', 30, 15, ?, ?)
+    `).run('预付客户', timestamp, timestamp).lastInsertRowid);
+    const productId = Number(database.prepare(`
+      INSERT INTO products (name, sku, specification, created_at, updated_at)
+      VALUES ('系统电钻', 'D-1', '20V', ?, ?)
+    `).run(timestamp, timestamp).lastInsertRowid);
+    const documentId = insertSalesDocument(database, {
+      status: 'issued',
+      customerId,
+      customerName: '预付客户',
+      shippingCents: 0,
+      taxRateBps: 0,
+      items: [{ name: '系统电钻', quantity: 2, unitPriceCents: 5000, productId }],
+    });
+
+    const response = await authInject(app, { method: 'POST', url: `/api/sales-documents/${documentId}/create-order` });
+    expect(response.statusCode).toBe(201);
+    const order = response.json().data;
+    expect(order.status).toBe('draft');
+    expect(order.payment_policy).toBe('prepay');
+    expect(order.deposit_percent).toBe(30);
+    expect(order.credit_days).toBe(15);
+    expect(order.items[0]).toMatchObject({ product_id: productId, name: '系统电钻', quantity: 2 });
     await app.close();
     database.close();
   });

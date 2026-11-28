@@ -657,8 +657,8 @@ describe('按客户维护的产品 API', () => {
     const now = new Date().toISOString();
     const orderId = Number(database.prepare(
       `INSERT INTO orders
-        (customer_id, order_no, ordered_at, customer_name, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+        (customer_id, order_no, ordered_at, customer_name, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'shipped', ?, ?)`,
     ).run(customer.id, 'ORDER-SNAPSHOT-1', '2026-08-11', '张三', now, now).lastInsertRowid);
     const orderItemId = Number(database.prepare(
       `INSERT INTO order_items
@@ -678,6 +678,51 @@ describe('按客户维护的产品 API', () => {
       specification: '旧规格',
       pack_count: 10,
     });
+  });
+
+  it('客户产品被待备货订单或标贴台账引用时不能删除', async () => {
+    const { app, database } = await testApp();
+    const customer = await createCustomer(app, '张三');
+    const pending = await createCustomerProduct(app, customer.id, productInput('待备货电钻', '12V'));
+    const sticker = await createCustomerProduct(app, customer.id, productInput('标贴电钻', '20V'));
+    const pendingId = Number(pending.id);
+    const stickerId = Number(sticker.id);
+    const now = new Date().toISOString();
+    const orderId = Number(database.prepare(
+      `INSERT INTO orders
+        (customer_id, order_no, ordered_at, customer_name, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'pending_stock', ?, ?)`,
+    ).run(customer.id, 'ORDER-IN-USE-1', '2026-08-11', '张三', now, now).lastInsertRowid);
+    database.prepare(
+      `INSERT INTO order_items
+        (order_id, customer_product_id, name, sku, specification, pack_count, quantity, created_at, updated_at)
+       VALUES (?, ?, ?, '', '', 10, 2, ?, ?)`,
+    ).run(orderId, pendingId, '待备货电钻', now, now);
+    database.prepare(
+      `INSERT INTO sticker_transactions (customer_product_id, kind, quantity, created_at)
+       VALUES (?, 'print', 10, ?)`,
+    ).run(stickerId, now);
+
+    const pendingRejected = await authInject(app, { method: 'DELETE', url: `/api/customer-products/${pendingId}` });
+    expect(pendingRejected.statusCode).toBe(409);
+    expect(pendingRejected.json().error.code).toBe('CUSTOMER_PRODUCT_IN_USE');
+    expect(pendingRejected.json().error.message).toContain('待备货订单');
+
+    const stickerRejected = await authInject(app, { method: 'DELETE', url: `/api/customer-products/${stickerId}` });
+    expect(stickerRejected.statusCode).toBe(409);
+    expect(stickerRejected.json().error.message).toContain('标贴台账');
+
+    const batchRejected = await authInject(app, {
+      method: 'POST',
+      url: `/api/customers/${customer.id}/products/batch-delete`,
+      payload: { ids: [pendingId] },
+    });
+    expect(batchRejected.statusCode).toBe(409);
+
+    database.prepare("UPDATE orders SET status = 'stock_reported' WHERE id = ?").run(orderId);
+    database.prepare('DELETE FROM sticker_transactions WHERE customer_product_id = ?').run(stickerId);
+    expect((await authInject(app, { method: 'DELETE', url: `/api/customer-products/${pendingId}` })).statusCode).toBe(200);
+    expect((await authInject(app, { method: 'DELETE', url: `/api/customer-products/${stickerId}` })).statusCode).toBe(200);
   });
 
   it('不再暴露旧的全局客户产品列表和新增接口', async () => {

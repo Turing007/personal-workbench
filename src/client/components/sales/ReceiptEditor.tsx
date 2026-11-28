@@ -21,6 +21,8 @@ export interface ReceiptEditorProps {
   documentId?: number;
   receipts: SalesReceipt[];
   disabled?: boolean;
+  /** 销售单已生成订单时收款已转入订单财务，这里只读并显示原因。 */
+  lockedReason?: string;
   onRefresh: () => Promise<void> | void;
   onNotify?: (message: string, tone?: 'success' | 'error' | 'info') => void;
 }
@@ -80,11 +82,12 @@ function savedAttachments(receipt: SalesReceipt): ImageAttachment[] {
   }));
 }
 
-export default function ReceiptEditor({ documentId, receipts, disabled, onRefresh, onNotify }: ReceiptEditorProps) {
+export default function ReceiptEditor({ documentId, receipts, disabled, lockedReason, onRefresh, onNotify }: ReceiptEditorProps) {
   const [newReceipt, setNewReceipt] = useState<ReceiptDraft>(emptyReceipt);
   const [drafts, setDrafts] = useState<Record<number, ReceiptDraft>>({});
   const [busyKey, setBusyKey] = useState<string>();
   const [error, setError] = useState('');
+  const readOnly = Boolean(disabled || lockedReason);
 
   useEffect(() => {
     setDrafts(Object.fromEntries(receipts.map((receipt) => [receipt.id, receiptToDraft(receipt)])));
@@ -104,7 +107,7 @@ export default function ReceiptEditor({ documentId, receipts, disabled, onRefres
   };
 
   const addReceipt = async () => {
-    if (!documentId || disabled || busyKey) return;
+    if (!documentId || readOnly || busyKey) return;
     setError('');
     setBusyKey('new');
     try {
@@ -123,7 +126,7 @@ export default function ReceiptEditor({ documentId, receipts, disabled, onRefres
 
   const saveReceipt = async (receipt: SalesReceipt) => {
     const draft = drafts[receipt.id];
-    if (!draft || disabled || busyKey) return;
+    if (!draft || readOnly || busyKey) return;
     setError('');
     setBusyKey(`save-${receipt.id}`);
     try {
@@ -140,7 +143,7 @@ export default function ReceiptEditor({ documentId, receipts, disabled, onRefres
   };
 
   const removeReceipt = async (receipt: SalesReceipt) => {
-    if (disabled || busyKey || !window.confirm(`确定删除 ${receipt.receivedAt} 的收款记录及付款凭证吗？`)) return;
+    if (readOnly || busyKey || !window.confirm(`确定删除 ${receipt.receivedAt} 的收款记录及付款凭证吗？`)) return;
     setError('');
     setBusyKey(`delete-${receipt.id}`);
     try {
@@ -158,7 +161,7 @@ export default function ReceiptEditor({ documentId, receipts, disabled, onRefres
 
   const changeProof = async (receipt: SalesReceipt, attachments: ImageAttachment[]) => {
     const uploaded = attachments.find((attachment) => attachment.file);
-    if (!uploaded?.file || disabled || busyKey) return;
+    if (!uploaded?.file || readOnly || busyKey) return;
     setError('');
     setBusyKey(`proof-${receipt.id}`);
     try {
@@ -177,7 +180,7 @@ export default function ReceiptEditor({ documentId, receipts, disabled, onRefres
 
   const removeProof = async (attachment: ImageAttachment) => {
     const fileId = Number(attachment.id);
-    if (!Number.isInteger(fileId)) return;
+    if (readOnly || busyKey || !Number.isInteger(fileId)) return;
     await deleteSalesReceiptFile(fileId);
     await refresh();
     notify('付款凭证已删除', 'success');
@@ -195,11 +198,13 @@ export default function ReceiptEditor({ documentId, receipts, disabled, onRefres
       <span style={{ color: 'var(--color-text-secondary)', fontSize: 12 }}>共 {receipts.length} 笔，已收 ¥{(receivedCents / 100).toFixed(2)}</span>
     </div>
 
+    {lockedReason && <div className="notice notice-info" style={{ fontSize: 12 }}>{lockedReason}</div>}
+
     <div style={{ display: 'grid', gridTemplateColumns: '130px 120px 150px minmax(180px, 1fr) 38px', gap: 7, alignItems: 'end', padding: 9, background: 'var(--color-surface-subtle)', borderRadius: 'var(--radius-ui)' }}>
-      <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>收款日期<input type="date" value={newReceipt.receivedAt} disabled={disabled} onChange={(event) => setNewReceipt({ ...newReceipt, receivedAt: event.target.value })} style={fieldStyle} /></label>
-      <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>金额<input type="number" min="0.01" step="0.01" value={newReceipt.amount} disabled={disabled} onChange={(event) => setNewReceipt({ ...newReceipt, amount: event.target.value })} style={fieldStyle} placeholder="0.00" /></label>
-      <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>付款方式<input value={newReceipt.paymentMethod} disabled={disabled} onChange={(event) => setNewReceipt({ ...newReceipt, paymentMethod: event.target.value })} style={fieldStyle} placeholder="微信 / 转账" /></label>
-      <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>备注<input value={newReceipt.note} disabled={disabled} onChange={(event) => setNewReceipt({ ...newReceipt, note: event.target.value })} style={fieldStyle} placeholder="预付款 / 尾款" /></label>
+      <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>收款日期<input type="date" value={newReceipt.receivedAt} disabled={readOnly} onChange={(event) => setNewReceipt({ ...newReceipt, receivedAt: event.target.value })} style={fieldStyle} /></label>
+      <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>金额<input type="number" min="0.01" step="0.01" value={newReceipt.amount} disabled={readOnly} onChange={(event) => setNewReceipt({ ...newReceipt, amount: event.target.value })} style={fieldStyle} placeholder="0.00" /></label>
+      <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>付款方式<input value={newReceipt.paymentMethod} disabled={readOnly} onChange={(event) => setNewReceipt({ ...newReceipt, paymentMethod: event.target.value })} style={fieldStyle} placeholder="微信 / 转账" /></label>
+      <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>备注<input value={newReceipt.note} disabled={readOnly} onChange={(event) => setNewReceipt({ ...newReceipt, note: event.target.value })} style={fieldStyle} placeholder="预付款 / 尾款" /></label>
       <button type="button" className="icon-button" title="添加收款" disabled={disabled || Boolean(busyKey)} onClick={() => void addReceipt()}><Plus size={15} /></button>
     </div>
 
@@ -207,14 +212,14 @@ export default function ReceiptEditor({ documentId, receipts, disabled, onRefres
       const draft = drafts[receipt.id] ?? receiptToDraft(receipt);
       return <div key={receipt.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 210px', gap: 12, padding: 10, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-ui)' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '130px 120px 150px minmax(160px, 1fr) 34px 34px', gap: 7, alignItems: 'end' }}>
-          <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>收款日期<input type="date" value={draft.receivedAt} disabled={disabled} onChange={(event) => setDrafts({ ...drafts, [receipt.id]: { ...draft, receivedAt: event.target.value } })} style={fieldStyle} /></label>
-          <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>金额<input type="number" min="0.01" step="0.01" value={draft.amount} disabled={disabled} onChange={(event) => setDrafts({ ...drafts, [receipt.id]: { ...draft, amount: event.target.value } })} style={fieldStyle} /></label>
-          <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>付款方式<input value={draft.paymentMethod} disabled={disabled} onChange={(event) => setDrafts({ ...drafts, [receipt.id]: { ...draft, paymentMethod: event.target.value } })} style={fieldStyle} /></label>
-          <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>备注<input value={draft.note} disabled={disabled} onChange={(event) => setDrafts({ ...drafts, [receipt.id]: { ...draft, note: event.target.value } })} style={fieldStyle} /></label>
+          <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>收款日期<input type="date" value={draft.receivedAt} disabled={readOnly} onChange={(event) => setDrafts({ ...drafts, [receipt.id]: { ...draft, receivedAt: event.target.value } })} style={fieldStyle} /></label>
+          <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>金额<input type="number" min="0.01" step="0.01" value={draft.amount} disabled={readOnly} onChange={(event) => setDrafts({ ...drafts, [receipt.id]: { ...draft, amount: event.target.value } })} style={fieldStyle} /></label>
+          <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>付款方式<input value={draft.paymentMethod} disabled={readOnly} onChange={(event) => setDrafts({ ...drafts, [receipt.id]: { ...draft, paymentMethod: event.target.value } })} style={fieldStyle} /></label>
+          <label style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>备注<input value={draft.note} disabled={readOnly} onChange={(event) => setDrafts({ ...drafts, [receipt.id]: { ...draft, note: event.target.value } })} style={fieldStyle} /></label>
           <button type="button" className="icon-button" title="保存收款修改" disabled={disabled || Boolean(busyKey)} onClick={() => void saveReceipt(receipt)}><Save size={14} /></button>
           <button type="button" className="icon-button danger" title="删除收款" disabled={disabled || Boolean(busyKey)} onClick={() => void removeReceipt(receipt)}><Trash2 size={14} /></button>
         </div>
-        {disabled ? <div style={{ display: 'grid', gap: 6, fontSize: 11, color: 'var(--color-text-secondary)' }}>
+        {readOnly ? <div style={{ display: 'grid', gap: 6, fontSize: 11, color: 'var(--color-text-secondary)' }}>
           <span style={{ fontWeight: 600 }}>付款凭证</span>
           {receipt.files[0]
             ? <a href={`/files/${receipt.files[0].relativePath}`} target="_blank" rel="noreferrer" title="查看付款凭证"><img src={`/files/${receipt.files[0].relativePath}`} alt={receipt.files[0].originalName} style={{ width: 92, height: 70, objectFit: 'cover', border: '1px solid var(--color-border-control)', borderRadius: 'var(--radius-ui)' }} /></a>

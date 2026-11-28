@@ -1137,6 +1137,66 @@ describe('订单草稿', () => {
     database.close();
   });
 
+  it('订单列表支持多状态与分页，统计接口按渠道返回状态数', async () => {
+    const { app, database } = await makeContext();
+    // 下单时间会被 normalizeOrderDate 截成日期；统计按东八区“今天”，这里也用东八区日期，
+    // 否则在 UTC 16:00–24:00 跑用例会落到“上海明天”而统计不到。
+    const orderedAt = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput({ orderNo: 'SO-PAGE-DRAFT', isDraft: true, channel: 'online', orderedAt }) });
+    await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      payload: orderInput({
+        orderNo: 'SO-PAGE-ONLINE',
+        channel: 'online',
+        orderedAt,
+        // 订单金额由行金额重算（忽略手工 amount），给单价才能得到 10000 分。
+        items: [{ name: '测试产品', sku: 'VT-0001', specification: '标准规格', packagingName: '彩盒包装', packCount: 10, quantity: 1, unitPriceCents: 10000 }],
+      }),
+    });
+    await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput({ orderNo: 'SO-PAGE-OFFLINE', channel: 'offline', orderedAt }) });
+
+    const first = await app.inject({ method: 'GET', url: '/api/orders?statuses=draft,pending_stock&channel=online&page=1&pageSize=1' });
+    expect(first.statusCode).toBe(200);
+    const firstData = first.json().data;
+    expect(firstData.total).toBe(2);
+    expect(firstData.rows).toHaveLength(1);
+    const second = await app.inject({ method: 'GET', url: '/api/orders?statuses=draft,pending_stock&channel=online&page=2&pageSize=1' });
+    expect(second.json().data.rows).toHaveLength(1);
+    expect(second.json().data.rows[0].id).not.toBe(firstData.rows[0].id);
+
+    const stats = await app.inject({ method: 'GET', url: '/api/orders/stats?channel=online' });
+    expect(stats.statusCode).toBe(200);
+    const statsData = stats.json().data;
+    expect(statsData.counts).toMatchObject({ all: 2, draft: 1, pending_stock: 1 });
+    expect(statsData.channelCounts).toMatchObject({ online: 2, offline: 1 });
+    expect(statsData.todayOrderCount).toBe(1);
+    expect(statsData.todaySalesCents).toBe(10000);
+    expect(statsData.unassignedCompanyCount).toBe(1);
+
+    const invalidPage = await app.inject({ method: 'GET', url: '/api/orders?page=abc' });
+    expect(invalidPage.statusCode).toBe(400);
+    const invalidStatus = await app.inject({ method: 'GET', url: '/api/orders?statuses=pending_stock,unknown' });
+    expect(invalidStatus.statusCode).toBe(400);
+
+    await app.close();
+    database.close();
+  });
+
+  it('带时区的下单时间按北京时间折算日期', async () => {
+    const { app, database } = await makeContext();
+    // UTC 20:00 已是上海次日：ordered_at 只存日期，落到错误的自然日会让“今日订单/今日销售额”漏单。
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/orders',
+      payload: orderInput({ orderNo: 'SO-TZ-BOUNDARY', orderedAt: '2026-08-10T20:00:00.000Z' }),
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().data.ordered_at).toBe('2026-08-11');
+    await app.close();
+    database.close();
+  });
+
   it('发布草稿：进入待备货，信息完整时成功', async () => {
     const { app, database } = await makeContext();
     const created = await app.inject({ method: 'POST', url: '/api/orders', payload: orderInput({ isDraft: true }) });

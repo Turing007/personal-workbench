@@ -393,7 +393,7 @@ export default function WaterSlipPage({ onNotify, onOpenOrder, onOpenFinance, in
         {lookupRows.map((row) => <button type="button" key={row.orderId} className="water-slip-candidate" onClick={() => selectOrder(row)}>
           <strong>{row.orderNo}</strong>
           <span>{row.customerName || '未填客户'}{row.recipientName ? ` · 收件人 ${row.recipientName}` : ''} · {row.companyName || '未分配公司'}</span>
-          <small>金额 {money(row.amountCents)} · 未收 {money(row.outstandingCents)}</small>
+          <small>金额 {money(row.amountCents)} · {row.overpaidCents > 0 ? `超收 ${money(row.overpaidCents)}` : `未收 ${money(row.outstandingCents)}`}</small>
         </button>)}
       </div>}
       {selectedOrder && <div className="water-slip-selected-order">
@@ -404,7 +404,7 @@ export default function WaterSlipPage({ onNotify, onOpenOrder, onOpenFinance, in
         <div className="water-slip-order-metrics">
           <div><span>应收</span><strong>{money(selectedOrder.receivableCents)}</strong></div>
           <div><span>已收</span><strong className="finance-positive">{money(selectedOrder.receivedCents)}</strong></div>
-          <div><span>未收</span><strong className={selectedOrder.outstandingCents > 0 ? 'finance-warning' : 'finance-positive'}>{money(selectedOrder.outstandingCents)}</strong></div>
+          <div><span>{selectedOrder.overpaidCents > 0 ? '超收' : '未收'}</span><strong className={selectedOrder.outstandingCents > 0 || selectedOrder.overpaidCents > 0 ? 'finance-warning' : 'finance-positive'}>{selectedOrder.overpaidCents > 0 ? money(selectedOrder.overpaidCents) : money(selectedOrder.outstandingCents)}</strong></div>
           <div><span>发票</span><strong>{selectedOrder.invoiceStatus === 'not_requested' ? '未申请' : selectedOrder.invoiceStatus === 'pending_issue' ? '待开票' : selectedOrder.invoiceStatus === 'issued' ? '已开票' : selectedOrder.invoiceStatus === 'sent' ? '已发送' : selectedOrder.invoiceStatus === 'void' ? '已作废' : '资料不完整'}</strong></div>
         </div>
         {selectedCompanyWarning && <div className="water-slip-warning"><AlertTriangle size={14} /><span>该对公订单还没有分配收款/开票公司，水单会先归到“未分配公司”；建议先分配公司再统计。</span>{onOpenOrder && <button className="button button-ghost" type="button" onClick={() => onOpenOrder(selectedOrder.orderId)}>去订单分配</button>}</div>}

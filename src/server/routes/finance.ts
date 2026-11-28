@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { MultipartFile } from '@fastify/multipart';
 import { Readable } from 'node:stream';
-import { FinanceService, FinanceServiceError, type FinanceInvoiceInput, type FinanceProofInput } from '../services/finance-service.js';
+import { FinanceService, FinanceServiceError, type FinanceInvoiceInput, type FinanceProofInput, type FinanceRefundInput } from '../services/finance-service.js';
 import type { FinanceListFilters } from '../../shared/finance.js';
 import type { FileStore } from '../files/file-store.js';
 import { FileStoreError } from '../files/file-store.js';
@@ -42,10 +42,11 @@ function parseOptionalNumber(value: unknown): unknown {
 function financeError(error: unknown): ApiError {
   if (error instanceof ApiError) return error;
   if (error instanceof FinanceServiceError) {
-    const notFound = new Set(['FINANCE_ORDER_NOT_FOUND', 'PROOF_NOT_FOUND', 'INVOICE_NOT_FOUND']);
+    const notFound = new Set(['FINANCE_ORDER_NOT_FOUND', 'PROOF_NOT_FOUND', 'INVOICE_NOT_FOUND', 'REFUND_NOT_FOUND']);
     const conflict = new Set([
       'PROOF_ALREADY_REVIEWED', 'PROOF_ALREADY_VOID', 'PROOF_TRANSACTION_EXISTS', 'RECEIPT_EXISTS',
-      'RECEIPT_EXCEEDS_ORDER', 'INVOICE_AMOUNT_EXCEEDS_ORDER', 'INVOICE_ALREADY_VOID', 'INVALID_FINANCE_STATUS',
+      'RECEIPT_EXCEEDS_ORDER', 'REFUND_EXCEEDS_RECEIVED', 'REFUND_PREVENTS_VOID',
+      'INVOICE_AMOUNT_EXCEEDS_ORDER', 'INVOICE_ALREADY_VOID', 'INVALID_FINANCE_STATUS',
     ]);
     return new ApiError(notFound.has(error.code) ? 404 : conflict.has(error.code) ? 409 : error.code === 'FILE_STORE_REQUIRED' ? 503 : 400, error.code, error.message);
   }
@@ -89,6 +90,16 @@ function proofInputFromRecord(body: Record<string, unknown>): FinanceProofInput 
     paymentMethod: body.paymentMethod ?? body.payment_method,
     payerName: body.payerName ?? body.payer_name,
     transactionNo: body.transactionNo ?? body.transaction_no,
+    note: body.note,
+  };
+}
+
+function refundInputFromRecord(body: Record<string, unknown>): FinanceRefundInput {
+  return {
+    refundedAt: body.refundedAt ?? body.refunded_at,
+    amountCents: parseOptionalNumber(body.amountCents ?? body.amount_cents),
+    paymentMethod: body.paymentMethod ?? body.payment_method,
+    reason: body.reason,
     note: body.note,
   };
 }
@@ -290,6 +301,26 @@ export async function registerFinanceRoutes(app: FastifyInstance, options: Finan
     const proof = await service.deleteProof(parseId(request.params.id));
     return sendSuccess(reply, mapProof(proof as unknown as Record<string, unknown>));
   }, reply));
+
+  app.get('/api/finance/orders/:orderId/refunds', async (request: FastifyRequest<{ Params: OrderParams }>, reply) => safeRoute(() => (
+    sendSuccess(reply, { items: service.listRefunds(parseId(request.params.orderId, 'orderId')) })
+  ), reply));
+
+  app.post('/api/finance/orders/:orderId/refunds', async (request: FastifyRequest<{ Params: OrderParams }>, reply) => safeRoute(() => (
+    sendSuccess(reply, service.createRefund(
+      parseId(request.params.orderId, 'orderId'),
+      refundInputFromRecord(asRecord(request.body)),
+      request.user?.username ?? '',
+    ), 201)
+  ), reply));
+
+  app.put('/api/finance/refunds/:id', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(() => (
+    sendSuccess(reply, service.updateRefund(parseId(request.params.id), refundInputFromRecord(asRecord(request.body))))
+  ), reply));
+
+  app.delete('/api/finance/refunds/:id', async (request: FastifyRequest<{ Params: IdParams }>, reply) => safeRoute(() => (
+    sendSuccess(reply, service.deleteRefund(parseId(request.params.id)))
+  ), reply));
 
   app.get('/api/finance/orders/:orderId/invoices', async (request: FastifyRequest<{ Params: OrderParams }>, reply) => safeRoute(() => {
     const detail = service.get(parseId(request.params.orderId, 'orderId'));

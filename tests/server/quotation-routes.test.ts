@@ -297,7 +297,7 @@ describe('quotation routes', () => {
     const copied = await app.inject({ method: 'POST', url: `/api/quotations/${quotation.id}/copy-to-sales` });
     expect(copied.statusCode).toBe(201);
     expect(copied.json().data.number).toBe('XS20260809001');
-    expect(copyQuotationToSales).toHaveBeenCalledWith(quotation.id);
+    expect(copyQuotationToSales).toHaveBeenCalledWith(quotation.id, '');
     await app.close();
     database.close();
   });

@@ -43,7 +43,7 @@ export class StockRepository {
       FROM orders o
       JOIN order_items oi ON oi.order_id = o.id
       LEFT JOIN customer_products cp ON cp.id = oi.customer_product_id
-      LEFT JOIN products p ON p.id = cp.system_product_id
+      LEFT JOIN products p ON p.id = COALESCE(cp.system_product_id, oi.product_id)
       WHERE ${clauses.join(' AND ')}
       ORDER BY o.ordered_at, o.id, oi.sort_order, oi.id
     `).all(...parameters) as StockPreparationRow[];

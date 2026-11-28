@@ -135,8 +135,8 @@ export default function OrderDetailModal({
           </div>
           <div className="order-detail-finance-metrics">
             <div style={detailStyle}><span style={labelStyle}>应收金额</span><strong style={{ fontSize: 13 }}>{`¥ ${(order.financeSummary.receivableCents / 100).toFixed(2)}`}</strong></div>
-            <div style={detailStyle}><span style={labelStyle}>已收金额</span><strong style={{ fontSize: 13, color: 'var(--color-success)' }}>{`¥ ${(order.financeSummary.receivedCents / 100).toFixed(2)}`}</strong></div>
-            <div style={detailStyle}><span style={labelStyle}>未收金额</span><strong style={{ fontSize: 13, color: order.financeSummary.outstandingCents > 0 ? 'var(--color-warning-text)' : 'var(--color-success)' }}>{`¥ ${(order.financeSummary.outstandingCents / 100).toFixed(2)}`}</strong></div>
+            <div style={detailStyle}><span style={labelStyle}>已收金额</span><strong style={{ fontSize: 13, color: 'var(--color-success)' }}>{`¥ ${(order.financeSummary.receivedCents / 100).toFixed(2)}`}</strong>{order.financeSummary.refundedCents > 0 && <small style={{ color: 'var(--color-warning-text)', fontSize: 11 }}>已退 ¥{(order.financeSummary.refundedCents / 100).toFixed(2)}</small>}</div>
+            <div style={detailStyle}><span style={labelStyle}>{order.financeSummary.overpaidCents > 0 ? '超收金额' : '未收金额'}</span><strong style={{ fontSize: 13, color: order.financeSummary.outstandingCents > 0 || order.financeSummary.overpaidCents > 0 ? 'var(--color-warning-text)' : 'var(--color-success)' }}>{order.financeSummary.overpaidCents > 0 ? `¥ ${(order.financeSummary.overpaidCents / 100).toFixed(2)}` : `¥ ${(order.financeSummary.outstandingCents / 100).toFixed(2)}`}</strong></div>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             <span style={{ padding: '3px 8px', borderRadius: 999, background: order.companyName ? 'var(--color-neutral-pill)' : 'var(--color-warning-soft)', color: order.companyName ? 'var(--color-text-secondary)' : 'var(--color-warning-text)', fontSize: 11 }}>公司：{order.companyName || '未分配'}</span>
